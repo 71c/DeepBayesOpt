@@ -94,6 +94,7 @@ def calculate_EI_GP(X_hist: Tensor, y_hist: Tensor, X: Tensor,
 
     return EI_values
 
+
 # https://pytorch.org/docs/stable/data.html#map-style-datasets
 # https://pytorch.org/docs/stable/data.html#torch.utils.data.Dataset
 # https://pytorch.org/docs/stable/data.html#torch.utils.data.IterableDataset
@@ -211,22 +212,9 @@ class GaussainProcessRandomDataset(torch.utils.data.IterableDataset):
         # shape (batch_shape, n_datapoints, 1)
         y_values = prior.sample(torch.Size([]))
 
-
-        #### CORRECT CODE:
-        
-        # # As a hack, need to remove last dimension of y_values because
-        # # set_train_data isn't really supported in BoTorch
-        # random_model.set_train_data(
-        #     x_values_botorch, y_values.squeeze(-1), strict=False)
-
-        # return x_values, y_values.squeeze(), random_model, model
-        
-
-        #### TESTING:
-    
         # As a hack, need to remove last dimension of y_values because
         # set_train_data isn't really supported in BoTorch
-        model.set_train_data(
+        random_model.set_train_data(
             x_values_botorch, y_values.squeeze(-1), strict=False)
 
-        return x_values, y_values.squeeze(), model, model
+        return x_values, y_values.squeeze(), random_model, model

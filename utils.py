@@ -29,3 +29,9 @@ def get_param_value(module, name):
 #     print(name)
 #     print(get_param_value(random_model, name))
 #     print()
+## OR,
+# random_model_params_dict = {
+#     name: get_param_value(random_model, name)
+#     for name, param in model.named_parameters()
+# }
+
