@@ -1,6 +1,8 @@
 import torch
 import botorch
 import gpytorch
+from gpytorch.constraints.constraints import GreaterThan
+from gpytorch.likelihoods import GaussianLikelihood
 from botorch.fit import fit_gpytorch_mll
 from gpytorch.mlls import ExactMarginalLogLikelihood
 from botorch.models.gp_regression import SingleTaskGP
@@ -11,7 +13,7 @@ from torch import Tensor
 from botorch.models.model import Model
 from typing import List
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
 torch.set_default_dtype(torch.double)
 
 
@@ -19,7 +21,6 @@ def calculate_EI_GP(X_hist: Tensor, y_hist: Tensor, X: Tensor,
                     model: SingleTaskGP, fit_params=False):
     """Calculate the exact Expected Improvements at `n_eval` points,
     given `N` histories each of length `n_train`.
-    Assumes noise-free observations, so gives a fixed noise level of 1e-6
 
     Args:
         X_hist: History x values, of shape `(N, n_train, d)`
@@ -93,13 +94,16 @@ def calculate_EI_GP(X_hist: Tensor, y_hist: Tensor, X: Tensor,
 
     return EI_values
 
-
+# https://pytorch.org/docs/stable/data.html#map-style-datasets
+# https://pytorch.org/docs/stable/data.html#torch.utils.data.Dataset
+# https://pytorch.org/docs/stable/data.html#torch.utils.data.IterableDataset
 class GaussainProcessRandomDataset(torch.utils.data.IterableDataset):
     def __init__(self, dimension, n_datapoints:int=None,
                  n_datapoints_random_gen=None,
                  xvalue_distribution: Distribution=None,
                  models: List[SingleTaskGP]=None,
-                 model_probabilities=None, observation_noise:bool=False):
+                 model_probabilities=None, observation_noise:bool=False,
+                 device=None):
         """Create a dataset that generates random Gaussian Process data.
 
         Args:
@@ -117,12 +121,14 @@ class GaussainProcessRandomDataset(torch.utils.data.IterableDataset):
                 with their priors 
                 defaults to a single SingleTaskGP model with the default BoTorch
                 Matern 5/2 kernel and Gamma priors for the lengthscale,
-                outputscale, and noise level.
+                outputscale; and noise level also if observation_noise==True.
                 It is assumed that each model provided is single-batch.
             model_probabilities: list of probability of choosing each model
             observation_noise: boolean specifying whether to generate the data
                 to include the "observation noise" given by the model's
                 likelihood (True), or not (False)
+            device: torch.device, optional -- the desired device to use for
+                computations.
         """
         self.dimension = dimension
         self.observation_noise = observation_noise
@@ -131,28 +137,44 @@ class GaussainProcessRandomDataset(torch.utils.data.IterableDataset):
         assert (n_datapoints is None) ^ (n_datapoints_random_gen is None)
         self.n_datapoints = n_datapoints
         self.n_datapoints_random_gen = n_datapoints_random_gen
+        self.device = device
         
         if xvalue_distribution is None:
             # m = Normal(torch.zeros(dimension), torch.ones(dimension))
-            m = Uniform(torch.zeros(dimension), torch.ones(dimension))
+            m = Uniform(torch.zeros(dimension, device=device),
+                        torch.ones(dimension, device=device))
             xvalue_distribution = Independent(m, 1)
         self.xvalue_distribution = xvalue_distribution
 
         if models is None: # models is None implies model_probabilities is None
             assert model_probabilities is None
 
-            train_X = torch.empty(1, 0, dimension) # (nbatch, n_data, dimension)
-            train_Y = torch.empty(1, 0, 1)         # (nbatch, n_data, n_out)
+            train_X = torch.zeros(0, dimension, device=device)
+            train_Y = torch.zeros(0, 1, device=device)
+
             # Default: Matern 5/2 kernel with gamma priors on
-            # lengthscale, outputscale, and noise level
-            models = [SingleTaskGP(train_X, train_Y)]
+            # lengthscale and outputscale, and noise level also if
+            # observation_noise.
+            # If no observation noise is generated, then make the likelihood
+            # be fixed noise at almost zero to correspond to what is generated.
+            likelihood = None if observation_noise else GaussianLikelihood(
+                    noise_prior=None, batch_shape=torch.Size(),
+                    noise_constraint=GreaterThan(
+                        0.0, transform=None, initial_value=1e-6
+                    )
+                )
+            models = [SingleTaskGP(train_X, train_Y, likelihood=likelihood)]
             model_probabilities = torch.tensor([1.0])
-        elif model_probabilities is None:
-            model_probabilities = torch.full([len(models)], 1/len(models))
-        else: # if both were specified, then,
-            model_probabilities = torch.as_tensor(model_probabilities)
-            assert model_probabilities.dim() == 1
-            assert len(models) == len(model_probabilities)
+        else:
+            for model in models:
+                t = len(model.batch_shape)
+                assert t == 0 or t == 1 and model.batch_shape[0] == 1
+            if model_probabilities is None:
+                model_probabilities = torch.full([len(models)], 1/len(models))
+            else: # if both were specified, then,
+                model_probabilities = torch.as_tensor(model_probabilities)
+                assert model_probabilities.dim() == 1
+                assert len(models) == len(model_probabilities)
         self.models = models
         self.model_probabilities = model_probabilities
     
@@ -177,16 +199,34 @@ class GaussainProcessRandomDataset(torch.utils.data.IterableDataset):
         # generate the x-values
         x_values = self.xvalue_distribution.sample(torch.Size([n_datapoints]))
         assert x_values.dim() == 2 # should have shape (n_datapoints, dimension)
+        
+        # make x_values have 1 batch for Botorch
+        x_values_botorch = x_values.unsqueeze(0) if len(model.batch_shape) == 1 else x_values
 
         with gpytorch.settings.prior_mode(True): # sample from prior
             prior = random_model.posterior(
-                x_values.unsqueeze(0), # make x_values have 1 batch for Botorch
+                x_values_botorch, 
                 observation_noise=self.observation_noise)
 
-        #        n_samples, n_batch, n_datapoints, n_out
-        # shape (1,         1,       n_datapoints, 1)
-        y_values = prior.sample(torch.Size([1]))
-        y_values = y_values.squeeze() # shape (n_datapoints,)
+        # shape (batch_shape, n_datapoints, 1)
+        y_values = prior.sample(torch.Size([]))
 
-        return x_values, y_values, random_model
 
+        #### CORRECT CODE:
+        
+        # # As a hack, need to remove last dimension of y_values because
+        # # set_train_data isn't really supported in BoTorch
+        # random_model.set_train_data(
+        #     x_values_botorch, y_values.squeeze(-1), strict=False)
+
+        # return x_values, y_values.squeeze(), random_model, model
+        
+
+        #### TESTING:
+    
+        # As a hack, need to remove last dimension of y_values because
+        # set_train_data isn't really supported in BoTorch
+        model.set_train_data(
+            x_values_botorch, y_values.squeeze(-1), strict=False)
+
+        return x_values, y_values.squeeze(), model, model
