@@ -6,11 +6,14 @@ from gpytorch.likelihoods import GaussianLikelihood
 from botorch.models.gp_regression import SingleTaskGP
 
 from torch.distributions import Uniform, Normal, Independent, Distribution
-from typing import List, Union
-
 from torch.utils.data import Dataset, IterableDataset, DataLoader
+from utils import get_uniform_randint_generator
+
+from typing import List, Union
+from collections.abc import Sequence
 
 import os
+import warnings
 
 torch.set_default_dtype(torch.double)
 
@@ -510,34 +513,101 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
     """
     def __init__(self,
                  dataset: Union[GaussainProcessRandomDataset, FunctionSamplesDataset],
-                 dataset_size:int=None, n_candidate_points:int=1,
-                 give_improvements:bool=True):
-        # TODO: Add support for random number of history points
+                 dataset_size:int=None, n_candidate_points:Union[int,str,Sequence[int]]=1,
+                 n_samples:str="all", give_improvements:bool=True, min_n_candidates=2):
         """
         Args:
             dataset: The base dataset from which to generate training data for
                 acquisition functions.
-            dataset_size (Optional[int]): The size of the dataset to generate.
-                If None, dataset size is determined by the size of the base
-                dataset.
-            n_candidate_points (int; default: 1): The number of candidate points
+            dataset_size (Optional[int]): The size of the dataset to generate
+                (i.e. number of samples). If None, dataset size is determined by
+                the size of the base dataset.
+            n_candidate_points (default: 1): The number of candidate points
                 to generate for each training example.
+                Can be:
+                    - A positive integer, in which case the number of candidate
+                        points is fixed to that value.
+                    - A tuple of two positive integers (min, max), in which case
+                        the number of candidate points is chosen uniformly at
+                        random from min to max.
+                    - A string "uniform", in which case the number of candidate
+                        points is chosen uniformly at random from
+                        `[min_n_candidates...n_samples-1]`.
+                    - A string "binomial", in which case the number of candidate
+                        points is chosen from a binomial distribution with
+                        parameters n_samples and 0.5, conditioned on being
+                        between `min_n_candidates` and n_samples-1.
+            n_samples (str; default: "all"): The number of samples to use from
+                the dataset each iteration. If "all", all samples are used.
+                If "uniform", a uniform random number of samples is used each
+                iteration. Specifically,
+                    - If n_candidate_points is "uniform" or "binomial", then
+                    n_samples is chosen uniformly at random in
+                    [min_n_candidates+1...n], where n is the number of samples
+                    in the dataset iteration, and then n_candidate_points is
+                    chosen based on that.
+                    - If n_candidate_points is an integer or a tuple of two
+                    integers, then n_candidate_points is first chosen and then
+                    n_samples is chosen uniformly in [n_candidate_points+1...n].
             give_improvements (bool): Whether to generate improvement values as
                 targets instead of raw y-values of the candidate points.
+            min_n_candidates (int): The minimum number of candidate points for
+                every iteration. Only used if n_candidate_points is "uniform" or
+                "binomial".
+            
+              min_n_candidates <= n_candidate <= n_samples-1
+        ===>  min_n_candidates <= n_samples-1
+        ===>  n_samples >= min_n_candidates + 1
         """
-        if not isinstance(n_candidate_points, int) or n_candidate_points <= 0:
-            raise ValueError(f"n_candidate_points should be a positive integer, but got n_candidate_points={n_candidate_points}")
-        if dataset_size is not None and (not isinstance(dataset_size, int) or dataset_size <= 0):
-            raise ValueError(f"dataset_size should be a positive integer, but got dataset_size={dataset_size}")
+        # whether to generate `n_candidates` first or not
+        self._gen_n_candidates_first = True
+        if isinstance(n_candidate_points, str):
+            if not (n_candidate_points == "uniform" or n_candidate_points == "binomial"):
+                raise ValueError(f"Invalid value for n_candidate_points: {n_candidate_points}")
+            self._gen_n_candidates_first = False
+        elif isinstance(n_candidate_points, int):
+            if n_candidate_points <= 0:
+                raise ValueError(f"n_candidate_points should be positive, but got n_candidate_points={n_candidate_points}")
+            self._gen_n_candidates = lambda: n_candidate_points
+        else: # n_candidate_points is a tuple (or list) of two integers
+            try:
+                if not (len(n_candidate_points) == 2 and
+                        isinstance(n_candidate_points[0], int) and
+                        isinstance(n_candidate_points[1], int) and
+                        1 <= n_candidate_points[0] <= n_candidate_points[1]):
+                    raise ValueError(f"n_candidate_points should be a positive integer or a tuple of two integers, but got n_candidate_points={n_candidate_points}")
+                self._gen_n_candidates = get_uniform_randint_generator(*n_candidate_points)
+            except TypeError:
+                raise ValueError(f"n_candidate_points should be a string, positive integer, tuple of two integers, but got n_candidate_points={n_candidate_points}")
+        self.n_candidate_points = n_candidate_points
+
+        if n_samples == "all":
+            self.n_samples = "all"
+        elif n_samples == "uniform":
+            self.n_samples = "uniform"
+        else:
+            raise ValueError(f"Invalid value for n_samples: {n_samples}")
+        
+        if not isinstance(min_n_candidates, int) or min_n_candidates <= 0:
+            raise ValueError(f"min_n_candidates should be a positive integer, but got min_n_candidates={min_n_candidates}")
+        self.min_n_candidates = min_n_candidates
+        
         if not isinstance(give_improvements, bool):
             raise TypeError(f"give_improvements should be a boolean value, but got give_improvements={give_improvements}")
+        self.give_improvements = give_improvements
 
+        if dataset_size is not None and (not isinstance(dataset_size, int) or dataset_size <= 0):
+            raise ValueError(f"dataset_size should be a positive integer, but got dataset_size={dataset_size}")
+        
         if isinstance(dataset, GaussainProcessRandomDataset):
             self.has_models = True
             if dataset_size is None:
                 self.data_iterable = dataset
             else:
                 self.data_iterable = _FirstNIterable(dataset, dataset_size)
+            
+            if n_samples == "uniform":
+                warnings.warn("n_samples='uniform' for GaussainProcessRandomDataset is supported but wasteful. Consider using n_samples='all' and setting n_datapoints_random_gen in the GaussainProcessRandomDataset instead.")
         elif isinstance(dataset, FunctionSamplesDataset):
             self.has_models = dataset.has_models
             if dataset_size is None:
@@ -551,10 +621,45 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
         else:
             raise TypeError(
                 "dataset should be of type GaussainProcessRandomDataset or FunctionSamplesDataset")
-
-        self.n_candidate_points = n_candidate_points
-        self.give_improvements = give_improvements
     
+    def _pick_random_n_samples_and_n_candidates(self, n_datapoints_original):
+        if self._gen_n_candidates_first:
+            # generate n_candidates first; either fixed or random
+            n_candidates = self._gen_n_candidates()
+
+            # Need to have at least 1 history point
+            if not (n_candidates+1 <= n_datapoints_original):
+                raise ValueError(f"n_datapoints_original={n_datapoints_original} should be at least n_candidates+1={n_candidates+1}")
+
+            # generate n_samples
+            if self.n_samples == "all":
+                n_samples = n_datapoints_original
+            elif self.n_samples == "uniform":
+                n_samples = get_uniform_randint_generator(n_candidates+1, n_datapoints_original)()
+        else:
+            # n_candidates is "uniform" or "binomial"
+
+            min_n_candidates = self.min_n_candidates
+
+            if not (min_n_candidates+1 <= n_datapoints_original):
+                raise ValueError(f"n_datapoints_original={n_datapoints_original} should be at least min_n_candidates+1={min_n_candidates+1}")
+
+            # generate n_samples first; either "all" or "uniform"
+            if self.n_samples == "all":
+                n_samples = n_datapoints_original
+            elif self.n_samples == "uniform":
+                n_samples = get_uniform_randint_generator(min_n_candidates+1, n_datapoints_original)()
+
+            # generate n_candidates
+            if self.n_candidate_points == "uniform":
+                n_candidates = get_uniform_randint_generator(min_n_candidates, n_samples-1)()
+            elif self.n_candidate_points == "binomial":
+                n_candidates = int(torch.distributions.Binomial(n_samples, 0.5).sample())
+                while not (min_n_candidates <= n_candidates <= n_samples-1):
+                    n_candidates = int(torch.distributions.Binomial(n_samples, 0.5).sample())
+        
+        return n_samples, n_candidates
+
     def __iter__(self):
         n_candidate = self.n_candidate_points
         has_models = self.has_models
@@ -568,6 +673,8 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
                 x_values, y_values = item
             
             n_datapoints = x_values.shape[0]
+
+            # TODO: randomize n_samples and n_candidates
 
             rand_idx = torch.randperm(n_datapoints)
             candidate_idx = rand_idx[:n_candidate]
