@@ -7,7 +7,7 @@ from botorch.models.gp_regression import SingleTaskGP
 
 from torch.distributions import Uniform, Normal, Independent, Distribution
 from torch.utils.data import Dataset, IterableDataset, DataLoader
-from utils import get_uniform_randint_generator
+from utils import uniform_randint, get_uniform_randint_generator
 
 from typing import List, Union
 from collections.abc import Sequence
@@ -553,7 +553,7 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
                 targets instead of raw y-values of the candidate points.
             min_n_candidates (int): The minimum number of candidate points for
                 every iteration. Only used if n_candidate_points is "uniform" or
-                "binomial".
+                "binomial"; ignored otherwise.
             
               min_n_candidates <= n_candidate <= n_samples-1
         ===>  min_n_candidates <= n_samples-1
@@ -635,7 +635,7 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
             if self.n_samples == "all":
                 n_samples = n_datapoints_original
             elif self.n_samples == "uniform":
-                n_samples = get_uniform_randint_generator(n_candidates+1, n_datapoints_original)()
+                n_samples = uniform_randint(n_candidates+1, n_datapoints_original)
         else:
             # n_candidates is "uniform" or "binomial"
 
@@ -648,11 +648,11 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
             if self.n_samples == "all":
                 n_samples = n_datapoints_original
             elif self.n_samples == "uniform":
-                n_samples = get_uniform_randint_generator(min_n_candidates+1, n_datapoints_original)()
+                n_samples = uniform_randint(min_n_candidates+1, n_datapoints_original)
 
             # generate n_candidates
             if self.n_candidate_points == "uniform":
-                n_candidates = get_uniform_randint_generator(min_n_candidates, n_samples-1)()
+                n_candidates = uniform_randint(min_n_candidates, n_samples-1)
             elif self.n_candidate_points == "binomial":
                 n_candidates = int(torch.distributions.Binomial(n_samples, 0.5).sample())
                 while not (min_n_candidates <= n_candidates <= n_samples-1):
@@ -661,7 +661,6 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
         return n_samples, n_candidates
 
     def __iter__(self):
-        n_candidate = self.n_candidate_points
         has_models = self.has_models
         
         # x_values has shape (n_datapoints, dimension)
@@ -674,11 +673,11 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
             
             n_datapoints = x_values.shape[0]
 
-            # TODO: randomize n_samples and n_candidates
+            n_samples, n_candidate = self._pick_random_n_samples_and_n_candidates(n_datapoints)
 
             rand_idx = torch.randperm(n_datapoints)
             candidate_idx = rand_idx[:n_candidate]
-            hist_idx = rand_idx[n_candidate:]
+            hist_idx = rand_idx[n_candidate:n_samples]
 
             x_hist, y_hist = x_values[hist_idx], y_values[hist_idx]
             x_candidates = x_values[candidate_idx]
