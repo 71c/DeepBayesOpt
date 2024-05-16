@@ -7,6 +7,12 @@ from botorch.models.gp_regression import SingleTaskGP
 
 from torch.distributions import Uniform, Normal, Independent, Distribution
 from torch.utils.data import Dataset, IterableDataset, DataLoader
+
+# https://pytorch.org/maskedtensor/main/index.html
+# https://pytorch.org/docs/stable/masked.html
+# https://pytorch.org/tutorials/prototype/maskedtensor_overview
+from torch.masked import masked_tensor, as_masked_tensor
+
 from utils import uniform_randint, get_uniform_randint_generator
 
 from typing import List, Union
@@ -510,6 +516,10 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
         for x_hist, y_hist, x_cand, improvements, model in training_dataset:
             # Use x_hist, y_hist, x_cand, and improvements for training
             # and model for evaluation of the approximated acquisition function
+            # x_hist shape: (n_hist, dimension)
+            # y_hist shape: (n_hist,)
+            # x_cand shape: (n_cand, dimension)
+            # improvements shape: (n_cand,)
     """
     def __init__(self,
                  dataset: Union[GaussainProcessRandomDataset, FunctionSamplesDataset],
@@ -554,10 +564,6 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
             min_n_candidates (int): The minimum number of candidate points for
                 every iteration. Only used if n_candidate_points is "uniform" or
                 "binomial"; ignored otherwise.
-            
-              min_n_candidates <= n_candidate <= n_samples-1
-        ===>  min_n_candidates <= n_samples-1
-        ===>  n_samples >= min_n_candidates + 1
         """
         # whether to generate `n_candidates` first or not
         self._gen_n_candidates_first = True
@@ -687,11 +693,114 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
                 best_f = y_hist.amax(0, keepdim=False) # both T and F work
                 improvement_values = torch.nn.functional.relu(
                     y_candidates - best_f, inplace=True)
-                ret_y = improvement_values
+                vals_candidates = improvement_values
             else:
-                ret_y = y_candidates
+                vals_candidates = y_candidates
 
             if has_models:
-                yield x_hist, y_hist, x_candidates, ret_y, model
+                yield x_hist, y_hist, x_candidates, vals_candidates, model
             else:
-                yield x_hist, y_hist, x_candidates, ret_y
+                yield x_hist, y_hist, x_candidates, vals_candidates
+    
+    @staticmethod
+    def collate_train_acquisition_function_samples(samples_list):
+        unzipped_lists = list(zip(*samples_list))
+        x_hist, y_hist, x_candidates, vals_candidates = unzipped_lists[:4]
+
+        x_hist = max_pad_tensors_batch(x_hist, add_mask=True)
+        y_hist = max_pad_tensors_batch(y_hist, add_mask=True)
+        
+        x_candidates = max_pad_tensors_batch(x_candidates, add_mask=True)
+        vals_candidates = max_pad_tensors_batch(vals_candidates, add_mask=True)
+
+        unzipped_lists[:4] = [x_hist, y_hist, x_candidates, vals_candidates]
+        return unzipped_lists
+    
+    def get_dataloader(self, batch_size=32, **kwargs):
+        """
+        Returns a DataLoader object for the dataset.
+
+        Args:
+            batch_size (int): The batch size for the DataLoader. Default is 32.
+            **kwargs: Additional keyword arguments to be passed to the DataLoader constructor.
+
+        Raises:
+            ValueError: If 'collate_fn' is specified in kwargs.
+            ValueError: If 'shuffle' is specified as True in kwargs.
+
+        Returns:
+            DataLoader: A DataLoader object for the dataset.
+        """
+        if 'collate_fn' in kwargs:
+            raise ValueError("collate_fn should not be specified in get_dataloader; we do it for you")
+        if 'shuffle' in kwargs and kwargs['shuffle']:
+            # Can't do shuffle=True on a IterableDataset
+            # ValueError: DataLoader with IterableDataset: expected unspecified shuffle option, but got shuffle=True
+            raise ValueError("shuffle should not be specified as True in get_dataloader; the dataset is already shuffled")
+        return DataLoader(self, batch_size=batch_size, shuffle=False,
+                          collate_fn=TrainAcquisitionFunctionDataset.collate_train_acquisition_function_samples, **kwargs)
+
+
+def pad_tensor(vec, length, dim, add_mask=True):
+    """
+    Pads a tensor 'vec' to a size 'length' in dimension 'dim' with zeros.
+    args:
+        vec - tensor to pad
+        length - the size to pad to in dimension 'dim'
+        dim - dimension to pad
+        add_mask - whether to return a MaskedTensor that includes the mask
+
+    return:
+        a new tensor padded to 'length' in dimension 'dim'
+    """
+    pad_size = length - vec.size(dim)
+    if pad_size < 0:
+        raise ValueError("Tensor cannot be padded to length less than it already is")
+    
+    pad_shape = list(vec.shape)
+    pad_shape[dim] = pad_size
+    if pad_size == 0: # Could pad with nothing but that's unnecessary
+        padded = vec
+    else:
+        padding = torch.zeros(*pad_shape, dtype=vec.dtype, device=vec.device)
+        padded = torch.cat([vec, padding], dim=dim)
+
+    if add_mask:
+        mask_true = torch.ones(vec.shape, dtype=torch.bool, device=vec.device)
+        mask_false = torch.zeros(*pad_shape, dtype=torch.bool, device=vec.device)
+        mask = torch.cat([mask_true, mask_false], dim=dim)
+        padded = masked_tensor(padded, mask)
+
+    return padded
+
+
+def max_pad_tensors_batch(tensors, dim=0, add_mask=True):
+    """
+    Pads a batch of tensors along a specified dimension to match the maximum length.
+
+    Args:
+        tensors (List[torch.Tensor]): A list of tensors to be padded.
+        dim (int, optional): The dimension along which to pad the tensors. Defaults to 0.
+        add_mask (bool, optional, default: True):
+            If add_mask=True AND tensors are of different lengths
+            (padding is necessary), add a mask and return a MaskedTensor.
+            Otherwise, returns a regular tensor padded with zeros.
+
+    Returns:
+        Tensor or MaskedTensor: The padded batch of tensors.
+
+    """
+    lengths = [x.shape[dim] for x in tensors]
+    max_length = max(lengths)
+    if all(length == max_length for length in lengths):
+        stacked = torch.stack(tensors) # Don't pad if we don't need to
+    else:
+        # MaskedTensor doesn't support torch.stack but does support torch.vstack
+        # so need to add a dimension to all of them and then vstack which is
+        # equivalent.
+        padded_tensors = [
+            pad_tensor(x.unsqueeze(0), max_length, dim=1+dim, add_mask=add_mask)
+            for x in tensors]
+        stacked = torch.vstack(padded_tensors)
+    
+    return stacked
