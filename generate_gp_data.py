@@ -6,7 +6,7 @@ from gpytorch.likelihoods import GaussianLikelihood
 from botorch.models.gp_regression import SingleTaskGP
 
 from torch.distributions import Uniform, Normal, Independent, Distribution
-from torch.utils.data import Dataset, IterableDataset, DataLoader
+from torch.utils.data import Dataset, IterableDataset, DataLoader, random_split, Subset
 
 # https://pytorch.org/maskedtensor/main/index.html
 # https://pytorch.org/docs/stable/masked.html
@@ -15,11 +15,12 @@ from torch.masked import masked_tensor, as_masked_tensor
 
 from utils import uniform_randint, get_uniform_randint_generator
 
-from typing import List, Union
+from typing import Iterable, Optional, List, Union
 from collections.abc import Sequence
 
 import os
 import warnings
+import math
 
 torch.set_default_dtype(torch.double)
 
@@ -66,8 +67,9 @@ class RandomModelSampler:
             model.index = i
 
         self._models = models
+        # need to copy the initial parameters with clone()
         self._model_initial_parameters = [
-            {name: param for name, param in model.named_parameters()}
+            {name: param.clone() for name, param in model.named_parameters()}
             for model in models
         ]
 
@@ -100,45 +102,160 @@ class RandomModelSampler:
         if model_params is None:
             model_params = self._model_initial_parameters[index]
         model = self._models[index]
+
+        # Remove the data from the model. Basically equivalent to
+        # model.set_train_data(inputs=None, targets=None, strict=False)
+        # except that would just do nothing
+        model.train_inputs = None
+        model.train_targets = None
+        model.prediction_strategy = None
+
         model.initialize(**model_params)
         return model
     
     @property
     def initial_models(self):
-        # Set the parameters of each model to be the original ones
-        for model, params in zip(self._models, self._model_initial_parameters):
-            # Remove the data from the model.
-            # Basically equivalent to
-            # model.set_train_data(inputs=None, targets=None, strict=False)
-            # except that would just do nothing
-            model.train_inputs = None
-            model.train_targets = None
-            model.prediction_strategy = None
-
-            # Set the parameters of the model to be the initial ones
-            model.initialize(**params)
-        return self._models
+        return [self.get_model(i) for i in range(len(self._models))]
 
 
-class GaussainProcessRandomDataset(IterableDataset):
-    """An IterableDataset that generates random Gaussian Process data.
+class FunctionSamplesDataset(Dataset):
+    """
+    A dataset class for function samples.
 
-     Usage example:
+    It is expected that the yielded values are either
+    (x_values, y_values, model) or (x_values, y_values), where
+    - x_values: A tensor of shape (n_datapoints, dimension)
+    - y_values: A tensor of shape (n_datapoints,)
+    - model: A SingleTaskGP instance that was used to generate the data
+
+    Subclasses include:
+    - GaussianProcessRandomDataset, which represents an iterable-style
+      dataset where the samples are generated from random Gaussian processes,
+      and each iter() can be either finite or infinite in length
+    - FunctionSamplesMapDataset, which represents a map-style dataset where
+        the samples are stored in memory and can be accessed by index.
+    
+    Usage example:
     ```
-    dataset = GaussainProcessRandomDataset(n_datapoints=15, dimension=5)
+    dataset = some FunctionSamplesDataset instance
     for x_values, y_values, model in dataset:
         # x_values has shape (n_datapoints, dimension)
         # y_values has shape (n_datapoints,)
         # do something with x_values, y_values, and model
     ```
     """
-    def __init__(self, n_datapoints:int=None, n_datapoints_random_gen=None,
+
+    @property
+    def has_models(self):
+        """Boolean variable that is whether the dataset includes model
+        information (i.e., GP models and their parameters)."""
+        raise NotImplementedError("Subclasses of FunctionSamplesDataset should implement has_models.")
+
+    @property
+    def model_sampler(self):
+        """The RandomModelSampler instance that is used to sample random GP
+        models for this dataset.
+        Should raise an error if has_models is False."""
+        raise NotImplementedError("Subclasses of FunctionSamplesDataset should implement model_sampler.")
+
+    def random_split(self, lengths: Sequence[Union[int, float]]):
+        """Randomly splits the dataset into multiple subsets.
+
+        Args:
+            lengths (Sequence[Union[int, float]]): A sequence of lengths specifying the size of each subset.
+        """
+        raise NotImplementedError("Subclasses of FunctionSamplesDataset should implement random_split.")
+    
+    def save(self, dir_name: str, n_realizations:Optional[int]=None):
+        """Saves the dataset to a specified directory. If the dataset includes
+        models, the models are saved as well. If the directory does not
+        exist, it will be created.
+
+        Args:
+            dir_name (str): The directory where the realizations should be saved.
+            n_realizations (int): The number of realizations to save.
+            If unspecified, all the realizations are saved.
+            If specified, the first n_realizations realizations are saved.
+        """
+        raise NotImplementedError("Subclasses of FunctionSamplesDataset should implement save.")
+
+
+class SizedIterableMixin(Iterable):
+    """A mixin class that provides functionality for creating iterable objects
+    with a specified size. If the size is None, the object is considered to be
+    infinite and so calling iter() then you can call next() indefinitely wihout
+    any StopIteration exception.
+    If the size is not None, then the object is considered to be finite and
+    calling iter() will return a generator that will yield the next element
+    until the size is reached.
+
+    Attributes:
+        _size (Optional[int]): The size of the iterable object.
+            None if the size is infinite.
+    """
+
+    _size: Optional[int] = None
+
+    def copy_with_new_size(self, size:int) -> "SizedIterableMixin":
+        """Creates a copy of the object with a new size.
+        Should set the _size attribute of the new object to the specified size.
+
+        Args:
+            size (int): The new size for the object.
+
+        Returns:
+            A new instance of the object with the specified size.
+        """
+        raise NotImplementedError("Subclasses of SizedIterableMixin should implement copy_with_new_size.")
+
+    def _next(self):
+        """Returns the next element in the iterable."""
+        raise NotImplementedError("Subclasses of SizedIterableMixin should implement _next.")
+
+    def __iter__(self):
+        if self._size is None:
+            return self
+        else:
+            # Must separate this in a different function because otherwise,
+            # iter will always return a generator, even if self._size is None
+            return self._finite_iterator()
+    
+    def _finite_iterator(self):
+        for _ in range(self._size):
+            yield self._next()
+    
+    def __len__(self):
+        if self._size is None:
+            raise TypeError(f"Length of the {type(self)} is infinite")
+        return self._size
+
+    def __next__(self):
+        if self._size is None:
+            return self._next()
+        raise TypeError(f"Cannot call __next__ on a finitely sized {type(self)}. Use iter() first.")
+
+
+class GaussianProcessRandomDataset(FunctionSamplesDataset, IterableDataset, SizedIterableMixin):
+    """An IterableDataset that generates random Gaussian Process data.
+
+     Usage example:
+    ```
+    dataset = GaussianProcessRandomDataset(n_datapoints=15, dimension=5, dataset_size=100)
+    for x_values, y_values, model in dataset:
+        # x_values has shape (n_datapoints, dimension)
+        # y_values has shape (n_datapoints,)
+        # do something with x_values, y_values, and model
+    ```
+    """
+    def __init__(self, n_datapoints:Optional[int]=None,
+                 n_datapoints_random_gen=None,
                  observation_noise:bool=False,
-                 xvalue_distribution: Distribution=None,
-                 models: List[SingleTaskGP]=None,
+                 xvalue_distribution: Optional[Distribution]=None,
+                 models: Optional[List[SingleTaskGP]]=None,
                  model_probabilities=None,
-                 dimension:int=None, device=None,
-                 set_random_model_train_data=False):
+                 dimension:Optional[int]=None, device=None,
+                 set_random_model_train_data=False,
+                 dataset_size:Optional[int]=None):
         """Create a dataset that generates random Gaussian Process data.
         
         Args:
@@ -170,6 +287,9 @@ class GaussainProcessRandomDataset(IterableDataset):
             set_random_model_train_data (bool, default: False):
                 Whether to set the random model train data to the random data
                 with each returned values
+            dataset_size: int, optional -- The size of the dataset to generate.
+                If None, the dataset is infinite. If specified, the dataset
+                generates that many samples with each iter() call.
         """
         # exacly one of them should be specified; verify this by xor
         if not ((n_datapoints is None) ^ (n_datapoints_random_gen is None)):
@@ -227,12 +347,71 @@ class GaussainProcessRandomDataset(IterableDataset):
             t = len(model.batch_shape)
             assert t == 0 or t == 1 and model.batch_shape[0] == 1
         
-        self.model_sampler = RandomModelSampler(models, model_probabilities)
+        self._model_sampler = RandomModelSampler(models, model_probabilities)
+
+        if dataset_size is not None and (not isinstance(dataset_size, int) or dataset_size <= 0):
+            raise ValueError("dataset_size should be a positive integer.")
+        self._size = dataset_size
     
-    def __iter__(self):
-        return self
+    @property
+    def has_models(self):
+        return True
     
-    def __next__(self):
+    @property
+    def model_sampler(self):
+        return self._model_sampler
+    
+    def random_split(self, lengths: Sequence[Union[int, float]]):
+        # Same check that pytorch does in torch.utils.data.random_split
+        # https://pytorch.org/docs/stable/_modules/torch/utils/data/dataset.html#random_split
+        lengths_is_proportions = math.isclose(sum(lengths), 1) and sum(lengths) <= 1
+
+        dataset_size = self._size
+        if dataset_size is None:
+            if lengths_is_proportions:
+                raise ValueError(
+                    "The GaussianProcessRandomDataset should not be infinite if lengths is a list of proportions")
+            dataset_size = sum(lengths)
+        else:
+            if lengths_is_proportions:
+                lengths = _get_lengths_from_proportions(dataset_size, lengths)
+            
+            if sum(lengths) != dataset_size:
+                raise ValueError(
+                    "Sum of input lengths does not equal the dataset size!")
+        return [self.copy_with_new_size(length) for length in lengths]
+
+    def save(self, dir_name:str, n_realizations:Optional[int]=None):
+        """Save the realizations of the dataset to a directory.
+
+        Args:
+            dir_name (str): The directory where the realizations should be saved.
+            n_realizations (int): The number of realizations to save.
+        """
+        dataset = FunctionSamplesMapDataset.from_iterable_dataset(self, n_realizations)
+        dataset.save(dir_name)
+    
+    def copy_with_new_size(self, dataset_size:int):
+        """Create a copy of the dataset with a new dataset size.
+
+        Args:
+            dataset_size (int): The new dataset size for the copied dataset.
+
+        Returns:
+            GaussianProcessRandomDataset: A new instance of the dataset with the
+            specified dataset size.
+        """
+        return GaussianProcessRandomDataset(
+            n_datapoints=self.n_datapoints,
+            n_datapoints_random_gen=self.n_datapoints_random_gen,
+            observation_noise=self.observation_noise,
+            xvalue_distribution=self.xvalue_distribution,
+            models=self.model_sampler.initial_models,
+            model_probabilities=self.model_sampler.model_probabilities,
+            set_random_model_train_data=self.set_random_model_train_data,
+            dataset_size=dataset_size)
+    
+    def _next(self):
         """Generate a random Gaussian Process model and sample from it.
 
         Returns:
@@ -275,18 +454,8 @@ class GaussainProcessRandomDataset(IterableDataset):
 
         return x_values, y_values.squeeze(), model
 
-    def save_realizations(self, n_realizations:int, dir_name:str):
-        """Save the realizations of the dataset to a directory.
 
-        Args:
-            n_realizations (int): The number of realizations to save.
-            dir_name (str): The directory where the realizations should be saved.
-        """
-        dataset = FunctionSamplesDataset.from_gp_random_dataset(self, n_realizations)
-        dataset.save(dir_name)
-
-
-class FunctionSamplesDataset(Dataset):
+class FunctionSamplesMapDataset(FunctionSamplesDataset):
     """A dataset class that holds function samples, as well as optionally
     their associated GP models and parameters.
 
@@ -299,12 +468,12 @@ class FunctionSamplesDataset(Dataset):
 
     Example:
         ```
-        rand_dataset = GaussainProcessRandomDataset(n_datapoints=15, dimension=5)
-        function_samples_dataset = FunctionSamplesDataset.from_gp_random_dataset(rand_dataset, 100)
+        rand_dataset = GaussianProcessRandomDataset(n_datapoints=15, dimension=5)
+        function_samples_dataset = FunctionSamplesMapDataset.from_iterable_dataset(rand_dataset, 100)
         function_samples_dataset.save('path/to/directory')
-        loaded_dataset = FunctionSamplesDataset.load('path/to/directory')
+        loaded_dataset = FunctionSamplesMapDataset.load('path/to/directory')
     """
-    def __init__(self, data: List[dict], model_sampler:RandomModelSampler=None):
+    def __init__(self, data: List[dict], model_sampler:Optional[RandomModelSampler]=None):
             """
             Initializes an instance of the class with the given data.
 
@@ -315,100 +484,6 @@ class FunctionSamplesDataset(Dataset):
             self.data = data
             self._model_sampler = model_sampler
     
-    @classmethod
-    def from_gp_random_dataset(cls, dataset: GaussainProcessRandomDataset,
-                               n_realizations: int):
-        """Creates an instance of FunctionSamplesDataset from a given
-        GaussainProcessRandomDataset instance by sampling a specified number of
-        data points.
-
-        Args:
-            dataset (GaussainProcessRandomDataset):
-                The random GP dataset from which to generate samples.
-            n_realizations (int, positive):
-                The number of function realizations (samples) to generate.
-
-        Returns:
-            FunctionSamplesDataset:
-            A new instance of FunctionSamplesDataset containing the sampled
-            function realizations.
-
-        Example:
-            ```
-            dataset = GaussainProcessRandomDataset(n_datapoints=15, dimension=5)
-            samples_dataset = FunctionSamplesDataset.from_gp_random_dataset(dataset, 100)
-        """
-        # if not isinstance(dataset, GaussainProcessRandomDataset):
-        #     raise TypeError("dataset should be an instance of GaussainProcessRandomDataset")
-        if not isinstance(n_realizations, int) or n_realizations <= 0:
-            raise ValueError("n_realizations should be a positive integer")
-        iterator = iter(dataset)
-        samples_list = []
-        for i in range(n_realizations):
-            x_values, y_values, model = next(iterator)
-            # need to copy the data, otherwise everything will be the same
-            model_params = {name: param.detach().clone()
-                            for name, param in model.named_parameters()}
-            samples_list.append({
-                'x_values': x_values,
-                'y_values': y_values,
-                'model_index': model.index,
-                'model_params': model_params
-            })
-        return cls(samples_list, dataset.model_sampler)
-
-    @classmethod
-    def load(cls, dir_name: str):
-        """
-        Loads a dataset from a given directory. The directory must contain a
-        saved instance of FunctionSamplesDataset, including the data and
-        optionally the models.
-
-        Args:
-            dir_name (str): The path to the directory from which the dataset
-            should be loaded.
-
-        Returns:
-            FunctionSamplesDataset: The loaded dataset instance.
-        """
-        if not os.path.exists(dir_name): # Error if path doesn't exist
-            raise FileNotFoundError(f"Path {dir_name} does not exist")
-        if not os.path.isdir(dir_name): # Error if path isn't directory
-            raise NotADirectoryError(f"Path {dir_name} is not a directory")
-
-        data = torch.load(os.path.join(dir_name, "data.pt"))
-        
-        models_path = os.path.join(dir_name, "models.pt")
-        if os.path.exists(models_path):
-            models = torch.load(models_path)
-            model_sampler = RandomModelSampler(models)
-            return cls(data, model_sampler)
-        
-        return cls(data)
-
-    def save(self, dir_name: str):
-        """
-        Saves the dataset to a specified directory. If the dataset includes
-        models, the models are saved as well. If the directory does not
-        exist, it will be created.
-
-        Args:
-            dir_name (str): The path to the directory where the dataset should
-            be saved.
-        """
-        if os.path.exists(dir_name):
-            if not os.path.isdir(dir_name):
-                raise NotADirectoryError(f"Path {dir_name} is not a directory")
-        else:
-            os.mkdir(dir_name)
-
-        # Save the models if we have them
-        if self.has_models:
-            models = self.model_sampler.initial_models
-            torch.save(models, os.path.join(dir_name, "models.pt"))
-
-        torch.save(self.data, os.path.join(dir_name, "data.pt"))
-
     @property
     def has_models(self):
         """Boolean variable that is whether the dataset includes model
@@ -420,6 +495,32 @@ class FunctionSamplesDataset(Dataset):
         if not self.has_models:
             raise ValueError(f"This {self.__class__.__name__} does not have models")
         return self._model_sampler
+    
+    def random_split(self, lengths: Sequence[Union[int, float]]):
+        subsets = random_split(self, lengths)
+        return [FunctionSamplesMapSubset.from_subset(subset) for subset in subsets]
+
+    def save(self, dir_name: str, n_realizations:Optional[int]=None):
+        data = self.data
+        if n_realizations is not None:
+            if not isinstance(n_realizations, int) or n_realizations <= 0:
+                raise ValueError("n_realizations should be a positive integer.")
+            if n_realizations > len(self):
+                raise ValueError(f"To save FunctionSamplesMapDataset, cannot make n_realizations > len(dataset). Got {n_realizations=} and len(dataset)={len(self)}")
+            data = data[:n_realizations]
+
+        if os.path.exists(dir_name):
+            if not os.path.isdir(dir_name):
+                raise NotADirectoryError(f"Path {dir_name} is not a directory")
+        else:
+            os.mkdir(dir_name)
+
+        # Save the models if we have them
+        if self.has_models:
+            models = self.model_sampler.initial_models
+            torch.save(models, os.path.join(dir_name, "models.pt"))
+
+        torch.save(data, os.path.join(dir_name, "data.pt"))
     
     def __getitem__(self, index):
         """Retrieves a single sample from the dataset at the specified index.
@@ -443,6 +544,152 @@ class FunctionSamplesDataset(Dataset):
     
     def __len__(self):
         return len(self.data)
+
+    @staticmethod
+    def load(dir_name: str):
+        """
+        Loads a dataset from a given directory. The directory must contain a
+        saved instance of FunctionSamplesMapDataset, including the data and
+        optionally the models.
+
+        Args:
+            dir_name (str): The path to the directory from which the dataset
+            should be loaded.
+
+        Returns:
+            FunctionSamplesMapDataset: The loaded dataset instance.
+        """
+        if not os.path.exists(dir_name): # Error if path doesn't exist
+            raise FileNotFoundError(f"Path {dir_name} does not exist")
+        if not os.path.isdir(dir_name): # Error if path isn't directory
+            raise NotADirectoryError(f"Path {dir_name} is not a directory")
+
+        data = torch.load(os.path.join(dir_name, "data.pt"))
+        
+        models_path = os.path.join(dir_name, "models.pt")
+        if os.path.exists(models_path):
+            models = torch.load(models_path)
+            model_sampler = RandomModelSampler(models)
+            return FunctionSamplesMapDataset(data, model_sampler)
+        
+        return FunctionSamplesMapDataset(data)
+    
+    @staticmethod
+    def from_iterable_dataset(dataset: FunctionSamplesDataset,
+                               n_realizations:Optional[int] = None):
+        """Creates an instance of FunctionSamplesMapDataset from a given
+        iterable-style FunctionSamplesDataset by sampling a specified number of
+        data points.
+
+        Args:
+            dataset (FunctionSamplesDataset and IterableDataset):
+                The dataset from which to generate samples.
+                Must be both a FunctionSamplesDataset and a IterableDataset.
+            n_realizations (int, positive):
+                The number of function realizations (samples) to generate.
+                Optional if the dataset has finite size, in which case the size
+                of the dataset is used.
+
+        Returns:
+            FunctionSamplesMapDataset:
+            A new instance of FunctionSamplesMapDataset containing the sampled
+            function realizations.
+
+        Example:
+            ```
+            dataset = GaussianProcessRandomDataset(n_datapoints=15, dimension=5)
+            samples_dataset = FunctionSamplesMapDataset.from_iterable_dataset(dataset, 100)
+        """
+        if not (isinstance(dataset, FunctionSamplesDataset) and isinstance(dataset, IterableDataset)):
+            raise TypeError("dataset should be an instance of both FunctionSamplesDataset and IterableDataset.")
+        
+        try:
+            original_dataset_size = len(dataset)
+        except TypeError:
+            original_dataset_size = None
+
+        if n_realizations is None:
+            if original_dataset_size is None:
+                raise ValueError("Can't create an infinite FunctionSamplesMapDataset from an infinite-sized FunctionSamplesDataset IterableDataset. Either specify n_realizations or use a finite-sized IterableDataset.")
+        else:
+            if not isinstance(n_realizations, int) or n_realizations <= 0:
+                raise ValueError("n_realizations should be a positive integer")
+            if n_realizations != original_dataset_size:
+                if isinstance(dataset, SizedIterableMixin):
+                    dataset = dataset.copy_with_new_size(n_realizations)
+                else:
+                    if n_realizations > original_dataset_size:
+                        raise ValueError(f"n_realizations should be <= len(dataset)={original_dataset_size}")
+                    dataset = _FirstNIterable(dataset, n_realizations)
+
+        samples_list = []
+        for x_values, y_values, model in dataset:
+            # need to copy the data, otherwise everything will be the same
+            model_params = {name: param.detach().clone()
+                            for name, param in model.named_parameters()}
+            samples_list.append({
+                'x_values': x_values,
+                'y_values': y_values,
+                'model_index': model.index,
+                'model_params': model_params
+            })
+        return FunctionSamplesMapDataset(samples_list, dataset.model_sampler)
+
+
+class FunctionSamplesMapSubset(Subset, FunctionSamplesMapDataset):
+    def __init__(self, dataset: FunctionSamplesMapDataset, indices: Sequence[int]) -> None:
+        if not isinstance(dataset, FunctionSamplesMapDataset):
+            raise ValueError("dataset should be an instance of FunctionSamplesMapDataset")
+        
+        # Equivalent to: self.dataset = dataset; self.indices = indices
+        Subset.__init__(self, dataset, indices)
+    
+    @classmethod
+    def from_subset(cls, subset: Subset):
+        if not isinstance(subset, Subset):
+            raise ValueError("subset should be an instance of torch.utils.data.Subset")
+        return cls(subset.dataset, subset.indices)
+    
+    @property
+    def has_models(self):
+        return self.dataset.has_models
+
+    @property
+    def model_sampler(self):
+        return self.dataset.model_sampler
+
+    @property
+    def _model_sampler(self):
+        # The difference is that _model_sampler can be None but
+        # model_sampler raises an error if it is None.
+        # Need to define _model_sampler property here, along with data below,
+        # so that _full_subset works when the base dataset is a subset
+        return self.dataset._model_sampler
+
+    @property
+    def data(self):
+        all_data = self.dataset.data
+        return [all_data[i] for i in self.indices]
+
+    @property
+    def _full_subset(self):
+        if hasattr(self, "_full_subset_cached"):
+            return self._full_subset_cached
+        self._full_subset_cached = FunctionSamplesMapDataset(
+            self.data, self._model_sampler)
+        return self._full_subset_cached
+
+    # random_split is inherited from FunctionSamplesMapDataset
+    # so no need to redefine it here
+    
+    def save(self, dir_name: str, n_realizations:Optional[int]=None):
+        self._full_subset.save(dir_name, n_realizations)
+    
+    def __getitem__(self, idx):
+        return Subset.__getitem__(self, idx)
+
+    def __len__(self):
+        return Subset.__len__(self)
 
 
 class _FirstNIterable:
@@ -486,10 +733,9 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
     """
     An IterableDataset designed for training a "likelihood-free" DNN acquisition
     function.
-    It processes either a GaussainProcessRandomDataset or FunctionSamplesDataset
-    instance to generate training data consisting of historical observations and
-    candidate points for acquisition function evaluation.
-    The data is generated randomly on-the-fly.
+    It processes a FunctionSamplesDataset instance to generate training data
+    consisting of historical observations and candidate points for acquisition
+    function evaluation. The data is generated randomly on-the-fly.
 
     Attributes:
         n_candidate_points (int): The number of candidate points to generate for
@@ -506,7 +752,7 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
         each item also includes the associated GP model.
 
     Example:
-        dataset = GaussainProcessRandomDataset(n_datapoints=15, dimension=5)
+        dataset = GaussianProcessRandomDataset(n_datapoints=15, dimension=5, dataset_size=100)
         
         # Creating the training dataset for acquisition functions
         training_dataset = TrainAcquisitionFunctionDataset(
@@ -522,16 +768,16 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
             # improvements shape: (n_cand,)
     """
     def __init__(self,
-                 dataset: Union[GaussainProcessRandomDataset, FunctionSamplesDataset],
-                 dataset_size:int=None, n_candidate_points:Union[int,str,Sequence[int]]=1,
-                 n_samples:str="all", give_improvements:bool=True, min_n_candidates=2):
+                 dataset: FunctionSamplesDataset,
+                 n_candidate_points:Union[int,str,Sequence[int]]=1,
+                 n_samples:str="all", give_improvements:bool=True, min_n_candidates=2,
+                 dataset_size_factor:Optional[int]=None):
         """
         Args:
-            dataset: The base dataset from which to generate training data for
+            dataset (FunctionSamplesDataset):
+                The base dataset from which to generate training data for
                 acquisition functions.
-            dataset_size (Optional[int]): The size of the dataset to generate
-                (i.e. number of samples). If None, dataset size is determined by
-                the size of the base dataset.
+            
             n_candidate_points (default: 1): The number of candidate points
                 to generate for each training example.
                 Can be:
@@ -564,6 +810,15 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
             min_n_candidates (int): The minimum number of candidate points for
                 every iteration. Only used if n_candidate_points is "uniform" or
                 "binomial"; ignored otherwise.
+            dataset_size_factor (Optional[int]): If the base dataset is a
+                map-style dataset
+                (i.e. a FunctionSamplesMapDataset or FunctionSamplesMapSubset),
+                this parameter specifies the expansion factor for the dataset
+                size. The dataset size is determined by the size of the base
+                dataset multiplied by this factor. Default is 1.
+                If the base dataset is an iterable-style dataset
+                (i.e. GaussianProcessRandomDataset), then this
+                parameter should not be specified.
         """
         # whether to generate `n_candidates` first or not
         self._gen_n_candidates_first = True
@@ -602,31 +857,52 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
             raise TypeError(f"give_improvements should be a boolean value, but got give_improvements={give_improvements}")
         self.give_improvements = give_improvements
 
-        if dataset_size is not None and (not isinstance(dataset_size, int) or dataset_size <= 0):
-            raise ValueError(f"dataset_size should be a positive integer, but got dataset_size={dataset_size}")
-        
-        if isinstance(dataset, GaussainProcessRandomDataset):
-            self.has_models = True
-            if dataset_size is None:
-                self.data_iterable = dataset
-            else:
-                self.data_iterable = _FirstNIterable(dataset, dataset_size)
+        # Need to save these so that we can copy in random_split
+        self.base_dataset = dataset
+        self.dataset_size_factor = dataset_size_factor
+
+        if not isinstance(dataset, FunctionSamplesDataset):
+            raise TypeError(f"dataset should be an instance of FunctionSamplesDataset, but got {dataset=}")
+
+        # Check whether dataset is an iterable-style dataset or not.
+        # Could also check this by checking that it's not a map-style dataset
+        # by checking whether it doesn't have the __getitem__ method:
+        # `not callable(getattr(dataset, "__getitem__", None))`.
+        dataset_is_iterable_style = isinstance(dataset, IterableDataset)
+
+        if dataset_is_iterable_style: # GaussianProcessRandomDataset
+            if dataset_size_factor is not None:
+                raise ValueError("dataset_size_factor should not be specified if dataset is an iterable-style dataset (GaussianProcessRandomDataset).")
+
+            try:
+                self._dataset_size = len(dataset)
+            except TypeError:
+                self._dataset_size = None
+            self._data_iterable = dataset
             
             if n_samples == "uniform":
-                warnings.warn("n_samples='uniform' for GaussainProcessRandomDataset is supported but wasteful. Consider using n_samples='all' and setting n_datapoints_random_gen in the GaussainProcessRandomDataset instead.")
-        elif isinstance(dataset, FunctionSamplesDataset):
-            self.has_models = dataset.has_models
-            if dataset_size is None:
-                self.data_iterable = DataLoader(
+                warnings.warn("n_samples='uniform' for iterable-style dataset (GaussianProcessRandomDataset) is supported but wasteful. Consider using n_samples='all' and setting n_datapoints_random_gen in the dataset instead.")
+        else: # FunctionSamplesMapDataset
+            if dataset_size_factor is None:
+                dataset_size_factor = 1
+            elif not isinstance(dataset_size_factor, int) or dataset_size_factor <= 0:
+                raise ValueError(f"dataset_size_factor should be a positive integer, but got {dataset_size_factor=}")
+
+            if dataset_size_factor == 1:
+                self._dataset_size = len(dataset)
+                self._data_iterable = DataLoader(
                     dataset, batch_size=None, shuffle=True)
             else:
-                self.data_iterable = DataLoader(
+                self._dataset_size = dataset_size_factor * len(dataset)
+                self._data_iterable = DataLoader(
                     dataset, batch_size=None,
                     sampler=torch.utils.data.RandomSampler(
-                        dataset, replacement=False, num_samples=dataset_size))
-        else:
-            raise TypeError(
-                "dataset should be of type GaussainProcessRandomDataset or FunctionSamplesDataset")
+                        dataset, replacement=False, num_samples=self._dataset_size))
+    
+    def __len__(self):
+        if self._dataset_size is None:
+            raise TypeError("Length of the TrainAcquisitionFunctionDataset with an infinite iterable-style dataset and is infinite")
+        return self._dataset_size
     
     def _pick_random_n_samples_and_n_candidates(self, n_datapoints_original):
         if self._gen_n_candidates_first:
@@ -667,11 +943,11 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
         return n_samples, n_candidates
 
     def __iter__(self):
-        has_models = self.has_models
+        has_models = self.base_dataset.has_models
         
         # x_values has shape (n_datapoints, dimension)
         # y_values has shape (n_datapoints,)
-        for item in self.data_iterable:
+        for item in self._data_iterable:
             if has_models:
                 x_values, y_values, model = item
             else:
@@ -703,7 +979,7 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
                 yield x_hist, y_hist, x_candidates, vals_candidates
     
     @staticmethod
-    def collate_train_acquisition_function_samples(samples_list):
+    def _collate_train_acquisition_function_samples(samples_list):
         unzipped_lists = list(zip(*samples_list))
         x_hist, y_hist, x_candidates, vals_candidates = unzipped_lists[:4]
 
@@ -715,6 +991,15 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
 
         unzipped_lists[:4] = [x_hist, y_hist, x_candidates, vals_candidates]
         return unzipped_lists
+
+    def random_split(self, lengths: Sequence[Union[int, float]]):
+        split_gp_datasets = self.base_dataset.random_split(lengths)
+        return [
+            type(self)(split_dataset, self.n_candidate_points, self.n_samples,
+                       self.give_improvements, self.min_n_candidates,
+                       self.dataset_size_factor)
+            for split_dataset in split_gp_datasets
+        ]
     
     def get_dataloader(self, batch_size=32, **kwargs):
         """
@@ -735,10 +1020,33 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
             raise ValueError("collate_fn should not be specified in get_dataloader; we do it for you")
         if 'shuffle' in kwargs and kwargs['shuffle']:
             # Can't do shuffle=True on a IterableDataset
-            # ValueError: DataLoader with IterableDataset: expected unspecified shuffle option, but got shuffle=True
             raise ValueError("shuffle should not be specified as True in get_dataloader; the dataset is already shuffled")
         return DataLoader(self, batch_size=batch_size, shuffle=False,
-                          collate_fn=TrainAcquisitionFunctionDataset.collate_train_acquisition_function_samples, **kwargs)
+                          collate_fn=TrainAcquisitionFunctionDataset._collate_train_acquisition_function_samples, **kwargs)
+
+
+# Taken from
+# https://pytorch.org/docs/stable/_modules/torch/utils/data/dataset.html#random_split
+def _get_lengths_from_proportions(total_length, proportions):
+    subset_lengths: List[int] = []
+    for i, frac in enumerate(proportions):
+        if frac < 0 or frac > 1:
+            raise ValueError(f"Fraction at index {i} is not between 0 and 1")
+        n_items_in_split = int(math.floor(total_length * frac))
+        subset_lengths.append(n_items_in_split)
+    remainder = total_length - sum(subset_lengths)
+    # add 1 to all the lengths in round-robin fashion until the remainder is 0
+    for i in range(remainder):
+        idx_to_add_at = i % len(subset_lengths)
+        subset_lengths[idx_to_add_at] += 1
+    lengths = subset_lengths
+    for i, length in enumerate(lengths):
+        if length == 0:
+            warnings.warn(
+                f"Length of split at index {i} is 0. "
+                f"This might result in an empty dataset."
+            )
+    return lengths
 
 
 def pad_tensor(vec, length, dim, add_mask=True):
@@ -788,7 +1096,6 @@ def max_pad_tensors_batch(tensors, dim=0, add_mask=True):
 
     Returns:
         Tensor or MaskedTensor: The padded batch of tensors.
-
     """
     lengths = [x.shape[dim] for x in tensors]
     max_length = max(lengths)
@@ -804,3 +1111,4 @@ def max_pad_tensors_batch(tensors, dim=0, add_mask=True):
         stacked = torch.vstack(padded_tensors)
     
     return stacked
+ 
