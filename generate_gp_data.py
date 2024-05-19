@@ -11,7 +11,7 @@ from torch.utils.data import Dataset, IterableDataset, DataLoader, random_split,
 # https://pytorch.org/maskedtensor/main/index.html
 # https://pytorch.org/docs/stable/masked.html
 # https://pytorch.org/tutorials/prototype/maskedtensor_overview
-from torch.masked import masked_tensor, as_masked_tensor
+from torch.masked import masked_tensor
 
 from utils import uniform_randint, get_uniform_randint_generator
 
@@ -382,12 +382,6 @@ class GaussianProcessRandomDataset(FunctionSamplesDataset, IterableDataset, Size
         return [self.copy_with_new_size(length) for length in lengths]
 
     def save(self, dir_name:str, n_realizations:Optional[int]=None):
-        """Save the realizations of the dataset to a directory.
-
-        Args:
-            dir_name (str): The directory where the realizations should be saved.
-            n_realizations (int): The number of realizations to save.
-        """
         dataset = FunctionSamplesMapDataset.from_iterable_dataset(self, n_realizations)
         dataset.save(dir_name)
     
@@ -486,8 +480,6 @@ class FunctionSamplesMapDataset(FunctionSamplesDataset):
     
     @property
     def has_models(self):
-        """Boolean variable that is whether the dataset includes model
-        information (i.e., GP models and their parameters)."""
         return self._model_sampler is not None
 
     @property
@@ -658,12 +650,12 @@ class FunctionSamplesMapSubset(Subset, FunctionSamplesMapDataset):
     def model_sampler(self):
         return self.dataset.model_sampler
 
+    # The difference is that _model_sampler can be None but
+    # model_sampler raises an error if it is None.
+    # Need to define _model_sampler property here, along with data below,
+    # so that _full_subset works when the base dataset is a subset
     @property
     def _model_sampler(self):
-        # The difference is that _model_sampler can be None but
-        # model_sampler raises an error if it is None.
-        # Need to define _model_sampler property here, along with data below,
-        # so that _full_subset works when the base dataset is a subset
         return self.dataset._model_sampler
 
     @property
@@ -673,10 +665,9 @@ class FunctionSamplesMapSubset(Subset, FunctionSamplesMapDataset):
 
     @property
     def _full_subset(self):
-        if hasattr(self, "_full_subset_cached"):
-            return self._full_subset_cached
-        self._full_subset_cached = FunctionSamplesMapDataset(
-            self.data, self._model_sampler)
+        if not hasattr(self, "_full_subset_cached"):
+            self._full_subset_cached = FunctionSamplesMapDataset(
+                self.data, self._model_sampler)
         return self._full_subset_cached
 
     # random_split is inherited from FunctionSamplesMapDataset
@@ -980,14 +971,15 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
     
     @staticmethod
     def _collate_train_acquisition_function_samples(samples_list):
+        # TODO: also give the masks.
         unzipped_lists = list(zip(*samples_list))
         x_hist, y_hist, x_candidates, vals_candidates = unzipped_lists[:4]
 
-        x_hist = max_pad_tensors_batch(x_hist, add_mask=True)
-        y_hist = max_pad_tensors_batch(y_hist, add_mask=True)
+        x_hist = max_pad_tensors_batch(x_hist, add_mask=False)
+        y_hist = max_pad_tensors_batch(y_hist, add_mask=False)
         
-        x_candidates = max_pad_tensors_batch(x_candidates, add_mask=True)
-        vals_candidates = max_pad_tensors_batch(vals_candidates, add_mask=True)
+        x_candidates = max_pad_tensors_batch(x_candidates, add_mask=False)
+        vals_candidates = max_pad_tensors_batch(vals_candidates, add_mask=False)
 
         unzipped_lists[:4] = [x_hist, y_hist, x_candidates, vals_candidates]
         return unzipped_lists
@@ -1065,7 +1057,8 @@ def pad_tensor(vec, length, dim, add_mask=True):
     if pad_size < 0:
         raise ValueError("Tensor cannot be padded to length less than it already is")
     
-    pad_shape = list(vec.shape)
+    vec_shape = list(vec.shape)
+    pad_shape = vec_shape.copy()
     pad_shape[dim] = pad_size
     if pad_size == 0: # Could pad with nothing but that's unnecessary
         padded = vec
@@ -1111,4 +1104,3 @@ def max_pad_tensors_batch(tensors, dim=0, add_mask=True):
         stacked = torch.vstack(padded_tensors)
     
     return stacked
- 

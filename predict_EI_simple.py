@@ -4,12 +4,13 @@ from botorch.fit import fit_gpytorch_mll
 from gpytorch.mlls import ExactMarginalLogLikelihood
 from botorch.models.gp_regression import SingleTaskGP
 from botorch.acquisition.analytic import ExpectedImprovement
+from typing import Optional
 
 torch.set_default_dtype(torch.double)
 
 
 def calculate_EI_GP(model: SingleTaskGP, X_hist: Tensor, y_hist: Tensor,
-                    X: Tensor, y: Tensor=None, fit_params=False):
+                    X: Tensor, y: Optional[Tensor]=None, fit_params=False):
     """Calculate the exact Expected Improvements at `n_eval` points,
     given `N` histories each of length `n_train`.
 
