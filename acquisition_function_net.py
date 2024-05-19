@@ -1,6 +1,13 @@
 import torch
 from torch import nn
 
+
+def expand_dim(tensor, dim, k):
+    new_shape = list(tensor.shape)
+    new_shape[dim] = k
+    return tensor.expand(*new_shape)
+
+
 # Unfortunately, torch.masked does not support torch.addmm
 # (which is used in nn.Linear), so we have to do the masking manually and
 # can't support MaskedTensor.
@@ -32,9 +39,13 @@ class AcquisitionFunctionNet(nn.Module):
         self.dimension = dimension
 
         hist_enc_widths = [dimension+1] + list(history_encoder_hidden_dims) + [encoded_history_dim]
+        n_hist_enc_layers = len(hist_enc_widths) - 1
         history_encoder = nn.Sequential()
-        for in_dim, out_dim in zip(hist_enc_widths[:-1], hist_enc_widths[1:]):
+        for i in range(n_hist_enc_layers):
+            in_dim, out_dim = hist_enc_widths[i], hist_enc_widths[i+1]
             history_encoder.append(nn.Linear(in_dim, out_dim))
+            # if i != n_hist_enc_layers - 1:
+            #     history_encoder.append(nn.ReLU())
             history_encoder.append(nn.ReLU())
         self.history_encoder = history_encoder
 
@@ -59,9 +70,9 @@ class AcquisitionFunctionNet(nn.Module):
             x_cand (torch.Tensor):
                 Candidate input tensor with shape (*, n_cand, dimension).
             hist_mask (torch.Tensor): Mask tensor for the history inputs with
-                shape (*, n_hist). Defaults to have all ones.
+                shape (*, n_hist). If None, then mask is all ones.
             cand_mask (torch.Tensor): Mask tensor for the candidate inputs with
-                shape (*, n_cand). Defaults to have all ones.
+                shape (*, n_cand). If None, then mask is all ones.
 
         Note: It is assumed x_hist and y_hist are padded (with zeros), although
             that shouldn't matter since the mask will take care of it.
@@ -69,34 +80,35 @@ class AcquisitionFunctionNet(nn.Module):
         Returns:
             torch.Tensor: Acquisition values tensor with shape (*, n_cand).
         """
-        if hist_mask is None:
-            hist_mask = torch.ones_like(x_hist[..., 0], dtype=torch.bool)
-        hist_mask = hist_mask.unsqueeze(-1) # shape (*, n_hist, 1)
+        if hist_mask is not None:
+            hist_mask = hist_mask.unsqueeze(-1) # shape (*, n_hist, 1)
 
-        if cand_mask is None:
-            cand_mask = torch.ones_like(x_cand[..., 0], dtype=torch.bool)
-        cand_mask = cand_mask.unsqueeze(-1) # shape (*, n_cand, 1)
+        if cand_mask is not None:
+            cand_mask = cand_mask.unsqueeze(-1) # shape (*, n_cand, 1)
 
         # shape (*, n_hist, dimension+1)
         xy_hist = torch.cat((x_hist, y_hist.unsqueeze(-1)), dim=-1)
 
         # shape (*, n_hist, encoded_history_dim)
         local_features = self.history_encoder(xy_hist)
+
         # Mask out the padded values. It is sufficient to mask at the end.
-        local_features = local_features * hist_mask
+        if hist_mask is not None:        
+            # This would work for summing
+            # local_features = local_features * hist_mask
+
+            # This works for maxing
+            neg_inf = torch.zeros_like(local_features)
+            hist_mask_expanded = expand_dim(hist_mask, -1, local_features.size(-1))
+            neg_inf[~hist_mask_expanded] = float("-inf")
+            local_features = local_features + neg_inf
         
         # "global feature", shape (*, 1, encoded_history_dim)
-        # The masking zeros will not affect the max operation because 
-        # ReLU was applied at the end so all values are >= 0.
         encoded_history = torch.max(local_features, dim=-2, keepdim=True).values
-        
-        # (*, n_cand, encoded_history_dim)
-        encoded_history_new_shape = list(encoded_history.shape)
-        n_cand = x_cand.size(-2)
-        encoded_history_new_shape[-2] = n_cand
 
         # shape (*, n_cand, encoded_history_dim)
-        encoded_history_expanded = encoded_history.expand(*encoded_history_new_shape)
+        n_cand = x_cand.size(-2)
+        encoded_history_expanded = expand_dim(encoded_history, -2, n_cand)
 
         # shape (*, n_cand, dimension+encoded_history_dim)
         x_cand_encoded_history = torch.cat((x_cand, encoded_history_expanded), dim=-1)
@@ -104,7 +116,9 @@ class AcquisitionFunctionNet(nn.Module):
         # shape (*, n_cand, 1)
         acquisition_values = self.acquisition_function_net(x_cand_encoded_history)
         
-        # Mask out the padded values
-        acquisition_values = acquisition_values * cand_mask
+        if cand_mask is not None:
+            # Mask out the padded values
+            acquisition_values = acquisition_values * cand_mask
 
         return acquisition_values.squeeze(-1) # shape (*, n_cand)
+        # return encoded_history.squeeze(-2) # for testing

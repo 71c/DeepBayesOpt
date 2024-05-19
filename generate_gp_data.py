@@ -11,7 +11,7 @@ from torch.utils.data import Dataset, IterableDataset, DataLoader, random_split,
 # https://pytorch.org/maskedtensor/main/index.html
 # https://pytorch.org/docs/stable/masked.html
 # https://pytorch.org/tutorials/prototype/maskedtensor_overview
-from torch.masked import masked_tensor
+from torch.masked import masked_tensor, is_masked_tensor
 
 from utils import uniform_randint, get_uniform_randint_generator
 
@@ -313,7 +313,8 @@ class GaussianProcessRandomDataset(FunctionSamplesDataset, IterableDataset, Size
         if xvalue_distribution is None:
             if dimension is None:
                 raise ValueError("dimension should be specified if xvalue_distribution is None")
-            # m = Normal(torch.zeros(dimension), torch.ones(dimension))
+            # m = Normal(torch.zeros(dimension, device=device),
+            #            torch.ones(dimension, device=device))
             m = Uniform(torch.zeros(dimension, device=device),
                         torch.ones(dimension, device=device))
             xvalue_distribution = Independent(m, 1)
@@ -593,7 +594,7 @@ class FunctionSamplesMapDataset(FunctionSamplesDataset):
             samples_dataset = FunctionSamplesMapDataset.from_iterable_dataset(dataset, 100)
         """
         if not (isinstance(dataset, FunctionSamplesDataset) and isinstance(dataset, IterableDataset)):
-            raise TypeError("dataset should be an instance of both FunctionSamplesDataset and IterableDataset.")
+            raise TypeError("dataset should be an instance of both FunctionSamplesDataset and IterableDataset")
         
         try:
             original_dataset_size = len(dataset)
@@ -968,21 +969,6 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
                 yield x_hist, y_hist, x_candidates, vals_candidates, model
             else:
                 yield x_hist, y_hist, x_candidates, vals_candidates
-    
-    @staticmethod
-    def _collate_train_acquisition_function_samples(samples_list):
-        # TODO: also give the masks.
-        unzipped_lists = list(zip(*samples_list))
-        x_hist, y_hist, x_candidates, vals_candidates = unzipped_lists[:4]
-
-        x_hist = max_pad_tensors_batch(x_hist, add_mask=False)
-        y_hist = max_pad_tensors_batch(y_hist, add_mask=False)
-        
-        x_candidates = max_pad_tensors_batch(x_candidates, add_mask=False)
-        vals_candidates = max_pad_tensors_batch(vals_candidates, add_mask=False)
-
-        unzipped_lists[:4] = [x_hist, y_hist, x_candidates, vals_candidates]
-        return unzipped_lists
 
     def random_split(self, lengths: Sequence[Union[int, float]]):
         split_gp_datasets = self.base_dataset.random_split(lengths)
@@ -993,9 +979,41 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
             for split_dataset in split_gp_datasets
         ]
     
+    @staticmethod
+    def _collate_train_acquisition_function_samples(samples_list):
+        unzipped_lists = list(zip(*samples_list))
+        # Each of these are tuples of tensors
+        x_hists, y_hists, x_cands, vals_cands = unzipped_lists[:4]
+
+        # x_hist shape: (n_hist, dimension)
+        # y_hist shape: (n_hist,)
+        # x_cand shape: (n_cand, dimension)
+        # vals_cand shape: (n_cand,)
+
+        x_hist = max_pad_tensors_batch(x_hists, add_mask=False)
+
+        y_hist_masked = max_pad_tensors_batch(y_hists, add_mask=True)
+        if is_masked_tensor(y_hist_masked):
+            y_hist = y_hist_masked.get_data()
+            hist_mask = y_hist_masked.get_mask()
+        else:
+            y_hist = y_hist_masked
+            hist_mask = None
+        
+        x_cand = max_pad_tensors_batch(x_cands, add_mask=False)
+
+        vals_cand_masked = max_pad_tensors_batch(vals_cands, add_mask=True)
+        if is_masked_tensor(vals_cand_masked):
+            vals_cand = vals_cand_masked.get_data()
+            cand_mask = vals_cand_masked.get_mask()
+        else:
+            vals_cand = vals_cand_masked
+            cand_mask = None
+
+        return [x_hist, y_hist, x_cand, vals_cand, hist_mask, cand_mask] + unzipped_lists[4:]
+    
     def get_dataloader(self, batch_size=32, **kwargs):
-        """
-        Returns a DataLoader object for the dataset.
+        """Returns a DataLoader object for the dataset.
 
         Args:
             batch_size (int): The batch size for the DataLoader. Default is 32.
@@ -1006,7 +1024,19 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
             ValueError: If 'shuffle' is specified as True in kwargs.
 
         Returns:
-            DataLoader: A DataLoader object for the dataset.
+            DataLoader: A DataLoader object for the dataset, where
+            each batch contains a list of tensors
+            [x_hist, y_hist, x_cand, vals_cand, hist_mask, cand_mask, models] or
+            [x_hist, y_hist, x_cand, vals_cand, hist_mask, cand_mask] if models
+            are not associated with the dataset.
+            
+            x_hist has shape (batch_size, n_hist, dimension),
+            y_hist and hist_mask have shape (batch_size, n_hist),
+            x_cand has shape (batch_size, n_cand, dimension),
+            vals_cand and cand_mask have shape (batch_size, n_cand),
+            and models is a batch_size length tuple of GP models associated
+            with the dataset.
+            Everything is padded with zeros along with the corresponding masks.
         """
         if 'collate_fn' in kwargs:
             raise ValueError("collate_fn should not be specified in get_dataloader; we do it for you")
@@ -1014,7 +1044,8 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
             # Can't do shuffle=True on a IterableDataset
             raise ValueError("shuffle should not be specified as True in get_dataloader; the dataset is already shuffled")
         return DataLoader(self, batch_size=batch_size, shuffle=False,
-                          collate_fn=TrainAcquisitionFunctionDataset._collate_train_acquisition_function_samples, **kwargs)
+                          collate_fn=TrainAcquisitionFunctionDataset._collate_train_acquisition_function_samples,
+                          **kwargs)
 
 
 # Taken from
@@ -1042,8 +1073,7 @@ def _get_lengths_from_proportions(total_length, proportions):
 
 
 def pad_tensor(vec, length, dim, add_mask=True):
-    """
-    Pads a tensor 'vec' to a size 'length' in dimension 'dim' with zeros.
+    """Pads a tensor 'vec' to a size 'length' in dimension 'dim' with zeros.
     args:
         vec - tensor to pad
         length - the size to pad to in dimension 'dim'
@@ -1057,8 +1087,7 @@ def pad_tensor(vec, length, dim, add_mask=True):
     if pad_size < 0:
         raise ValueError("Tensor cannot be padded to length less than it already is")
     
-    vec_shape = list(vec.shape)
-    pad_shape = vec_shape.copy()
+    pad_shape = list(vec.shape)
     pad_shape[dim] = pad_size
     if pad_size == 0: # Could pad with nothing but that's unnecessary
         padded = vec
@@ -1076,12 +1105,11 @@ def pad_tensor(vec, length, dim, add_mask=True):
 
 
 def max_pad_tensors_batch(tensors, dim=0, add_mask=True):
-    """
-    Pads a batch of tensors along a specified dimension to match the maximum length.
+    """Pads a batch of tensors along a dimension to match the maximum length.
 
     Args:
         tensors (List[torch.Tensor]): A list of tensors to be padded.
-        dim (int, optional): The dimension along which to pad the tensors. Defaults to 0.
+        dim (int, default: 0): The dimension along which to pad the tensors.
         add_mask (bool, optional, default: True):
             If add_mask=True AND tensors are of different lengths
             (padding is necessary), add a mask and return a MaskedTensor.
