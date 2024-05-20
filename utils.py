@@ -1,4 +1,5 @@
 import torch
+from torch.masked import masked_tensor
 from functools import partial
 
 
@@ -27,6 +28,68 @@ def loguniform_randint(min_val, max_val, size=1, pre_offset=0.0, offset=0):
 
 def get_loguniform_randint_generator(min_val, max_val, pre_offset=0.0, offset=0):
     return partial(loguniform_randint, min_val, max_val, pre_offset=pre_offset, offset=offset)
+
+
+def pad_tensor(vec, length, dim, add_mask=False):
+    """Pads a tensor 'vec' to a size 'length' in dimension 'dim' with zeros.
+    args:
+        vec - tensor to pad
+        length - the size to pad to in dimension 'dim'
+        dim - dimension to pad
+        add_mask - whether to return a MaskedTensor that includes the mask
+
+    return:
+        a new tensor padded to 'length' in dimension 'dim'
+    """
+    pad_size = length - vec.size(dim)
+    if pad_size < 0:
+        raise ValueError("Tensor cannot be padded to length less than it already is")
+    
+    pad_shape = list(vec.shape)
+    pad_shape[dim] = pad_size
+    if pad_size == 0: # Could pad with nothing but that's unnecessary
+        padded = vec
+    else:
+        padding = torch.zeros(*pad_shape, dtype=vec.dtype, device=vec.device)
+        padded = torch.cat([vec, padding], dim=dim)
+
+    if add_mask:
+        mask_true = torch.ones(vec.shape, dtype=torch.bool, device=vec.device)
+        mask_false = torch.zeros(*pad_shape, dtype=torch.bool, device=vec.device)
+        mask = torch.cat([mask_true, mask_false], dim=dim)
+        padded = masked_tensor(padded, mask)
+
+    return padded
+
+
+def max_pad_tensors_batch(tensors, dim=0, add_mask=False):
+    """Pads a batch of tensors along a dimension to match the maximum length.
+
+    Args:
+        tensors (List[torch.Tensor]): A list of tensors to be padded.
+        dim (int, default: 0): The dimension along which to pad the tensors.
+        add_mask (bool, optional, default: False):
+            If add_mask=True AND tensors are of different lengths
+            (padding is necessary), add a mask and return a MaskedTensor.
+            Otherwise, returns a regular tensor padded with zeros.
+
+    Returns:
+        Tensor or MaskedTensor: The padded batch of tensors.
+    """
+    lengths = [x.shape[dim] for x in tensors]
+    max_length = max(lengths)
+    if all(length == max_length for length in lengths):
+        stacked = torch.stack(tensors) # Don't pad if we don't need to
+    else:
+        # MaskedTensor doesn't support torch.stack but does support torch.vstack
+        # so need to add a dimension to all of them and then vstack which is
+        # equivalent.
+        padded_tensors = [
+            pad_tensor(x.unsqueeze(0), max_length, dim=1+dim, add_mask=add_mask)
+            for x in tensors]
+        stacked = torch.vstack(padded_tensors)
+    
+    return stacked
 
 
 # Based on

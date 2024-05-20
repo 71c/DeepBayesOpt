@@ -11,9 +11,9 @@ from torch.utils.data import Dataset, IterableDataset, DataLoader, random_split,
 # https://pytorch.org/maskedtensor/main/index.html
 # https://pytorch.org/docs/stable/masked.html
 # https://pytorch.org/tutorials/prototype/maskedtensor_overview
-from torch.masked import masked_tensor, is_masked_tensor
+from torch.masked import is_masked_tensor
 
-from utils import uniform_randint, get_uniform_randint_generator
+from utils import uniform_randint, get_uniform_randint_generator, max_pad_tensors_batch
 
 from typing import Iterable, Optional, List, Union
 from collections.abc import Sequence
@@ -162,7 +162,9 @@ class FunctionSamplesDataset(Dataset):
         """Randomly splits the dataset into multiple subsets.
 
         Args:
-            lengths (Sequence[Union[int, float]]): A sequence of lengths specifying the size of each subset.
+            lengths (Sequence[Union[int, float]]): A sequence of lengths
+            specifying the size of each subset, or the proportion of the
+            dataset to include in each subset.
         """
         raise NotImplementedError("Subclasses of FunctionSamplesDataset should implement random_split.")
     
@@ -250,7 +252,7 @@ class GaussianProcessRandomDataset(FunctionSamplesDataset, IterableDataset, Size
     def __init__(self, n_datapoints:Optional[int]=None,
                  n_datapoints_random_gen=None,
                  observation_noise:bool=False,
-                 xvalue_distribution: Optional[Distribution]=None,
+                 xvalue_distribution: Union[Distribution,str]="uniform",
                  models: Optional[List[SingleTaskGP]]=None,
                  model_probabilities=None,
                  dimension:Optional[int]=None, device=None,
@@ -270,7 +272,8 @@ class GaussianProcessRandomDataset(FunctionSamplesDataset, IterableDataset, Size
                 likelihood (True), or not (False)
             xvalue_distribution: a torch.distributions.Distribution object that
                 represents the probability distribution for generating each iid
-                value $x \in \mathbb{R}^{dimension}$. Default: iid Uniform(0,1)
+                value $x \in \mathbb{R}^{dimension}$, or a string 'uniform' or
+                'normal' to specify iid uniform(0,1) or normal(0,I) distribution
             models: a list of SingleTaskGP models to choose from randomly,
                 with their priors 
                 defaults to a single SingleTaskGP model with the default BoTorch
@@ -309,15 +312,17 @@ class GaussianProcessRandomDataset(FunctionSamplesDataset, IterableDataset, Size
         if not isinstance(set_random_model_train_data, bool):
             raise TypeError("set_random_model_train_data must be a boolean value.")
         self.set_random_model_train_data = set_random_model_train_data
-        
-        if xvalue_distribution is None:
+
+        # Set xvalue_distribution
+        if xvalue_distribution == "uniform" or xvalue_distribution == "normal":
             if dimension is None:
-                raise ValueError("dimension should be specified if xvalue_distribution is None")
-            # m = Normal(torch.zeros(dimension, device=device),
-            #            torch.ones(dimension, device=device))
-            m = Uniform(torch.zeros(dimension, device=device),
+                raise ValueError("dimension should be specified if xvalue_distribution is 'uniform' or 'normal' string.")
+            dist_cls = {"uniform": Uniform, "normal": Normal}[xvalue_distribution]
+            m = dist_cls(torch.zeros(dimension, device=device),
                         torch.ones(dimension, device=device))
             xvalue_distribution = Independent(m, 1)
+        elif not isinstance(xvalue_distribution, Distribution):
+            raise ValueError(f"xvalue_distribution should be a Distribution object or 'uniform' or 'normal' string, but got {xvalue_distribution}")
         self.xvalue_distribution = xvalue_distribution
 
         if models is None: # models is None implies model_probabilities is None
@@ -971,6 +976,13 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
                 yield x_hist, y_hist, x_candidates, vals_candidates
 
     def random_split(self, lengths: Sequence[Union[int, float]]):
+        """Randomly splits the dataset into multiple subsets.
+
+        Args:
+            lengths (Sequence[Union[int, float]]): A sequence of lengths
+            specifying the size of each subset, or the proportion of the
+            dataset to include in each subset.
+        """
         split_gp_datasets = self.base_dataset.random_split(lengths)
         return [
             type(self)(split_dataset, self.n_candidate_points, self.n_samples,
@@ -1072,63 +1084,3 @@ def _get_lengths_from_proportions(total_length, proportions):
     return lengths
 
 
-def pad_tensor(vec, length, dim, add_mask=True):
-    """Pads a tensor 'vec' to a size 'length' in dimension 'dim' with zeros.
-    args:
-        vec - tensor to pad
-        length - the size to pad to in dimension 'dim'
-        dim - dimension to pad
-        add_mask - whether to return a MaskedTensor that includes the mask
-
-    return:
-        a new tensor padded to 'length' in dimension 'dim'
-    """
-    pad_size = length - vec.size(dim)
-    if pad_size < 0:
-        raise ValueError("Tensor cannot be padded to length less than it already is")
-    
-    pad_shape = list(vec.shape)
-    pad_shape[dim] = pad_size
-    if pad_size == 0: # Could pad with nothing but that's unnecessary
-        padded = vec
-    else:
-        padding = torch.zeros(*pad_shape, dtype=vec.dtype, device=vec.device)
-        padded = torch.cat([vec, padding], dim=dim)
-
-    if add_mask:
-        mask_true = torch.ones(vec.shape, dtype=torch.bool, device=vec.device)
-        mask_false = torch.zeros(*pad_shape, dtype=torch.bool, device=vec.device)
-        mask = torch.cat([mask_true, mask_false], dim=dim)
-        padded = masked_tensor(padded, mask)
-
-    return padded
-
-
-def max_pad_tensors_batch(tensors, dim=0, add_mask=True):
-    """Pads a batch of tensors along a dimension to match the maximum length.
-
-    Args:
-        tensors (List[torch.Tensor]): A list of tensors to be padded.
-        dim (int, default: 0): The dimension along which to pad the tensors.
-        add_mask (bool, optional, default: True):
-            If add_mask=True AND tensors are of different lengths
-            (padding is necessary), add a mask and return a MaskedTensor.
-            Otherwise, returns a regular tensor padded with zeros.
-
-    Returns:
-        Tensor or MaskedTensor: The padded batch of tensors.
-    """
-    lengths = [x.shape[dim] for x in tensors]
-    max_length = max(lengths)
-    if all(length == max_length for length in lengths):
-        stacked = torch.stack(tensors) # Don't pad if we don't need to
-    else:
-        # MaskedTensor doesn't support torch.stack but does support torch.vstack
-        # so need to add a dimension to all of them and then vstack which is
-        # equivalent.
-        padded_tensors = [
-            pad_tensor(x.unsqueeze(0), max_length, dim=1+dim, add_mask=add_mask)
-            for x in tensors]
-        stacked = torch.vstack(padded_tensors)
-    
-    return stacked

@@ -43,10 +43,13 @@ class AcquisitionFunctionNet(nn.Module):
         history_encoder = nn.Sequential()
         for i in range(n_hist_enc_layers):
             in_dim, out_dim = hist_enc_widths[i], hist_enc_widths[i+1]
+            
             history_encoder.append(nn.Linear(in_dim, out_dim))
-            # if i != n_hist_enc_layers - 1:
-            #     history_encoder.append(nn.ReLU())
-            history_encoder.append(nn.ReLU())
+            # history_encoder.append(nn.LayerNorm(out_dim))
+            
+            if i != n_hist_enc_layers - 1:
+                history_encoder.append(nn.ReLU())
+            # history_encoder.append(nn.ReLU())
         self.history_encoder = history_encoder
 
         aqnet_layer_widths = [dimension + encoded_history_dim] + list(aq_func_hidden_dims) + [1]
@@ -54,12 +57,15 @@ class AcquisitionFunctionNet(nn.Module):
         acquisition_function_net = nn.Sequential()
         for i in range(n_aqnet_layers):
             in_dim, out_dim = aqnet_layer_widths[i], aqnet_layer_widths[i+1]
+            
             acquisition_function_net.append(nn.Linear(in_dim, out_dim))
+            # acquisition_function_net.append(nn.LayerNorm(out_dim))
+            
             if i != n_aqnet_layers - 1:
                 acquisition_function_net.append(nn.ReLU())
         self.acquisition_function_net = acquisition_function_net
 
-    def forward(self, x_hist, y_hist, x_cand, hist_mask=None, cand_mask=None):
+    def forward(self, x_hist, y_hist, x_cand, hist_mask=None, cand_mask=None, exponentiate=False):
         """Forward pass of the acquisition function network.
 
         Args:
@@ -97,7 +103,8 @@ class AcquisitionFunctionNet(nn.Module):
             # This would work for summing
             # local_features = local_features * hist_mask
 
-            # This works for maxing
+            # This works for maxing. If ReLU is applied at the end, then
+            # we could instead just use the above.
             neg_inf = torch.zeros_like(local_features)
             hist_mask_expanded = expand_dim(hist_mask, -1, local_features.size(-1))
             neg_inf[~hist_mask_expanded] = float("-inf")
@@ -115,10 +122,12 @@ class AcquisitionFunctionNet(nn.Module):
 
         # shape (*, n_cand, 1)
         acquisition_values = self.acquisition_function_net(x_cand_encoded_history)
+
+        if exponentiate:
+            acquisition_values = torch.exp(acquisition_values)
         
         if cand_mask is not None:
             # Mask out the padded values
             acquisition_values = acquisition_values * cand_mask
 
         return acquisition_values.squeeze(-1) # shape (*, n_cand)
-        # return encoded_history.squeeze(-2) # for testing
