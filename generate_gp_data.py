@@ -15,12 +15,13 @@ from torch.masked import is_masked_tensor
 
 from utils import uniform_randint, get_uniform_randint_generator, max_pad_tensors_batch
 
-from typing import Iterable, Optional, List, Union
+from typing import Iterable, Optional, List, Tuple, Union
 from collections.abc import Sequence
 
 import os
 import warnings
 import math
+import copy
 
 torch.set_default_dtype(torch.double)
 
@@ -116,6 +117,70 @@ class RandomModelSampler:
     @property
     def initial_models(self):
         return [self.get_model(i) for i in range(len(self._models))]
+
+
+class TupleWithModel:
+    def __init__(self, *items, model, model_params=None):
+        self._items = items
+        self._indices = list(range(len(items) + 1))
+        self._model = model
+        if model_params is None:
+            # need to copy the data, otherwise everything will be the same
+            model_params = {name: param.detach().clone()
+                            for name, param in model.named_parameters()}
+        self.model_params = model_params
+        self.model_index = model.index if hasattr(model, "index") else None
+    
+    @property
+    def model(self):
+        # self._model.train_inputs = None
+        # self._model.train_targets = None
+        # self._model.prediction_strategy = None
+        self._model.initialize(**self.model_params)
+        return self._model
+
+    @property
+    def _tuple(self):
+        return self._items + (self.model,)
+    
+    def __getitem__(self, index):
+        # return self._tuple[index] # basically equivalent to the below
+
+        if isinstance(index, slice):
+            return tuple(self[i] for i in range(*index.indices(len(self))))
+
+        index = self._indices[index]
+        if index == len(self._items):
+            return self.model
+        return self._items[index]
+    
+    def __len__(self):
+        return len(self._items) + 1
+
+    def __str__(self):
+        return str(self._tuple)
+
+    def __repr__(self):
+        return repr(self._tuple)
+    
+    def __eq__(self, other):
+        return type(self) == type(other) and self._tuple == other._tuple
+
+
+class GPDatasetItem(TupleWithModel):
+    def __init__(self, x_values, y_values, model, model_params=None):
+        super().__init__(x_values, y_values, model=model, model_params=model_params)
+        self.x_values = x_values
+        self.y_values = y_values
+
+
+class TrainAcquisitionFunctionDatasetModelItem(TupleWithModel):
+    def __init__(self, x_hist, y_hist, x_cand, vals_cand, model, model_params=None):
+        super().__init__(x_hist, y_hist, x_cand, vals_cand, model=model, model_params=model_params)
+        self.x_hist = x_hist
+        self.y_hist = y_hist
+        self.x_cand = x_cand
+        self.vals_cand = vals_cand
 
 
 class FunctionSamplesDataset(Dataset):
@@ -452,7 +517,7 @@ class GaussianProcessRandomDataset(FunctionSamplesDataset, IterableDataset, Size
             model.set_train_data(
                 x_values_botorch, y_values.squeeze(-1), strict=False)
 
-        return x_values, y_values.squeeze(), model
+        return GPDatasetItem(x_values, y_values.squeeze(), model)
 
 
 class FunctionSamplesMapDataset(FunctionSamplesDataset):
@@ -535,8 +600,9 @@ class FunctionSamplesMapDataset(FunctionSamplesDataset):
         if self.has_models:
             model_index = item['model_index']
             model_params = item['model_params']
-            model = self.model_sampler.get_model(model_index, model_params)
-            return item['x_values'], item['y_values'], model
+            model = self.model_sampler._models[model_index]
+            return GPDatasetItem(
+                item['x_values'], item['y_values'], model, model_params)
         else:
             return item['x_values'], item['y_values']
     
@@ -605,6 +671,8 @@ class FunctionSamplesMapDataset(FunctionSamplesDataset):
             original_dataset_size = len(dataset)
         except TypeError:
             original_dataset_size = None
+        
+        has_models = dataset.has_models
 
         if n_realizations is None:
             if original_dataset_size is None:
@@ -613,7 +681,8 @@ class FunctionSamplesMapDataset(FunctionSamplesDataset):
             if not isinstance(n_realizations, int) or n_realizations <= 0:
                 raise ValueError("n_realizations should be a positive integer")
             if n_realizations != original_dataset_size:
-                if isinstance(dataset, SizedIterableMixin):
+                # Equivalent to `if isinstance(dataset, SizedIterableMixin):`
+                if callable(getattr(dataset, "copy_with_new_size", None)):
                     dataset = dataset.copy_with_new_size(n_realizations)
                 else:
                     if n_realizations > original_dataset_size:
@@ -621,16 +690,32 @@ class FunctionSamplesMapDataset(FunctionSamplesDataset):
                     dataset = _FirstNIterable(dataset, n_realizations)
 
         samples_list = []
-        for x_values, y_values, model in dataset:
-            # need to copy the data, otherwise everything will be the same
-            model_params = {name: param.detach().clone()
-                            for name, param in model.named_parameters()}
-            samples_list.append({
-                'x_values': x_values,
-                'y_values': y_values,
-                'model_index': model.index,
-                'model_params': model_params
-            })
+        for item in dataset:
+            if has_models:
+                if isinstance(item, GPDatasetItem):
+                    x_values, y_values = item.x_values, item.y_values
+                    model_index = item.model_index
+                    model_params = item.model_params
+                else:
+                    x_values, y_values, model = item
+                    # need to copy the data, otherwise everything will be same
+                    model_params = {name: param.detach().clone()
+                                    for name, param in model.named_parameters()}
+                    model_index = model.index
+                
+                samples_list.append({
+                    'x_values': x_values,
+                    'y_values': y_values,
+                    'model_index': model_index,
+                    'model_params': model_params
+                })
+            else:
+                x_values, y_values = item
+                samples_list.append({
+                    'x_values': x_values,
+                    'y_values': y_values
+                })
+
         return FunctionSamplesMapDataset(samples_list, dataset.model_sampler)
 
 
@@ -639,7 +724,7 @@ class FunctionSamplesMapSubset(Subset, FunctionSamplesMapDataset):
         if not isinstance(dataset, FunctionSamplesMapDataset):
             raise ValueError("dataset should be an instance of FunctionSamplesMapDataset")
         
-        # Equivalent to: self.dataset = dataset; self.indices = indices
+        # Equivalent to self.dataset = dataset; self.indices = indices
         Subset.__init__(self, dataset, indices)
     
     @classmethod
@@ -724,6 +809,56 @@ class _FirstNIterable:
                 yield next(iterator)
             except StopIteration:
                 break
+
+
+class ModelsWithParamsList:
+    """
+    A class representing a list of models with their corresponding parameters.
+    """
+
+    def __init__(self, models_and_params: List[Tuple[SingleTaskGP, dict]]):
+        """Initializes a ModelsWithParamsList object.
+
+        Args:
+            models_and_params (List[Tuple[SingleTaskGP, dict]]): A list of tuples where each tuple contains a SingleTaskGP model and its corresponding parameters.
+        """
+        self._models_and_params = models_and_params
+    
+    def __getitem__(self, index):
+        """Returns the model at the specified index or a slice of models.
+
+        Args:
+            index: The index or slice to retrieve the model(s) from.
+
+        Returns:
+            SingleTaskGP or ModelsWithParamsList:
+            If `index` is an integer, the model at the specified index with its
+            parameters initialized.
+            If `index` is a slice, a new ModelsWithParamsList object containing
+            the models in the specified slice.
+        """
+        if isinstance(index, slice):
+            # `return [self[i] for i in range(*index.indices(len(self)))]``
+            # would not work because there might be a single or a few model
+            # instances that are shared among the items.
+            # Instead, here is what should be done:
+            return ModelsWithParamsList(self._models_and_params[index])
+        
+        model, params = self._models_and_params[index]
+        model.initialize(**params)
+        return model
+
+    def __len__(self):
+        return len(self._models_and_params)
+    
+    def __repr__(self):
+        return f"ModelsWithParamsList({repr(self._models_and_params)})"
+
+    def __str__(self):
+        return f"ModelsWithParamsList({str(self._models_and_params)})"
+
+    def __eq__(self, other):
+        return type(self) == type(other) and self._models_and_params == other._models_and_params
 
 
 class TrainAcquisitionFunctionDataset(IterableDataset):
@@ -854,27 +989,27 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
             raise TypeError(f"give_improvements should be a boolean value, but got give_improvements={give_improvements}")
         self.give_improvements = give_improvements
 
+        if not isinstance(dataset, FunctionSamplesDataset):
+            raise TypeError(f"dataset should be an instance of FunctionSamplesDataset, but got {dataset=}")
+
         # Need to save these so that we can copy in random_split
         self.base_dataset = dataset
         self.dataset_size_factor = dataset_size_factor
-
-        if not isinstance(dataset, FunctionSamplesDataset):
-            raise TypeError(f"dataset should be an instance of FunctionSamplesDataset, but got {dataset=}")
 
         # Check whether dataset is an iterable-style dataset or not.
         # Could also check this by checking that it's not a map-style dataset
         # by checking whether it doesn't have the __getitem__ method:
         # `not callable(getattr(dataset, "__getitem__", None))`.
-        dataset_is_iterable_style = isinstance(dataset, IterableDataset)
+        self._dataset_is_iterable_style = isinstance(dataset, IterableDataset)
 
-        if dataset_is_iterable_style: # GaussianProcessRandomDataset
+        if self._dataset_is_iterable_style: # GaussianProcessRandomDataset
             if dataset_size_factor is not None:
                 raise ValueError("dataset_size_factor should not be specified if dataset is an iterable-style dataset (GaussianProcessRandomDataset).")
 
             try:
-                self._dataset_size = len(dataset)
+                self._size = len(dataset)
             except TypeError:
-                self._dataset_size = None
+                self._size = None
             self._data_iterable = dataset
             
             if n_samples == "uniform":
@@ -886,21 +1021,63 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
                 raise ValueError(f"dataset_size_factor should be a positive integer, but got {dataset_size_factor=}")
 
             if dataset_size_factor == 1:
-                self._dataset_size = len(dataset)
+                self._size = len(dataset)
                 self._data_iterable = DataLoader(
                     dataset, batch_size=None, shuffle=True)
             else:
-                self._dataset_size = dataset_size_factor * len(dataset)
+                self._size = dataset_size_factor * len(dataset)
                 self._data_iterable = DataLoader(
                     dataset, batch_size=None,
                     sampler=torch.utils.data.RandomSampler(
-                        dataset, replacement=False, num_samples=self._dataset_size))
+                        dataset, replacement=False, num_samples=self._size))
     
     def __len__(self):
-        if self._dataset_size is None:
+        if self._size is None:
             raise TypeError("Length of the TrainAcquisitionFunctionDataset with an infinite iterable-style dataset and is infinite")
-        return self._dataset_size
+        return self._size
     
+    def copy_with_expanded_size(self, size_factor: int) -> "TrainAcquisitionFunctionDataset":
+        """Creates a copy of the dataset with an expanded size.
+
+        Args:
+            size_factor (int): The factor by which to expand the size of the dataset.
+
+        Returns:
+            TrainAcquisitionFunctionDataset: A new instance of the dataset with the expanded size.
+        """
+        # Eequivalent to `if isinstance(self.base_dataset, SizedIterableMixin):`
+        if callable(getattr(self.base_dataset, "copy_with_new_size", None)):
+            return self.copy_with_new_size(self.base_dataset.size * size_factor)
+        else:
+            return type(self)(
+                self.base_dataset,
+                self.n_candidate_points,
+                self.n_samples, self.give_improvements, self.min_n_candidates,
+                size_factor)
+    
+    def copy_with_new_size(self, size: int) -> "TrainAcquisitionFunctionDataset":
+        """Creates a copy of the dataset with a new size.
+
+        Args:
+            size (int):
+            The new size of the dataset.
+
+        Returns:
+            TrainAcquisitionFunctionDataset: A new instance of the dataset with the specified size.
+        """
+        # Eequivalent to `if isinstance(self.base_dataset, SizedIterableMixin):`
+        if callable(getattr(self.base_dataset, "copy_with_new_size", None)):
+            return type(self)(
+                self.base_dataset.copy_with_new_size(size),
+                self.n_candidate_points,
+                self.n_samples, self.give_improvements, self.min_n_candidates)
+        else:
+            if self._dataset_is_iterable_style:
+                raise TypeError("Cannot create a copy of TrainAcquisitionFunctionDataset with a new size if the base dataset is an iterable-style dataset that cannot be resized.")
+            if not isinstance(size, int) or size <= 0:
+                raise ValueError("size should be a positive integer.")
+            return self.copy_with_expanded_size(math.ceil(size / len(self.base_dataset)))
+
     def _pick_random_n_samples_and_n_candidates(self, n_datapoints_original):
         if self._gen_n_candidates_first:
             # generate n_candidates first; either fixed or random
@@ -946,7 +1123,15 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
         # y_values has shape (n_datapoints,)
         for item in self._data_iterable:
             if has_models:
-                x_values, y_values, model = item
+                if isinstance(item, GPDatasetItem):
+                    x_values, y_values = item.x_values, item.y_values
+                    model = item._model
+                    model_params = item.model_params
+                else:
+                    x_values, y_values, model = item
+                    # need to copy the data, otherwise everything will be same
+                    model_params = {name: param.detach().clone()
+                                    for name, param in model.named_parameters()}
             else:
                 x_values, y_values = item
             
@@ -959,21 +1144,22 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
             hist_idx = rand_idx[n_candidate:n_samples]
 
             x_hist, y_hist = x_values[hist_idx], y_values[hist_idx]
-            x_candidates = x_values[candidate_idx]
-            y_candidates = y_values[candidate_idx]
+            x_cand = x_values[candidate_idx]
+            y_cand = y_values[candidate_idx]
 
             if self.give_improvements:
                 best_f = y_hist.amax(0, keepdim=False) # both T and F work
                 improvement_values = torch.nn.functional.relu(
-                    y_candidates - best_f, inplace=True)
-                vals_candidates = improvement_values
+                    y_cand - best_f, inplace=True)
+                vals_cand = improvement_values
             else:
-                vals_candidates = y_candidates
+                vals_cand = y_cand
 
             if has_models:
-                yield x_hist, y_hist, x_candidates, vals_candidates, model
+                yield TrainAcquisitionFunctionDatasetModelItem(
+                    x_hist, y_hist, x_cand, vals_cand, model, model_params)
             else:
-                yield x_hist, y_hist, x_candidates, vals_candidates
+                yield x_hist, y_hist, x_cand, vals_cand
 
     def random_split(self, lengths: Sequence[Union[int, float]]):
         """Randomly splits the dataset into multiple subsets.
@@ -993,7 +1179,14 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
     
     @staticmethod
     def _collate_train_acquisition_function_samples(samples_list):
-        unzipped_lists = list(zip(*samples_list))
+        if isinstance(samples_list[0], TrainAcquisitionFunctionDatasetModelItem):
+            unzipped_lists_first_4 = list(zip(*
+                    [x[:4] for x in samples_list]))
+            models_list = ModelsWithParamsList(
+                [(x._model, x.model_params) for x in samples_list])
+            unzipped_lists = unzipped_lists_first_4 + [models_list]
+        else:
+            unzipped_lists = list(zip(*samples_list))
         # Each of these are tuples of tensors
         x_hists, y_hists, x_cands, vals_cands = unzipped_lists[:4]
 

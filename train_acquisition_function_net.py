@@ -7,6 +7,8 @@ from utils import get_uniform_randint_generator, get_loguniform_randint_generato
 from acquisition_function_net import AcquisitionFunctionNet
 from predict_EI_simple import calculate_EI_GP_padded_batch
 
+import os
+
 
 def mse_loss_with_mask(output, target, mask):
     """Calculate the MSE loss. Handle padding with mask for the case that
@@ -24,6 +26,15 @@ def train_loop_ei(dataloader, model, optimizer, every_n_batches=10):
     n_batches = len(dataloader)
     for i, batch in enumerate(dataloader):
         x_hist, y_hist, x_cand, improvements, hist_mask, cand_mask, models = batch
+
+        # print(type(models))
+        # for gp_model in models:
+        #     print(gp_model)
+        #     for name, param in gp_model.named_parameters():
+        #         print(name, param)
+        #     print()
+        # print()
+        # exit()
 
         # shape (batch_size, n_cand)
         output = model(x_hist, y_hist, x_cand, hist_mask, cand_mask, exponentiate=True)
@@ -70,9 +81,12 @@ def test_loop_ei(dataloader, model):
 N_CANDIDATES = 1
 MAX_HISTORY = 50
 HISTORY_LOGUNIFORM = True
-BATCH_SIZE = 256
+BATCH_SIZE = 4
 N_BATCHES = 200
 DIMENSION = 6
+
+TRAIN = False
+
 
 if HISTORY_LOGUNIFORM:
     n_datapoints_random_gen = get_loguniform_randint_generator(
@@ -96,16 +110,39 @@ train_aq_dataset, test_aq_dataset = aq_dataset.random_split([0.8, 0.2])
 train_aq_dataloader = train_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_last=True)
 test_aq_dataloader = test_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_last=True)
 
-model = AcquisitionFunctionNet(DIMENSION).to(device)
-print(model)
+
+script_dir = os.path.dirname(os.path.abspath(__file__))
+model_path = os.path.join(script_dir, "acquisition_function_net.pth")
+
+if TRAIN:
+    model = AcquisitionFunctionNet(DIMENSION).to(device)
+    print(model)
+
+    learning_rate = 1e-4
+    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    epochs = 10
+    every_n_batches = 10
+
+    for t in range(epochs):
+        print(f"Epoch {t+1}\n-------------------------------")
+        train_loop_ei(train_aq_dataloader, model, optimizer, every_n_batches)
+        test_loop_ei(test_aq_dataloader, model)
+
+    print("Done training!")
+
+    # Save the model
+    torch.save(model.state_dict(), model_path)
+else:
+    # Load the model
+    model = AcquisitionFunctionNet(DIMENSION).to(device)
+    model.load_state_dict(torch.load(model_path))
+    model.eval()
 
 
-learning_rate = 1e-4
-optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-epochs = 10
+# Test the model on a larger dataset
+test_aq_dataloader_big = test_aq_dataset \
+    .copy_with_new_size(2 * len(aq_dataset)) \
+    .get_dataloader(batch_size=BATCH_SIZE, drop_last=True)
+test_loop_ei(test_aq_dataloader_big, model)
 
-for t in range(epochs):
-    print(f"Epoch {t+1}\n-------------------------------")
-    train_loop_ei(train_aq_dataloader, model, optimizer)
-    test_loop_ei(test_aq_dataloader, model)
 

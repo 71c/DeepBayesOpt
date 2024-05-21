@@ -45,6 +45,8 @@ class AcquisitionFunctionNet(nn.Module):
             in_dim, out_dim = hist_enc_widths[i], hist_enc_widths[i+1]
             
             history_encoder.append(nn.Linear(in_dim, out_dim))
+            
+            # It was fund that LayerNorm is detrimental to the performance
             # history_encoder.append(nn.LayerNorm(out_dim))
             
             if i != n_hist_enc_layers - 1:
@@ -59,6 +61,8 @@ class AcquisitionFunctionNet(nn.Module):
             in_dim, out_dim = aqnet_layer_widths[i], aqnet_layer_widths[i+1]
             
             acquisition_function_net.append(nn.Linear(in_dim, out_dim))
+
+            # It was fund that LayerNorm is detrimental to the performance
             # acquisition_function_net.append(nn.LayerNorm(out_dim))
             
             if i != n_aqnet_layers - 1:
@@ -79,6 +83,10 @@ class AcquisitionFunctionNet(nn.Module):
                 shape (*, n_hist). If None, then mask is all ones.
             cand_mask (torch.Tensor): Mask tensor for the candidate inputs with
                 shape (*, n_cand). If None, then mask is all ones.
+            exponentiate (bool, optional): Whether to exponentiate the output.
+                Default is False. For EI, False corresponds to the log of the
+                acquisition function (e.g. log EI), and True corresponds to
+                the acquisition function itself (e.g. EI).
 
         Note: It is assumed x_hist and y_hist are padded (with zeros), although
             that shouldn't matter since the mask will take care of it.
