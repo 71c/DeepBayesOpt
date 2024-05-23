@@ -4,10 +4,21 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 from generate_gp_data import GaussianProcessRandomDataset, TrainAcquisitionFunctionDataset
 from utils import get_uniform_randint_generator, get_loguniform_randint_generator
-from acquisition_function_net import AcquisitionFunctionNet
-from predict_EI_simple import calculate_EI_GP_padded_batch
+from acquisition_function_net import AcquisitionFunctionNet, LikelihoodFreeNetworkAcquisitionFunction
+from predict_EI_simple import calculate_EI_GP_padded_batch, calculate_EI_GP
+from botorch.acquisition.analytic import ExpectedImprovement
 
 import os
+from tqdm import tqdm
+
+
+def count_trainable_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters())
+
 
 
 def mse_loss_with_mask(output, target, mask):
@@ -53,39 +64,49 @@ def test_loop_ei(dataloader, model):
     model.eval()
 
     test_loss = 0.
-    test_ei_loss = 0.
     test_loss_true_gp = 0.
+    test_loss_gp_map = 0.
     always_predict_0_loss = 0.
-    with torch.no_grad():
-        for batch in dataloader:
+    
+    for batch in tqdm(dataloader):
+        
+        
+        with torch.no_grad():
             x_hist, y_hist, x_cand, improvements, hist_mask, cand_mask, models = batch
-            
-            output = model(x_hist, y_hist, x_cand, hist_mask, cand_mask, exponentiate=True)
-            test_loss += mse_loss_with_mask(output, improvements, cand_mask).item()
-            always_predict_0_loss += mse_loss_with_mask(torch.zeros_like(output), improvements, cand_mask).item()
 
-            # Calculate the EI values using the GP models
-            ei_values = calculate_EI_GP_padded_batch(x_hist, y_hist, x_cand, hist_mask, cand_mask, models)
-            test_ei_loss += mse_loss_with_mask(output, ei_values, cand_mask).item()
-            test_loss_true_gp += mse_loss_with_mask(ei_values, improvements, cand_mask).item()
+            # for gp_model in models:
+            #     print(list(gp_model.named_parameters()))
+
+            ei_values_nn = model(x_hist, y_hist, x_cand, hist_mask, cand_mask, exponentiate=True)
+            test_loss += mse_loss_with_mask(ei_values_nn, improvements, cand_mask).item()
+            always_predict_0_loss += mse_loss_with_mask(torch.zeros_like(ei_values_nn), improvements, cand_mask).item()
+            
+            ei_values_true_model = calculate_EI_GP_padded_batch(x_hist, y_hist, x_cand, hist_mask, cand_mask, models)
+            test_loss_true_gp += mse_loss_with_mask(ei_values_true_model, improvements, cand_mask).item()
+
+        ei_values_map = calculate_EI_GP_padded_batch(x_hist, y_hist, x_cand, hist_mask, cand_mask, models, fit_params=True)
+        test_loss_gp_map += mse_loss_with_mask(ei_values_map, improvements, cand_mask).item()
+
 
     n_batches = len(dataloader)
     test_loss /= n_batches
-    test_ei_loss /= n_batches
     test_loss_true_gp /= n_batches
+    test_loss_gp_map /= n_batches
     always_predict_0_loss /= n_batches
 
-    print(f"Test Error:\n NN improvement MSE (loss): {test_loss:>8f}\n True GP improvement MSE: {test_loss_true_gp:>8f}\n NN EI - GP EI MSE: {test_ei_loss:>8f}\n Always predict 0 MSE: {always_predict_0_loss:>8f}\n")
+    print(f"Test Error:\n NN improvement MSE (loss): {test_loss:>8f}\n True GP improvement MSE: {test_loss_true_gp:>8f}\n MAP GP improvement MSE: {test_loss_gp_map:>8f}\n Always predict 0 MSE: {always_predict_0_loss:>8f}\n")
 
 
-N_CANDIDATES = 1
+N_CANDIDATES = 10
 MAX_HISTORY = 50
 HISTORY_LOGUNIFORM = True
-BATCH_SIZE = 4
-N_BATCHES = 200
+BATCH_SIZE = 32 # 64
+N_BATCHES = 100 # 300
 DIMENSION = 6
+RANDOMIZE_PARAMS = True
+XVALUE_DISTRIBUTION = "normal"
 
-TRAIN = False
+TRAIN = True
 
 
 if HISTORY_LOGUNIFORM:
@@ -95,29 +116,39 @@ else:
     n_datapoints_random_gen = get_uniform_randint_generator(
         N_CANDIDATES+1, N_CANDIDATES+MAX_HISTORY)
 
+# print(n_datapoints_random_gen(30))
+
 dataset = GaussianProcessRandomDataset(
     dimension=DIMENSION, n_datapoints_random_gen=n_datapoints_random_gen,
     observation_noise=False, set_random_model_train_data=False,
-    xvalue_distribution="normal", device=device,
-    dataset_size=BATCH_SIZE * N_BATCHES)
+    xvalue_distribution=XVALUE_DISTRIBUTION, device=device,
+    dataset_size=BATCH_SIZE * N_BATCHES,
+    randomize_params=RANDOMIZE_PARAMS)
 
 aq_dataset = TrainAcquisitionFunctionDataset(
     dataset, n_candidate_points=N_CANDIDATES, n_samples="all",
     give_improvements=True)
 
-train_aq_dataset, test_aq_dataset = aq_dataset.random_split([0.8, 0.2])
+train_aq_dataset, test_aq_dataset = aq_dataset.random_split([0.95, 0.05])
 
 train_aq_dataloader = train_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_last=True)
 test_aq_dataloader = test_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_last=True)
 
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
-model_path = os.path.join(script_dir, "acquisition_function_net.pth")
+file_name = f"acquisition_function_net_{DIMENSION}d_{'random' if RANDOMIZE_PARAMS else 'fixed'}_kernel_{XVALUE_DISTRIBUTION}_x_upto_{MAX_HISTORY}_{'loguniform' if HISTORY_LOGUNIFORM else 'uniform'}_ei_{N_CANDIDATES}.pth"
+model_path = os.path.join(script_dir, file_name)
+
+
+
+model = AcquisitionFunctionNet(DIMENSION,
+                            #    history_encoder_hidden_dims=[256, 512, 512], encoded_history_dim=1024, aq_func_hidden_dims=[512, 256, 64]
+                               ).to(device)
+print(model)
+print("Number of trainable parameters:", count_trainable_parameters(model))
+print("Number of parameters:", count_parameters(model))
 
 if TRAIN:
-    model = AcquisitionFunctionNet(DIMENSION).to(device)
-    print(model)
-
     learning_rate = 1e-4
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     epochs = 10
@@ -134,15 +165,58 @@ if TRAIN:
     torch.save(model.state_dict(), model_path)
 else:
     # Load the model
-    model = AcquisitionFunctionNet(DIMENSION).to(device)
     model.load_state_dict(torch.load(model_path))
     model.eval()
 
 
-# Test the model on a larger dataset
-test_aq_dataloader_big = test_aq_dataset \
-    .copy_with_new_size(2 * len(aq_dataset)) \
-    .get_dataloader(batch_size=BATCH_SIZE, drop_last=True)
-test_loop_ei(test_aq_dataloader_big, model)
 
+
+test_aq_dataset_big = test_aq_dataset \
+    .copy_with_new_size(len(aq_dataset))
+
+
+# test_aq_dataloader_big = test_aq_dataset_big \
+#     .get_dataloader(batch_size=BATCH_SIZE, drop_last=True)
+# test_loop_ei(test_aq_dataloader_big, model)
+
+print(model)
+
+it = iter(test_aq_dataset_big)
+x_hist, y_hist, x_cand, improvements, gp_model = next(it)
+aq_fn = LikelihoodFreeNetworkAcquisitionFunction.from_net(
+    model, x_hist, y_hist, exponentiate=True)
+
+x_cand = torch.randn(100, DIMENSION)
+
+
+ei_nn = aq_fn(x_cand.unsqueeze(1))
+
+
+ei_true = calculate_EI_GP(gp_model, x_hist, y_hist, x_cand)
+ei_map = calculate_EI_GP(gp_model, x_hist, y_hist, x_cand, fit_params=True)
+
+
+
+
+print(ei_true)
+print(ei_nn)
+print(ei_map)
+
+
+import matplotlib.pyplot as plt
+
+plt.scatter(ei_true.detach().numpy(), ei_nn.detach().numpy())
+plt.xlabel('EI True')
+plt.ylabel('EI NN')
+plt.title('EI True vs EI NN')
+plt.loglog()
+
+plt.figure()
+plt.scatter(ei_true.detach().numpy(), ei_map.detach().numpy())
+plt.xlabel('EI True')
+plt.ylabel('EI MAP')
+plt.title('EI True vs EI MAP')
+plt.loglog()
+
+plt.show()
 

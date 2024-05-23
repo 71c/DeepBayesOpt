@@ -53,7 +53,7 @@ def _pyro_sample_from_prior(module, memo=None, prefix=""):
 class RandomModelSampler:
     """A class that samples a random model with random parameters from its prior
     from a list of models."""
-    def __init__(self, models: List[SingleTaskGP], model_probabilities=None):
+    def __init__(self, models: List[SingleTaskGP], model_probabilities=None, randomize_params=True):
         """Initializes the RandomModelSampler instance.
 
         Args:
@@ -69,10 +69,8 @@ class RandomModelSampler:
 
         self._models = models
         # need to copy the initial parameters with clone()
-        self._model_initial_parameters = [
-            {name: param.clone() for name, param in model.named_parameters()}
-            for model in models
-        ]
+        for model in models:
+            model.initial_params = {name: param.detach().clone() for name, param in model.named_parameters()}
 
         if model_probabilities is None:
             model_probabilities = torch.full([len(models)], 1/len(models))
@@ -82,6 +80,7 @@ class RandomModelSampler:
             assert len(models) == len(model_probabilities)
 
         self.model_probabilities = model_probabilities
+        self.randomize_params = randomize_params
     
     def sample(self):
         # pick the model
@@ -90,19 +89,25 @@ class RandomModelSampler:
                                                            replacement=True)[0]
         model = self._models[model_index]
 
+        # Initialize the model with the initial parameters
+        # because they could have been changed by maximizing mll.
+        # in particular the parameters that don't have priors.
+        model.initialize(**model.initial_params)
+
         # Randomly set the parameters based on the priors of the model.
         # Instead of doing  `random_model = model.pyro_sample_from_prior()`
         # which does a deep copy which takes long,
         # sample in-place, significantly speeding it up.
         # This also avoids the parameters disappearing.
-        _pyro_sample_from_prior(model, memo=None, prefix="")
+        if self.randomize_params:
+            _pyro_sample_from_prior(model, memo=None, prefix="")
 
         return model
     
     def get_model(self, index, model_params=None):
-        if model_params is None:
-            model_params = self._model_initial_parameters[index]
         model = self._models[index]
+        if model_params is None:
+            model_params = model.initial_params
 
         # Remove the data from the model. Basically equivalent to
         # model.set_train_data(inputs=None, targets=None, strict=False)
@@ -322,7 +327,8 @@ class GaussianProcessRandomDataset(FunctionSamplesDataset, IterableDataset, Size
                  model_probabilities=None,
                  dimension:Optional[int]=None, device=None,
                  set_random_model_train_data=False,
-                 dataset_size:Optional[int]=None):
+                 dataset_size:Optional[int]=None,
+                 randomize_params=True):
         """Create a dataset that generates random Gaussian Process data.
         
         Args:
@@ -403,13 +409,19 @@ class GaussianProcessRandomDataset(FunctionSamplesDataset, IterableDataset, Size
             # lengthscale and outputscale, and noise level also if
             # observation_noise.
             # If no observation noise is generated, then make the likelihood
-            # be fixed noise at almost zero to correspond to what is generated.
+            # be fixed noise at zero to correspond to what is generated.
             likelihood = None if observation_noise else GaussianLikelihood(
                     noise_prior=None, batch_shape=torch.Size(),
                     noise_constraint=GreaterThan(
-                        0.0, transform=None, initial_value=1e-6
+                        0.0, transform=None, initial_value=0.0
                     )
                 )
+
+            # If no observation noise, then keep the noise
+            # level fixed so it can't be changed by optimization.
+            if not observation_noise:
+                likelihood.noise_covar.raw_noise.requires_grad_(False)
+
             models = [SingleTaskGP(train_X, train_Y, likelihood=likelihood)]
             model_probabilities = torch.tensor([1.0])
         
@@ -418,7 +430,8 @@ class GaussianProcessRandomDataset(FunctionSamplesDataset, IterableDataset, Size
             t = len(model.batch_shape)
             assert t == 0 or t == 1 and model.batch_shape[0] == 1
         
-        self._model_sampler = RandomModelSampler(models, model_probabilities)
+        self._model_sampler = RandomModelSampler(
+            models, model_probabilities, randomize_params=randomize_params)
 
         if dataset_size is not None and (not isinstance(dataset_size, int) or dataset_size <= 0):
             raise ValueError("dataset_size should be a positive integer.")
@@ -474,7 +487,7 @@ class GaussianProcessRandomDataset(FunctionSamplesDataset, IterableDataset, Size
             models=self.model_sampler.initial_models,
             model_probabilities=self.model_sampler.model_probabilities,
             set_random_model_train_data=self.set_random_model_train_data,
-            dataset_size=dataset_size)
+            dataset_size=dataset_size, randomize_params=self.model_sampler.randomize_params)
     
     def _next(self):
         """Generate a random Gaussian Process model and sample from it.
@@ -681,12 +694,12 @@ class FunctionSamplesMapDataset(FunctionSamplesDataset):
             if not isinstance(n_realizations, int) or n_realizations <= 0:
                 raise ValueError("n_realizations should be a positive integer")
             if n_realizations != original_dataset_size:
-                # Equivalent to `if isinstance(dataset, SizedIterableMixin):`
+                # Weaker condition than `if isinstance(dataset, SizedIterableMixin):`
                 if callable(getattr(dataset, "copy_with_new_size", None)):
                     dataset = dataset.copy_with_new_size(n_realizations)
                 else:
                     if n_realizations > original_dataset_size:
-                        raise ValueError(f"n_realizations should be <= len(dataset)={original_dataset_size}")
+                        raise ValueError(f"n_realizations should be <= len(dataset)={original_dataset_size} if dataset is not a SizedIterableMixin")
                     dataset = _FirstNIterable(dataset, n_realizations)
 
         samples_list = []
@@ -844,6 +857,7 @@ class ModelsWithParamsList:
             # Instead, here is what should be done:
             return ModelsWithParamsList(self._models_and_params[index])
         
+        # print("YES")
         model, params = self._models_and_params[index]
         model.initialize(**params)
         return model
@@ -1045,7 +1059,7 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
         Returns:
             TrainAcquisitionFunctionDataset: A new instance of the dataset with the expanded size.
         """
-        # Eequivalent to `if isinstance(self.base_dataset, SizedIterableMixin):`
+        # Weaker condition than `if isinstance(self.base_dataset, SizedIterableMixin):`
         if callable(getattr(self.base_dataset, "copy_with_new_size", None)):
             return self.copy_with_new_size(self.base_dataset.size * size_factor)
         else:
@@ -1065,7 +1079,7 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
         Returns:
             TrainAcquisitionFunctionDataset: A new instance of the dataset with the specified size.
         """
-        # Eequivalent to `if isinstance(self.base_dataset, SizedIterableMixin):`
+        # Weaker condition than `if isinstance(self.base_dataset, SizedIterableMixin):`
         if callable(getattr(self.base_dataset, "copy_with_new_size", None)):
             return type(self)(
                 self.base_dataset.copy_with_new_size(size),

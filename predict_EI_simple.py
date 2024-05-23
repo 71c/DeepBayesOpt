@@ -11,7 +11,8 @@ torch.set_default_dtype(torch.double)
 
 
 def calculate_EI_GP(model: SingleTaskGP, X_hist: Tensor, y_hist: Tensor,
-                    X: Tensor, y: Optional[Tensor]=None, fit_params=False):
+                    X: Tensor, y: Optional[Tensor]=None, fit_params=False,
+                    use_priors=True):
     """Calculate the exact Expected Improvements at `n_eval` points,
     given `N` histories each of length `n_train`.
 
@@ -23,8 +24,12 @@ def calculate_EI_GP(model: SingleTaskGP, X_hist: Tensor, y_hist: Tensor,
         X: Evaluation x points, of shape `(N, n_eval, d)`
         y: True values of y corresponding to the X, of shape `(N, n_eval)`
             or `(N, n_eval, 1)`
-        fit_params: whether to fit parameters by maximizing the marginal log
-            likelihood
+        fit_params: whether to fit parameters before calculating EI
+        use_priors: whether to use the model's prior when fitting parameters.
+            If False, the model's prior will be removed before fitting and then
+            re-added after fitting, so that the MLE estimate is done.
+            If True, the model's prior will be used as the prior for fitting,
+            making the estimate MAP.
 
     Returns:
         A `(N, n_eval)`-dim tensor of Expected Improvement values at the
@@ -84,6 +89,10 @@ def calculate_EI_GP(model: SingleTaskGP, X_hist: Tensor, y_hist: Tensor,
 
     if fit_params:
         # TODO: provide option to not use model's prior (remove it) (?)
+
+        if hasattr(model, "initial_params"):
+            # print("initial params:", model.initial_params) # This is ok
+            model.initialize(**model.initial_params)
         mll = ExactMarginalLogLikelihood(model.likelihood, model)
         fit_gpytorch_mll(mll)
 
@@ -121,7 +130,7 @@ def calculate_EI_GP(model: SingleTaskGP, X_hist: Tensor, y_hist: Tensor,
     return ei_values
 
 
-def calculate_EI_GP_padded_batch(x_hist, y_hist, x_cand, hist_mask, cand_mask, models):
+def calculate_EI_GP_padded_batch(x_hist, y_hist, x_cand, hist_mask, cand_mask, models, fit_params=False):
     n_hist = x_hist.size(1) # = y_hist.size(1)
     n_cand = x_cand.size(1)
     batch_size = x_hist.size(0) # = y_hist.size(0) = x_cand.size(0) = len(models)
@@ -141,7 +150,7 @@ def calculate_EI_GP_padded_batch(x_hist, y_hist, x_cand, hist_mask, cand_mask, m
         x_cand_i = x_cand_i_padded[:n_cand_i]
 
         # shape (n_cand_i,)
-        ei_value = calculate_EI_GP(models[i], x_hist_i, y_hist_i, x_cand_i)
+        ei_value = calculate_EI_GP(models[i], x_hist_i, y_hist_i, x_cand_i, fit_params=fit_params)
         # shape (n_cand,)
         ei_value_padded = pad_tensor(ei_value, n_cand, 0, add_mask=False)
         ei_values.append(ei_value_padded)
