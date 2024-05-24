@@ -3,7 +3,7 @@ from torch import Tensor
 from botorch.fit import fit_gpytorch_mll
 from gpytorch.mlls import ExactMarginalLogLikelihood
 from botorch.models.gp_regression import SingleTaskGP
-from botorch.acquisition.analytic import ExpectedImprovement
+from botorch.acquisition.analytic import ExpectedImprovement, LogExpectedImprovement
 from typing import Optional
 from utils import pad_tensor
 
@@ -12,7 +12,7 @@ torch.set_default_dtype(torch.double)
 
 def calculate_EI_GP(model: SingleTaskGP, X_hist: Tensor, y_hist: Tensor,
                     X: Tensor, y: Optional[Tensor]=None, fit_params=False,
-                    use_priors=True):
+                    use_priors=True, log=False):
     """Calculate the exact Expected Improvements at `n_eval` points,
     given `N` histories each of length `n_train`.
 
@@ -98,7 +98,10 @@ def calculate_EI_GP(model: SingleTaskGP, X_hist: Tensor, y_hist: Tensor,
 
     # best_f has shape (N,)
     best_f = y_hist.squeeze(2).amax(1) # unsqueezed so need to squeeze again
-    EI_object = ExpectedImprovement(model, best_f=best_f, maximize=True)
+    if log:
+        EI_object = LogExpectedImprovement(model, best_f=best_f, maximize=True)
+    else:
+        EI_object = ExpectedImprovement(model, best_f=best_f, maximize=True)
 
     # X currently has shape (N, n_eval, d)
     # Make it have shape (b_1, b_2, 1, d) where (b_1, b_2) = (N, n_eval)

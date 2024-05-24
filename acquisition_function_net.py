@@ -1,4 +1,5 @@
 from typing import List, Optional
+import warnings
 import torch
 from torch import nn
 from torch import Tensor
@@ -39,7 +40,8 @@ class AcquisitionFunctionNet(nn.Module):
                  dimension,
                  history_encoder_hidden_dims=[256, 256],
                  encoded_history_dim=1024,
-                 aq_func_hidden_dims=[256, 64]):
+                 aq_func_hidden_dims=[256, 64, 64],
+                 learn_alpha=False):
         super().__init__()
 
         self.dimension = dimension
@@ -69,11 +71,25 @@ class AcquisitionFunctionNet(nn.Module):
             acquisition_function_net.append(nn.Linear(in_dim, out_dim))
 
             # It was fund that LayerNorm is detrimental to the performance
-            # acquisition_function_net.append(nn.LayerNorm(out_dim))
+            # if i == n_aqnet_layers - 1:
+            #     acquisition_function_net.append(nn.LayerNorm(out_dim))
             
             if i != n_aqnet_layers - 1:
                 acquisition_function_net.append(nn.ReLU())
         self.acquisition_function_net = acquisition_function_net
+
+        if learn_alpha:
+            self.includes_alpha = True
+            self.log_alpha = nn.Parameter(torch.tensor(0.0))
+        else:
+            self.includes_alpha = False
+    
+    @property
+    def alpha(self):
+        if self.includes_alpha:
+            return torch.exp(self.log_alpha)
+        else:
+            raise ValueError("Model does not include alpha.")
     
     def encode_history(self, x_hist, y_hist, hist_mask=None):
         """Encodes the history inputs into a global feature.
@@ -149,7 +165,9 @@ class AcquisitionFunctionNet(nn.Module):
 
         return updated_encoded_history
 
-    def compute_acquisition_with_encoded_history(self, encoded_history, x_cand, cand_mask=None, exponentiate=False):
+    def compute_acquisition_with_encoded_history(
+            self, encoded_history, x_cand, cand_mask=None,
+            exponentiate=False, softmax=False):
         """Compute the acquisition function with the encoded history.
 
         Args:
@@ -163,6 +181,9 @@ class AcquisitionFunctionNet(nn.Module):
                 Default is False. For EI, False corresponds to the log of the
                 acquisition function (e.g. log EI), and True corresponds to
                 the acquisition function itself (e.g. EI).
+                Only applies if self.includes_alpha is False.
+            softmax (bool, optional): Whether to apply softmax to the output.
+                Only applies if self.includes_alpha is True. Default is False.
 
         Returns:
             torch.Tensor: Acquisition values tensor with shape (*, n_cand).
@@ -177,7 +198,24 @@ class AcquisitionFunctionNet(nn.Module):
         # shape (*, n_cand, 1)
         acquisition_values = self.acquisition_function_net(x_cand_encoded_history)
 
+        if softmax:
+            if self.includes_alpha:
+                acquisition_values = acquisition_values * torch.exp(self.log_alpha)
+            acquisition_values = nn.functional.softmax(acquisition_values, dim=-2)
+        elif self.training and self.includes_alpha:
+            warnings.warn("The model is in training mode but softmax is False "
+                          "and alpha is included in the model. "
+                          "If this is unintentional, set softmax=True.")
+
         if exponentiate:
+            if self.includes_alpha:
+                raise ValueError(
+                    "It doesn't make sense to exponentiate and use alpha at "
+                    "the same time. Should set softmax=True instead of exponentiate=True.")
+            if softmax:
+                raise ValueError(
+                    "It doesn't make sense to exponentiate and use softmax at "
+                    "the same time. Should set softmax=False instead.")
             acquisition_values = torch.exp(acquisition_values)
         
         if cand_mask is not None:
@@ -187,7 +225,9 @@ class AcquisitionFunctionNet(nn.Module):
 
         return acquisition_values.squeeze(-1) # shape (*, n_cand)
 
-    def forward(self, x_hist, y_hist, x_cand, hist_mask=None, cand_mask=None, exponentiate=False):
+    def forward(self, x_hist, y_hist, x_cand,
+                hist_mask=None, cand_mask=None,
+                exponentiate=False, softmax=False):
         """Forward pass of the acquisition function network.
 
         Args:
@@ -205,6 +245,9 @@ class AcquisitionFunctionNet(nn.Module):
                 Default is False. For EI, False corresponds to the log of the
                 acquisition function (e.g. log EI), and True corresponds to
                 the acquisition function itself (e.g. EI).
+                Only applies if self.includes_alpha is False.
+            softmax (bool, optional): Whether to apply softmax to the output.
+                Only applies if self.includes_alpha is True. Default is False.
 
         Note: It is assumed x_hist and y_hist are padded (with zeros), although
             that shouldn't matter since the mask will take care of it.
@@ -216,7 +259,7 @@ class AcquisitionFunctionNet(nn.Module):
         encoded_history = self.encode_history(x_hist, y_hist, hist_mask)
 
         return self.compute_acquisition_with_encoded_history(
-            encoded_history, x_cand, cand_mask, exponentiate)
+            encoded_history, x_cand, cand_mask, exponentiate, softmax)
 
 
 class AcquisitionFunctionNetModel(Model):

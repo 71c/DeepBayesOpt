@@ -857,7 +857,6 @@ class ModelsWithParamsList:
             # Instead, here is what should be done:
             return ModelsWithParamsList(self._models_and_params[index])
         
-        # print("YES")
         model, params = self._models_and_params[index]
         model.initialize(**params)
         return model
