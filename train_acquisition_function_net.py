@@ -211,30 +211,35 @@ def test_loop(dataloader, model, policy_gradient=False, fit_map_gp=False):
     print(eval_str)
 
 
-N_CANDIDATES = 25
+# Number of candidate points. More relevant for the policy gradient case.
+# Doesn't matter that much for the MSE EI case; for MSE, could just set to 1.
+N_CANDIDATES = 16
+
+MIN_HISTORY = 1
 MAX_HISTORY = 8
 HISTORY_LOGUNIFORM = True
+
 BATCH_SIZE = 64
 N_BATCHES = 200
 EPOCHS = 5
 
-DIMENSION = 1
-RANDOMIZE_PARAMS = False
+DIMENSION = 1 # dimension of the optimization problem
+RANDOMIZE_PARAMS = False # whether to randomize the GP parameters for training data
 XVALUE_DISTRIBUTION = "uniform"
-POLICY_GRADIENT = True
-INCLUDES_ALPHA = True
+POLICY_GRADIENT = False # True for the softmax thing, False for MSE
+INCLUDES_ALPHA = True # Only relevant if POLICY_GRADIENT is True
 FIT_MAP_GP = False
 
-TRAIN = False
-LOAD_SAVED_MODEL = False
+TRAIN = True
+LOAD_SAVED_MODEL_TO_TRAIN = False
 
 
 if HISTORY_LOGUNIFORM:
     n_datapoints_random_gen = get_loguniform_randint_generator(
-        1, MAX_HISTORY, pre_offset=3.0, offset=N_CANDIDATES)
+        MIN_HISTORY, MAX_HISTORY, pre_offset=3.0, offset=N_CANDIDATES)
 else:
     n_datapoints_random_gen = get_uniform_randint_generator(
-        N_CANDIDATES+1, N_CANDIDATES+MAX_HISTORY)
+        N_CANDIDATES+MIN_HISTORY, N_CANDIDATES+MAX_HISTORY)
 
 sample_n_points = n_datapoints_random_gen(30)
 print("Examples of history lengths:", sample_n_points - N_CANDIDATES)
@@ -257,13 +262,14 @@ test_aq_dataloader = test_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_
 
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
-file_name = f"acquisition_function_net_{DIMENSION}d_{'random' if RANDOMIZE_PARAMS else 'fixed'}_kernel_{XVALUE_DISTRIBUTION}_x_upto_{MAX_HISTORY}_{'loguniform' if HISTORY_LOGUNIFORM else 'uniform'}_{'policy_gradient_myopic' if POLICY_GRADIENT else 'ei'}_{N_CANDIDATES}cand_batchsize{BATCH_SIZE}_batches_per_epoch{N_BATCHES}_epochs{EPOCHS}.pth"
+# training_info = f"batchsize{BATCH_SIZE}_batches_per_epoch{N_BATCHES}_epochs{EPOCHS}"
+file_name = f"acquisition_function_net_{DIMENSION}d_{'random' if RANDOMIZE_PARAMS else 'fixed'}_kernel_{XVALUE_DISTRIBUTION}_x_history{MIN_HISTORY}-{MAX_HISTORY}_{'loguniform' if HISTORY_LOGUNIFORM else 'uniform'}_{'policy_gradient_myopic' if POLICY_GRADIENT else 'ei'}_{N_CANDIDATES}cand.pth"
 print(f"Model file: {file_name}")
 model_path = os.path.join(script_dir, file_name)
 
 model = AcquisitionFunctionNet(DIMENSION,
                                learn_alpha=INCLUDES_ALPHA and POLICY_GRADIENT,
-                            #    history_encoder_hidden_dims=[256, 512, 512], encoded_history_dim=1024, aq_func_hidden_dims=[512, 256, 64]
+                               history_encoder_hidden_dims=[16, 16], encoded_history_dim=16, aq_func_hidden_dims=[16, 16]
                                ).to(device)
 print(model)
 print("Number of trainable parameters:", count_trainable_parameters(model))
@@ -271,12 +277,12 @@ print("Number of parameters:", count_parameters(model))
 
 
 if TRAIN:
-    if LOAD_SAVED_MODEL:
+    if LOAD_SAVED_MODEL_TO_TRAIN:
         # Load the model
         print(f"Loading model from {model_path}")
         model.load_state_dict(torch.load(model_path))
     
-    learning_rate = 1e-3
+    learning_rate = 1e-4
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     every_n_batches = 10
 
@@ -303,24 +309,32 @@ test_aq_dataset_big = test_aq_dataset \
     .copy_with_new_size(len(aq_dataset))
 
 
-test_aq_dataloader_big = test_aq_dataset_big \
-    .get_dataloader(batch_size=BATCH_SIZE, drop_last=True)
-test_loop(test_aq_dataloader_big, model,
-          policy_gradient=POLICY_GRADIENT,
-          fit_map_gp=FIT_MAP_GP)
+# test_aq_dataloader_big = test_aq_dataset_big \
+#     .get_dataloader(batch_size=BATCH_SIZE, drop_last=True)
+# test_loop(test_aq_dataloader_big, model,
+#           policy_gradient=POLICY_GRADIENT,
+#           fit_map_gp=FIT_MAP_GP)
 
 
-n_candidates = 50
+n_candidates = 100
 
 it = iter(test_aq_dataset_big)
 x_hist, y_hist, x_cand, improvements, gp_model = next(it)
+
+# for x_hist, y_hist, x_cand, improvements, gp_model in test_aq_dataset_big:
+#     if x_hist.size(0) != 2:
+#         continue
+#     if x_hist[0, 0].item() > 0.05 or x_hist[1, 0].item() < 0.95:
+#         continue
+#     break
 
 
 print(f"Number of history points: {x_hist.size(0)}")
 x_cand = torch.rand(n_candidates, DIMENSION)
 
+
 aq_fn = LikelihoodFreeNetworkAcquisitionFunction.from_net(
-    model, x_hist, y_hist, exponentiate=False)
+    model, x_hist, y_hist, exponentiate=not POLICY_GRADIENT)
 ei_nn = aq_fn(x_cand.unsqueeze(1))
 
 
@@ -332,9 +346,10 @@ ei_true = calculate_EI_GP(gp_model, x_hist, y_hist, x_cand, log=False)
 ei_map = calculate_EI_GP(gp_model, x_hist, y_hist, x_cand, fit_params=True, log=False)
 
 # Normalize so they have the same scale
-ei_nn = (ei_nn - ei_nn.mean()) / ei_nn.std()
-ei_true = (ei_true - ei_true.mean()) / ei_true.std()
-ei_map = (ei_map - ei_map.mean()) / ei_map.std()
+if POLICY_GRADIENT:
+    ei_nn = (ei_nn - ei_nn.mean()) / ei_nn.std()
+    ei_true = (ei_true - ei_true.mean()) / ei_true.std()
+    ei_map = (ei_map - ei_map.mean()) / ei_map.std()
 
 name = "acquisition" if POLICY_GRADIENT else "EI"
 

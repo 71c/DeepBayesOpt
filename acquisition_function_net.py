@@ -40,7 +40,7 @@ class AcquisitionFunctionNet(nn.Module):
                  dimension,
                  history_encoder_hidden_dims=[256, 256],
                  encoded_history_dim=1024,
-                 aq_func_hidden_dims=[256, 64, 64],
+                 aq_func_hidden_dims=[256, 64],
                  learn_alpha=False):
         super().__init__()
 
@@ -54,12 +54,12 @@ class AcquisitionFunctionNet(nn.Module):
             
             history_encoder.append(nn.Linear(in_dim, out_dim))
             
-            # It was fund that LayerNorm is detrimental to the performance
             # history_encoder.append(nn.LayerNorm(out_dim))
             
             if i != n_hist_enc_layers - 1:
                 history_encoder.append(nn.ReLU())
             # history_encoder.append(nn.ReLU())
+
         self.history_encoder = history_encoder
 
         aqnet_layer_widths = [dimension + encoded_history_dim] + list(aq_func_hidden_dims) + [1]
@@ -70,7 +70,9 @@ class AcquisitionFunctionNet(nn.Module):
             
             acquisition_function_net.append(nn.Linear(in_dim, out_dim))
 
-            # It was fund that LayerNorm is detrimental to the performance
+            # if i != n_aqnet_layers - 1:
+            #     acquisition_function_net.append(nn.LayerNorm(out_dim))
+            
             # if i == n_aqnet_layers - 1:
             #     acquisition_function_net.append(nn.LayerNorm(out_dim))
             
@@ -137,6 +139,7 @@ class AcquisitionFunctionNet(nn.Module):
         
         # "global feature", shape (*, 1, encoded_history_dim)
         encoded_history = torch.max(local_features, dim=-2, keepdim=True).values
+        # encoded_history = torch.sum(local_features, dim=-2, keepdim=True)
         return encoded_history
 
     def add_to_encoded_history(self, original_encoded_history, x_hist, y_hist, hist_mask=None):
