@@ -41,7 +41,8 @@ class AcquisitionFunctionNet(nn.Module):
                  history_encoder_hidden_dims=[256, 256],
                  encoded_history_dim=1024,
                  aq_func_hidden_dims=[256, 64],
-                 learn_alpha=False):
+                 learn_alpha=False,
+                 pooling="max"):
         super().__init__()
 
         self.dimension = dimension
@@ -85,6 +86,11 @@ class AcquisitionFunctionNet(nn.Module):
             self.log_alpha = nn.Parameter(torch.tensor(0.0))
         else:
             self.includes_alpha = False
+        
+        if pooling == "max" or pooling == "sum":
+            self.pooling = pooling
+        else:
+            raise ValueError("pooling must be either 'max' or 'sum'")
     
     @property
     def alpha(self):
@@ -127,19 +133,22 @@ class AcquisitionFunctionNet(nn.Module):
         if hist_mask is not None:
             hist_mask = hist_mask.unsqueeze(-1) # shape (*, n_hist, 1)
 
-            # This would work for summing
-            # local_features = local_features * hist_mask
-
-            # This works for maxing. If ReLU is applied at the end, then
-            # we could instead just use the above.
-            neg_inf = torch.zeros_like(local_features)
-            hist_mask_expanded = expand_dim(hist_mask, -1, local_features.size(-1))
-            neg_inf[~hist_mask_expanded] = float("-inf")
-            local_features = local_features + neg_inf
+            if self.pooling == "sum":
+                # This works for summing
+                local_features = local_features * hist_mask
+            else: # self.pooling == "max"
+                # This works for maxing. If ReLU is applied at the end, then
+                # we could instead just use the above.
+                neg_inf = torch.zeros_like(local_features)
+                hist_mask_expanded = expand_dim(hist_mask, -1, local_features.size(-1))
+                neg_inf[~hist_mask_expanded] = float("-inf")
+                local_features = local_features + neg_inf
         
         # "global feature", shape (*, 1, encoded_history_dim)
-        encoded_history = torch.max(local_features, dim=-2, keepdim=True).values
-        # encoded_history = torch.sum(local_features, dim=-2, keepdim=True)
+        if self.pooling == "sum":
+            encoded_history = torch.sum(local_features, dim=-2, keepdim=True)
+        else: # self.pooling == "max"
+            encoded_history = torch.max(local_features, dim=-2, keepdim=True).values
         return encoded_history
 
     def add_to_encoded_history(self, original_encoded_history, x_hist, y_hist, hist_mask=None):
@@ -159,14 +168,18 @@ class AcquisitionFunctionNet(nn.Module):
             torch.Tensor: Updated encoded history tensor with shape (*, 1, encoded_history_dim).
         """
         # shape (*, 1, encoded_history_dim)
-        new_encoded_history = self.encode_history(x_hist, y_hist, hist_mask)
+        add_enc_hist = self.encode_history(x_hist, y_hist, hist_mask)
+
+        # shape (*, 2, encoded_history_dim)
+        concat_hist = torch.cat((original_encoded_history, add_enc_hist), dim=-2)
 
         # shape (*, 1, encoded_history_dim)
-        updated_encoded_history = torch.max(
-            torch.cat((original_encoded_history, new_encoded_history), dim=-2),
-            dim=-2, keepdim=True).values
+        if self.pooling == "sum":
+            new_enc_hist = torch.sum(concat_hist, dim=-2, keepdim=True)
+        else: # self.pooling == "max"
+            new_enc_hist = torch.max(concat_hist, dim=-2, keepdim=True).values
 
-        return updated_encoded_history
+        return new_enc_hist
 
     def compute_acquisition_with_encoded_history(
             self, encoded_history, x_cand, cand_mask=None,
