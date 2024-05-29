@@ -230,7 +230,7 @@ POLICY_GRADIENT = False # True for the softmax thing, False for MSE
 INCLUDES_ALPHA = True # Only relevant if POLICY_GRADIENT is True
 FIT_MAP_GP = False
 
-TRAIN = False
+TRAIN = True
 LOAD_SAVED_MODEL_TO_TRAIN = False
 
 
@@ -269,7 +269,7 @@ model_path = os.path.join(script_dir, file_name)
 
 model = AcquisitionFunctionNet(DIMENSION,
                                learn_alpha=INCLUDES_ALPHA and POLICY_GRADIENT,
-                               history_encoder_hidden_dims=[32, 32], encoded_history_dim=32, aq_func_hidden_dims=[32, 32]
+                               history_enc_hidden_dims=[32, 32], encoded_history_dim=32, aq_func_hidden_dims=[32, 32]
                                ).to(device)
 print(model)
 print("Number of trainable parameters:", count_trainable_parameters(model))
@@ -283,6 +283,7 @@ if TRAIN:
         model.load_state_dict(torch.load(model_path))
     
     learning_rate = 1e-4
+    # could also try RMSProp
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     every_n_batches = 10
 
