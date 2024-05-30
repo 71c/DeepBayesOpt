@@ -8,6 +8,17 @@ from botorch.acquisition.acquisition import AcquisitionFunction
 from botorch.exceptions import UnsupportedError
 from botorch.utils.transforms import t_batch_mode_transform, match_batch_shape
 
+import logging
+logging.basicConfig(level=logging.WARNING)
+
+# Set to True to enable debug logging
+DEBUG = False
+
+# Create a logger for your application
+logger = logging.getLogger('acquisition_function_net')
+# Configure the logging
+logger.setLevel(logging.DEBUG if DEBUG else logging.WARNING)
+
 
 def expand_dim(tensor, dim, k):
     new_shape = list(tensor.shape)
@@ -15,7 +26,25 @@ def expand_dim(tensor, dim, k):
     return tensor.expand(*new_shape)
 
 
-def make_dimensions_compatible(x: Tensor, y: Tensor, x_name: str, y_name: str) -> Tensor:
+def check_xy_dims_add_y_output_dim(x: Tensor, y: Tensor, x_name: str, y_name: str) -> Tensor:
+    """Check that the dimensions of x and y are as expected, and add an output
+    dimension to y if there is none.
+    
+    Args:
+        x (Tensor): The input tensor x.
+        y (Tensor): The input tensor y.
+        x_name (str): The name of the x tensor.
+        y_name (str): The name of the y tensor.
+    
+    Returns:
+        Tensor: The modified y tensor, with an added output dimension
+        if it was missing.
+    """
+    if x.dim() < 2:
+        raise ValueError(
+            f"{x_name} must have at least 2 dimensions,"
+            f" but has only {x.dim()} dimensions."
+        )
     if x.dim() != y.dim():
         if (x.dim() - y.dim() == 1) and (x.shape[:-1] == y.shape):
             y = y.unsqueeze(-1)
@@ -28,13 +57,23 @@ def make_dimensions_compatible(x: Tensor, y: Tensor, x_name: str, y_name: str) -
     return y
 
 
+def add_tbatch_dimension(x: Tensor, x_name: str):
+    if x.dim() < 2:
+        raise ValueError(
+            f"{x_name} must have at least 2 dimensions,"
+            f" but has only {x.dim()} dimensions."
+        )
+    return x if x.dim() > 2 else x.unsqueeze(0)
+
+
 # Unfortunately, torch.masked does not support torch.addmm
 # (which is used in nn.Linear), so we have to do the masking manually and
 # can't support MaskedTensor.
 
 
 class AcquisitionNetFinalLayer(nn.Module):
-    def __init__(self, input_dim, hidden_dims=[256, 64], learn_alpha=False):
+    def __init__(self, input_dim, hidden_dims=[256, 64],
+                 include_alpha=False, learn_alpha=False, initial_alpha=1.0):
         super().__init__()
 
         aqnet_layer_widths = [input_dim] + list(hidden_dims) + [1]
@@ -55,18 +94,28 @@ class AcquisitionNetFinalLayer(nn.Module):
                 network.append(nn.ReLU())
         self.network = network
 
-        if learn_alpha:
-            self.includes_alpha = True
-            self.log_alpha = nn.Parameter(torch.tensor(0.0))
-        else:
-            self.includes_alpha = False
-    
-    @property
-    def alpha(self):
-        if self.includes_alpha:
-            return torch.exp(self.log_alpha)
-        else:
+        self.includes_alpha = include_alpha
+        if include_alpha:
+            if learn_alpha:
+                self._log_alpha = nn.Parameter(torch.tensor(0.0))
+            else:
+                # register a buffer which is _log_alpha but not a parameter
+                self.register_buffer("_log_alpha", torch.tensor(0.0))
+            self.set_alpha(initial_alpha)
+
+    def get_alpha(self):
+        if not self.includes_alpha:
             raise ValueError("Model does not include alpha.")
+        return torch.exp(self._log_alpha)
+    
+    def set_alpha(self, val):
+        if not self.includes_alpha:
+            raise ValueError("Model does not include alpha.")
+        val = torch.log(torch.as_tensor(val))
+        try:
+            self._log_alpha.data.copy_(val.expand_as(self._log_alpha))
+        except RuntimeError:
+            self._log_alpha.data = val
     
     def forward(self, x, cand_mask=None, exponentiate=False, softmax=False):
         """Compute the acquisition function.
@@ -92,7 +141,7 @@ class AcquisitionNetFinalLayer(nn.Module):
 
         if softmax:
             if self.includes_alpha:
-                acquisition_values = acquisition_values * self.alpha
+                acquisition_values = acquisition_values * self.get_alpha()
             acquisition_values = nn.functional.softmax(acquisition_values, dim=-2)
         elif self.training and self.includes_alpha:
             warnings.warn("The model is in training mode but softmax is False "
@@ -161,7 +210,7 @@ class PointNetLayer(nn.Module):
         # Mask out the padded values. It is sufficient to mask at the end.
         if mask is not None:
             # shape (*, n, 1)
-            mask = make_dimensions_compatible(x, mask, "x", "mask")
+            mask = check_xy_dims_add_y_output_dim(x, mask, "x", "mask")
 
             if self.pooling == "sum":
                 # This works for summing
@@ -205,8 +254,10 @@ class AcquisitionFunctionNet(nn.Module):
                  history_enc_hidden_dims=[256, 256],
                  encoded_history_dim=1024,
                  aq_func_hidden_dims=[256, 64],
+                 pooling="max",
+                 include_alpha=False,
                  learn_alpha=False,
-                 pooling="max"):
+                 initial_alpha=1.0):
         super().__init__()
 
         self.dimension = dimension
@@ -215,108 +266,19 @@ class AcquisitionFunctionNet(nn.Module):
             dimension+1, history_enc_hidden_dims, encoded_history_dim, pooling)
 
         self.acquisition_function_net = AcquisitionNetFinalLayer(
-            dimension + encoded_history_dim, aq_func_hidden_dims, learn_alpha)
+            dimension + encoded_history_dim, aq_func_hidden_dims,
+            include_alpha=include_alpha, learn_alpha=learn_alpha,
+            initial_alpha=initial_alpha)
     
-    @property
-    def alpha(self):
-        return self.acquisition_function_net.alpha
+    def get_alpha(self):
+        return self.acquisition_function_net.get_alpha()
 
-    @property
-    def log_alpha(self):
-        return self.acquisition_function_net.log_alpha
+    def set_alpha(self, val):
+        self.acquisition_function_net.set_alpha(val)
 
     @property
     def includes_alpha(self):
         return self.acquisition_function_net.includes_alpha
-    
-    def encode_history(self, x_hist, y_hist, hist_mask=None):
-        """Encodes the history inputs into a global feature.
-
-        Args:
-            x_hist (torch.Tensor):
-                Input history tensor with shape (*, n_hist, dimension).
-            y_hist (torch.Tensor):
-                Output history tensor with shape (*, n_hist) or (*, n_hist, 1)
-            hist_mask (torch.Tensor): Mask tensor for the history inputs with
-                shape (*, n_hist). If None, then mask is all ones.
-
-        Returns:
-            torch.Tensor: Encoded history tensor with shape (*, 1, encoded_history_dim).
-        """
-        # Make y_hist have shape (*, n_hist, 1)
-        y_hist = make_dimensions_compatible(x_hist, y_hist, "x_hist", "y_hist")
-
-        # shape (*, n_hist, dimension+1)
-        xy_hist = torch.cat((x_hist, y_hist), dim=-1)
-
-        # shape (*, 1, encoded_history_dim)
-        return self.history_encoder(xy_hist, mask=hist_mask, keepdim=True)
-
-    def add_to_encoded_history(self, original_encoded_history, x_hist, y_hist, hist_mask=None):
-        """Add new history to the encoded history.
-
-        Args:
-            original_encoded_history (torch.Tensor):
-                Original encoded history tensor with shape (*, 1, encoded_history_dim).
-            x_hist (torch.Tensor):
-                Input history tensor with shape (*, n_hist, dimension).
-            y_hist (torch.Tensor):
-                Output history tensor with shape (*, n_hist).
-            hist_mask (torch.Tensor): Mask tensor for the history inputs with
-                shape (*, n_hist). If None, then mask is all ones.
-
-        Returns:
-            torch.Tensor: Updated encoded history tensor with shape (*, 1, encoded_history_dim).
-        """
-        # shape (*, 1, encoded_history_dim)
-        add_enc_hist = self.encode_history(x_hist, y_hist, hist_mask)
-
-        # shape (*, 2, encoded_history_dim)
-        concat_hist = torch.cat((original_encoded_history, add_enc_hist), dim=-2)
-
-        # shape (*, 1, encoded_history_dim)
-        if self.pooling == "sum":
-            new_enc_hist = torch.sum(concat_hist, dim=-2, keepdim=True)
-        else: # self.pooling == "max"
-            new_enc_hist = torch.max(concat_hist, dim=-2, keepdim=True).values
-
-        return new_enc_hist
-
-    def compute_acquisition_with_encoded_history(
-            self, encoded_history, x_cand, cand_mask=None,
-            exponentiate=False, softmax=False):
-        """Compute the acquisition function with the encoded history.
-
-        Args:
-            encoded_history (torch.Tensor):
-                Encoded history tensor with shape (*, 1, encoded_history_dim).
-            x_cand (torch.Tensor):
-                Candidate input tensor with shape (*, n_cand, dimension).
-            cand_mask (torch.Tensor): Mask tensor for the candidate inputs with
-                shape (*, n_cand). If None, then mask is all ones.
-            exponentiate (bool, optional): Whether to exponentiate the output.
-                Default is False. For EI, False corresponds to the log of the
-                acquisition function (e.g. log EI), and True corresponds to
-                the acquisition function itself (e.g. EI).
-                Only applies if self.includes_alpha is False.
-            softmax (bool, optional): Whether to apply softmax to the output.
-                Only applies if self.includes_alpha is True. Default is False.
-
-        Returns:
-            torch.Tensor: Acquisition values tensor with shape (*, n_cand).
-        """
-        # shape (*, n_cand, encoded_history_dim)
-        n_cand = x_cand.size(-2)
-        encoded_history_expanded = expand_dim(encoded_history, -2, n_cand)
-
-        # shape (*, n_cand, dimension+encoded_history_dim)
-        x_cand_encoded_history = torch.cat((x_cand, encoded_history_expanded), dim=-1)
-
-        # shape (*, n_cand)
-        return self.acquisition_function_net(x_cand_encoded_history,
-                                             cand_mask=cand_mask,
-                                             exponentiate=exponentiate,
-                                             softmax=softmax)
 
     def forward(self, x_hist, y_hist, x_cand,
                 hist_mask=None, cand_mask=None,
@@ -348,11 +310,32 @@ class AcquisitionFunctionNet(nn.Module):
         Returns:
             torch.Tensor: Acquisition values tensor with shape (*, n_cand).
         """
-        # "global feature", shape (*, 1, encoded_history_dim)
-        encoded_history = self.encode_history(x_hist, y_hist, hist_mask)
+        ## Encode the history inputs into a global feature
+        # Make y_hist have shape (*, n_hist, 1)
+        y_hist = check_xy_dims_add_y_output_dim(x_hist, y_hist, "x_hist", "y_hist")
+        # shape (*, n_hist, dimension+1)
+        xy_hist = torch.cat((x_hist, y_hist), dim=-1)
+        # shape (*, 1, encoded_history_dim)
+        encoded_history = self.history_encoder(xy_hist, mask=hist_mask, keepdim=True)
 
-        return self.compute_acquisition_with_encoded_history(
-            encoded_history, x_cand, cand_mask, exponentiate, softmax)
+        ## Compute the acquisition function with the encoded history.
+        n_cand = x_cand.size(-2)
+        logger.debug(f"In AcquisitionFunctionNet.forward, n_cand = {n_cand}")
+        # shape (*, n_cand, encoded_history_dim)
+        encoded_history_expanded = expand_dim(encoded_history, -2, n_cand)
+        logger.debug(f"In AcquisitionFunctionNet.forward, encoded_history_expanded.shape = {encoded_history_expanded.shape}")
+        # Maybe neeed to match dimensions (?): (TODO: test this)
+        encoded_history_expanded = match_batch_shape(encoded_history_expanded, x_cand)
+        logger.debug(f"In AcquisitionFunctionNet.forward, encoded_history_expanded.shape = {encoded_history_expanded.shape}")
+        # shape (*, n_cand, dimension+encoded_history_dim)
+        x_cand_encoded_history = torch.cat((x_cand, encoded_history_expanded), dim=-1)
+        # shape (*, n_cand)
+        ret = self.acquisition_function_net(x_cand_encoded_history,
+                                             cand_mask=cand_mask,
+                                             exponentiate=exponentiate,
+                                             softmax=softmax)
+        assert ret.shape == x_cand.shape[:-1]
+        return ret
 
 
 class AcquisitionFunctionNetModel(Model):
@@ -366,16 +349,26 @@ class AcquisitionFunctionNetModel(Model):
         Args:
             model: The acquisition function network model.
             train_X: A `batch_shape x n x d` tensor of training features.
-            train_Y: A `batch_shape x n x m` tensor of training observations.
+            train_Y: A `batch_shape x n x 1` or `batch_shape x n` tensor of training observations.
         """
         super().__init__()
         model.eval()
         self.model = model
 
         if train_X is not None and train_Y is not None:
-            self._encoded_history = model.encode_history(train_X, train_Y)
+            # Check that the dimensions are compatible, and add an output dimension to train_Y if there is none
+            train_Y = check_xy_dims_add_y_output_dim(train_X, train_Y, "train_X", "train_Y")
+            
+            # Add a batch dimension to both if they don't have it
+            # Don't think I need to do this actually
+            # train_X = add_tbatch_dimension(train_X, "train_X")
+            # train_Y = add_tbatch_dimension(train_Y, "train_Y")
+            
+            self.train_X = train_X
+            self.train_Y = train_Y
         elif train_X is None and train_Y is None:
-            self._encoded_history = None
+            self.train_X = None
+            self.train_Y = None
         else:
             raise ValueError("Both train_X and train_Y must be provided or neither.")
     
@@ -391,34 +384,52 @@ class AcquisitionFunctionNetModel(Model):
         raise UnsupportedError("AcquisitionFunctionNetModel does not support output subsetting.")
 
     def condition_on_observations(self, X: Tensor, Y: Tensor) -> Model:
-        if self._encoded_history is None:
-            return AcquisitionFunctionNetModel(self.model, X, Y)
+        if self.train_X is None:
+            new_X, new_Y = X, Y
         else:
-            new_encoded_history = self.model.add_to_encoded_history(
-                self._encoded_history, X, Y)
-            ret = AcquisitionFunctionNetModel(self.model, train_X=None, train_Y=None)
-            ret._encoded_history = new_encoded_history
-            return ret
+            # Check dimensions & add output dimension to Y if there is none
+            Y = check_xy_dims_add_y_output_dim(X, Y, "X", "Y")
+            X = match_batch_shape(X, self.train_X)
+            Y = match_batch_shape(Y, self.train_Y)
+            new_X = torch.cat(self.train_X, X, dim=-2)
+            new_Y = torch.cat(self.train_Y, Y, dim=-2)
+        return AcquisitionFunctionNetModel(self.model, new_X, new_Y)
 
-    def forward(self, X: Tensor, exponentiate=False) -> Tensor:
+    def forward(self, X: Tensor, exponentiate=False, softmax=False) -> Tensor:
         """
         Forward pass of the acquisition function network.
 
         Args:
-            X (Tensor): The input tensor of shape `(batch_shape) x q x d`.
+            X (Tensor): The input tensor of shape `(batch_shape) x n_cand x d`.
             exponentiate (bool): Whether to exponentiate the output.
+            softmax (bool): Whether to apply softmax to the output.
 
         Returns:
-            Tensor: The output tensor of shape `(batch_shape) x q`.
+            Tensor: The output tensor of shape `(batch_shape) x n_cand`.
 
         Raises:
             RuntimeError: If the encoded history is not available.
         """
-        if self._encoded_history is None:
+        train_X = self.train_X
+
+        if train_X is None:
             raise RuntimeError("Cannot make predictions without conditioning on data.")
-        encoded_history = match_batch_shape(self._encoded_history, X)
-        return self.model.compute_acquisition_with_encoded_history(
-            encoded_history, X, exponentiate=exponentiate)
+        
+        # Don't think I need to do this actually
+        # if X.dim() > train_X.dim():
+        #     train_X = match_batch_shape(train_X, X)
+        # else:
+        #     X = match_batch_shape(X, train_X)
+
+        # return self.model.compute_acquisition_with_encoded_history(
+        #     encoded_history, X, exponentiate=exponentiate)
+
+        logger.debug(f"In AcquisitionFunctionNetModel.forward, X.shape = {X.shape}")
+
+        ret = self.model(train_X, self.train_Y, X,
+                          exponentiate=exponentiate, softmax=softmax)
+        assert ret.shape == X.shape[:-1]
+        return ret
 
 
 class LikelihoodFreeNetworkAcquisitionFunction(AcquisitionFunction):
@@ -448,16 +459,20 @@ class LikelihoodFreeNetworkAcquisitionFunction(AcquisitionFunction):
 
         Args:
             X: A `(b) x q x d`-dim Tensor of `(b)` t-batches with `q` `d`-dim
-                design points each.
+                design points each, where q=1.
 
         Returns:
             A `(b)`-dim Tensor of acquisition function values at the given
             design points `X`.
         """
-        # shape (batch_shape) x q=1
+        logger.debug(f"In LikelihoodFreeNetworkAcquisitionFunction.forward, X.shape = {X.shape}")
+        assert X.size(-2) == 1 # Guaranteed by t_batch_mode_transform
+        X = X.squeeze(-2) # Make shape (b) x d
+
+        # shape (b)
         output = self.model(X, exponentiate=self.exponentiate)
-        assert output.size(-1) == 1
-        return output.squeeze(-1)
+        assert output.shape == X.shape[:-1]
+        return output
 
     def set_X_pending(self, X_pending: Optional[Tensor] = None) -> None:
         raise UnsupportedError("AcquisitionFunctionNetModel does not support pending points.")
