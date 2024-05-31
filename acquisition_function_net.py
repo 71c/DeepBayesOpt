@@ -1,4 +1,4 @@
-from typing import List, Optional
+from typing import List, Optional, Sequence, Union
 import warnings
 import torch
 from torch import nn
@@ -7,6 +7,7 @@ from botorch.models.model import Model
 from botorch.acquisition.acquisition import AcquisitionFunction
 from botorch.exceptions import UnsupportedError
 from botorch.utils.transforms import t_batch_mode_transform, match_batch_shape
+from abc import ABC, abstractmethod
 
 import logging
 logging.basicConfig(level=logging.WARNING)
@@ -26,13 +27,14 @@ def expand_dim(tensor, dim, k):
     return tensor.expand(*new_shape)
 
 
-def check_xy_dims_add_y_output_dim(x: Tensor, y: Tensor, x_name: str, y_name: str) -> Tensor:
+def check_xy_dims_add_y_output_dim(x: Tensor, y: Union[Tensor, None],
+                                   x_name: str, y_name: str) -> Tensor:
     """Check that the dimensions of x and y are as expected, and add an output
     dimension to y if there is none.
     
     Args:
         x (Tensor): The input tensor x.
-        y (Tensor): The input tensor y.
+        y (Tensor or None): The input tensor y.
         x_name (str): The name of the x tensor.
         y_name (str): The name of the y tensor.
     
@@ -40,6 +42,8 @@ def check_xy_dims_add_y_output_dim(x: Tensor, y: Tensor, x_name: str, y_name: st
         Tensor: The modified y tensor, with an added output dimension
         if it was missing.
     """
+    if y is None:
+        return y
     if x.dim() < 2:
         raise ValueError(
             f"{x_name} must have at least 2 dimensions,"
@@ -72,8 +76,25 @@ def add_tbatch_dimension(x: Tensor, x_name: str):
 
 
 class AcquisitionNetFinalLayer(nn.Module):
-    def __init__(self, input_dim, hidden_dims=[256, 64],
+    """Final layer of the acquisition function network. This is a simple
+    feedforward neural network with a single output node."""
+    def __init__(self, input_dim: int, hidden_dims: Sequence[int]=[256, 64],
                  include_alpha=False, learn_alpha=False, initial_alpha=1.0):
+        """Initialize the AcquisitionNetFinalLayer class.
+
+        Args:
+            input_dim (int):
+                The dimensionality of the input.
+            hidden_dims (Sequence[int], default: [256, 64]):
+                A sequence of integers representing the sizes of the hidden
+                layers.
+            include_alpha (bool, default: False):
+                Whether to include an alpha parameter.
+            learn_alpha (bool, default: False):
+                Whether to learn the alpha parameter.
+            initial_alpha (float, default: 1.0):
+                The initial value for the alpha parameter.
+        """
         super().__init__()
 
         aqnet_layer_widths = [input_dim] + list(hidden_dims) + [1]
@@ -124,7 +145,7 @@ class AcquisitionNetFinalLayer(nn.Module):
             x (torch.Tensor):
                 Fixed-dimension input of shape (*, n_cand, input_dim)
             cand_mask (torch.Tensor): Mask tensor for the candidate inputs with
-                shape (*, n_cand). If None, then mask is all ones.
+                shape (*, n_cand) or (*, n_cand, 1). If None, mask is all ones.
             exponentiate (bool, optional): Whether to exponentiate the output.
                 Default is False. For EI, False corresponds to the log of the
                 acquisition function (e.g. log EI), and True corresponds to
@@ -160,7 +181,8 @@ class AcquisitionNetFinalLayer(nn.Module):
             acquisition_values = torch.exp(acquisition_values)
         
         if cand_mask is not None:
-            cand_mask = cand_mask.unsqueeze(-1) # shape (*, n_cand, 1)
+            # get to shape (*, n_cand, 1)
+            cand_mask = check_xy_dims_add_y_output_dim(x, cand_mask, "x", "cand_mask")
             # Mask out the padded values
             acquisition_values = acquisition_values * cand_mask
 
@@ -168,7 +190,8 @@ class AcquisitionNetFinalLayer(nn.Module):
 
 
 class PointNetLayer(nn.Module):
-    def __init__(self, input_dim, hidden_dims=[256, 256], output_dim=1024, pooling="max"):
+    def __init__(self, input_dim: int, hidden_dims: Sequence[int]=[256, 256],
+                 output_dim: int=1024, pooling="max"):
         super().__init__()
 
         layer_widths = [input_dim] + list(hidden_dims) + [output_dim]
@@ -192,11 +215,11 @@ class PointNetLayer(nn.Module):
             raise ValueError("pooling must be either 'max' or 'sum'")
     
     def forward(self, x, mask=None, keepdim=True):
-        """Computes the output
+        """Computes the output of the PointNet layer.
 
         Args:
             x (torch.Tensor): Input tensor with shape (*, n, input_dim).
-            mask (torch.Tensor): Mask tensor with shape (*, n).
+            mask (torch.Tensor): Mask tensor with shape (*, n) or (*, n, 1).
                 If None, then mask is all ones.
             keepdim (boolean): whether to remove the `n` dimension from output
 
@@ -232,41 +255,101 @@ class PointNetLayer(nn.Module):
             return torch.max(local_features, dim=-2, keepdim=keepdim).values
 
 
-class AcquisitionFunctionNet(nn.Module):
-    """
-    Neural network model for the acquisition function in NN-based
-        likelihood-free Bayesian optimization.
+class AcquisitionFunctionNet(nn.Module, ABC):
+    @abstractmethod
+    def forward(self, x_hist, y_hist, x_cand, hist_mask=None, cand_mask=None,
+                **kwargs):
+        """Forward pass of the acquisition function network.
 
-    Args:
-        dimension (int): The dimensionality of the input space.
-        history_encoder_hidden_dims (list): List of integers representing the
-            hidden layer dimensions of the history encoder network.
-            Default is [256, 256].
-        encoded_history_dim (int): The dimensionality of the encoded history
-            representation. Default is 1024.
-        aq_func_hidden_dims (list): List of integers representing the hidden
-            layer dimensions of the acquisition function network.
-            Default is [256, 64].
-    """
+        Args:
+            x_hist (torch.Tensor):
+                A `batch_shape x n_hist x d` tensor of training features.
+            y_hist (torch.Tensor):
+                A `batch_shape x n_hist` or `batch_shape x n_hist x 1`
+                tensor of training observations.
+            x_cand (torch.Tensor):
+                Candidate input tensor with shape `batch_shape x n_cand x d`.
+            hist_mask (torch.Tensor): Mask tensor for the history inputs with
+                shape `batch_shape x n_hist` or `batch_shape x n_hist x 1`.
+                If None, then mask is all ones.
+            cand_mask (torch.Tensor): Mask tensor for the candidate inputs with
+                shape `batch_shape x n_cand` or `batch_shape x n_cand x 1`.
+                If None, then mask is all ones.
+            **kwargs: Additional arguments.
 
-    def __init__(self,
-                 dimension,
-                 history_enc_hidden_dims=[256, 256],
-                 encoded_history_dim=1024,
-                 aq_func_hidden_dims=[256, 64],
-                 pooling="max",
+        Note: It is assumed x_hist and y_hist are padded (with zeros), although
+            that shouldn't matter since the mask will take care of it.
+
+        Returns:
+            torch.Tensor: A `batch_shape x n_cand` tensor of acquisition values.
+        """
+        pass  # pragma: no cover
+
+
+class AcquisitionFunctionNetWithSoftmaxAndExponentiate(AcquisitionFunctionNet):
+    @abstractmethod
+    def forward(self, x_hist, y_hist, x_cand, hist_mask=None, cand_mask=None,
+                exponentiate=False, softmax=False):
+        """Forward pass of the acquisition function network.
+
+        Args:
+            x_hist (torch.Tensor):
+                A `batch_shape x n_hist x d` tensor of training features.
+            y_hist (torch.Tensor):
+                A `batch_shape x n_hist` or `batch_shape x n_hist x 1`
+                tensor of training observations.
+            x_cand (torch.Tensor):
+                Candidate input tensor with shape `batch_shape x n_cand x d`.
+            hist_mask (torch.Tensor): Mask tensor for the history inputs with
+                shape `batch_shape x n_hist` or `batch_shape x n_hist x 1`.
+                If None, then mask is all ones.
+            cand_mask (torch.Tensor): Mask tensor for the candidate inputs with
+                shape `batch_shape x n_cand` or `batch_shape x n_cand x 1`.
+                If None, then mask is all ones.
+            exponentiate (bool, default: False):
+                Whether to exponentiate the output.
+                For EI, False corresponds to the log of the acquisition function
+                (e.g. log EI), and True corresponds to the acquisition function
+                itself (e.g. EI).
+                Only applies if self.includes_alpha is False.
+            softmax (bool, default: False):
+                Whether to apply softmax to the output.
+                Only applies if self.includes_alpha is True.
+
+        Returns:
+            torch.Tensor: A `batch_shape x n_cand` tensor of acquisition values.
+        """
+        pass  # pragma: no cover
+
+
+class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExponentiate):
+    """Abstract class for an acquisition function network with a final MLP
+    layer. Subclasses should implement the `_get_mlp_input` method."""
+    
+    def __init__(self, input_to_final_layer_dim: int,
+                 aq_func_hidden_dims: Sequence[int]=[256, 64],
                  include_alpha=False,
                  learn_alpha=False,
                  initial_alpha=1.0):
+        """Initializes the MLP layer at the end of the acquisition function.
+        Subclasses should call this method in their `__init__` method.
+
+        Args:
+            input_to_final_layer_dim (int):
+                The dimensionality of the input.
+            aq_func_hidden_dims (Sequence[int], default: [256, 64]):
+                A sequence of integers representing the sizes of the hidden
+                layers of the final fully connected network.
+            include_alpha (bool, default: False):
+                Whether to include an alpha parameter.
+            learn_alpha (bool, default: False):
+                Whether to learn the alpha parameter.
+            initial_alpha (float, default: 1.0):
+                The initial value for the alpha parameter.
+        """
         super().__init__()
-
-        self.dimension = dimension
-
-        self.history_encoder = PointNetLayer(
-            dimension+1, history_enc_hidden_dims, encoded_history_dim, pooling)
-
         self.acquisition_function_net = AcquisitionNetFinalLayer(
-            dimension + encoded_history_dim, aq_func_hidden_dims,
+            input_to_final_layer_dim, aq_func_hidden_dims,
             include_alpha=include_alpha, learn_alpha=learn_alpha,
             initial_alpha=initial_alpha)
     
@@ -279,46 +362,92 @@ class AcquisitionFunctionNet(nn.Module):
     @property
     def includes_alpha(self):
         return self.acquisition_function_net.includes_alpha
-
-    def forward(self, x_hist, y_hist, x_cand,
-                hist_mask=None, cand_mask=None,
-                exponentiate=False, softmax=False):
-        """Forward pass of the acquisition function network.
+    
+    @abstractmethod
+    def _get_mlp_input(self, x_hist, y_hist, x_cand,
+                       hist_mask=None, cand_mask=None):
+        """Compute the input to the final MLP network.
+        This method should be implemented in a subclass.
 
         Args:
             x_hist (torch.Tensor):
-                Input history tensor with shape (*, n_hist, dimension).
+                A `batch_shape x n_hist x d` tensor of training features.
             y_hist (torch.Tensor):
-                Output history tensor with shape (*, n_hist).
+                A `batch_shape x n_hist x 1` tensor of training observations.
             x_cand (torch.Tensor):
-                Candidate input tensor with shape (*, n_cand, dimension).
-            hist_mask (torch.Tensor): Mask tensor for the history inputs with
-                shape (*, n_hist). If None, then mask is all ones.
-            cand_mask (torch.Tensor): Mask tensor for the candidate inputs with
-                shape (*, n_cand). If None, then mask is all ones.
-            exponentiate (bool, optional): Whether to exponentiate the output.
-                Default is False. For EI, False corresponds to the log of the
-                acquisition function (e.g. log EI), and True corresponds to
-                the acquisition function itself (e.g. EI).
-                Only applies if self.includes_alpha is False.
-            softmax (bool, optional): Whether to apply softmax to the output.
-                Only applies if self.includes_alpha is True. Default is False.
-
-        Note: It is assumed x_hist and y_hist are padded (with zeros), although
-            that shouldn't matter since the mask will take care of it.
+                A `batch_shape x n_cand x d` tensor of candidate points.
+            hist_mask (torch.Tensor):
+                A `batch_shape x n_hist x 1` mask tensor for the history inputs.
+                If None, then mask is all ones.
+            cand_mask (torch.Tensor):
+                A `batch_shape x n_cand x 1` mask tensor for the candidate
+                inputs. If None, then mask is all ones.
 
         Returns:
-            torch.Tensor: Acquisition values tensor with shape (*, n_cand).
+            torch.Tensor: The `batch_shape x n_cand x input_to_final_layer_dim`
+            input tensor to the final MLP network.
         """
-        ## Encode the history inputs into a global feature
-        # Make y_hist have shape (*, n_hist, 1)
+        pass  # pragma: no cover
+    
+    def forward(self, x_hist, y_hist, x_cand,
+                hist_mask=None, cand_mask=None,
+                exponentiate=False, softmax=False):
         y_hist = check_xy_dims_add_y_output_dim(x_hist, y_hist, "x_hist", "y_hist")
+        hist_mask = check_xy_dims_add_y_output_dim(x_hist, hist_mask, "x_hist", "hist_mask")
+        cand_mask = check_xy_dims_add_y_output_dim(x_cand, cand_mask, "x_cand", "cand_mask")
+
+        # shape (*, n_cand, input_to_final_layer_dim)
+        a = self._get_mlp_input(x_hist, y_hist, x_cand, hist_mask, cand_mask)
+        
+        # Compute the acquisition function value, shape (*, n_cand)
+        ret = self.acquisition_function_net(a, cand_mask, exponentiate, softmax)
+        assert ret.shape == x_cand.shape[:-1]
+        return ret
+
+
+class AcquisitionFunctionNetV1(AcquisitionFunctionNetWithFinalMLP):
+    """Neural network model for the acquisition function in NN-based
+    likelihood-free Bayesian optimization."""
+
+    def __init__(self,
+                 dimension, history_enc_hidden_dims=[256, 256], pooling="max",
+                 encoded_history_dim=1024, aq_func_hidden_dims=[256, 64],
+                 include_alpha=False, learn_alpha=False, initial_alpha=1.0):
+        """
+        Args:
+            dimension (int): The dimensionality of the input space.
+            history_enc_hidden_dims: sequence of integers representing the
+                hidden layer dimensions of the history encoder network.
+                Default is [256, 256].
+            pooling (str): The pooling method used in the history encoder.
+                Must be either "max" or "sum". Default is "max".
+            encoded_history_dim (int): The dimensionality of the encoded history
+                representation. Default is 1024.
+            aq_func_hidden_dims: sequence of integers representing the hidden
+                layer dimensions of the acquisition function network.
+                Default is [256, 64].
+            include_alpha (bool, default: False):
+                Whether to include an alpha parameter.
+            learn_alpha (bool, default: False):
+                Whether to learn the alpha parameter.
+            initial_alpha (float, default: 1.0):
+                The initial value for the alpha parameter.
+        """
+        super().__init__(dimension + encoded_history_dim, aq_func_hidden_dims,
+                         include_alpha, learn_alpha, initial_alpha)
+        self.dimension = dimension
+        self.history_encoder = PointNetLayer(
+            dimension+1, history_enc_hidden_dims, encoded_history_dim, pooling)
+    
+    def _get_mlp_input(self, x_hist, y_hist, x_cand,
+                       hist_mask=None, cand_mask=None):
+        ## Encode the history inputs into a global feature
         # shape (*, n_hist, dimension+1)
         xy_hist = torch.cat((x_hist, y_hist), dim=-1)
         # shape (*, 1, encoded_history_dim)
         encoded_history = self.history_encoder(xy_hist, mask=hist_mask, keepdim=True)
 
-        ## Compute the acquisition function with the encoded history.
+        ## Prepare input to the acquisition function network final dense layer
         n_cand = x_cand.size(-2)
         logger.debug(f"In AcquisitionFunctionNet.forward, n_cand = {n_cand}")
         # shape (*, n_cand, encoded_history_dim)
@@ -329,19 +458,18 @@ class AcquisitionFunctionNet(nn.Module):
         logger.debug(f"In AcquisitionFunctionNet.forward, encoded_history_expanded.shape = {encoded_history_expanded.shape}")
         # shape (*, n_cand, dimension+encoded_history_dim)
         x_cand_encoded_history = torch.cat((x_cand, encoded_history_expanded), dim=-1)
-        # shape (*, n_cand)
-        ret = self.acquisition_function_net(x_cand_encoded_history,
-                                             cand_mask=cand_mask,
-                                             exponentiate=exponentiate,
-                                             softmax=softmax)
-        assert ret.shape == x_cand.shape[:-1]
-        return ret
 
+        return x_cand_encoded_history
+
+# class AcquisitionFunctionNet(nn.Module):
+#     def forward(self, x_hist, y_hist, x_cand, hist_mask=None, cand_mask=None,
+#                 **kwargs):
 
 class AcquisitionFunctionNetModel(Model):
     """In this case, the model is the acquisition function network itself.
     So it's kind of silly to have this intermediate between the NN and the
     acquisition function, but it's necessary for the BoTorch API."""
+    
     def __init__(self, model: AcquisitionFunctionNet,
                  train_X: Optional[Tensor]=None,
                  train_Y: Optional[Tensor]=None):
@@ -352,6 +480,8 @@ class AcquisitionFunctionNetModel(Model):
             train_Y: A `batch_shape x n x 1` or `batch_shape x n` tensor of training observations.
         """
         super().__init__()
+        if not isinstance(model, AcquisitionFunctionNet):
+            raise ValueError("model must be an instance of AcquisitionFunctionNet.")
         model.eval()
         self.model = model
 
@@ -380,7 +510,7 @@ class AcquisitionFunctionNetModel(Model):
         r"""The number of outputs of the model."""
         return 1 # Only supporting 1 output (for now at least)
     
-    def subset_output(self, idcs: List[int]):
+    def subset_output(self, idcs: Sequence[int]):
         raise UnsupportedError("AcquisitionFunctionNetModel does not support output subsetting.")
 
     def condition_on_observations(self, X: Tensor, Y: Tensor) -> Model:
@@ -395,14 +525,13 @@ class AcquisitionFunctionNetModel(Model):
             new_Y = torch.cat(self.train_Y, Y, dim=-2)
         return AcquisitionFunctionNetModel(self.model, new_X, new_Y)
 
-    def forward(self, X: Tensor, exponentiate=False, softmax=False) -> Tensor:
-        """
-        Forward pass of the acquisition function network.
+    def forward(self, X: Tensor, **kwargs) -> Tensor:
+        """Forward pass of the acquisition function network.
 
         Args:
             X (Tensor): The input tensor of shape `(batch_shape) x n_cand x d`.
-            exponentiate (bool): Whether to exponentiate the output.
-            softmax (bool): Whether to apply softmax to the output.
+            **kwargs: Keyword arguments to pass to the model's `forward` method.
+                If any are unspecified, then the default values will be used.
 
         Returns:
             Tensor: The output tensor of shape `(batch_shape) x n_cand`.
@@ -410,45 +539,39 @@ class AcquisitionFunctionNetModel(Model):
         Raises:
             RuntimeError: If the encoded history is not available.
         """
-        train_X = self.train_X
-
-        if train_X is None:
+        if self.train_X is None:
             raise RuntimeError("Cannot make predictions without conditioning on data.")
         
         # Don't think I need to do this actually
+        # (would also need to do same to train_Y I think)
+        # train_X = self.train_X
         # if X.dim() > train_X.dim():
         #     train_X = match_batch_shape(train_X, X)
         # else:
         #     X = match_batch_shape(X, train_X)
 
-        # return self.model.compute_acquisition_with_encoded_history(
-        #     encoded_history, X, exponentiate=exponentiate)
-
         logger.debug(f"In AcquisitionFunctionNetModel.forward, X.shape = {X.shape}")
 
-        ret = self.model(train_X, self.train_Y, X,
-                          exponentiate=exponentiate, softmax=softmax)
+        ret = self.model(self.train_X, self.train_Y, X, **kwargs)
         assert ret.shape == X.shape[:-1]
         return ret
 
 
 class LikelihoodFreeNetworkAcquisitionFunction(AcquisitionFunction):
-    def __init__(self, model: AcquisitionFunctionNetModel,
-                 exponentiate: bool = False):
+    def __init__(self, model: AcquisitionFunctionNetModel, **kwargs):
         """
         Args:
             model: The acquisition function network model.
         """
-        super().__init__(model=model)
-        self.exponentiate = exponentiate
+        super().__init__(model=model) # sets self.model = model
+        self.kwargs = kwargs
     
     @classmethod
     def from_net(cls, model: AcquisitionFunctionNet,
                  train_X: Optional[Tensor]=None,
                  train_Y: Optional[Tensor]=None,
-                 exponentiate: bool = False) -> "LikelihoodFreeNetworkAcquisitionFunction":
-        return cls(AcquisitionFunctionNetModel(model, train_X, train_Y),
-                   exponentiate=exponentiate)
+                 **kwargs) -> "LikelihoodFreeNetworkAcquisitionFunction":
+        return cls(AcquisitionFunctionNetModel(model, train_X, train_Y), **kwargs)
     
     # They all do this
     # https://botorch.org/api/utils.html#botorch.utils.transforms.t_batch_mode_transform
@@ -470,7 +593,7 @@ class LikelihoodFreeNetworkAcquisitionFunction(AcquisitionFunction):
         X = X.squeeze(-2) # Make shape (b) x d
 
         # shape (b)
-        output = self.model(X, exponentiate=self.exponentiate)
+        output = self.model(X, **self.kwargs)
         assert output.shape == X.shape[:-1]
         return output
 

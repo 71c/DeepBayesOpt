@@ -3,7 +3,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 from generate_gp_data import GaussianProcessRandomDataset, TrainAcquisitionFunctionDataset
 from utils import get_uniform_randint_generator, get_loguniform_randint_generator
-from acquisition_function_net import AcquisitionFunctionNet, LikelihoodFreeNetworkAcquisitionFunction
+from acquisition_function_net import AcquisitionFunctionNetV1, LikelihoodFreeNetworkAcquisitionFunction
 from predict_EI_simple import calculate_EI_GP
 import numpy as np
 import matplotlib.pyplot as plt
@@ -20,8 +20,8 @@ MIN_HISTORY = 1
 MAX_HISTORY = 8
 HISTORY_LOGUNIFORM = True
 
-BATCH_SIZE = 64
-N_BATCHES = 100
+BATCH_SIZE = 8 # 64
+N_BATCHES = 10 # 100
 EVERY_N_BATCHES = 5
 EPOCHS = 5
 
@@ -35,9 +35,9 @@ XVALUE_DISTRIBUTION = "uniform"
 # True for the softmax thing, False for MSE
 POLICY_GRADIENT = True
 # Only used if POLICY_GRADIENT is True
-INCLUDE_ALPHA = False
+INCLUDE_ALPHA = True
 # Following 3 are only used if both POLICY_GRADIENT and INCLUDE_ALPHA are True
-LEARN_ALPHA = False
+LEARN_ALPHA = True
 INITIAL_ALPHA = 1.0
 ALPHA_INCREMENT = 0.01
 
@@ -45,9 +45,19 @@ ALPHA_INCREMENT = 0.01
 FIT_MAP_GP = False
 
 # Whether to train the model. If False, will load a saved model.
-TRAIN = False
+TRAIN = True
 # Whether to load a saved model to train
 LOAD_SAVED_MODEL_TO_TRAIN = False
+
+# Initialize the acquisition function network
+model = AcquisitionFunctionNetV1(DIMENSION,
+                                 pooling="max",
+                                 history_enc_hidden_dims=[32, 32],
+                                 encoded_history_dim=32,
+                                 aq_func_hidden_dims=[32, 32],
+                                 include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
+                                 learn_alpha=LEARN_ALPHA,
+                                 initial_alpha=INITIAL_ALPHA).to(device)
 
 
 if HISTORY_LOGUNIFORM:
@@ -83,12 +93,6 @@ file_name = f"acquisition_function_net_{DIMENSION}d_{'random' if RANDOMIZE_PARAM
 print(f"Model file: {file_name}")
 model_path = os.path.join(script_dir, file_name)
 
-model = AcquisitionFunctionNet(DIMENSION,
-                               history_enc_hidden_dims=[32, 32], encoded_history_dim=32, aq_func_hidden_dims=[32, 32],
-                               include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
-                               learn_alpha=LEARN_ALPHA,
-                               initial_alpha=INITIAL_ALPHA
-                               ).to(device)
 print(model)
 print("Number of trainable parameters:", count_trainable_parameters(model))
 print("Number of parameters:", count_parameters(model))
@@ -155,7 +159,7 @@ x_cand = torch.rand(n_candidates, DIMENSION)
 
 
 aq_fn = LikelihoodFreeNetworkAcquisitionFunction.from_net(
-    model, x_hist, y_hist, exponentiate=not POLICY_GRADIENT)
+    model, x_hist, y_hist, exponentiate=not POLICY_GRADIENT, softmax=False)
 ei_nn = aq_fn(x_cand.unsqueeze(1))
 
 
