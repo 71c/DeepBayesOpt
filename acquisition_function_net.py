@@ -1,3 +1,4 @@
+from collections import OrderedDict
 from typing import List, Optional, Sequence, Union
 import warnings
 import torch
@@ -70,24 +71,14 @@ def add_tbatch_dimension(x: Tensor, x_name: str):
     return x if x.dim() > 2 else x.unsqueeze(0)
 
 
-# Unfortunately, torch.masked does not support torch.addmm
-# (which is used in nn.Linear), so we have to do the masking manually and
-# can't support MaskedTensor.
-
-
-class AcquisitionNetFinalLayer(nn.Module):
-    """Final layer of the acquisition function network. This is a simple
-    feedforward neural network with a single output node."""
-    def __init__(self, input_dim: int, hidden_dims: Sequence[int]=[256, 64],
+class SoftmaxOrExponentiateLayer(nn.Module):
+    def __init__(self, softmax_dim=-1,
                  include_alpha=False, learn_alpha=False, initial_alpha=1.0):
-        """Initialize the AcquisitionNetFinalLayer class.
+        """Initialize the SoftmaxOrExponentiateLayer class.
 
         Args:
-            input_dim (int):
-                The dimensionality of the input.
-            hidden_dims (Sequence[int], default: [256, 64]):
-                A sequence of integers representing the sizes of the hidden
-                layers.
+            softmax_dim (int, default: -1):
+                The dimension along which to apply the softmax.
             include_alpha (bool, default: False):
                 Whether to include an alpha parameter.
             learn_alpha (bool, default: False):
@@ -96,25 +87,7 @@ class AcquisitionNetFinalLayer(nn.Module):
                 The initial value for the alpha parameter.
         """
         super().__init__()
-
-        aqnet_layer_widths = [input_dim] + list(hidden_dims) + [1]
-        n_layers = len(aqnet_layer_widths) - 1
-        network = nn.Sequential()
-        for i in range(n_layers):
-            in_dim, out_dim = aqnet_layer_widths[i], aqnet_layer_widths[i+1]
-            
-            network.append(nn.Linear(in_dim, out_dim))
-
-            # if i != n_layers - 1:
-            #     network.append(nn.LayerNorm(out_dim))
-            
-            # if i == n_layers - 1:
-            #     network.append(nn.LayerNorm(out_dim))
-            
-            if i != n_layers - 1: # want to be linear in output
-                network.append(nn.ReLU())
-        self.network = network
-
+        self.softmax_dim = softmax_dim
         self.includes_alpha = include_alpha
         if include_alpha:
             if learn_alpha:
@@ -138,14 +111,12 @@ class AcquisitionNetFinalLayer(nn.Module):
         except RuntimeError:
             self._log_alpha.data = val
     
-    def forward(self, x, cand_mask=None, exponentiate=False, softmax=False):
+    def forward(self, x, exponentiate=False, softmax=False):
         """Compute the acquisition function.
 
         Args:
             x (torch.Tensor):
-                Fixed-dimension input of shape (*, n_cand, input_dim)
-            cand_mask (torch.Tensor): Mask tensor for the candidate inputs with
-                shape (*, n_cand) or (*, n_cand, 1). If None, mask is all ones.
+                input tensor
             exponentiate (bool, optional): Whether to exponentiate the output.
                 Default is False. For EI, False corresponds to the log of the
                 acquisition function (e.g. log EI), and True corresponds to
@@ -155,15 +126,12 @@ class AcquisitionNetFinalLayer(nn.Module):
                 Only applies if self.includes_alpha is True. Default is False.
 
         Returns:
-            torch.Tensor: Acquisition values tensor with shape (*, n_cand).
+            torch.Tensor: Exponentiated or softmaxed tensor.
         """
-        # shape (*, n_cand, 1)
-        acquisition_values = self.network(x)
-
         if softmax:
             if self.includes_alpha:
-                acquisition_values = acquisition_values * self.get_alpha()
-            acquisition_values = nn.functional.softmax(acquisition_values, dim=-2)
+                x = x * self.get_alpha()
+            x = nn.functional.softmax(x, dim=self.softmax_dim)
         elif self.training and self.includes_alpha:
             warnings.warn("The model is in training mode but softmax is False "
                           "and alpha is included in the model. "
@@ -178,15 +146,45 @@ class AcquisitionNetFinalLayer(nn.Module):
                 raise ValueError(
                     "It doesn't make sense to exponentiate and use softmax at "
                     "the same time. Should set softmax=False instead.")
-            acquisition_values = torch.exp(acquisition_values)
-        
-        if cand_mask is not None:
-            # get to shape (*, n_cand, 1)
-            cand_mask = check_xy_dims_add_y_output_dim(x, cand_mask, "x", "cand_mask")
-            # Mask out the padded values
-            acquisition_values = acquisition_values * cand_mask
+            x = torch.exp(x)
 
-        return acquisition_values.squeeze(-1) # shape (*, n_cand)
+        return x
+
+
+class Dense(nn.Sequential):
+    """Dense neural network with ReLU activations."""
+    def __init__(self, input_dim: int, hidden_dims: Sequence[int]=[256, 64],
+                 output_dim: int=1, activation_at_end=False,
+                 layer_norm_before_end=False, layer_norm_at_end=False):
+        """
+        Args:
+            input_dim (int):
+                The dimensionality of the input.
+            hidden_dims (Sequence[int], default: [256, 64]):
+                A sequence of integers representing the sizes of the hidden
+                layers.
+            output_dim (int, default: 1):
+                The dimensionality of the output.
+            activation_at_end (bool, default: False):
+                Whether to apply the activation function at the end.
+        """
+        layer_widths = [input_dim] + list(hidden_dims) + [output_dim]
+        n_layers = len(layer_widths) - 1
+        
+        layers = []
+        for i in range(n_layers):
+            in_dim, out_dim = layer_widths[i], layer_widths[i+1]
+            
+            layers.append(nn.Linear(in_dim, out_dim))
+            
+            add_layer_norm = layer_norm_at_end if i == n_layers - 1 else layer_norm_before_end
+            if add_layer_norm:
+                layers.append(nn.LayerNorm(out_dim))
+            
+            if i != n_layers - 1 or activation_at_end:
+                layers.append(nn.ReLU())
+        
+        super().__init__(*layers)
 
 
 class PointNetLayer(nn.Module):
@@ -194,20 +192,8 @@ class PointNetLayer(nn.Module):
                  output_dim: int=1024, pooling="max"):
         super().__init__()
 
-        layer_widths = [input_dim] + list(hidden_dims) + [output_dim]
-        n_layers = len(layer_widths) - 1
-        network = nn.Sequential()
-        for i in range(n_layers):
-            in_dim, out_dim = layer_widths[i], layer_widths[i+1]
-            
-            network.append(nn.Linear(in_dim, out_dim))
-            
-            # network.append(nn.LayerNorm(out_dim))
-            
-            if i != n_layers - 1:
-                network.append(nn.ReLU())
-            # network.append(nn.ReLU())
-        self.network = network
+        self.network = Dense(input_dim, hidden_dims, output_dim,
+                             activation_at_end=False)
 
         if pooling == "max" or pooling == "sum":
             self.pooling = pooling
@@ -326,7 +312,8 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
     """Abstract class for an acquisition function network with a final MLP
     layer. Subclasses should implement the `_get_mlp_input` method."""
     
-    def __init__(self, input_to_final_layer_dim: int,
+    def __init__(self, initial_modules: OrderedDict,
+                 input_to_final_layer_dim: int,
                  aq_func_hidden_dims: Sequence[int]=[256, 64],
                  include_alpha=False,
                  learn_alpha=False,
@@ -348,20 +335,28 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
                 The initial value for the alpha parameter.
         """
         super().__init__()
-        self.acquisition_function_net = AcquisitionNetFinalLayer(
-            input_to_final_layer_dim, aq_func_hidden_dims,
-            include_alpha=include_alpha, learn_alpha=learn_alpha,
-            initial_alpha=initial_alpha)
+
+        if not isinstance(initial_modules, OrderedDict):
+            raise ValueError("initial_modules must be an instance of OrderedDict.")
+        for key, val in initial_modules.items():
+            setattr(self, key, val)
+
+        self.dense = Dense(input_to_final_layer_dim, aq_func_hidden_dims, 1,
+                           activation_at_end=False)
+        self.transform = SoftmaxOrExponentiateLayer(softmax_dim=-2,
+                                            include_alpha=include_alpha,
+                                            learn_alpha=learn_alpha,
+                                            initial_alpha=initial_alpha)
     
     def get_alpha(self):
-        return self.acquisition_function_net.get_alpha()
+        return self.transform.get_alpha()
 
     def set_alpha(self, val):
-        self.acquisition_function_net.set_alpha(val)
+        self.transform.set_alpha(val)
 
     @property
     def includes_alpha(self):
-        return self.acquisition_function_net.includes_alpha
+        return self.transform.includes_alpha
     
     @abstractmethod
     def _get_mlp_input(self, x_hist, y_hist, x_cand,
@@ -398,11 +393,16 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
 
         # shape (*, n_cand, input_to_final_layer_dim)
         a = self._get_mlp_input(x_hist, y_hist, x_cand, hist_mask, cand_mask)
-        
-        # Compute the acquisition function value, shape (*, n_cand)
-        ret = self.acquisition_function_net(a, cand_mask, exponentiate, softmax)
-        assert ret.shape == x_cand.shape[:-1]
-        return ret
+
+        # shape (*, n_cand, 1)
+        acquisition_values = self.dense(a)
+        acquisition_values = self.transform(acquisition_values, exponentiate, softmax)
+
+        if cand_mask is not None:
+            # Mask out the padded values
+            acquisition_values = acquisition_values * cand_mask
+
+        return acquisition_values.squeeze(-1) # shape (*, n_cand)
 
 
 class AcquisitionFunctionNetV1(AcquisitionFunctionNetWithFinalMLP):
@@ -433,11 +433,14 @@ class AcquisitionFunctionNetV1(AcquisitionFunctionNetWithFinalMLP):
             initial_alpha (float, default: 1.0):
                 The initial value for the alpha parameter.
         """
-        super().__init__(dimension + encoded_history_dim, aq_func_hidden_dims,
-                         include_alpha, learn_alpha, initial_alpha)
-        self.dimension = dimension
-        self.history_encoder = PointNetLayer(
+        initial_modules = OrderedDict([
+            ('history_encoder', PointNetLayer(
             dimension+1, history_enc_hidden_dims, encoded_history_dim, pooling)
+            )])
+        super().__init__(initial_modules, dimension + encoded_history_dim,
+                         aq_func_hidden_dims, include_alpha,
+                         learn_alpha, initial_alpha)
+        self.dimension = dimension
     
     def _get_mlp_input(self, x_hist, y_hist, x_cand,
                        hist_mask=None, cand_mask=None):
@@ -461,9 +464,6 @@ class AcquisitionFunctionNetV1(AcquisitionFunctionNetWithFinalMLP):
 
         return x_cand_encoded_history
 
-# class AcquisitionFunctionNet(nn.Module):
-#     def forward(self, x_hist, y_hist, x_cand, hist_mask=None, cand_mask=None,
-#                 **kwargs):
 
 class AcquisitionFunctionNetModel(Model):
     """In this case, the model is the acquisition function network itself.
@@ -599,4 +599,3 @@ class LikelihoodFreeNetworkAcquisitionFunction(AcquisitionFunction):
 
     def set_X_pending(self, X_pending: Optional[Tensor] = None) -> None:
         raise UnsupportedError("AcquisitionFunctionNetModel does not support pending points.")
-
