@@ -3,7 +3,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 from generate_gp_data import GaussianProcessRandomDataset, TrainAcquisitionFunctionDataset
 from utils import get_uniform_randint_generator, get_loguniform_randint_generator
-from acquisition_function_net import AcquisitionFunctionNetV1, LikelihoodFreeNetworkAcquisitionFunction
+from acquisition_function_net import AcquisitionFunctionNetV1, AcquisitionFunctionNetV2, AcquisitionFunctionNetV3, AcquisitionFunctionNetDense, LikelihoodFreeNetworkAcquisitionFunction
 from predict_EI_simple import calculate_EI_GP
 import numpy as np
 import matplotlib.pyplot as plt
@@ -14,16 +14,16 @@ from train_acquisition_function_net import train_loop, test_loop, count_trainabl
 
 # Number of candidate points. More relevant for the policy gradient case.
 # Doesn't matter that much for the MSE EI case; for MSE, could just set to 1.
-N_CANDIDATES = 16
+N_CANDIDATES = 10
 
 MIN_HISTORY = 1
 MAX_HISTORY = 8
 HISTORY_LOGUNIFORM = True
 
-BATCH_SIZE = 32 # 64
-N_BATCHES = 30 # 100
+BATCH_SIZE = 128
+N_BATCHES = 100
 EVERY_N_BATCHES = 10
-EPOCHS = 5
+EPOCHS = 10
 
 # dimension of the optimization problem
 DIMENSION = 1
@@ -34,30 +34,55 @@ XVALUE_DISTRIBUTION = "uniform"
 
 # True for the softmax thing, False for MSE
 POLICY_GRADIENT = True
+
 # Only used if POLICY_GRADIENT is True
 INCLUDE_ALPHA = True
 # Following 3 are only used if both POLICY_GRADIENT and INCLUDE_ALPHA are True
 LEARN_ALPHA = True
 INITIAL_ALPHA = 1.0
-ALPHA_INCREMENT = 0.01
+ALPHA_INCREMENT = None # equivalent to 0.0
+
+# Whether to train to predict the EI rather than predict the I
+# Only used if POLICY_GRADIENT is False
+TRAIN_WITH_EI = False
 
 # Whether to fit maximum a posteriori GP for testing
 FIT_MAP_GP = False
 
 # Whether to train the model. If False, will load a saved model.
-TRAIN = True
+TRAIN = False
 # Whether to load a saved model to train
 LOAD_SAVED_MODEL_TO_TRAIN = False
 
 # Initialize the acquisition function network
-model = AcquisitionFunctionNetV1(DIMENSION,
+# model = AcquisitionFunctionNetV3(DIMENSION,
+#                                  history_enc_hidden_dims=[32, 32], pooling="max",
+#                  encoded_history_dim=16,
+#                  mean_enc_hidden_dims=[32, 32], mean_dim=1,
+#                  std_enc_hidden_dims=[32, 32], std_dim=1,
+#                  aq_func_hidden_dims=[32, 32], layer_norm=False,
+#                  layer_norm_at_end_mlp=False,
+#                  include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
+#                                  learn_alpha=LEARN_ALPHA,
+#                                  initial_alpha=INITIAL_ALPHA).to(device)
+
+model = AcquisitionFunctionNetV2(DIMENSION,
                                  pooling="max",
-                                 history_enc_hidden_dims=[32, 32],
-                                 encoded_history_dim=32,
-                                 aq_func_hidden_dims=[32, 32],
+                                 history_enc_hidden_dims=[32, 64],
+                                 encoded_history_dim=128,
+                                 aq_func_hidden_dims=[64, 32],
                                  include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
                                  learn_alpha=LEARN_ALPHA,
-                                 initial_alpha=INITIAL_ALPHA).to(device)
+                                 initial_alpha=INITIAL_ALPHA,
+                                 layer_norm_pointnet=False,
+                                 layer_norm_before_end_mlp=False,
+                                 layer_norm_at_end_mlp=False).to(device)
+
+# model = AcquisitionFunctionNetDense(DIMENSION, MAX_HISTORY,
+#                                     hidden_dims=[32, 32],
+#                                     include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
+#                                     learn_alpha=LEARN_ALPHA,
+#                                     initial_alpha=INITIAL_ALPHA).to(device)
 
 
 if HISTORY_LOGUNIFORM:
@@ -89,7 +114,9 @@ test_aq_dataloader = test_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 # training_info = f"batchsize{BATCH_SIZE}_batches_per_epoch{N_BATCHES}_epochs{EPOCHS}"
-file_name = f"acquisition_function_net_{DIMENSION}d_{'random' if RANDOMIZE_PARAMS else 'fixed'}_kernel_{XVALUE_DISTRIBUTION}_x_history{MIN_HISTORY}-{MAX_HISTORY}_{'loguniform' if HISTORY_LOGUNIFORM else 'uniform'}_{'policy_gradient_myopic' if POLICY_GRADIENT else 'ei'}_{N_CANDIDATES}cand.pth"
+model_class_name = model.__class__.__name__
+loss_str = 'policy_gradient_myopic' if POLICY_GRADIENT else 'ei'
+file_name = f"acquisition_function_net_{model_class_name}_{DIMENSION}d_{'random' if RANDOMIZE_PARAMS else 'fixed'}_kernel_{XVALUE_DISTRIBUTION}_x_history{MIN_HISTORY}-{MAX_HISTORY}_{'loguniform' if HISTORY_LOGUNIFORM else 'uniform'}_{loss_str}_{N_CANDIDATES}cand.pth"
 print(f"Model file: {file_name}")
 model_path = os.path.join(script_dir, file_name)
 
@@ -104,7 +131,7 @@ if TRAIN:
         print(f"Loading model from {model_path}")
         model.load_state_dict(torch.load(model_path))
     
-    learning_rate = 1e-4
+    learning_rate = 1e-3
     # could also try RMSProp
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
@@ -113,7 +140,8 @@ if TRAIN:
         train_loop(train_aq_dataloader, model, optimizer,
                    every_n_batches=EVERY_N_BATCHES,
                    policy_gradient=POLICY_GRADIENT,
-                   alpha_increment=ALPHA_INCREMENT)
+                   alpha_increment=ALPHA_INCREMENT,
+                   train_with_ei=TRAIN_WITH_EI)
         test_loop(test_aq_dataloader, model,
                   policy_gradient=POLICY_GRADIENT, fit_map_gp=FIT_MAP_GP)
 
@@ -134,11 +162,11 @@ test_aq_dataset_big = test_aq_dataset \
     .copy_with_new_size(len(aq_dataset))
 
 
-# test_aq_dataloader_big = test_aq_dataset_big \
-#     .get_dataloader(batch_size=BATCH_SIZE, drop_last=True)
-# test_loop(test_aq_dataloader_big, model,
-#           policy_gradient=POLICY_GRADIENT,
-#           fit_map_gp=FIT_MAP_GP)
+test_aq_dataloader_big = test_aq_dataset_big \
+    .get_dataloader(batch_size=BATCH_SIZE, drop_last=True)
+test_loop(test_aq_dataloader_big, model,
+          policy_gradient=POLICY_GRADIENT,
+          fit_map_gp=FIT_MAP_GP)
 
 
 n_candidates = 100
@@ -146,6 +174,7 @@ n_candidates = 100
 it = iter(test_aq_dataset_big)
 x_hist, y_hist, x_cand, improvements, gp_model = next(it)
 
+# Failure case:
 # for x_hist, y_hist, x_cand, improvements, gp_model in test_aq_dataset_big:
 #     if x_hist.size(0) != 2:
 #         continue

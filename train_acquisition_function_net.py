@@ -80,7 +80,7 @@ def mse_loss(pred_improvements, improvements, mask):
 
 
 def train_loop(dataloader, model, optimizer, every_n_batches=10,
-               policy_gradient=False, alpha_increment=None):
+               policy_gradient=False, alpha_increment=None, train_with_ei=False):
     """Trains the acquisition function network.
 
     Args:
@@ -108,7 +108,13 @@ def train_loop(dataloader, model, optimizer, every_n_batches=10,
             loss = myopic_policy_gradient_loss(output, improvements)
         else:
             output = model(x_hist, y_hist, x_cand, hist_mask, cand_mask, exponentiate=True, softmax=False)
-            loss = mse_loss(output, improvements, cand_mask)
+
+            if train_with_ei:
+                ei_values_true_model = calculate_EI_GP_padded_batch(
+                    x_hist, y_hist, x_cand, hist_mask, cand_mask, models)
+                loss = mse_loss(output, ei_values_true_model, cand_mask)
+            else:
+                loss = mse_loss(output, improvements, cand_mask)
 
         optimizer.zero_grad()
         loss.backward()
@@ -142,6 +148,7 @@ def test_loop(dataloader, model, policy_gradient=False, fit_map_gp=False):
     if policy_gradient:
         ideal_loss = 0.
         avg_normalized_entropy_nn = 0.
+        test_loss_max = 0.
     
     for batch in tqdm(dataloader):
         x_hist, y_hist, x_cand, improvements, hist_mask, cand_mask, models = batch
@@ -167,6 +174,9 @@ def test_loop(dataloader, model, policy_gradient=False, fit_map_gp=False):
 
                 ideal_probabilities = max_one_hot(improvements, cand_mask)
                 ideal_loss += myopic_policy_gradient_loss(ideal_probabilities, improvements).item()
+
+                probabilities_nn_max = max_one_hot(probabilities_nn, cand_mask)
+                test_loss_max += myopic_policy_gradient_loss(probabilities_nn_max, improvements).item()
             else:
                 ei_values_nn = model(x_hist, y_hist, x_cand, hist_mask, cand_mask, exponentiate=True)
                 test_loss += mse_loss(ei_values_nn, improvements, cand_mask).item()
@@ -198,11 +208,15 @@ def test_loop(dataloader, model, policy_gradient=False, fit_map_gp=False):
     if policy_gradient:
         ideal_loss /= multiplier * n_batches
         avg_normalized_entropy_nn /= n_batches
+        test_loss_max /= multiplier * n_batches
 
     mse_desc = "Expected 1-step improvement" if policy_gradient else"Improvement MSE"
     map_str = f" MAP GP: {test_loss_gp_map:>8f}\n" if fit_map_gp else ""
     naive_desc = "Random search" if policy_gradient else "Always predict 0"
-    eval_str = f"Test {mse_desc}:\n NN (loss): {test_loss:>8f}\n True GP: {test_loss_true_gp:>8f}\n{map_str} {naive_desc}: {always_predict_0_loss:>8f}\n"
+    eval_str = f"Test {mse_desc}:\n NN ({'softmax' if policy_gradient else 'loss'}): {test_loss:>8f}\n"
+    if policy_gradient:
+        eval_str += f" NN (max): {test_loss_max:>8f}\n"
+    eval_str += f" True GP: {test_loss_true_gp:>8f}\n{map_str} {naive_desc}: {always_predict_0_loss:>8f}\n"
     if policy_gradient:
         eval_str += f" Ideal: {ideal_loss:>8f}\n NN avg normalized entropy: {avg_normalized_entropy_nn:>8f}\n"
     print(eval_str)

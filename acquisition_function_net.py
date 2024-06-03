@@ -11,6 +11,8 @@ from botorch.utils.transforms import t_batch_mode_transform, match_batch_shape
 from abc import ABC, abstractmethod
 
 import logging
+
+from utils import pad_tensor
 logging.basicConfig(level=logging.WARNING)
 
 # Set to True to enable debug logging
@@ -146,7 +148,8 @@ class SoftmaxOrExponentiateLayer(nn.Module):
                 raise ValueError(
                     "It doesn't make sense to exponentiate and use softmax at "
                     "the same time. Should set softmax=False instead.")
-            x = torch.exp(x)
+            # x = torch.exp(x)
+            x = nn.functional.softplus(x)
 
         return x
 
@@ -189,11 +192,10 @@ class Dense(nn.Sequential):
 
 class PointNetLayer(nn.Module):
     def __init__(self, input_dim: int, hidden_dims: Sequence[int]=[256, 256],
-                 output_dim: int=1024, pooling="max"):
+                 output_dim: int=1024, pooling="max", **dense_kwargs):
         super().__init__()
 
-        self.network = Dense(input_dim, hidden_dims, output_dim,
-                             activation_at_end=False)
+        self.network = Dense(input_dim, hidden_dims, output_dim, **dense_kwargs)
 
         if pooling == "max" or pooling == "sum":
             self.pooling = pooling
@@ -234,14 +236,15 @@ class PointNetLayer(nn.Module):
         
         # "global feature"
         if self.pooling == "sum":
-            # shape (*, 1, output_dim)
             return torch.sum(local_features, dim=-2, keepdim=keepdim)
         else: # self.pooling == "max"
-            # shape (*, output_dim)
             return torch.max(local_features, dim=-2, keepdim=keepdim).values
 
 
 class AcquisitionFunctionNet(nn.Module, ABC):
+    """Neural network model for the acquisition function in NN-based
+    likelihood-free Bayesian optimization."""
+
     @abstractmethod
     def forward(self, x_hist, y_hist, x_cand, hist_mask=None, cand_mask=None,
                 **kwargs):
@@ -317,11 +320,18 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
                  aq_func_hidden_dims: Sequence[int]=[256, 64],
                  include_alpha=False,
                  learn_alpha=False,
-                 initial_alpha=1.0):
+                 initial_alpha=1.0,
+                 layer_norm_before_end=False,
+                 layer_norm_at_end=False):
         """Initializes the MLP layer at the end of the acquisition function.
         Subclasses should call this method in their `__init__` method.
 
         Args:
+            initial_modules (OrderedDict): the initial modules that are to be
+                used before the final MLP. It is a good idea to specify them
+                here in super().__init__ rather than setting these attributes
+                yourself because that way, they are listed first when the module
+                is printed, which makes conceptual sense.
             input_to_final_layer_dim (int):
                 The dimensionality of the input.
             aq_func_hidden_dims (Sequence[int], default: [256, 64]):
@@ -342,7 +352,9 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
             setattr(self, key, val)
 
         self.dense = Dense(input_to_final_layer_dim, aq_func_hidden_dims, 1,
-                           activation_at_end=False)
+                           activation_at_end=False,
+                           layer_norm_before_end=layer_norm_before_end,
+                           layer_norm_at_end=layer_norm_at_end)
         self.transform = SoftmaxOrExponentiateLayer(softmax_dim=-2,
                                             include_alpha=include_alpha,
                                             learn_alpha=learn_alpha,
@@ -406,13 +418,12 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
 
 
 class AcquisitionFunctionNetV1(AcquisitionFunctionNetWithFinalMLP):
-    """Neural network model for the acquisition function in NN-based
-    likelihood-free Bayesian optimization."""
-
     def __init__(self,
                  dimension, history_enc_hidden_dims=[256, 256], pooling="max",
                  encoded_history_dim=1024, aq_func_hidden_dims=[256, 64],
-                 include_alpha=False, learn_alpha=False, initial_alpha=1.0):
+                 include_alpha=False, learn_alpha=False, initial_alpha=1.0,
+                 layer_norm_pointnet=False, layer_norm_before_end_mlp=False,
+                 layer_norm_at_end_mlp=False):
         """
         Args:
             dimension (int): The dimensionality of the input space.
@@ -435,11 +446,14 @@ class AcquisitionFunctionNetV1(AcquisitionFunctionNetWithFinalMLP):
         """
         initial_modules = OrderedDict([
             ('history_encoder', PointNetLayer(
-            dimension+1, history_enc_hidden_dims, encoded_history_dim, pooling)
+            dimension+1, history_enc_hidden_dims, encoded_history_dim, pooling,
+            layer_norm_before_end=layer_norm_pointnet,
+            layer_norm_at_end=layer_norm_pointnet)
             )])
         super().__init__(initial_modules, dimension + encoded_history_dim,
                          aq_func_hidden_dims, include_alpha,
-                         learn_alpha, initial_alpha)
+                         learn_alpha, initial_alpha,
+                         layer_norm_before_end_mlp, layer_norm_at_end_mlp)
         self.dimension = dimension
     
     def _get_mlp_input(self, x_hist, y_hist, x_cand,
@@ -463,6 +477,230 @@ class AcquisitionFunctionNetV1(AcquisitionFunctionNetWithFinalMLP):
         x_cand_encoded_history = torch.cat((x_cand, encoded_history_expanded), dim=-1)
 
         return x_cand_encoded_history
+
+
+def _get_xy_hist_and_cand(x_hist, y_hist, x_cand, hist_mask=None, include_y=True):
+    # shape (*, n_hist, dimension+1)
+    xy_hist = torch.cat((x_hist, y_hist), dim=-1)
+
+    n_hist = x_hist.size(-2)
+    n_cand = x_cand.size(-2)
+    # shape (*, n_cand, n_hist, dimension)
+    x_cand_expanded = expand_dim(x_cand.unsqueeze(-2), -2, n_hist)
+
+    # hist_mask has shape (*, n_hist, 1), so need to expand to match.
+    # shape (*, n_cand, n_hist, 1)
+    mask = None if hist_mask is None else expand_dim(hist_mask.unsqueeze(-3), -3, n_cand)
+
+    if include_y:
+        # shape (*, n_cand, n_hist, dimension+1)
+        xy_hist_expanded = expand_dim(xy_hist.unsqueeze(-3), -3, n_cand)
+
+        # shape (*, n_cand, n_hist, 2*dimension+1)
+        xy_hist_and_cand = torch.cat((x_cand_expanded, xy_hist_expanded), dim=-1)
+
+        return xy_hist, xy_hist_and_cand, mask
+    else:
+        # shape (*, n_cand, n_hist, dimension)
+        x_hist_expanded = expand_dim(x_hist.unsqueeze(-3), -3, n_cand)
+
+        # shape (*, n_cand, n_hist, 2*dimension)
+        x_hist_and_cand = torch.cat((x_cand_expanded, x_hist_expanded), dim=-1)
+
+        return xy_hist, x_hist_and_cand, mask
+
+class AcquisitionFunctionNetV2(AcquisitionFunctionNetWithFinalMLP):
+    def __init__(self,
+                 dimension, history_enc_hidden_dims=[256, 256], pooling="max",
+                 encoded_history_dim=1024, aq_func_hidden_dims=[256, 64],
+                 include_alpha=False, learn_alpha=False, initial_alpha=1.0,
+                 layer_norm_pointnet=False,
+                 layer_norm_before_end_mlp=False,
+                 layer_norm_at_end_mlp=False):
+        """
+        Args:
+            dimension (int): The dimensionality of the input space.
+            history_enc_hidden_dims: sequence of integers representing the
+                hidden layer dimensions of the history encoder network.
+                Default is [256, 256].
+            pooling (str): The pooling method used in the history encoder.
+                Must be either "max" or "sum". Default is "max".
+            encoded_history_dim (int): The dimensionality of the encoded history
+                representation. Default is 1024.
+            aq_func_hidden_dims: sequence of integers representing the hidden
+                layer dimensions of the acquisition function network.
+                Default is [256, 64].
+            include_alpha (bool, default: False):
+                Whether to include an alpha parameter.
+            learn_alpha (bool, default: False):
+                Whether to learn the alpha parameter.
+            initial_alpha (float, default: 1.0):
+                The initial value for the alpha parameter.
+        """
+        initial_modules = OrderedDict([
+            ('pointnet', PointNetLayer(
+            2 * dimension + 1, history_enc_hidden_dims, encoded_history_dim, pooling,
+            activation_at_end=True,
+            layer_norm_before_end=layer_norm_pointnet,
+            layer_norm_at_end=layer_norm_pointnet)
+            )])
+        super().__init__(initial_modules, encoded_history_dim,
+                         aq_func_hidden_dims, include_alpha,
+                         learn_alpha, initial_alpha,
+                         layer_norm_before_end_mlp, layer_norm_at_end_mlp)
+        self.dimension = dimension
+    
+    def _get_mlp_input(self, x_hist, y_hist, x_cand,
+                       hist_mask=None, cand_mask=None):
+        xy_hist, xy_hist_and_cand, mask = _get_xy_hist_and_cand(x_hist, y_hist, x_cand, hist_mask)
+
+        # shape (*, n_cand, encoded_history_dim)
+        return self.pointnet(xy_hist_and_cand, mask=mask, keepdim=False)
+
+
+class AcquisitionFunctionNetV3(AcquisitionFunctionNetWithFinalMLP):
+    def __init__(self,
+                 dimension, history_enc_hidden_dims=[256, 256], pooling="max",
+                 encoded_history_dim=1024,
+                 mean_enc_hidden_dims=[256, 256], mean_dim=1,
+                 std_enc_hidden_dims=[256, 256], std_dim=1,
+                 aq_func_hidden_dims=[256, 64], layer_norm=False,
+                 layer_norm_at_end_mlp=False,
+                 include_alpha=False, learn_alpha=False, initial_alpha=1.0):
+        """
+        Args:
+            dimension (int): The dimensionality of the input space.
+            history_enc_hidden_dims: sequence of integers representing the
+                hidden layer dimensions of the history encoder network.
+                Default is [256, 256].
+            pooling (str): The pooling method used in the history encoder.
+                Must be either "max" or "sum". Default is "max".
+            encoded_history_dim (int): The dimensionality of the encoded history
+                representation. Default is 1024.
+            aq_func_hidden_dims: sequence of integers representing the hidden
+                layer dimensions of the acquisition function network.
+                Default is [256, 64].
+            include_alpha (bool, default: False):
+                Whether to include an alpha parameter.
+            learn_alpha (bool, default: False):
+                Whether to learn the alpha parameter.
+            initial_alpha (float, default: 1.0):
+                The initial value for the alpha parameter.
+        """
+        initial_modules = OrderedDict([
+            ('history_encoder', PointNetLayer(
+            dimension + 1, history_enc_hidden_dims, encoded_history_dim, pooling,
+            activation_at_end=False,
+            layer_norm_before_end=layer_norm, layer_norm_at_end=layer_norm)),
+            ('mean_net', Dense(2 * dimension + encoded_history_dim,
+                               mean_enc_hidden_dims, mean_dim,
+                               activation_at_end=False,
+                               layer_norm_before_end=layer_norm,
+                               layer_norm_at_end=False)),
+            ('std_net', PointNetLayer(
+            2 * dimension + encoded_history_dim, std_enc_hidden_dims,
+            std_dim, pooling, activation_at_end=True,
+            layer_norm_before_end=layer_norm, layer_norm_at_end=False))
+        ])
+        super().__init__(initial_modules, mean_dim + std_dim,
+                         aq_func_hidden_dims, include_alpha,
+                         learn_alpha, initial_alpha,
+                         layer_norm_before_end=layer_norm,
+                         layer_norm_at_end=layer_norm_at_end_mlp)
+        self.dimension = dimension
+    
+    def _get_mlp_input(self, x_hist, y_hist, x_cand,
+                       hist_mask=None, cand_mask=None):
+        # xy_hist shape (*, n_hist, dimension+1)
+        # x_hist_and_cand shape (*, n_cand, n_hist, 2*dimension)
+        # mask shape (*, n_cand, n_hist, 1)
+        xy_hist, x_hist_and_cand, mask = _get_xy_hist_and_cand(
+            x_hist, y_hist, x_cand, hist_mask, include_y=False)
+
+        # shape (*, 1, encoded_history_dim)
+        encoded_history = self.history_encoder(xy_hist, mask=hist_mask, keepdim=True)
+
+        n_hist = x_hist.size(-2)
+        n_cand = x_cand.size(-2)
+
+        # shape (*, n_hist, encoded_history_dim)
+        encoded_history = expand_dim(encoded_history, -2, n_hist)
+        # shape (*, n_cand, n_hist, encoded_history_dim)
+        encoded_history = expand_dim(encoded_history.unsqueeze(-3), -3, n_cand)
+
+        # shape (*, n_cand, n_hist, 2*dimension + encoded_history_dim)
+        x_hist_and_cand_and_enc_hist = torch.cat((x_hist_and_cand, encoded_history), dim=-1)
+
+        # shape (*, n_cand, n_hist, mean_dim)
+        mean_a = self.mean_net(x_hist_and_cand_and_enc_hist)
+
+        # y_hist shape: (*, n_hist, 1)
+        # shape (*, n_cand, n_hist, 1)
+        y_hist_expanded = expand_dim(y_hist.unsqueeze(-3), -3, n_cand)
+
+        # shpae (*, n_cand, n_hist, mean_dim)
+        tmp = mean_a * y_hist_expanded
+        # sum along history dimension
+        # shape (*, n_cand, mean_dim)
+        mean_out = torch.sum(tmp, dim=-2, keepdim=False)
+
+        # shape (*, n_cand, std_dim)
+        std_out = self.std_net(x_hist_and_cand_and_enc_hist, mask=mask, keepdim=False)
+
+        # shape (*, n_cand, mean_dim + std_dim)
+        mean_and_std = torch.cat((mean_out, std_out), dim=-1)
+
+        return mean_and_std
+
+
+def flatten_last_two_dimensions(tensor):
+    return tensor.reshape(tensor.shape[:-2] + (-1,))
+
+
+class AcquisitionFunctionNetDense(AcquisitionFunctionNetWithFinalMLP):
+    def __init__(self, dimension, max_history, hidden_dims=[256, 64],
+                 include_alpha=False, learn_alpha=False, initial_alpha=1.0):
+        """
+        Args:
+            dimension (int): The dimensionality of the input space.
+            hidden_dims: sequence of integers representing the hidden
+                layer dimensions of the acquisition function network.
+                Default is [256, 64].
+            include_alpha (bool, default: False):
+                Whether to include an alpha parameter.
+            learn_alpha (bool, default: False):
+                Whether to learn the alpha parameter.
+            initial_alpha (float, default: 1.0):
+                The initial value for the alpha parameter.
+        """
+        self.max_history = max_history
+        self.input_dim = max_history * (2 * dimension + 1)
+        super().__init__(OrderedDict(), self.input_dim, hidden_dims,
+                         include_alpha, learn_alpha, initial_alpha)
+        self.dimension = dimension
+    
+    def _get_mlp_input(self, x_hist, y_hist, x_cand,
+                       hist_mask=None, cand_mask=None):
+        # Pad things to the max history length
+        x_hist = pad_tensor(x_hist, self.max_history, -2)
+        y_hist = pad_tensor(y_hist, self.max_history, -2)
+        hist_mask = None if hist_mask is None else pad_tensor(hist_mask, self.max_history, -2)
+
+        # xy_hist_and_cand shape: (*, n_cand, n_hist, 2*dimension+1)
+        # mask shape: (*, n_cand, n_hist, 1)
+        xy_hist, xy_hist_and_cand, mask = _get_xy_hist_and_cand(x_hist, y_hist, x_cand, hist_mask)
+
+        # shape (*, n_cand, n_hist, 2*dimension+1)
+        # mask = None if mask is None else expand_dim(mask, -1, xy_hist_and_cand.size(-1))
+
+        # Make both hsve shape (*, n_cand, n_hist*(2*dimension+1))
+        xy_hist_and_cand = flatten_last_two_dimensions(xy_hist_and_cand)
+        # mask = flatten_last_two_dimensions(mask)
+
+        assert xy_hist_and_cand.size(-1) == self.input_dim
+        assert xy_hist_and_cand.size(-2) == x_cand.size(-2)
+
+        return xy_hist_and_cand
 
 
 class AcquisitionFunctionNetModel(Model):
