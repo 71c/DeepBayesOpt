@@ -915,9 +915,10 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
     def __init__(self,
                  dataset: FunctionSamplesDataset,
                  n_candidate_points:Union[int,str,Sequence[int]]=1,
-                 n_samples:str="all", give_improvements:bool=True, min_n_candidates=2,
+                 n_samples:str="all", give_improvements:bool=True,
+                 min_n_candidates=2,
                  dataset_size_factor:Optional[int]=None):
-        """
+        r"""
         Args:
             dataset (FunctionSamplesDataset):
                 The base dataset from which to generate training data for
@@ -938,9 +939,11 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
                         points is chosen from a binomial distribution with
                         parameters n_samples and 0.5, conditioned on being
                         between `min_n_candidates` and n_samples-1.
+
             n_samples (str; default: "all"): The number of samples to use from
-                the dataset each iteration. If "all", all samples are used.
-                If "uniform", a uniform random number of samples is used each
+                the dataset each iteration.
+                - If "all", all samples are used.
+                - If "uniform", a uniform random number of samples is used each
                 iteration. Specifically,
                     - If n_candidate_points is "uniform" or "binomial", then
                     n_samples is chosen uniformly at random in
@@ -950,11 +953,14 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
                     - If n_candidate_points is an integer or a tuple of two
                     integers, then n_candidate_points is first chosen and then
                     n_samples is chosen uniformly in [n_candidate_points+1...n].
+            
             give_improvements (bool): Whether to generate improvement values as
                 targets instead of raw y-values of the candidate points.
+            
             min_n_candidates (int): The minimum number of candidate points for
                 every iteration. Only used if n_candidate_points is "uniform" or
                 "binomial"; ignored otherwise.
+            
             dataset_size_factor (Optional[int]): If the base dataset is a
                 map-style dataset
                 (i.e. a FunctionSamplesMapDataset or FunctionSamplesMapSubset),
@@ -1127,6 +1133,8 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
                 while not (min_n_candidates <= n_candidates <= n_samples-1):
                     n_candidates = int(torch.distributions.Binomial(n_samples, 0.5).sample())
         
+        if torch.is_tensor(n_samples):
+            n_samples = n_samples.item()
         return n_samples, n_candidates
 
     def __iter__(self):

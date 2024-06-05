@@ -3,7 +3,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 from generate_gp_data import GaussianProcessRandomDataset, TrainAcquisitionFunctionDataset
 from utils import get_uniform_randint_generator, get_loguniform_randint_generator
-from acquisition_function_net import AcquisitionFunctionNetV1, AcquisitionFunctionNetV2, AcquisitionFunctionNetV3, AcquisitionFunctionNetDense, LikelihoodFreeNetworkAcquisitionFunction
+from acquisition_function_net import AcquisitionFunctionNetV1, AcquisitionFunctionNetV2, AcquisitionFunctionNetV3, AcquisitionFunctionNetV4, AcquisitionFunctionNetDense, LikelihoodFreeNetworkAcquisitionFunction
 from predict_EI_simple import calculate_EI_GP
 import numpy as np
 import matplotlib.pyplot as plt
@@ -11,14 +11,36 @@ import os
 
 from train_acquisition_function_net import train_loop, test_loop, count_trainable_parameters, count_parameters
 
+# This means whether n history points is log-uniform
+# or whether the total number of points is log-uniform
+LOGUNIFORM = True
 
-# Number of candidate points. More relevant for the policy gradient case.
-# Doesn't matter that much for the MSE EI case; for MSE, could just set to 1.
-N_CANDIDATES = 10
+FIX_N_CANDIDATES = True
 
-MIN_HISTORY = 1
-MAX_HISTORY = 8
-HISTORY_LOGUNIFORM = True
+if FIX_N_CANDIDATES:
+    # Number of candidate points. More relevant for the policy gradient case.
+    # Doesn't matter that much for the MSE EI case; for MSE, could just set to 1.
+    N_CANDIDATES = 50
+    MIN_HISTORY = 1
+    MAX_HISTORY = 8
+
+    if LOGUNIFORM:
+        n_datapoints_random_gen = get_loguniform_randint_generator(
+            MIN_HISTORY, MAX_HISTORY, pre_offset=3.0, offset=N_CANDIDATES)
+    else:
+        n_datapoints_random_gen = get_uniform_randint_generator(
+            N_CANDIDATES+MIN_HISTORY, N_CANDIDATES+MAX_HISTORY)
+else:
+    MIN_N_CANDIDATES = 2
+    MIN_POINTS = MIN_N_CANDIDATES + 1
+    MAX_POINTS = 30
+
+    if LOGUNIFORM:
+        n_datapoints_random_gen = get_loguniform_randint_generator(
+            MIN_POINTS, MAX_POINTS, pre_offset=3.0, offset=0)
+    else:
+        n_datapoints_random_gen = get_uniform_randint_generator(
+            MIN_POINTS, MAX_POINTS)
 
 BATCH_SIZE = 128
 N_BATCHES = 100
@@ -55,27 +77,42 @@ TRAIN = False
 LOAD_SAVED_MODEL_TO_TRAIN = False
 
 # Initialize the acquisition function network
-# model = AcquisitionFunctionNetV3(DIMENSION,
-#                                  history_enc_hidden_dims=[32, 32], pooling="max",
-#                  encoded_history_dim=16,
-#                  mean_enc_hidden_dims=[32, 32], mean_dim=1,
-#                  std_enc_hidden_dims=[32, 32], std_dim=1,
+
+
+# model = AcquisitionFunctionNetV4(DIMENSION,
+#                                  history_enc_hidden_dims=[32, 32], pooling="sum",
+#                  encoded_history_dim=32, include_mean=False,
+#                  mean_enc_hidden_dims=[32, 32], mean_dim=8,
+#                  std_enc_hidden_dims=[32, 32], std_dim=32,
 #                  aq_func_hidden_dims=[32, 32], layer_norm=False,
 #                  layer_norm_at_end_mlp=False,
 #                  include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
 #                                  learn_alpha=LEARN_ALPHA,
 #                                  initial_alpha=INITIAL_ALPHA).to(device)
 
+
+
+# model = AcquisitionFunctionNetV3(DIMENSION,
+#                                  history_enc_hidden_dims=[32, 32], pooling="max",
+#                  encoded_history_dim=32,
+#                  mean_enc_hidden_dims=[32, 32], mean_dim=8,
+#                  std_enc_hidden_dims=[32, 32], std_dim=8,
+#                  aq_func_hidden_dims=[32, 32], layer_norm=False,
+#                  layer_norm_at_end_mlp=False, include_y=True,
+#                  include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
+#                                  learn_alpha=LEARN_ALPHA,
+#                                  initial_alpha=INITIAL_ALPHA).to(device)
+
 model = AcquisitionFunctionNetV2(DIMENSION,
                                  pooling="max",
-                                 history_enc_hidden_dims=[32, 64],
-                                 encoded_history_dim=128,
-                                 aq_func_hidden_dims=[64, 32],
+                                 history_enc_hidden_dims=[32, 32],
+                                 encoded_history_dim=32,
+                                 aq_func_hidden_dims=[32, 32],
                                  include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
                                  learn_alpha=LEARN_ALPHA,
                                  initial_alpha=INITIAL_ALPHA,
-                                 layer_norm_pointnet=False,
-                                 layer_norm_before_end_mlp=False,
+                                 layer_norm_pointnet=True,
+                                 layer_norm_before_end_mlp=True,
                                  layer_norm_at_end_mlp=False).to(device)
 
 # model = AcquisitionFunctionNetDense(DIMENSION, MAX_HISTORY,
@@ -85,16 +122,6 @@ model = AcquisitionFunctionNetV2(DIMENSION,
 #                                     initial_alpha=INITIAL_ALPHA).to(device)
 
 
-if HISTORY_LOGUNIFORM:
-    n_datapoints_random_gen = get_loguniform_randint_generator(
-        MIN_HISTORY, MAX_HISTORY, pre_offset=3.0, offset=N_CANDIDATES)
-else:
-    n_datapoints_random_gen = get_uniform_randint_generator(
-        N_CANDIDATES+MIN_HISTORY, N_CANDIDATES+MAX_HISTORY)
-
-sample_n_points = n_datapoints_random_gen(30)
-print("Examples of history lengths:", sample_n_points - N_CANDIDATES)
-
 dataset = GaussianProcessRandomDataset(
     dimension=DIMENSION, n_datapoints_random_gen=n_datapoints_random_gen,
     observation_noise=False, set_random_model_train_data=False,
@@ -102,9 +129,30 @@ dataset = GaussianProcessRandomDataset(
     dataset_size=BATCH_SIZE * N_BATCHES,
     randomize_params=RANDOMIZE_PARAMS)
 
-aq_dataset = TrainAcquisitionFunctionDataset(
-    dataset, n_candidate_points=N_CANDIDATES, n_samples="all",
-    give_improvements=True)
+# aq_dataset = TrainAcquisitionFunctionDataset(
+#     dataset, n_candidate_points=N_CANDIDATES, n_samples="all",
+#     give_improvements=True)
+
+if FIX_N_CANDIDATES:
+    aq_dataset = TrainAcquisitionFunctionDataset(
+        dataset, n_candidate_points=N_CANDIDATES, n_samples="all",
+        give_improvements=True)
+else:
+    aq_dataset = TrainAcquisitionFunctionDataset(
+        dataset, n_candidate_points="uniform", n_samples="all",
+        give_improvements=True, min_n_candidates=MIN_N_CANDIDATES)
+
+sample_n_points = n_datapoints_random_gen(30)
+n_samples_and_candidates_examples = [
+    aq_dataset._pick_random_n_samples_and_n_candidates(n)
+    for n in sample_n_points]
+n_hist_and_candidates_examples = [
+    (n_samples - n_candidates, n_candidates)
+    for n_samples, n_candidates in n_samples_and_candidates_examples]
+print(n_hist_and_candidates_examples)
+
+# print("Examples of history lengths:", sample_n_points - N_CANDIDATES)
+
 
 train_aq_dataset, test_aq_dataset = aq_dataset.random_split([0.9, 0.1])
 
@@ -116,7 +164,12 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 # training_info = f"batchsize{BATCH_SIZE}_batches_per_epoch{N_BATCHES}_epochs{EPOCHS}"
 model_class_name = model.__class__.__name__
 loss_str = 'policy_gradient_myopic' if POLICY_GRADIENT else 'ei'
-file_name = f"acquisition_function_net_{model_class_name}_{DIMENSION}d_{'random' if RANDOMIZE_PARAMS else 'fixed'}_kernel_{XVALUE_DISTRIBUTION}_x_history{MIN_HISTORY}-{MAX_HISTORY}_{'loguniform' if HISTORY_LOGUNIFORM else 'uniform'}_{loss_str}_{N_CANDIDATES}cand.pth"
+file_name = f"acquisition_function_net_{model_class_name}_{DIMENSION}d_{loss_str}_{'random' if RANDOMIZE_PARAMS else 'fixed'}_kernel_{XVALUE_DISTRIBUTION}_x"
+if FIX_N_CANDIDATES:
+    file_name += f"_history{MIN_HISTORY}-{MAX_HISTORY}_{'loguniform' if LOGUNIFORM else 'uniform'}_{N_CANDIDATES}cand.pth"
+else:
+    file_name += f"_points{MIN_POINTS}-{MAX_POINTS}_{'loguniform' if LOGUNIFORM else 'uniform'}.pth"
+
 print(f"Model file: {file_name}")
 model_path = os.path.join(script_dir, file_name)
 
@@ -153,23 +206,22 @@ else:
     # Load the model
     print(f"Loading model from {model_path}")
     model.load_state_dict(torch.load(model_path))
-    model.eval()
 
-print(model)
+model.eval()
 
 
 test_aq_dataset_big = test_aq_dataset \
     .copy_with_new_size(len(aq_dataset))
 
 
-test_aq_dataloader_big = test_aq_dataset_big \
-    .get_dataloader(batch_size=BATCH_SIZE, drop_last=True)
-test_loop(test_aq_dataloader_big, model,
-          policy_gradient=POLICY_GRADIENT,
-          fit_map_gp=FIT_MAP_GP)
+# test_aq_dataloader_big = test_aq_dataset_big \
+#     .get_dataloader(batch_size=BATCH_SIZE, drop_last=True)
+# test_loop(test_aq_dataloader_big, model,
+#           policy_gradient=POLICY_GRADIENT,
+#           fit_map_gp=FIT_MAP_GP)
 
 
-n_candidates = 100
+n_candidates = 1000
 
 it = iter(test_aq_dataset_big)
 x_hist, y_hist, x_cand, improvements, gp_model = next(it)
@@ -207,12 +259,12 @@ if POLICY_GRADIENT:
 
 name = "acquisition" if POLICY_GRADIENT else "EI"
 
-print(f"{name} True:")
-print(ei_true)
-print(f"{name} NN:")
-print(ei_nn)
-print(f"{name} MAP:")
-print(ei_map)
+# print(f"{name} True:")
+# print(ei_true)
+# print(f"{name} NN:")
+# print(ei_nn)
+# print(f"{name} MAP:")
+# print(ei_map)
 
 
 plt.scatter(ei_true.detach().numpy(), ei_nn.detach().numpy())
