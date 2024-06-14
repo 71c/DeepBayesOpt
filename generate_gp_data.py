@@ -2,7 +2,7 @@ import torch
 import gpytorch
 import pyro
 from gpytorch.constraints.constraints import GreaterThan
-from gpytorch.likelihoods import GaussianLikelihood
+from gpytorch.likelihoods import GaussianLikelihood, FixedNoiseGaussianLikelihood
 from botorch.models.gp_regression import SingleTaskGP
 
 from torch.distributions import Uniform, Normal, Independent, Distribution
@@ -17,6 +17,7 @@ from utils import uniform_randint, get_uniform_randint_generator, max_pad_tensor
 
 from typing import Iterable, Optional, List, Tuple, Union
 from collections.abc import Sequence
+from botorch.exceptions import UnsupportedError
 
 import os
 import warnings
@@ -62,9 +63,12 @@ class RandomModelSampler:
             model_probabilities (Tensor, optional): 1D Tensor of probabilities
                 OF choosing each model. If None, then set to be uniform.
         """
-        # Set the model indices as attributes so we can access them for purpose
-        # of saving data
         for i, model in enumerate(models):
+            if not isinstance(model, SingleTaskGP):
+                raise UnsupportedError(f"models[{i}] should be a SingleTaskGP instance.")
+
+            # Set the model indices as attributes so we can access them for purpose
+            # of saving data
             model.index = i
 
         self._models = models
@@ -345,13 +349,16 @@ class GaussianProcessRandomDataset(FunctionSamplesDataset, IterableDataset, Size
                 represents the probability distribution for generating each iid
                 value $x \in \mathbb{R}^{dimension}$, or a string 'uniform' or
                 'normal' to specify iid uniform(0,1) or normal(0,I) distribution
-            models: a list of SingleTaskGP models to choose from randomly,
-                with their priors 
-                defaults to a single SingleTaskGP model with the default BoTorch
+            models: a list of SingleTaskGP models to choose from randomly.
+                Each model must have a GaussianLikelihood likelihood; no other
+                likelihood is supported.
+                Each model must also be single-batch.
+                The priors on the models are used for randomly sampling
+                parameters if randomize_params is True.
+                Default: a single SingleTaskGP model with the default BoTorch
                 Matern 5/2 kernel and Gamma priors for the lengthscale,
                 outputscale; and noise level also if observation_noise==True.
-                It is assumed that each model provided is single-batch.
-            model_probabilities: list of probability of choosing each model
+            model_probabilities: list of probabilities of choosing each model
             dimension: int, optional -- The dimension d of the feature space.
                 Is only used if xvalue_distribution is None or models is None;
                 in this case, it is required. Otherwise, it is ignored.
@@ -364,6 +371,9 @@ class GaussianProcessRandomDataset(FunctionSamplesDataset, IterableDataset, Size
             dataset_size: int, optional -- The size of the dataset to generate.
                 If None, the dataset is infinite. If specified, the dataset
                 generates that many samples with each iter() call.
+            randomize_params: bool, default: True -- Whether to randomize the
+                parameters of the model with each sample. If False, the model
+                parameters are kept the same as the initial parameters.
         """
         # exacly one of them should be specified; verify this by xor
         if not ((n_datapoints is None) ^ (n_datapoints_random_gen is None)):
@@ -417,16 +427,51 @@ class GaussianProcessRandomDataset(FunctionSamplesDataset, IterableDataset, Size
                     )
                 )
 
-            # If no observation noise, then keep the noise
-            # level fixed so it can't be changed by optimization.
-            if not observation_noise:
-                likelihood.noise_covar.raw_noise.requires_grad_(False)
-
             models = [SingleTaskGP(train_X, train_Y, likelihood=likelihood)]
             model_probabilities = torch.tensor([1.0])
         
-        # Verify that all the models are single-batch
-        for model in models:
+        for i, model in enumerate(models):
+            if not isinstance(model, SingleTaskGP):
+                raise UnsupportedError(f"models[{i}] should be a SingleTaskGP instance.")
+
+            if not observation_noise:
+                # If no observation noise, then keep the noise
+                # level fixed so it can't be changed by optimization.
+                # Make it so nothing in likelihood can change by gradient-based optimization.
+                # Since only GaussianLikelihood is supported, we could just do
+                # model.likelihood.noise_covar.raw_noise.requires_grad_(False),
+                # but this code is more general in case we want to support other likelihoods.
+                for param in model.likelihood.parameters():
+                    param.requires_grad_(False)
+            
+            if isinstance(model.likelihood, GaussianLikelihood):
+                if not observation_noise:
+                    # This is only important for estimating parameters with MLL
+                    # and not for sampling. Set noise level to zero so that
+                    # parameter estimates correspond to the generated data.
+
+                    # model.likelihood.noise_covar is a HomoskedasticNoise instance
+                    # Could also do model.initialize(**{'likelihood.noise_covar.raw_noise': 0.0})
+                    # Equivalent because GaussianLikelihood has @raw_noise.setter
+                    model.likelihood.raw_noise = 0.0
+            elif isinstance(model.likelihood, FixedNoiseGaussianLikelihood):
+                raise UnsupportedError(
+                    f"models[{i}] has FixedNoiseGaussianLikelihood which is not supported in GaussianProcessRandomDataset. Use GaussianLikelihood instead.")
+
+                # ## Could alternatively do it like this but that's too
+                # ## messy/buggy/not necessary:
+                # # model.likelihood.noise_covar is a FixedGaussianNoise instance
+                # # Also has a @noise.setter but not a raw_noise attribute
+                # # Fills the tensor with zeros (I think)
+                # model.noise = 0.0
+                # if model.likelihood.second_noise_covar is not None:
+                #     # there is also a @second_noise.setter
+                #     model.likelihood.second_noise = 0.0
+            else:
+                raise UnsupportedError(
+                    f"models[{i}] has likelihood {model.likelihood.__class__.__name__} which is not supported in GaussianProcessRandomDataset. Use GaussianLikelihood instead.")
+
+            # Verify that the model is single-batch
             t = len(model.batch_shape)
             assert t == 0 or t == 1 and model.batch_shape[0] == 1
         
@@ -684,8 +729,6 @@ class FunctionSamplesMapDataset(FunctionSamplesDataset):
             original_dataset_size = len(dataset)
         except TypeError:
             original_dataset_size = None
-        
-        has_models = dataset.has_models
 
         if n_realizations is None:
             if original_dataset_size is None:
@@ -698,11 +741,12 @@ class FunctionSamplesMapDataset(FunctionSamplesDataset):
                 if callable(getattr(dataset, "copy_with_new_size", None)):
                     dataset = dataset.copy_with_new_size(n_realizations)
                 else:
-                    if n_realizations > original_dataset_size:
+                    if original_dataset_size is not None and n_realizations > original_dataset_size:
                         raise ValueError(f"n_realizations should be <= len(dataset)={original_dataset_size} if dataset is not a SizedIterableMixin")
                     dataset = _FirstNIterable(dataset, n_realizations)
 
         samples_list = []
+        has_models = dataset.has_models
         for item in dataset:
             if has_models:
                 if isinstance(item, GPDatasetItem):
@@ -883,7 +927,7 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
     function evaluation. The data is generated randomly on-the-fly.
 
     Attributes:
-        n_candidate_points (int): The number of candidate points to generate for
+        n_candidate_points: The number of candidate points to generate for
             each training example.
         give_improvements (bool): If True, the dataset includes improvement
             values as targets instead of raw y-values of the candidate points.

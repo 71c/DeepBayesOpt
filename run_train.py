@@ -1,5 +1,6 @@
 import torch
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+from torch import nn
 
 from generate_gp_data import GaussianProcessRandomDataset, TrainAcquisitionFunctionDataset
 from utils import get_uniform_randint_generator, get_loguniform_randint_generator
@@ -10,6 +11,70 @@ import matplotlib.pyplot as plt
 import os
 
 from train_acquisition_function_net import train_loop, test_loop, count_trainable_parameters, count_parameters
+
+# Test Expected 1-step improvement:
+#  NN (softmax): 0.183188
+#  NN (max): 0.183303
+#  True GP: 0.194205
+#  Ratio: 0.943862
+#  Random search: 0.066052
+#  Ideal: 0.239328
+#  NN avg normalized entropy: 0.040441
+
+
+# 32, 32, 32, 32, 32
+# After 200 epochs:
+# Test Expected 1-step improvement:
+#  NN (softmax): 0.189382
+#  NN (max): 0.189514
+#  True GP: 0.197355
+#  Ratio: 0.960269
+#  Random search: 0.067983
+#  Ideal: 0.243696
+#  NN avg normalized entropy: 0.056592
+
+# 64, 64, 128, 64, 64
+# Test Expected 1-step improvement:
+#  NN (softmax): 0.182737
+#  NN (max): 0.182806
+#  True GP: 0.193619
+#  Ratio: 0.944151
+#  Random search: 0.065156
+#  Ideal: 0.240283
+#  NN avg normalized entropy: 0.060283
+
+# Test Expected 1-step improvement:
+#  NN (softmax): 0.187673
+#  NN (max): 0.187680
+#  True GP: 0.195257
+#  Ratio: 0.961194
+#  Random search: 0.067550
+#  Ideal: 0.242896
+#  NN avg normalized entropy: 0.026677
+
+# Test Expected 1-step improvement:
+#  NN (softmax): 0.189364
+#  NN (max): 0.189389
+#  True GP: 0.198434
+#  Ratio: 0.954419
+#  Random search: 0.068413
+#  Ideal: 0.244009
+#  NN avg normalized entropy: 0.027454
+
+# True for the softmax thing, False for MSE
+POLICY_GRADIENT = True
+
+# Only used if POLICY_GRADIENT is True
+INCLUDE_ALPHA = True
+# Following 3 are only used if both POLICY_GRADIENT and INCLUDE_ALPHA are True
+LEARN_ALPHA = True
+INITIAL_ALPHA = 1.0
+ALPHA_INCREMENT = None # equivalent to 0.0
+
+# Whether to train the model. If False, will load a saved model.
+TRAIN = True
+# Whether to load a saved model to train
+LOAD_SAVED_MODEL_TO_TRAIN = False
 
 # This means whether n history points is log-uniform
 # or whether the total number of points is log-uniform
@@ -24,12 +89,21 @@ if FIX_N_CANDIDATES:
     MIN_HISTORY = 1
     MAX_HISTORY = 8
 
+    # Only relevant if POLICY_GRADIENT is False
+    TEST_N_CANDIDATES = 50
+
     if LOGUNIFORM:
         n_datapoints_random_gen = get_loguniform_randint_generator(
             MIN_HISTORY, MAX_HISTORY, pre_offset=3.0, offset=N_CANDIDATES)
+        if not POLICY_GRADIENT:
+            test_n_datapoints_random_gen = get_loguniform_randint_generator(
+                MIN_HISTORY, MAX_HISTORY, pre_offset=3.0, offset=TEST_N_CANDIDATES)
     else:
         n_datapoints_random_gen = get_uniform_randint_generator(
             N_CANDIDATES+MIN_HISTORY, N_CANDIDATES+MAX_HISTORY)
+        if not POLICY_GRADIENT:
+            test_n_datapoints_random_gen = get_uniform_randint_generator(
+                TEST_N_CANDIDATES+MIN_HISTORY, TEST_N_CANDIDATES+MAX_HISTORY)
 else:
     MIN_N_CANDIDATES = 2
     MIN_POINTS = MIN_N_CANDIDATES + 1
@@ -42,10 +116,12 @@ else:
         n_datapoints_random_gen = get_uniform_randint_generator(
             MIN_POINTS, MAX_POINTS)
 
+# bindkey -v
+
 BATCH_SIZE = 128
 N_BATCHES = 100
 EVERY_N_BATCHES = 10
-EPOCHS = 10
+EPOCHS = 200
 
 # dimension of the optimization problem
 DIMENSION = 1
@@ -54,16 +130,6 @@ RANDOMIZE_PARAMS = False
 # choose either "uniform" or "normal" (or a custom distribution)
 XVALUE_DISTRIBUTION = "uniform"
 
-# True for the softmax thing, False for MSE
-POLICY_GRADIENT = True
-
-# Only used if POLICY_GRADIENT is True
-INCLUDE_ALPHA = True
-# Following 3 are only used if both POLICY_GRADIENT and INCLUDE_ALPHA are True
-LEARN_ALPHA = True
-INITIAL_ALPHA = 1.0
-ALPHA_INCREMENT = None # equivalent to 0.0
-
 # Whether to train to predict the EI rather than predict the I
 # Only used if POLICY_GRADIENT is False
 TRAIN_WITH_EI = False
@@ -71,20 +137,15 @@ TRAIN_WITH_EI = False
 # Whether to fit maximum a posteriori GP for testing
 FIT_MAP_GP = False
 
-# Whether to train the model. If False, will load a saved model.
-TRAIN = False
-# Whether to load a saved model to train
-LOAD_SAVED_MODEL_TO_TRAIN = False
-
 # Initialize the acquisition function network
 
 
 # model = AcquisitionFunctionNetV4(DIMENSION,
 #                                  history_enc_hidden_dims=[32, 32], pooling="sum",
-#                  encoded_history_dim=32, include_mean=False,
-#                  mean_enc_hidden_dims=[32, 32], mean_dim=8,
-#                  std_enc_hidden_dims=[32, 32], std_dim=32,
-#                  aq_func_hidden_dims=[32, 32], layer_norm=False,
+#                  encoded_history_dim=32, include_mean=True,
+#                  mean_enc_hidden_dims=[32, 32], mean_dim=1,
+#                  std_enc_hidden_dims=[32, 32], std_dim=1,
+#                  aq_func_hidden_dims=[32, 32], layer_norm=True,
 #                  layer_norm_at_end_mlp=False,
 #                  include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
 #                                  learn_alpha=LEARN_ALPHA,
@@ -95,8 +156,8 @@ LOAD_SAVED_MODEL_TO_TRAIN = False
 # model = AcquisitionFunctionNetV3(DIMENSION,
 #                                  history_enc_hidden_dims=[32, 32], pooling="max",
 #                  encoded_history_dim=32,
-#                  mean_enc_hidden_dims=[32, 32], mean_dim=8,
-#                  std_enc_hidden_dims=[32, 32], std_dim=8,
+#                  mean_enc_hidden_dims=[32, 32], mean_dim=1,
+#                  std_enc_hidden_dims=[32, 32], std_dim=16,
 #                  aq_func_hidden_dims=[32, 32], layer_norm=False,
 #                  layer_norm_at_end_mlp=False, include_y=True,
 #                  include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
@@ -104,43 +165,75 @@ LOAD_SAVED_MODEL_TO_TRAIN = False
 #                                  initial_alpha=INITIAL_ALPHA).to(device)
 
 model = AcquisitionFunctionNetV2(DIMENSION,
-                                 pooling="max",
+                                 pooling="sum",
                                  history_enc_hidden_dims=[32, 32],
                                  encoded_history_dim=32,
                                  aq_func_hidden_dims=[32, 32],
+                                #  history_enc_hidden_dims=[64, 64],
+                                #  encoded_history_dim=128,
+                                #  aq_func_hidden_dims=[64, 64],
                                  include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
                                  learn_alpha=LEARN_ALPHA,
                                  initial_alpha=INITIAL_ALPHA,
+                                 activation_at_end_pointnet=True,
                                  layer_norm_pointnet=True,
-                                 layer_norm_before_end_mlp=True,
-                                 layer_norm_at_end_mlp=False).to(device)
+                                 layer_norm_before_end_mlp=False,
+                                 layer_norm_at_end_mlp=False,
+                                 include_best_y=True,
+                                 activation_pointnet=nn.ReLU,
+                                 activation_mlp=nn.ReLU).to(device)
+
+# model = AcquisitionFunctionNetV1(DIMENSION,
+#                                  pooling="max",
+#                                  history_enc_hidden_dims=[32, 32],
+#                                  encoded_history_dim=32,
+#                                  aq_func_hidden_dims=[32, 32],
+#                                  include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
+#                                  learn_alpha=LEARN_ALPHA,
+#                                  initial_alpha=INITIAL_ALPHA,
+#                                  layer_norm_pointnet=False,
+#                                  layer_norm_before_end_mlp=False,
+#                                  layer_norm_at_end_mlp=False,
+#                                  include_best_y=True,
+#                                  activation_pointnet=nn.ReLU,
+#                                  activation_mlp=nn.ReLU).to(device)
 
 # model = AcquisitionFunctionNetDense(DIMENSION, MAX_HISTORY,
-#                                     hidden_dims=[32, 32],
+#                                     hidden_dims=[128, 128, 64, 32],
 #                                     include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
 #                                     learn_alpha=LEARN_ALPHA,
 #                                     initial_alpha=INITIAL_ALPHA).to(device)
 
 
-dataset = GaussianProcessRandomDataset(
-    dimension=DIMENSION, n_datapoints_random_gen=n_datapoints_random_gen,
-    observation_noise=False, set_random_model_train_data=False,
-    xvalue_distribution=XVALUE_DISTRIBUTION, device=device,
-    dataset_size=BATCH_SIZE * N_BATCHES,
+dataset_kwargs = dict(dimension=DIMENSION, observation_noise=False,
+    set_random_model_train_data=False, xvalue_distribution=XVALUE_DISTRIBUTION,
+    device=device, dataset_size=BATCH_SIZE * N_BATCHES,
     randomize_params=RANDOMIZE_PARAMS)
 
-# aq_dataset = TrainAcquisitionFunctionDataset(
-#     dataset, n_candidate_points=N_CANDIDATES, n_samples="all",
-#     give_improvements=True)
+dataset = GaussianProcessRandomDataset(
+    **dataset_kwargs, n_datapoints_random_gen=n_datapoints_random_gen)
+if not POLICY_GRADIENT:
+    test_dataset = GaussianProcessRandomDataset(
+        **dataset_kwargs, n_datapoints_random_gen=test_n_datapoints_random_gen)
+
 
 if FIX_N_CANDIDATES:
     aq_dataset = TrainAcquisitionFunctionDataset(
         dataset, n_candidate_points=N_CANDIDATES, n_samples="all",
         give_improvements=True)
+    if not POLICY_GRADIENT:
+        _, test_aq_dataset = TrainAcquisitionFunctionDataset(
+            test_dataset, n_candidate_points=TEST_N_CANDIDATES, n_samples="all",
+            give_improvements=True).random_split([0.9, 0.1])
+        train_aq_dataset, _ = aq_dataset.random_split([0.9, 0.1])
 else:
+    assert POLICY_GRADIENT
     aq_dataset = TrainAcquisitionFunctionDataset(
         dataset, n_candidate_points="uniform", n_samples="all",
         give_improvements=True, min_n_candidates=MIN_N_CANDIDATES)
+
+if POLICY_GRADIENT:
+    train_aq_dataset, test_aq_dataset = aq_dataset.random_split([0.9, 0.1])
 
 sample_n_points = n_datapoints_random_gen(30)
 n_samples_and_candidates_examples = [
@@ -154,7 +247,6 @@ print(n_hist_and_candidates_examples)
 # print("Examples of history lengths:", sample_n_points - N_CANDIDATES)
 
 
-train_aq_dataset, test_aq_dataset = aq_dataset.random_split([0.9, 0.1])
 
 train_aq_dataloader = train_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_last=True)
 test_aq_dataloader = test_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_last=True)
@@ -169,6 +261,8 @@ if FIX_N_CANDIDATES:
     file_name += f"_history{MIN_HISTORY}-{MAX_HISTORY}_{'loguniform' if LOGUNIFORM else 'uniform'}_{N_CANDIDATES}cand.pth"
 else:
     file_name += f"_points{MIN_POINTS}-{MAX_POINTS}_{'loguniform' if LOGUNIFORM else 'uniform'}.pth"
+
+# file_name = "acquisition_function_net_AcquisitionFunctionNetV2_1d_policy_gradient_myopic_fixed_kernel_uniform_x_history1-8_loguniform_50cand_96.pth"
 
 print(f"Model file: {file_name}")
 model_path = os.path.join(script_dir, file_name)
@@ -185,8 +279,8 @@ if TRAIN:
         model.load_state_dict(torch.load(model_path))
     
     learning_rate = 1e-3
-    # could also try RMSProp
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    # optimizer = torch.optim.RMSprop(model.parameters(), lr=learning_rate)
 
     for t in range(EPOCHS):
         print(f"Epoch {t+1}\n-------------------------------")
@@ -221,7 +315,7 @@ test_aq_dataset_big = test_aq_dataset \
 #           fit_map_gp=FIT_MAP_GP)
 
 
-n_candidates = 1000
+n_candidates = 2_000
 
 it = iter(test_aq_dataset_big)
 x_hist, y_hist, x_cand, improvements, gp_model = next(it)

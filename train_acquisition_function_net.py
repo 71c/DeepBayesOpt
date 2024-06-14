@@ -103,6 +103,18 @@ def train_loop(dataloader, model, optimizer, every_n_batches=10,
     for i, batch in enumerate(dataloader):
         x_hist, y_hist, x_cand, improvements, hist_mask, cand_mask, models = batch
 
+        # print(type(models))
+        # for gp_model in models:
+        #     print(gp_model)
+        #     for name, param in gp_model.named_parameters():
+        #         print(name, param)
+        #     print()
+        #     print("lengthscale:", gp_model.covar_module.base_kernel.lengthscale)
+        #     print("outputscale:", gp_model.covar_module.outputscale)
+        #     print("mean:", gp_model.mean_module.constant)
+        # print()
+        # exit()
+
         if policy_gradient:
             output = model(x_hist, y_hist, x_cand, hist_mask, cand_mask, exponentiate=False, softmax=True)
             loss = myopic_policy_gradient_loss(output, improvements)
@@ -145,16 +157,20 @@ def test_loop(dataloader, model, policy_gradient=False, fit_map_gp=False):
     if fit_map_gp:
         test_loss_gp_map = 0.
     always_predict_0_loss = 0.
+    test_loss_max = 0.
     if policy_gradient:
         ideal_loss = 0.
         avg_normalized_entropy_nn = 0.
-        test_loss_max = 0.
+    else:
+        test_ei_true_gp = 0.
     
     for batch in tqdm(dataloader):
         x_hist, y_hist, x_cand, improvements, hist_mask, cand_mask, models = batch
         
         with torch.no_grad():
             ei_values_true_model = calculate_EI_GP_padded_batch(x_hist, y_hist, x_cand, hist_mask, cand_mask, models)
+            probabilities_true_model = max_one_hot(ei_values_true_model, cand_mask)
+            ei_true_gp = myopic_policy_gradient_loss(probabilities_true_model, improvements).item()
 
             if policy_gradient:
                 probabilities_nn = model(x_hist, y_hist, x_cand, hist_mask, cand_mask, exponentiate=False, softmax=True)
@@ -169,14 +185,12 @@ def test_loop(dataloader, model, policy_gradient=False, fit_map_gp=False):
                 # print(always_predict_0_probabilities)
                 always_predict_0_loss += myopic_policy_gradient_loss(always_predict_0_probabilities, improvements).item()
 
-                probabilities_true_model = max_one_hot(ei_values_true_model, cand_mask)
-                test_loss_true_gp += myopic_policy_gradient_loss(probabilities_true_model, improvements).item()
+                test_loss_true_gp += ei_true_gp
 
                 ideal_probabilities = max_one_hot(improvements, cand_mask)
                 ideal_loss += myopic_policy_gradient_loss(ideal_probabilities, improvements).item()
 
                 probabilities_nn_max = max_one_hot(probabilities_nn, cand_mask)
-                test_loss_max += myopic_policy_gradient_loss(probabilities_nn_max, improvements).item()
             else:
                 ei_values_nn = model(x_hist, y_hist, x_cand, hist_mask, cand_mask, exponentiate=True)
                 test_loss += mse_loss(ei_values_nn, improvements, cand_mask).item()
@@ -184,6 +198,12 @@ def test_loop(dataloader, model, policy_gradient=False, fit_map_gp=False):
                 always_predict_0_loss += mse_loss(torch.zeros_like(ei_values_nn), improvements, cand_mask).item()
 
                 test_loss_true_gp += mse_loss(ei_values_true_model, improvements, cand_mask).item()
+
+                test_ei_true_gp += ei_true_gp
+
+                probabilities_nn_max = max_one_hot(ei_values_nn, cand_mask)
+            
+            test_loss_max += myopic_policy_gradient_loss(probabilities_nn_max, improvements).item()
 
         if fit_map_gp:
             ei_values_map = calculate_EI_GP_padded_batch(x_hist, y_hist, x_cand, hist_mask, cand_mask, models, fit_params=True)
@@ -209,6 +229,9 @@ def test_loop(dataloader, model, policy_gradient=False, fit_map_gp=False):
         ideal_loss /= multiplier * n_batches
         avg_normalized_entropy_nn /= n_batches
         test_loss_max /= multiplier * n_batches
+    else:
+        test_loss_max /= -n_batches
+        test_ei_true_gp /= -n_batches
 
     mse_desc = "Expected 1-step improvement" if policy_gradient else"Improvement MSE"
     map_str = f" MAP GP: {test_loss_gp_map:>8f}\n" if fit_map_gp else ""
@@ -216,8 +239,16 @@ def test_loop(dataloader, model, policy_gradient=False, fit_map_gp=False):
     eval_str = f"Test {mse_desc}:\n NN ({'softmax' if policy_gradient else 'loss'}): {test_loss:>8f}\n"
     if policy_gradient:
         eval_str += f" NN (max): {test_loss_max:>8f}\n"
-    eval_str += f" True GP: {test_loss_true_gp:>8f}\n{map_str} {naive_desc}: {always_predict_0_loss:>8f}\n"
+    eval_str += f" True GP: {test_loss_true_gp:>8f}\n"
+    if policy_gradient:
+        eval_str += f" Ratio: {test_loss_max/test_loss_true_gp:>8f}\n"
+    eval_str += f"{map_str} {naive_desc}: {always_predict_0_loss:>8f}\n"
     if policy_gradient:
         eval_str += f" Ideal: {ideal_loss:>8f}\n NN avg normalized entropy: {avg_normalized_entropy_nn:>8f}\n"
+    if not policy_gradient:
+        eval_str += "Expected 1-step improvement\n"
+        eval_str += f" NN (max): {test_loss_max:>8f}\n"
+        eval_str += f" True GP: {test_ei_true_gp:>8f}\n"
+        eval_str += f" Ratio: {test_loss_max/test_ei_true_gp:>8f}\n"
     print(eval_str)
 

@@ -16,7 +16,7 @@ from utils import pad_tensor
 logging.basicConfig(level=logging.WARNING)
 
 # Set to True to enable debug logging
-DEBUG = False
+DEBUG = True
 
 # Create a logger for your application
 logger = logging.getLogger('acquisition_function_net')
@@ -75,6 +75,8 @@ def add_tbatch_dimension(x: Tensor, x_name: str):
 
 # https://discuss.pytorch.org/t/apply-mask-softmax/14212/13
 def masked_softmax(vec, mask, dim=-1):
+    if mask is None:
+        return nn.functional.softmax(vec, dim=dim)
     neg_inf = torch.zeros_like(vec)
     mask_expanded = expand_dim(mask, -1, vec.size(-1))
     neg_inf[~mask_expanded] = float("-inf")
@@ -181,7 +183,8 @@ class Dense(nn.Sequential):
     """Dense neural network with ReLU activations."""
     def __init__(self, input_dim: int, hidden_dims: Sequence[int]=[256, 64],
                  output_dim: int=1, activation_at_end=False,
-                 layer_norm_before_end=False, layer_norm_at_end=False):
+                 layer_norm_before_end=False, layer_norm_at_end=False,
+                 activation=nn.ReLU):
         """
         Args:
             input_dim (int):
@@ -208,24 +211,42 @@ class Dense(nn.Sequential):
                 layers.append(nn.LayerNorm(out_dim))
             
             if i != n_layers - 1 or activation_at_end:
-                layers.append(nn.ReLU())
+                # layers.append(nn.ReLU())
+                # layers.append(nn.Softplus())
+                # layers.append(nn.SELU())
+                layers.append(activation())
         
         super().__init__(*layers)
 
 
+def add_neg_inf_for_max(x, mask):
+    neg_inf = torch.zeros_like(x)
+    mask_expanded = expand_dim(mask, -1, x.size(-1))
+    neg_inf[~mask_expanded] = float("-inf")
+    return x + neg_inf
+
+
+POOLING_METHODS = {"max", "sum", "experiment1", "experiment2", "experiment3"}
 class PointNetLayer(nn.Module):
     def __init__(self, input_dim: int, hidden_dims: Sequence[int]=[256, 256],
                  output_dim: int=1024, pooling="max", **dense_kwargs):
         super().__init__()
 
+        if pooling == "experiment1":
+            output_dim = output_dim * 2 + 3
+        elif pooling == "experiment2":
+            output_dim = output_dim + 2
+        elif pooling == "experiment3":
+            output_dim = output_dim + 1
+
         self.network = Dense(input_dim, hidden_dims, output_dim, **dense_kwargs)
 
-        if pooling == "max" or pooling == "sum":
+        if pooling in POOLING_METHODS:
             self.pooling = pooling
         else:
-            raise ValueError("pooling must be either 'max' or 'sum'")
+            raise ValueError(f"pooling must be one of {POOLING_METHODS}")
     
-    def forward(self, x, mask=None, keepdim=True):
+    def forward(self, x, mask=None, keepdim=True, return_local_features=False):
         """Computes the output of the PointNet layer.
 
         Args:
@@ -241,30 +262,141 @@ class PointNetLayer(nn.Module):
         # shape (*, n, output_dim)
         local_features = self.network(x)
 
+        # for name, param in self.network.named_parameters():
+        #     logger.debug(f"Parameter: {name}")
+        #     logger.debug(f"Parameter shape: {param.shape}")
+        #     logger.debug(f"Parameter value: {param}")
+
         # Mask out the padded values. It is sufficient to mask at the end.
         if mask is not None:
             # shape (*, n, 1)
             mask = check_xy_dims_add_y_output_dim(x, mask, "x", "mask")
-
-            if self.pooling == "sum":
-                # This works for summing
-                local_features = local_features * mask
-            else: # self.pooling == "max"
-                # This works for maxing. If ReLU is applied at the end, then
-                # we could instead just use the above.
-                neg_inf = torch.zeros_like(local_features)
-                hist_mask_expanded = expand_dim(mask, -1, local_features.size(-1))
-                neg_inf[~hist_mask_expanded] = float("-inf")
-                local_features = local_features + neg_inf
+            local_features = local_features * mask
         
         # "global feature"
         if self.pooling == "sum":
-            return torch.sum(local_features, dim=-2, keepdim=keepdim)
-        else: # self.pooling == "max"
-            ret = torch.max(local_features, dim=-2, keepdim=keepdim).values
+            ret = torch.sum(local_features, dim=-2, keepdim=keepdim)
+        elif self.pooling == "max":
+            ret = torch.max(
+                # This works for maxing. If ReLU is applied at the end, then
+                # we could instead just use the one for summing.
+                local_features if mask is None else add_neg_inf_for_max(local_features, mask),
+                dim=-2, keepdim=keepdim).values
             if mask is not None:
                 ret[ret == float("-inf")] = 0.0
-            return ret
+        elif self.pooling == "experiment1":
+            output_dim = (local_features.size(-1) - 3) // 2
+            softmax_in = local_features[..., :output_dim]
+            vals = local_features[..., output_dim:-3]
+            alphas_1 = nn.functional.softplus(local_features[..., -3:-2])
+            alphas_2 = nn.functional.softplus(local_features[..., -2:-1])
+            betas = nn.functional.sigmoid(local_features[..., -1:])
+            
+            # softmaxes_1 = masked_softmax(softmax_in * alphas_1, mask, dim=-2)
+            # softmaxes_2 = masked_softmax(vals * alphas_2, mask, dim=-2)
+            # tmp = betas * softmaxes_1 + (1 - betas) * softmaxes_2
+            # ret = torch.sum(vals * tmp, dim=-2, keepdim=keepdim)
+
+            tmp = betas * softmax_in * alphas_1 + (1 - betas) * vals * alphas_2
+            softmaxes = masked_softmax(tmp, mask, dim=-2)
+            ret = torch.sum(vals * softmaxes, dim=-2, keepdim=keepdim)
+        elif self.pooling == "experiment2":
+            output_dim = (local_features.size(-1) - 2) // 2
+            softmax_in = local_features[..., :output_dim]
+            vals = local_features[..., output_dim:-2]
+            alphas_1 = nn.functional.softplus(local_features[..., -2:-1])
+            alphas_2 = nn.functional.softplus(local_features[..., -1:])
+
+            softmaxes_1 = masked_softmax(softmax_in * alphas_1, mask, dim=-2)
+            softmaxes_2 = masked_softmax(vals * alphas_2, mask, dim=-2)
+            out_1 = torch.sum(vals * softmaxes_1, dim=-2, keepdim=keepdim)
+            out_2 = torch.sum(vals * softmaxes_2, dim=-2, keepdim=keepdim)
+            ret = torch.cat((out_1, out_2), dim=-1)
+        elif self.pooling == "experiment3":
+            output_dim = (local_features.size(-1) - 1) // 2
+            
+            vals = local_features[..., :output_dim]
+            ret_max = torch.max(
+                vals if mask is None else add_neg_inf_for_max(vals, mask),
+                dim=-2, keepdim=keepdim).values
+            if mask is not None:
+                ret_max[ret_max == float("-inf")] = 0.0
+            
+            softmax_in = local_features[..., output_dim:-1]
+            alphas = nn.functional.softplus(local_features[..., -1:])
+            softmaxes = masked_softmax(softmax_in * alphas, mask, dim=-2)
+            out = torch.sum(vals * softmaxes, dim=-2, keepdim=keepdim)
+
+            ret = torch.cat((ret_max, out), dim=-1)
+        
+        if return_local_features:
+            return ret, local_features
+        return ret
+
+
+class MultiLayerPointNet(nn.Module):
+    def __init__(self, input_dim: int, hidden_dims: Sequence[Sequence[int]],
+                 output_dims: Sequence[int], poolings: Sequence[str],
+                 dense_kwargs_list: List[dict], use_local_features=True):
+        super().__init__()
+
+        if not (len(hidden_dims) == len(output_dims) == len(poolings) == len(dense_kwargs_list)):
+            raise ValueError("hidden_dims, output_dims, poolings, and dense_kwargs_list must have the same length.")
+        
+        n_layers = len(hidden_dims)
+        
+        if use_local_features:
+            input_dims = [input_dim] + [output_dims[i-1] * 2 for i in range(1, n_layers)]
+        else:
+            input_dims = [input_dim] + [output_dims[i-1] + input_dim for i in range(1, n_layers)]
+        self.use_local_features = use_local_features
+
+        self.pointnets = nn.ModuleList([
+            PointNetLayer(input_dims[i], hidden_dims[i], output_dims[i],
+                          poolings[i], **dense_kwargs_list[i])
+            for i in range(n_layers)
+        ])
+    
+    def forward(self, x, mask=None, keepdim=True):
+        """Computes the output of the PointNet layers.
+
+        Args:
+            x (torch.Tensor): Input tensor with shape (*, n, input_dim).
+            mask (torch.Tensor): Mask tensor with shape (*, n) or (*, n, 1).
+                If None, then mask is all ones.
+            keepdim (boolean): whether to remove the `n` dimension from output
+
+        Returns:
+            torch.Tensor: Output with shape (*, 1, output_dim) if keepdim=True
+            or with shape (*, output_dim) if keepdim=False
+        """
+        if self.use_local_features:
+            global_feat, local_feat = self.pointnets[0](x, mask, keepdim=True, return_local_features=True)
+        else:
+            # shape (*, 1, output_dims[0])
+            global_feat = self.pointnets[0](x, mask, keepdim=True)
+
+        n = x.size(-2)
+
+        for i in range(1, len(self.pointnets)):
+            # shape (*, n, output_dims[i-1])
+            expanded_global_feat = expand_dim(global_feat, -2, n)
+            
+            if self.use_local_features:
+                # shape (*, n, output_dims[i-1] * 2)
+                in_i = torch.cat((local_feat, expanded_global_feat), dim=-1)
+            else:
+                # shape (*, n, input_dim + output_dims[i-1])
+                in_i = torch.cat((x, expanded_global_feat), dim=-1)
+
+            # shape (*, 1, output_dims[i])
+            keepdim_i = keepdim if i == len(self.pointnets) - 1 else True
+            if self.use_local_features:
+                global_feat, local_feat = self.pointnets[i](in_i, mask, keepdim=keepdim_i, return_local_features=True)
+            else:
+                global_feat = self.pointnets[i](in_i, mask, keepdim=keepdim_i)
+
+        return global_feat
 
 
 class AcquisitionFunctionNet(nn.Module, ABC):
@@ -348,7 +480,8 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
                  learn_alpha=False,
                  initial_alpha=1.0,
                  layer_norm_before_end=False,
-                 layer_norm_at_end=False):
+                 layer_norm_at_end=False,
+                 **dense_kwargs):
         """Initializes the MLP layer at the end of the acquisition function.
         Subclasses should call this method in their `__init__` method.
 
@@ -380,7 +513,7 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
         self.dense = Dense(input_to_final_layer_dim, aq_func_hidden_dims, 1,
                            activation_at_end=False,
                            layer_norm_before_end=layer_norm_before_end,
-                           layer_norm_at_end=False)
+                           layer_norm_at_end=False, **dense_kwargs)
         
         self.layer_norm_at_end = layer_norm_at_end
         
@@ -452,13 +585,29 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
         return acquisition_values.squeeze(-1) # shape (*, n_cand)
 
 
+def concat_y_hist_with_best_y(y_hist, hist_mask, subtract=False):
+    if hist_mask is not None:
+        neg_inf = torch.zeros_like(y_hist)
+        neg_inf[~hist_mask] = float("-inf")
+        best_f = (y_hist + neg_inf).amax(-2, keepdim=True)
+    else:
+        best_f = y_hist.amax(-2, keepdim=True)
+    best_f = best_f.expand_as(y_hist)
+
+    if subtract:
+        return torch.cat((best_f, best_f - y_hist), dim=-1)
+    return torch.cat((best_f, y_hist), dim=-1)
+
+
 class AcquisitionFunctionNetV1(AcquisitionFunctionNetWithFinalMLP):
     def __init__(self,
                  dimension, history_enc_hidden_dims=[256, 256], pooling="max",
                  encoded_history_dim=1024, aq_func_hidden_dims=[256, 64],
                  include_alpha=False, learn_alpha=False, initial_alpha=1.0,
                  layer_norm_pointnet=False, layer_norm_before_end_mlp=False,
-                 layer_norm_at_end_mlp=False):
+                 layer_norm_at_end_mlp=False, include_best_y=False,
+                 activation_pointnet=nn.ReLU,
+                 activation_mlp=nn.ReLU):
         """
         Args:
             dimension (int): The dimensionality of the input space.
@@ -481,18 +630,24 @@ class AcquisitionFunctionNetV1(AcquisitionFunctionNetWithFinalMLP):
         """
         initial_modules = OrderedDict([
             ('history_encoder', PointNetLayer(
-            dimension+1, history_enc_hidden_dims, encoded_history_dim, pooling,
+            dimension+1+int(include_best_y), history_enc_hidden_dims, encoded_history_dim, pooling, activation_at_end=True,
             layer_norm_before_end=layer_norm_pointnet,
-            layer_norm_at_end=layer_norm_pointnet)
+            layer_norm_at_end=layer_norm_pointnet,
+            activation=activation_pointnet)
             )])
         super().__init__(initial_modules, dimension + encoded_history_dim,
                          aq_func_hidden_dims, include_alpha,
                          learn_alpha, initial_alpha,
-                         layer_norm_before_end_mlp, layer_norm_at_end_mlp)
+                         layer_norm_before_end_mlp, layer_norm_at_end_mlp,
+                         activation=activation_mlp)
         self.dimension = dimension
+        self.include_best_y = include_best_y
     
     def _get_mlp_input(self, x_hist, y_hist, x_cand,
                        hist_mask=None, cand_mask=None):
+        if self.include_best_y:
+            y_hist = concat_y_hist_with_best_y(y_hist, hist_mask, subtract=False)
+
         ## Encode the history inputs into a global feature
         # shape (*, n_hist, dimension+1)
         xy_hist = torch.cat((x_hist, y_hist), dim=-1)
@@ -501,13 +656,10 @@ class AcquisitionFunctionNetV1(AcquisitionFunctionNetWithFinalMLP):
 
         ## Prepare input to the acquisition function network final dense layer
         n_cand = x_cand.size(-2)
-        logger.debug(f"In AcquisitionFunctionNet.forward, n_cand = {n_cand}")
         # shape (*, n_cand, encoded_history_dim)
         encoded_history_expanded = expand_dim(encoded_history, -2, n_cand)
-        logger.debug(f"In AcquisitionFunctionNet.forward, encoded_history_expanded.shape = {encoded_history_expanded.shape}")
         # Maybe neeed to match dimensions (?): (TODO: test this)
         encoded_history_expanded = match_batch_shape(encoded_history_expanded, x_cand)
-        logger.debug(f"In AcquisitionFunctionNet.forward, encoded_history_expanded.shape = {encoded_history_expanded.shape}")
         # shape (*, n_cand, dimension+encoded_history_dim)
         x_cand_encoded_history = torch.cat((x_cand, encoded_history_expanded), dim=-1)
 
@@ -544,14 +696,19 @@ def _get_xy_hist_and_cand(x_hist, y_hist, x_cand, hist_mask=None, include_y=True
 
         return xy_hist, x_hist_and_cand, mask
 
+
 class AcquisitionFunctionNetV2(AcquisitionFunctionNetWithFinalMLP):
     def __init__(self,
                  dimension, history_enc_hidden_dims=[256, 256], pooling="max",
                  encoded_history_dim=1024, aq_func_hidden_dims=[256, 64],
                  include_alpha=False, learn_alpha=False, initial_alpha=1.0,
+                 activation_at_end_pointnet=True,
                  layer_norm_pointnet=False,
                  layer_norm_before_end_mlp=False,
-                 layer_norm_at_end_mlp=False):
+                 layer_norm_at_end_mlp=False,
+                 include_best_y=False,
+                 activation_pointnet=nn.ReLU,
+                 activation_mlp=nn.ReLU):
         """
         Args:
             dimension (int): The dimensionality of the input space.
@@ -572,21 +729,47 @@ class AcquisitionFunctionNetV2(AcquisitionFunctionNetWithFinalMLP):
             initial_alpha (float, default: 1.0):
                 The initial value for the alpha parameter.
         """
+    #     class MultiLayerPointNet(nn.Module):
+    # def __init__(self, input_dim: int, hidden_dims: Sequence[Sequence[int]],
+    #              output_dims: Sequence[int], poolings: Sequence[str],
+    #              dense_kwargs_list: List[dict]):
+
         initial_modules = OrderedDict([
             ('pointnet', PointNetLayer(
-            2 * dimension + 1, history_enc_hidden_dims, encoded_history_dim, pooling,
-            activation_at_end=True,
+            2 * dimension + 1 + int(include_best_y), history_enc_hidden_dims, encoded_history_dim, pooling,
+            activation_at_end=activation_at_end_pointnet,
             layer_norm_before_end=layer_norm_pointnet,
-            layer_norm_at_end=layer_norm_pointnet)
+            layer_norm_at_end=layer_norm_pointnet,
+            activation=activation_pointnet)
             )])
+
+        # n_pointnets = 2
+        # kwargs_list = [dict(activation_at_end=activation_at_end_pointnet,
+        #     layer_norm_before_end=layer_norm_pointnet,
+        #     layer_norm_at_end=layer_norm_pointnet,
+        #     activation=activation_pointnet)] * n_pointnets
+        # initial_modules = OrderedDict([
+        #     ('pointnet', MultiLayerPointNet(
+        #     2 * dimension + 1 + int(include_best_y),
+        #     [history_enc_hidden_dims] * n_pointnets,
+        #     [encoded_history_dim] * n_pointnets,
+        #     [pooling] * n_pointnets,
+        #     kwargs_list)
+        #     )])
+    
         super().__init__(initial_modules, encoded_history_dim,
                          aq_func_hidden_dims, include_alpha,
                          learn_alpha, initial_alpha,
-                         layer_norm_before_end_mlp, layer_norm_at_end_mlp)
+                         layer_norm_before_end_mlp, layer_norm_at_end_mlp,
+                         activation=activation_mlp)
         self.dimension = dimension
+        self.include_best_y = include_best_y
     
     def _get_mlp_input(self, x_hist, y_hist, x_cand,
                        hist_mask=None, cand_mask=None):
+        if self.include_best_y:
+            y_hist = concat_y_hist_with_best_y(y_hist, hist_mask, subtract=False)
+        
         xy_hist, xy_hist_and_cand, mask = _get_xy_hist_and_cand(x_hist, y_hist, x_cand, hist_mask)
 
         # shape (*, n_cand, encoded_history_dim)
@@ -752,11 +935,11 @@ class AcquisitionFunctionNetV4(AcquisitionFunctionNetWithFinalMLP):
             layer_norm_before_end=layer_norm, layer_norm_at_end=False))
         ])
         if include_mean:
-            initial_modules.add('mean_net', Dense(encoded_history_dim,
+            initial_modules['mean_net'] = Dense(encoded_history_dim,
                                mean_enc_hidden_dims, mean_dim,
                                activation_at_end=False,
                                layer_norm_before_end=layer_norm,
-                               layer_norm_at_end=False))
+                               layer_norm_at_end=False)
         
         super().__init__(initial_modules, std_dim + (mean_dim if include_mean else 0),
                          aq_func_hidden_dims, include_alpha,
