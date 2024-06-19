@@ -894,6 +894,7 @@ class AcquisitionFunctionNetV4(AcquisitionFunctionNetWithFinalMLP):
                  std_enc_hidden_dims=[256, 256], std_dim=1,
                  aq_func_hidden_dims=[256, 64], layer_norm=False,
                  layer_norm_at_end_mlp=False, include_mean=True,
+                 include_local_features=False,
                  include_alpha=False, learn_alpha=False, initial_alpha=1.0):
         """
         Args:
@@ -924,18 +925,23 @@ class AcquisitionFunctionNetV4(AcquisitionFunctionNetWithFinalMLP):
             initial_alpha (float, default: 1.0):
                 The initial value for the alpha parameter.
         """
+        std_input_dim = encoded_history_dim + (
+            2 * dimension + 1 if include_local_features else 0)
         initial_modules = OrderedDict([
             ('history_encoder', PointNetLayer(
             3 * dimension + 2, history_enc_hidden_dims, encoded_history_dim, pooling,
             activation_at_end=False,
             layer_norm_before_end=layer_norm, layer_norm_at_end=layer_norm)),
             ('std_net', PointNetLayer(
-            encoded_history_dim, std_enc_hidden_dims,
-            std_dim, pooling, activation_at_end=True,
-            layer_norm_before_end=layer_norm, layer_norm_at_end=False))
+            std_input_dim, std_enc_hidden_dims,
+            std_dim, pooling, activation_at_end=include_mean,
+            layer_norm_before_end=layer_norm,
+            layer_norm_at_end=layer_norm and not include_mean))
         ])
         if include_mean:
-            initial_modules['mean_net'] = Dense(encoded_history_dim,
+            mean_input_dim = encoded_history_dim + (
+                2 * dimension + 1 if include_local_features else 0)
+            initial_modules['mean_net'] = Dense(mean_input_dim,
                                mean_enc_hidden_dims, mean_dim,
                                activation_at_end=False,
                                layer_norm_before_end=layer_norm,
@@ -948,20 +954,18 @@ class AcquisitionFunctionNetV4(AcquisitionFunctionNetWithFinalMLP):
                          layer_norm_at_end=layer_norm_at_end_mlp)
         self.dimension = dimension
         self.include_mean = include_mean
+        self.include_local_features = include_local_features
     
     def _get_mlp_input(self, x_hist, y_hist, x_cand,
                        hist_mask=None, cand_mask=None):
-        # # xy_hist shape (*, n_hist, dimension+1)
-        # # xy_hist_and_cand shape (*, n_cand, n_hist, 2*dimension+1)
-        # # mask shape (*, n_cand, n_hist, 1)
-        # xy_hist, xy_hist_and_cand, mask = _get_xy_hist_and_cand(
-        #     x_hist, y_hist, x_cand, hist_mask, include_y=True)
+        # xy_hist shape (*, n_hist, dimension+1)
+        # xy_hist_and_cand shape (*, n_cand, n_hist, 2*dimension+1)
+        # hist_and_cand_mask shape (*, n_cand, n_hist, 1)
+        xy_hist, xy_hist_and_cand, hist_and_cand_mask = _get_xy_hist_and_cand(
+            x_hist, y_hist, x_cand, hist_mask, include_y=True)
 
         n_hist = x_hist.size(-2)
         n_cand = x_cand.size(-2)
-
-        # shape (*, n_hist, dimension+1)
-        xy_hist = torch.cat((x_hist, y_hist), dim=-1)
 
         # shape (*, n_hist, [n_hist], dimension+1)
         xy_hist_1 = expand_dim(xy_hist.unsqueeze(-2), -2, n_hist)
@@ -1011,8 +1015,6 @@ class AcquisitionFunctionNetV4(AcquisitionFunctionNetWithFinalMLP):
             # cand_mask_expanded = expand_dim(cand_mask_expanded.unsqueeze(-2), -2, n_hist)
             # print(cand_mask_expanded.shape)
 
-            
-        
         # print(x_cand_and_xy_hist_pairwise - x_cand_and_xy_hist_pairwise * mask)
         # print(x_cand_and_xy_hist_pairwise)
         # exit()
@@ -1020,12 +1022,17 @@ class AcquisitionFunctionNetV4(AcquisitionFunctionNetWithFinalMLP):
         # shape (*, n_cand, n_hist, encoded_history_dim)
         out1 = self.history_encoder(
             x_cand_and_xy_hist_pairwise, mask=mask, keepdim=False)
+        
+        if self.include_local_features:
+            # xy_hist_and_cand shape (*, n_cand, n_hist, 2*dimension+1)
+            # out1             shape (*, n_cand, n_hist, encoded_history_dim)
+            out1 = torch.cat((out1, xy_hist_and_cand), dim=-1)
 
         ### Compute Std
         # shape (*, n_cand, n_hist, 1)
-        mask_std = None if hist_mask is None else expand_dim(hist_mask.unsqueeze(-3), -3, n_cand)
+        # mask_std = None if hist_mask is None else expand_dim(hist_mask.unsqueeze(-3), -3, n_cand)
         # shape (*, n_cand, std_dim)
-        std_out = self.std_net(out1, mask=mask_std, keepdim=False)
+        std_out = self.std_net(out1, mask=hist_and_cand_mask, keepdim=False)
         
         if self.include_mean:
             ### Compute Mean

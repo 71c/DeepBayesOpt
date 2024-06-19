@@ -12,6 +12,8 @@ import os
 
 from train_acquisition_function_net import train_loop, test_loop, count_trainable_parameters, count_parameters
 
+import torch.distributions as dist
+
 # Test Expected 1-step improvement:
 #  NN (softmax): 0.183188
 #  NN (max): 0.183303
@@ -61,8 +63,41 @@ from train_acquisition_function_net import train_loop, test_loop, count_trainabl
 #  Ideal: 0.244009
 #  NN avg normalized entropy: 0.027454
 
+# -- runs of same model:
+# Test Expected 1-step improvement:
+#  NN (softmax): 0.188118
+#  NN (max): 0.188107
+#  True GP: 0.197862
+#  Ratio: 0.950700
+#  Random search: 0.067085
+#  Ideal: 0.243121
+#  NN avg normalized entropy: 0.056938
+# --
+# Test Expected 1-step improvement:
+#  NN (softmax): 0.182578
+#  NN (max): 0.182538
+#  True GP: 0.189878
+#  Ratio: 0.961343
+#  Random search: 0.065658
+#  Ideal: 0.236335
+#  NN avg normalized entropy: 0.056288
+
+
+# V4 after 200 epochs; 128*100*10 = 128,000 examples
+# Test Expected 1-step improvement:
+#  NN (softmax): 0.189172
+#  NN (max): 0.189261
+#  True GP: 0.197286
+#  Ratio: 0.959321
+#  Random search: 0.067463
+#  Ideal: 0.243777
+#  NN avg normalized entropy: 0.071222
+
+
+
+
 # True for the softmax thing, False for MSE
-POLICY_GRADIENT = True
+POLICY_GRADIENT = False
 
 # Only used if POLICY_GRADIENT is True
 INCLUDE_ALPHA = True
@@ -141,10 +176,11 @@ FIT_MAP_GP = False
 
 
 # model = AcquisitionFunctionNetV4(DIMENSION,
-#                                  history_enc_hidden_dims=[32, 32], pooling="sum",
-#                  encoded_history_dim=32, include_mean=True,
+#                                  history_enc_hidden_dims=[32, 32], pooling="max",
+#                  include_local_features=True,
+#                  encoded_history_dim=4, include_mean=False,
 #                  mean_enc_hidden_dims=[32, 32], mean_dim=1,
-#                  std_enc_hidden_dims=[32, 32], std_dim=1,
+#                  std_enc_hidden_dims=[32, 32], std_dim=32,
 #                  aq_func_hidden_dims=[32, 32], layer_norm=True,
 #                  layer_norm_at_end_mlp=False,
 #                  include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
@@ -164,39 +200,39 @@ FIT_MAP_GP = False
 #                                  learn_alpha=LEARN_ALPHA,
 #                                  initial_alpha=INITIAL_ALPHA).to(device)
 
-# model = AcquisitionFunctionNetV2(DIMENSION,
-#                                  pooling="sum",
+model = AcquisitionFunctionNetV2(DIMENSION,
+                                 pooling="max",
+                                 history_enc_hidden_dims=[32, 32],
+                                 encoded_history_dim=32,
+                                 aq_func_hidden_dims=[32, 32],
+                                #  history_enc_hidden_dims=[64, 64],
+                                #  encoded_history_dim=128,
+                                #  aq_func_hidden_dims=[64, 64],
+                                 include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
+                                 learn_alpha=LEARN_ALPHA,
+                                 initial_alpha=INITIAL_ALPHA,
+                                 activation_at_end_pointnet=True,
+                                 layer_norm_pointnet=True,
+                                 layer_norm_before_end_mlp=True,
+                                 layer_norm_at_end_mlp=False,
+                                 include_best_y=False,
+                                 activation_pointnet=nn.ReLU,
+                                 activation_mlp=nn.ReLU).to(device)
+
+# model = AcquisitionFunctionNetV1(DIMENSION,
+#                                  pooling="max",
 #                                  history_enc_hidden_dims=[32, 32],
 #                                  encoded_history_dim=32,
 #                                  aq_func_hidden_dims=[32, 32],
-#                                 #  history_enc_hidden_dims=[64, 64],
-#                                 #  encoded_history_dim=128,
-#                                 #  aq_func_hidden_dims=[64, 64],
 #                                  include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
 #                                  learn_alpha=LEARN_ALPHA,
 #                                  initial_alpha=INITIAL_ALPHA,
-#                                  activation_at_end_pointnet=True,
-#                                  layer_norm_pointnet=True,
+#                                  layer_norm_pointnet=False,
 #                                  layer_norm_before_end_mlp=False,
 #                                  layer_norm_at_end_mlp=False,
 #                                  include_best_y=True,
 #                                  activation_pointnet=nn.ReLU,
 #                                  activation_mlp=nn.ReLU).to(device)
-
-model = AcquisitionFunctionNetV1(DIMENSION,
-                                 pooling="max",
-                                 history_enc_hidden_dims=[32, 32],
-                                 encoded_history_dim=32,
-                                 aq_func_hidden_dims=[32, 32],
-                                 include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
-                                 learn_alpha=LEARN_ALPHA,
-                                 initial_alpha=INITIAL_ALPHA,
-                                 layer_norm_pointnet=False,
-                                 layer_norm_before_end_mlp=False,
-                                 layer_norm_at_end_mlp=False,
-                                 include_best_y=True,
-                                 activation_pointnet=nn.ReLU,
-                                 activation_mlp=nn.ReLU).to(device)
 
 # model = AcquisitionFunctionNetDense(DIMENSION, MAX_HISTORY,
 #                                     hidden_dims=[128, 128, 64, 32],
@@ -262,7 +298,9 @@ if FIX_N_CANDIDATES:
 else:
     file_name += f"_points{MIN_POINTS}-{MAX_POINTS}_{'loguniform' if LOGUNIFORM else 'uniform'}.pth"
 
-# file_name = "acquisition_function_net_AcquisitionFunctionNetV2_1d_policy_gradient_myopic_fixed_kernel_uniform_x_history1-8_loguniform_50cand_96.pth"
+file_name = "acquisition_function_net_AcquisitionFunctionNetV4_1d_policy_gradient_myopic_fixed_kernel_uniform_x_history1-8_loguniform_50cand_200epochs.pth"
+
+
 
 print(f"Model file: {file_name}")
 model_path = os.path.join(script_dir, file_name)
@@ -278,7 +316,7 @@ if TRAIN:
         print(f"Loading model from {model_path}")
         model.load_state_dict(torch.load(model_path))
     
-    learning_rate = 1e-3
+    learning_rate = 3e-4
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     # optimizer = torch.optim.RMSprop(model.parameters(), lr=learning_rate)
 
@@ -305,74 +343,13 @@ model.eval()
 
 
 test_aq_dataset_big = test_aq_dataset \
-    .copy_with_new_size(len(aq_dataset))
+    .copy_with_new_size(len(aq_dataset) * 10)
 
-
-# test_aq_dataloader_big = test_aq_dataset_big \
-#     .get_dataloader(batch_size=BATCH_SIZE, drop_last=True)
-# test_loop(test_aq_dataloader_big, model,
-#           policy_gradient=POLICY_GRADIENT,
-#           fit_map_gp=FIT_MAP_GP)
-
-
-n_candidates = 2_000
-
-it = iter(test_aq_dataset_big)
-x_hist, y_hist, x_cand, improvements, gp_model = next(it)
-
-# Failure case:
-# for x_hist, y_hist, x_cand, improvements, gp_model in test_aq_dataset_big:
-#     if x_hist.size(0) != 2:
-#         continue
-#     if x_hist[0, 0].item() > 0.05 or x_hist[1, 0].item() < 0.95:
-#         continue
-#     break
-
-
-print(f"Number of history points: {x_hist.size(0)}")
-x_cand = torch.rand(n_candidates, DIMENSION)
-
-
-aq_fn = LikelihoodFreeNetworkAcquisitionFunction.from_net(
-    model, x_hist, y_hist, exponentiate=not POLICY_GRADIENT, softmax=False)
-ei_nn = aq_fn(x_cand.unsqueeze(1))
-
-
-if DIMENSION == 1:
-    gp_model.set_train_data(x_hist, y_hist.squeeze(-1), strict=False)
-    posterior_true = gp_model.posterior(x_cand, observation_noise=False)
-
-ei_true = calculate_EI_GP(gp_model, x_hist, y_hist, x_cand, log=False)
-ei_map = calculate_EI_GP(gp_model, x_hist, y_hist, x_cand, fit_params=True, log=False)
-
-# Normalize so they have the same scale
-if POLICY_GRADIENT:
-    ei_nn = (ei_nn - ei_nn.mean()) / ei_nn.std()
-    ei_true = (ei_true - ei_true.mean()) / ei_true.std()
-    ei_map = (ei_map - ei_map.mean()) / ei_map.std()
-
-name = "acquisition" if POLICY_GRADIENT else "EI"
-
-# print(f"{name} True:")
-# print(ei_true)
-# print(f"{name} NN:")
-# print(ei_nn)
-# print(f"{name} MAP:")
-# print(ei_map)
-
-
-plt.scatter(ei_true.detach().numpy(), ei_nn.detach().numpy())
-plt.xlabel(f'{name} True')
-plt.ylabel(f'{name} NN')
-plt.title(f'{name} True vs {name} NN')
-
-plt.figure()
-plt.scatter(ei_true.detach().numpy(), ei_map.detach().numpy())
-plt.xlabel(f'{name} True')
-plt.ylabel(f'{name} MAP')
-plt.title(f'{name} True vs {name} MAP')
-
-
+test_aq_dataloader_big = test_aq_dataset_big \
+    .get_dataloader(batch_size=BATCH_SIZE, drop_last=True)
+test_loop(test_aq_dataloader_big, model,
+          policy_gradient=POLICY_GRADIENT,
+          fit_map_gp=FIT_MAP_GP)
 
 def plot_gp_posterior(ax, posterior, test_x, train_x, train_y, color, name=None):
     lower, upper = posterior.mvn.confidence_region()
@@ -399,26 +376,138 @@ def plot_gp_posterior(ax, posterior, test_x, train_x, train_y, color, name=None)
     # Shade between the lower and upper confidence bounds
     ax.fill_between(test_x, lower, upper, color=color, alpha=0.5, label=f'Confidence{extension}')
 
+# decided actually don't want to use this
+normal = dist.Normal(0, 1)
+def normalize_by_quantile(x, dim=-1):
+    indices = torch.argsort(torch.argsort(x, dim=dim), dim=dim)
+    max_index = x.size(dim) - 1
+    quantiles = indices / max_index
+    return normal.icdf(quantiles)
+
+def plot_nn_vs_gp_acquisition_function_1d_grid(
+        aq_dataset, n_candidates, nrows, ncols, min_x=0., max_x=1.,
+        plot_map=True):
+    fig, axs = plt.subplots(nrows=nrows, ncols=ncols, figsize=(2.5*ncols, 2.5*nrows),
+                            sharex=True, sharey=False)
+    
+    # Failure case:
+    # for x_hist, y_hist, x_cand, improvements, gp_model in test_aq_dataset_big:
+    #     if x_hist.size(0) != 2:
+    #         continue
+    #     if x_hist[0, 0].item() > 0.05 or x_hist[1, 0].item() < 0.95:
+    #         continue
+    #     break
+
+    it = iter(aq_dataset)
+    for row in range(nrows):
+        for col in range(ncols):
+            x_hist, y_hist, x_cand, improvements, gp_model = next(it)
+
+            x_cand = torch.linspace(0, 1, n_candidates).unsqueeze(1)
+
+            aq_fn = LikelihoodFreeNetworkAcquisitionFunction.from_net(
+                model, x_hist, y_hist, exponentiate=not POLICY_GRADIENT, softmax=False)
+            ei_nn = aq_fn(x_cand.unsqueeze(1))
+
+            gp_model.set_train_data(x_hist, y_hist.squeeze(-1), strict=False)
+            posterior_true = gp_model.posterior(x_cand, observation_noise=False)
+
+            ei_true = calculate_EI_GP(gp_model, x_hist, y_hist, x_cand, log=False)
+
+            if plot_map:
+                ei_map = calculate_EI_GP(gp_model, x_hist, y_hist, x_cand, fit_params=True, log=False)
+
+            # Normalize so they have the same scale
+            if POLICY_GRADIENT:
+                ei_nn = (ei_nn - ei_nn.mean()) / ei_nn.std()
+                ei_true = (ei_true - ei_true.mean()) / ei_true.std()
+                if plot_map:
+                    ei_map = (ei_map - ei_map.mean()) / ei_map.std()
+
+                # ei_nn = normalize_by_quantile(ei_nn)
+                # ei_true = normalize_by_quantile(ei_true)
+                # if plot_map:
+                #     ei_map = normalize_by_quantile(ei_map)
+
+            ax = axs[row, col]
+
+            sorted_indices = np.argsort(x_cand.detach().numpy().flatten())
+            sorted_x_cand = x_cand.detach().numpy().flatten()[sorted_indices]
+            sorted_ei_true = ei_true.detach().numpy().flatten()[sorted_indices]
+            sorted_ei_nn = ei_nn.detach().numpy().flatten()[sorted_indices]
+            if plot_map:
+                sorted_ei_map = ei_map.detach().numpy().flatten()[sorted_indices]
+
+            ax.plot(sorted_x_cand, sorted_ei_true, label="True GP")
+            ax.plot(sorted_x_cand, sorted_ei_nn, label="NN")
+            if plot_map:
+                ax.plot(sorted_x_cand, sorted_ei_map, label="MAP")
+
+            plot_gp_posterior(ax, posterior_true, x_cand, x_hist, y_hist, 'b', name='True')
+
+            # ax.set_title(f"History: {x_hist.size(0)}")
+            ax.set_xlim(min_x, max_x)
+    
+    # Add a single legend for all plots
+    handles, labels = axs[0, 0].get_legend_handles_labels()
+    
+    # axs[0, ncols - 1].legend(handles, labels, loc='upper left', bbox_to_anchor=(1, 1))
+    axs[0, ncols - 1].legend(handles, labels, loc='lower left', bbox_to_anchor=(0, 1))
+    fig.tight_layout(rect=[0.02, 0.02, 1, 1])
+    # fig.suptitle(f'{name} vs x', fontsize=16)
+    fig.supxlabel("x", fontsize=10)
+    fig.supylabel(f'{name}', fontsize=10)
+
+    fig.subplots_adjust(wspace=0.2, hspace=0.2)
+    
+    return fig, axs
+
+
+n_candidates = 2_000
+name = "acquisition" if POLICY_GRADIENT else "EI"
+PLOT_MAP = False
 
 if DIMENSION == 1:
-    fig, ax = plt.subplots()
+    nrows, ncols = 5, 5
+    fig, axs = plot_nn_vs_gp_acquisition_function_1d_grid(
+        test_aq_dataset_big, n_candidates, nrows=nrows, ncols=ncols,
+        plot_map=PLOT_MAP)
+    fname = f'acqusion_function_net_vs_gp_acquisition_function_1d_grid_{nrows}x{ncols}.pdf'
+    fig.savefig(fname, bbox_inches='tight')
+else:
+    it = iter(test_aq_dataset_big)
+    x_hist, y_hist, x_cand, improvements, gp_model = next(it)
+    print(f"Number of history points: {x_hist.size(0)}")
 
-    sorted_indices = np.argsort(x_cand.detach().numpy().flatten())
-    sorted_x_cand = x_cand.detach().numpy().flatten()[sorted_indices]
-    sorted_ei_true = ei_true.detach().numpy().flatten()[sorted_indices]
-    sorted_ei_nn = ei_nn.detach().numpy().flatten()[sorted_indices]
-    sorted_ei_map = ei_map.detach().numpy().flatten()[sorted_indices]
+    x_cand = torch.rand(n_candidates, DIMENSION)
 
-    plt.plot(sorted_x_cand, sorted_ei_true, label="True")
-    plt.plot(sorted_x_cand, sorted_ei_nn, label="NN")
-    plt.plot(sorted_x_cand, sorted_ei_map, label="MAP")
+    aq_fn = LikelihoodFreeNetworkAcquisitionFunction.from_net(
+        model, x_hist, y_hist, exponentiate=not POLICY_GRADIENT, softmax=False)
+    ei_nn = aq_fn(x_cand.unsqueeze(1))
 
-    plot_gp_posterior(ax, posterior_true, x_cand, x_hist, y_hist, 'b', name='True')
+    ei_true = calculate_EI_GP(gp_model, x_hist, y_hist, x_cand, log=False)
+    if PLOT_MAP:
+        ei_map = calculate_EI_GP(gp_model, x_hist, y_hist, x_cand, fit_params=True, log=False)
 
-    plt.xlabel("x")
-    plt.ylabel(f'{name}')
-    plt.title(f'{name} vs x')
-    plt.legend()
+    # print(f"{name} True:")
+    # print(ei_true)
+    # print(f"{name} NN:")
+    # print(ei_nn)
+    # print(f"{name} MAP:")
+    # print(ei_map)
+
+    plt.scatter(ei_true.detach().numpy(), ei_nn.detach().numpy())
+    plt.xlabel(f'{name} True')
+    plt.ylabel(f'{name} NN')
+    plt.title(f'{name} True vs {name} NN')
+
+    if PLOT_MAP:
+        plt.figure()
+        plt.scatter(ei_true.detach().numpy(), ei_map.detach().numpy())
+        plt.xlabel(f'{name} True')
+        plt.ylabel(f'{name} MAP')
+        plt.title(f'{name} True vs {name} MAP')
+
 
 plt.show()
 
