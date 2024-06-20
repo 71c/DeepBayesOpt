@@ -89,13 +89,12 @@ def max_pad_tensors_batch(tensors, dim=0, add_mask=False):
             padded_tensors, masks = zip(*[
                 pad_tensor(x, max_length, dim=dim, add_mask=True)
                 for x in tensors])
-            stacked = torch.stack(padded_tensors)
             mask = torch.stack(masks)
         else:
             padded_tensors = [
                 pad_tensor(x, max_length, dim=dim, add_mask=False)
                 for x in tensors]
-            stacked = torch.stack(padded_tensors)
+        stacked = torch.stack(padded_tensors)
     
     if add_mask:
         return stacked, mask

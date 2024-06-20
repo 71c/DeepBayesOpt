@@ -1,8 +1,8 @@
 import torch
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-print("Device:", device)
-print(torch.cuda.current_device())
-print(torch.cuda.get_device_name(torch.cuda.current_device()))
+if torch.cuda.is_available():
+    print(torch.cuda.current_device())
+    print(torch.cuda.get_device_name(torch.cuda.current_device()))
 from torch import nn
 
 from generate_gp_data import GaussianProcessRandomDataset, FunctionSamplesMapDataset, TrainAcquisitionFunctionDataset
@@ -157,13 +157,14 @@ else:
         n_datapoints_random_gen = get_uniform_randint_generator(
             MIN_POINTS, MAX_POINTS)
 
+DATASET_SIZE = 128 * 100
 BATCH_SIZE = 128
-N_BATCHES = 100
+N_BATCHES = DATASET_SIZE // BATCH_SIZE
 TEST_SIZE = 0.1
 FIX_TRAIN_DATASET = True
 FIX_TEST_DATASET = True
 EPOCHS = 200
-EVERY_N_BATCHES = 10
+EVERY_N_BATCHES = N_BATCHES // 10
 
 # dimension of the optimization problem
 DIMENSION = 1
