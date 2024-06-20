@@ -1,3 +1,4 @@
+from abc import ABC, abstractmethod
 import torch
 import gpytorch
 import pyro
@@ -13,7 +14,7 @@ from torch.utils.data import Dataset, IterableDataset, DataLoader, random_split,
 # https://pytorch.org/tutorials/prototype/maskedtensor_overview
 from torch.masked import is_masked_tensor
 
-from utils import uniform_randint, get_uniform_randint_generator, max_pad_tensors_batch
+from utils import uniform_randint, get_uniform_randint_generator, max_pad_tensors_batch, get_lengths_from_proportions
 
 from typing import Iterable, Optional, List, Tuple, Union
 from collections.abc import Sequence
@@ -22,7 +23,7 @@ from botorch.exceptions import UnsupportedError
 import os
 import warnings
 import math
-import copy
+from tqdm import tqdm
 
 torch.set_default_dtype(torch.double)
 
@@ -192,7 +193,7 @@ class TrainAcquisitionFunctionDatasetModelItem(TupleWithModel):
         self.vals_cand = vals_cand
 
 
-class FunctionSamplesDataset(Dataset):
+class FunctionSamplesDataset(Dataset, ABC):
     """
     A dataset class for function samples.
 
@@ -218,20 +219,23 @@ class FunctionSamplesDataset(Dataset):
         # do something with x_values, y_values, and model
     ```
     """
-
+    
     @property
+    @abstractmethod
     def has_models(self):
         """Boolean variable that is whether the dataset includes model
         information (i.e., GP models and their parameters)."""
-        raise NotImplementedError("Subclasses of FunctionSamplesDataset should implement has_models.")
-
+        pass  # pragma: no cover
+    
     @property
+    @abstractmethod
     def model_sampler(self):
         """The RandomModelSampler instance that is used to sample random GP
         models for this dataset.
         Should raise an error if has_models is False."""
-        raise NotImplementedError("Subclasses of FunctionSamplesDataset should implement model_sampler.")
-
+        pass  # pragma: no cover
+    
+    @abstractmethod
     def random_split(self, lengths: Sequence[Union[int, float]]):
         """Randomly splits the dataset into multiple subsets.
 
@@ -240,8 +244,9 @@ class FunctionSamplesDataset(Dataset):
             specifying the size of each subset, or the proportion of the
             dataset to include in each subset.
         """
-        raise NotImplementedError("Subclasses of FunctionSamplesDataset should implement random_split.")
+        pass  # pragma: no cover
     
+    @abstractmethod
     def save(self, dir_name: str, n_realizations:Optional[int]=None):
         """Saves the dataset to a specified directory. If the dataset includes
         models, the models are saved as well. If the directory does not
@@ -253,10 +258,10 @@ class FunctionSamplesDataset(Dataset):
             If unspecified, all the realizations are saved.
             If specified, the first n_realizations realizations are saved.
         """
-        raise NotImplementedError("Subclasses of FunctionSamplesDataset should implement save.")
+        pass  # pragma: no cover
 
 
-class SizedIterableMixin(Iterable):
+class SizedIterableMixin(Iterable, ABC):
     """A mixin class that provides functionality for creating iterable objects
     with a specified size. If the size is None, the object is considered to be
     infinite and so calling iter() then you can call next() indefinitely wihout
@@ -272,6 +277,7 @@ class SizedIterableMixin(Iterable):
 
     _size: Optional[int] = None
 
+    @abstractmethod
     def copy_with_new_size(self, size:int) -> "SizedIterableMixin":
         """Creates a copy of the object with a new size.
         Should set the _size attribute of the new object to the specified size.
@@ -282,11 +288,12 @@ class SizedIterableMixin(Iterable):
         Returns:
             A new instance of the object with the specified size.
         """
-        raise NotImplementedError("Subclasses of SizedIterableMixin should implement copy_with_new_size.")
-
+        pass  # pragma: no cover
+    
+    @abstractmethod
     def _next(self):
         """Returns the next element in the iterable."""
-        raise NotImplementedError("Subclasses of SizedIterableMixin should implement _next.")
+        pass  # pragma: no cover
 
     def __iter__(self):
         if self._size is None:
@@ -503,7 +510,7 @@ class GaussianProcessRandomDataset(FunctionSamplesDataset, IterableDataset, Size
             dataset_size = sum(lengths)
         else:
             if lengths_is_proportions:
-                lengths = _get_lengths_from_proportions(dataset_size, lengths)
+                lengths = get_lengths_from_proportions(dataset_size, lengths)
             
             if sum(lengths) != dataset_size:
                 raise ValueError(
@@ -747,7 +754,8 @@ class FunctionSamplesMapDataset(FunctionSamplesDataset):
 
         samples_list = []
         has_models = dataset.has_models
-        for item in dataset:
+        print("Generating GP realizations:")
+        for item in tqdm(dataset):
             if has_models:
                 if isinstance(item, GPDatasetItem):
                     x_values, y_values = item.x_values, item.y_values
@@ -1261,24 +1269,9 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
         # vals_cand shape: (n_cand,)
 
         x_hist = max_pad_tensors_batch(x_hists, add_mask=False)
-
-        y_hist_masked = max_pad_tensors_batch(y_hists, add_mask=True)
-        if is_masked_tensor(y_hist_masked):
-            y_hist = y_hist_masked.get_data()
-            hist_mask = y_hist_masked.get_mask()
-        else:
-            y_hist = y_hist_masked
-            hist_mask = None
-        
+        y_hist, hist_mask = max_pad_tensors_batch(y_hists, add_mask=True)
         x_cand = max_pad_tensors_batch(x_cands, add_mask=False)
-
-        vals_cand_masked = max_pad_tensors_batch(vals_cands, add_mask=True)
-        if is_masked_tensor(vals_cand_masked):
-            vals_cand = vals_cand_masked.get_data()
-            cand_mask = vals_cand_masked.get_mask()
-        else:
-            vals_cand = vals_cand_masked
-            cand_mask = None
+        vals_cand, cand_mask = max_pad_tensors_batch(vals_cands, add_mask=True)
 
         return [x_hist, y_hist, x_cand, vals_cand, hist_mask, cand_mask] + unzipped_lists[4:]
     
@@ -1316,29 +1309,5 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
         return DataLoader(self, batch_size=batch_size, shuffle=False,
                           collate_fn=TrainAcquisitionFunctionDataset._collate_train_acquisition_function_samples,
                           **kwargs)
-
-
-# Taken from
-# https://pytorch.org/docs/stable/_modules/torch/utils/data/dataset.html#random_split
-def _get_lengths_from_proportions(total_length, proportions):
-    subset_lengths: List[int] = []
-    for i, frac in enumerate(proportions):
-        if frac < 0 or frac > 1:
-            raise ValueError(f"Fraction at index {i} is not between 0 and 1")
-        n_items_in_split = int(math.floor(total_length * frac))
-        subset_lengths.append(n_items_in_split)
-    remainder = total_length - sum(subset_lengths)
-    # add 1 to all the lengths in round-robin fashion until the remainder is 0
-    for i in range(remainder):
-        idx_to_add_at = i % len(subset_lengths)
-        subset_lengths[idx_to_add_at] += 1
-    lengths = subset_lengths
-    for i, length in enumerate(lengths):
-        if length == 0:
-            warnings.warn(
-                f"Length of split at index {i} is 0. "
-                f"This might result in an empty dataset."
-            )
-    return lengths
 
 

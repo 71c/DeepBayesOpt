@@ -103,6 +103,10 @@ def train_loop(dataloader, model, optimizer, every_n_batches=10,
     for i, batch in enumerate(dataloader):
         x_hist, y_hist, x_cand, improvements, hist_mask, cand_mask, models = batch
 
+        # if i % every_n_batches == 0:
+        #     print("Test")
+        # continue
+
         # print(type(models))
         # for gp_model in models:
         #     print(gp_model)
