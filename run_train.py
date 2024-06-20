@@ -5,8 +5,8 @@ print(torch.cuda.current_device())
 print(torch.cuda.get_device_name(torch.cuda.current_device()))
 from torch import nn
 
-from generate_gp_data import GaussianProcessRandomDataset, TrainAcquisitionFunctionDataset
-from utils import get_uniform_randint_generator, get_loguniform_randint_generator
+from generate_gp_data import GaussianProcessRandomDataset, FunctionSamplesMapDataset, TrainAcquisitionFunctionDataset
+from utils import get_uniform_randint_generator, get_loguniform_randint_generator, get_lengths_from_proportions_or_lengths
 from acquisition_function_net import AcquisitionFunctionNetV1, AcquisitionFunctionNetV2, AcquisitionFunctionNetV3, AcquisitionFunctionNetV4, AcquisitionFunctionNetDense, LikelihoodFreeNetworkAcquisitionFunction
 from predict_EI_simple import calculate_EI_GP
 import numpy as np
@@ -16,6 +16,9 @@ import os
 from train_acquisition_function_net import train_loop, test_loop, count_trainable_parameters, count_parameters
 
 import torch.distributions as dist
+
+import cProfile
+from tictoc import tic, toc, tocl
 
 # Test Expected 1-step improvement:
 #  NN (softmax): 0.183188
@@ -154,12 +157,13 @@ else:
         n_datapoints_random_gen = get_uniform_randint_generator(
             MIN_POINTS, MAX_POINTS)
 
-# bindkey -v
-
 BATCH_SIZE = 128
 N_BATCHES = 100
-EVERY_N_BATCHES = 10
+TEST_SIZE = 0.1
+FIX_TRAIN_DATASET = True
+FIX_TEST_DATASET = True
 EPOCHS = 200
+EVERY_N_BATCHES = 10
 
 # dimension of the optimization problem
 DIMENSION = 1
@@ -243,43 +247,55 @@ model = AcquisitionFunctionNetV2(DIMENSION,
 #                                     learn_alpha=LEARN_ALPHA,
 #                                     initial_alpha=INITIAL_ALPHA).to(device)
 
+dataset_size = BATCH_SIZE * N_BATCHES
+
+if 0 < TEST_SIZE < 1:
+    TRAIN_SIZE = 1 - TEST_SIZE
+else:
+    TRAIN_SIZE = dataset_size - TEST_SIZE
+
+TRAIN_SIZE, TEST_SIZE = get_lengths_from_proportions_or_lengths(dataset_size, [TRAIN_SIZE, TEST_SIZE])
 
 print(next(model.parameters()).is_cuda)
 
 
 dataset_kwargs = dict(dimension=DIMENSION, observation_noise=False,
     set_random_model_train_data=False, xvalue_distribution=XVALUE_DISTRIBUTION,
-    device=device, dataset_size=BATCH_SIZE * N_BATCHES,
+    device=device, # dataset_size=dataset_size,
     randomize_params=RANDOMIZE_PARAMS)
 
-dataset = GaussianProcessRandomDataset(
-    **dataset_kwargs, n_datapoints_random_gen=n_datapoints_random_gen)
-if not POLICY_GRADIENT:
-    test_dataset = GaussianProcessRandomDataset(
-        **dataset_kwargs, n_datapoints_random_gen=test_n_datapoints_random_gen)
+train_dataset = GaussianProcessRandomDataset(
+    **dataset_kwargs, dataset_size=TRAIN_SIZE,
+    n_datapoints_random_gen=n_datapoints_random_gen)
+test_dataset = GaussianProcessRandomDataset(
+    **dataset_kwargs, dataset_size=TEST_SIZE,
+    n_datapoints_random_gen=n_datapoints_random_gen if POLICY_GRADIENT else test_n_datapoints_random_gen)
 
+if FIX_TRAIN_DATASET:
+    train_dataset = FunctionSamplesMapDataset.from_iterable_dataset(train_dataset)
+if FIX_TEST_DATASET:
+    test_dataset = FunctionSamplesMapDataset.from_iterable_dataset(test_dataset)
 
 if FIX_N_CANDIDATES:
-    aq_dataset = TrainAcquisitionFunctionDataset(
-        dataset, n_candidate_points=N_CANDIDATES, n_samples="all",
-        give_improvements=True)
-    if not POLICY_GRADIENT:
-        _, test_aq_dataset = TrainAcquisitionFunctionDataset(
-            test_dataset, n_candidate_points=TEST_N_CANDIDATES, n_samples="all",
-            give_improvements=True).random_split([0.9, 0.1])
-        train_aq_dataset, _ = aq_dataset.random_split([0.9, 0.1])
+    train_aq_dataset = TrainAcquisitionFunctionDataset(
+        train_dataset, n_candidate_points=N_CANDIDATES,
+        n_samples="all", give_improvements=True)
+    test_aq_dataset = TrainAcquisitionFunctionDataset(
+        test_dataset,
+        n_candidate_points=N_CANDIDATES if POLICY_GRADIENT else TEST_N_CANDIDATES,
+        n_samples="all", give_improvements=True)
 else:
     assert POLICY_GRADIENT
-    aq_dataset = TrainAcquisitionFunctionDataset(
-        dataset, n_candidate_points="uniform", n_samples="all",
+    train_aq_dataset = TrainAcquisitionFunctionDataset(
+        train_dataset, n_candidate_points="uniform", n_samples="all",
         give_improvements=True, min_n_candidates=MIN_N_CANDIDATES)
-
-if POLICY_GRADIENT:
-    train_aq_dataset, test_aq_dataset = aq_dataset.random_split([0.9, 0.1])
+    test_aq_dataset = TrainAcquisitionFunctionDataset(
+        test_dataset, n_candidate_points="uniform", n_samples="all",
+        give_improvements=True, min_n_candidates=MIN_N_CANDIDATES)
 
 sample_n_points = n_datapoints_random_gen(30)
 n_samples_and_candidates_examples = [
-    aq_dataset._pick_random_n_samples_and_n_candidates(n)
+    train_aq_dataset._pick_random_n_samples_and_n_candidates(n)
     for n in sample_n_points]
 n_hist_and_candidates_examples = [
     (n_samples - n_candidates, n_candidates)
@@ -316,6 +332,11 @@ print("Number of trainable parameters:", count_trainable_parameters(model))
 print("Number of parameters:", count_parameters(model))
 
 
+# import cProfile, pstats, io
+# from pstats import SortKey
+# pr = cProfile.Profile()
+
+
 if TRAIN:
     if LOAD_SAVED_MODEL_TO_TRAIN:
         # Load the model
@@ -328,11 +349,27 @@ if TRAIN:
 
     for t in range(EPOCHS):
         print(f"Epoch {t+1}\n-------------------------------")
+
+        # pr.enable()
+
+        tic(f"Epoch {t+1} train")
+        
         train_loop(train_aq_dataloader, model, optimizer,
                    every_n_batches=EVERY_N_BATCHES,
                    policy_gradient=POLICY_GRADIENT,
                    alpha_increment=ALPHA_INCREMENT,
                    train_with_ei=TRAIN_WITH_EI)
+
+        tocl()
+        
+        # pr.disable()
+        # s = io.StringIO()
+        # sortby = SortKey.CUMULATIVE
+        # ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+        # ps.print_stats()
+        # print(s.getvalue())
+        # exit()
+
         test_loop(test_aq_dataloader, model,
                   policy_gradient=POLICY_GRADIENT, fit_map_gp=FIT_MAP_GP)
 
@@ -346,6 +383,7 @@ else:
     model.load_state_dict(torch.load(model_path))
 
 model.eval()
+
 
 
 test_aq_dataset_big = test_aq_dataset \

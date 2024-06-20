@@ -1,5 +1,7 @@
+import math
+from typing import List, Sequence, Union
+import warnings
 import torch
-from torch.masked import masked_tensor
 from functools import partial
 
 
@@ -36,7 +38,7 @@ def pad_tensor(vec, length, dim, add_mask=False):
         vec - tensor to pad
         length - the size to pad to in dimension 'dim'
         dim - dimension to pad
-        add_mask - whether to return a MaskedTensor that includes the mask
+        add_mask - whether to return the mask as well as (tensor, mask)
 
     return:
         a new tensor padded to 'length' in dimension 'dim'
@@ -57,7 +59,7 @@ def pad_tensor(vec, length, dim, add_mask=False):
         mask_true = torch.ones(vec.shape, dtype=torch.bool, device=vec.device)
         mask_false = torch.zeros(*pad_shape, dtype=torch.bool, device=vec.device)
         mask = torch.cat([mask_true, mask_false], dim=dim)
-        padded = masked_tensor(padded, mask)
+        return padded, mask
 
     return padded
 
@@ -70,7 +72,7 @@ def max_pad_tensors_batch(tensors, dim=0, add_mask=False):
         dim (int, default: 0): The dimension along which to pad the tensors.
         add_mask (bool, optional, default: False):
             If add_mask=True AND tensors are of different lengths
-            (padding is necessary), add a mask and return a MaskedTensor.
+            (padding is necessary), return mask as well as (tensor, mask).
             Otherwise, returns a regular tensor padded with zeros.
 
     Returns:
@@ -80,16 +82,56 @@ def max_pad_tensors_batch(tensors, dim=0, add_mask=False):
     max_length = max(lengths)
     if all(length == max_length for length in lengths):
         stacked = torch.stack(tensors) # Don't pad if we don't need to
+        if add_mask:
+            mask = None
     else:
-        # MaskedTensor doesn't support torch.stack but does support torch.vstack
-        # so need to add a dimension to all of them and then vstack which is
-        # equivalent.
-        padded_tensors = [
-            pad_tensor(x.unsqueeze(0), max_length, dim=1+dim, add_mask=add_mask)
-            for x in tensors]
-        stacked = torch.vstack(padded_tensors)
+        if add_mask:
+            padded_tensors, masks = zip(*[
+                pad_tensor(x, max_length, dim=dim, add_mask=True)
+                for x in tensors])
+            stacked = torch.stack(padded_tensors)
+            mask = torch.stack(masks)
+        else:
+            padded_tensors = [
+                pad_tensor(x, max_length, dim=dim, add_mask=False)
+                for x in tensors]
+            stacked = torch.stack(padded_tensors)
     
+    if add_mask:
+        return stacked, mask
     return stacked
+
+
+# Taken from
+# https://pytorch.org/docs/stable/_modules/torch/utils/data/dataset.html#random_split
+def get_lengths_from_proportions(total_length: int, proportions: Sequence[float]):
+    subset_lengths: List[int] = []
+    for i, frac in enumerate(proportions):
+        if frac < 0 or frac > 1:
+            raise ValueError(f"Fraction at index {i} is not between 0 and 1")
+        n_items_in_split = int(math.floor(total_length * frac))
+        subset_lengths.append(n_items_in_split)
+    remainder = total_length - sum(subset_lengths)
+    # add 1 to all the lengths in round-robin fashion until the remainder is 0
+    for i in range(remainder):
+        idx_to_add_at = i % len(subset_lengths)
+        subset_lengths[idx_to_add_at] += 1
+    lengths = subset_lengths
+    for i, length in enumerate(lengths):
+        if length == 0:
+            warnings.warn(
+                f"Length of split at index {i} is 0. "
+                f"This might result in an empty dataset."
+            )
+    return lengths
+
+
+def get_lengths_from_proportions_or_lengths(
+        total_length: int, lengths: Sequence[Union[int, float]]):
+    lengths_is_proportions = math.isclose(sum(lengths), 1) and sum(lengths) <= 1
+    if lengths_is_proportions:
+        return get_lengths_from_proportions(total_length, lengths)
+    return lengths
 
 
 # Based on
