@@ -1,5 +1,8 @@
 import torch
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print("Device:", device)
+print(torch.cuda.current_device())
+print(torch.cuda.get_device_name(torch.cuda.current_device()))
 from torch import nn
 
 from generate_gp_data import GaussianProcessRandomDataset, TrainAcquisitionFunctionDataset
@@ -97,7 +100,7 @@ import torch.distributions as dist
 
 
 # True for the softmax thing, False for MSE
-POLICY_GRADIENT = False
+POLICY_GRADIENT = True
 
 # Only used if POLICY_GRADIENT is True
 INCLUDE_ALPHA = True
@@ -212,8 +215,8 @@ model = AcquisitionFunctionNetV2(DIMENSION,
                                  learn_alpha=LEARN_ALPHA,
                                  initial_alpha=INITIAL_ALPHA,
                                  activation_at_end_pointnet=True,
-                                 layer_norm_pointnet=True,
-                                 layer_norm_before_end_mlp=True,
+                                 layer_norm_pointnet=False,
+                                 layer_norm_before_end_mlp=False,
                                  layer_norm_at_end_mlp=False,
                                  include_best_y=False,
                                  activation_pointnet=nn.ReLU,
@@ -239,6 +242,9 @@ model = AcquisitionFunctionNetV2(DIMENSION,
 #                                     include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
 #                                     learn_alpha=LEARN_ALPHA,
 #                                     initial_alpha=INITIAL_ALPHA).to(device)
+
+
+print(next(model.parameters()).is_cuda)
 
 
 dataset_kwargs = dict(dimension=DIMENSION, observation_noise=False,
