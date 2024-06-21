@@ -591,9 +591,9 @@ class FunctionSamplesMapDataset(FunctionSamplesDataset):
     their associated GP models and parameters.
 
     Attributes:
-        data (List[dict]): The dataset, where each item is a dictionary
-            containing 'x_values' and 'y_values', and also 'model_index' and
-            'model_params' if models are associated with the dataset.
+        data: The dataset, where each item is a tuple or GPDatasetItem
+            containing x_values, y_values and also model if models are
+            associated with the dataset.
         model_sampler (RandomModelSampler): The random model sampler, if models
             are associated with the dataset.
 
@@ -604,16 +604,38 @@ class FunctionSamplesMapDataset(FunctionSamplesDataset):
         function_samples_dataset.save('path/to/directory')
         loaded_dataset = FunctionSamplesMapDataset.load('path/to/directory')
     """
-    def __init__(self, data: List[dict], model_sampler:Optional[RandomModelSampler]=None):
-            """
-            Initializes an instance of the class with the given data.
+    def __init__(self, data: Union[List[GPDatasetItem], List[tuple]],
+                 model_sampler: Optional[RandomModelSampler]=None):
+        """
+        Initializes an instance of the class with the given data.
 
-            Args:
-                data (List[dict]): A list of dictionaries containing the data.
-                model_sampler: Optional RandomModelSampler instance to associate
-            """
-            self.data = data
-            self._model_sampler = model_sampler
+        Args:
+            data: A list of tuples or GPDatasetItem containing the data.
+            model_sampler: Optional RandomModelSampler instance to associate
+        """
+        if not (model_sampler is None or isinstance(model_sampler, RandomModelSampler)):
+            raise ValueError("model_sampler should be None or a RandomModelSampler instance")
+
+        if all(isinstance(x, GPDatasetItem) for x in data):
+            if model_sampler is None:
+                raise ValueError("model_sampler should not be None if all items are GPDatasetItem")
+            for item in data:
+                if item.model_index is None:
+                    raise ValueError("model_index should be specified for each GPDatasetItem")
+                else:
+                    assert model_sampler._models[item.model_index] is item._model
+        elif all(isinstance(x, tuple) for x in data):
+            if model_sampler is None:
+                # x_values, y_values
+                assert all(len(x) == 2 for x in data)
+            else:
+                # x_values, y_values, model
+                assert all(len(x) == 3 for x in data)
+        else:
+            raise ValueError("All items in data should be either GPDatasetItem or tuple")
+
+        self.data = data
+        self._model_sampler = model_sampler
     
     @property
     def has_models(self):
@@ -643,13 +665,42 @@ class FunctionSamplesMapDataset(FunctionSamplesDataset):
                 raise NotADirectoryError(f"Path {dir_name} is not a directory")
         else:
             os.mkdir(dir_name)
+        
+        has_models = self.has_models
 
         # Save the models if we have them
-        if self.has_models:
+        if has_models:
             models = self.model_sampler.initial_models
             torch.save(models, os.path.join(dir_name, "models.pt"))
+        
+        list_of_dicts = []
+        for item in data:
+            if has_models:
+                if isinstance(item, GPDatasetItem):
+                    x_values, y_values = item.x_values, item.y_values
+                    model_index = item.model_index
+                    model_params = item.model_params
+                else:
+                    x_values, y_values, model = item
+                    # need to copy the data, otherwise everything will be same
+                    model_params = {name: param.detach().clone()
+                                    for name, param in model.named_parameters()}
+                    model_index = model.index
+                
+                list_of_dicts.append({
+                    'x_values': x_values,
+                    'y_values': y_values,
+                    'model_index': model_index,
+                    'model_params': model_params
+                })
+            else:
+                x_values, y_values = item
+                list_of_dicts.append({
+                    'x_values': x_values,
+                    'y_values': y_values
+                })
 
-        torch.save(data, os.path.join(dir_name, "data.pt"))
+        torch.save(list_of_dicts, os.path.join(dir_name, "data.pt"))
     
     def __getitem__(self, index):
         """Retrieves a single sample from the dataset at the specified index.
@@ -662,15 +713,7 @@ class FunctionSamplesMapDataset(FunctionSamplesDataset):
             (x_values, y_values, model), where 'model' is the GP model that
             generated the sample. Otherwise, returns a tuple(x_values, y_values)
         """
-        item = self.data[index]
-        if self.has_models:
-            model_index = item['model_index']
-            model_params = item['model_params']
-            model = self.model_sampler._models[model_index]
-            return GPDatasetItem(
-                item['x_values'], item['y_values'], model, model_params)
-        else:
-            return item['x_values'], item['y_values']
+        return self.data[index]
     
     def __len__(self):
         return len(self.data)
@@ -694,15 +737,28 @@ class FunctionSamplesMapDataset(FunctionSamplesDataset):
         if not os.path.isdir(dir_name): # Error if path isn't directory
             raise NotADirectoryError(f"Path {dir_name} is not a directory")
 
-        data = torch.load(os.path.join(dir_name, "data.pt"))
-        
+        list_of_dicts = torch.load(os.path.join(dir_name, "data.pt"))
+
         models_path = os.path.join(dir_name, "models.pt")
         if os.path.exists(models_path):
             models = torch.load(models_path)
             model_sampler = RandomModelSampler(models)
+
+            data = []
+            for item in list_of_dicts:
+                model_index = item['model_index']
+                data.append(GPDatasetItem(
+                    item['x_values'], item['y_values'],
+                    model=model_sampler._models[model_index],
+                    model_params=item['model_params']))
             return FunctionSamplesMapDataset(data, model_sampler)
-        
-        return FunctionSamplesMapDataset(data)
+        else:
+            data = []
+            for item in list_of_dicts:
+                if 'model_index' in item or 'model_params' in item:
+                    raise ValueError("Model information should not be present in the data if models are not saved.")
+                data.append((item['x_values'], item['y_values']))
+            return FunctionSamplesMapDataset(data)
     
     @staticmethod
     def from_iterable_dataset(dataset: FunctionSamplesDataset,
@@ -753,36 +809,20 @@ class FunctionSamplesMapDataset(FunctionSamplesDataset):
                         raise ValueError(f"n_realizations should be <= len(dataset)={original_dataset_size} if dataset is not a SizedIterableMixin")
                     dataset = _FirstNIterable(dataset, n_realizations)
 
-        samples_list = []
+        data = []
         has_models = dataset.has_models
         print("Generating GP realizations:")
         for item in tqdm(dataset):
-            if has_models:
-                if isinstance(item, GPDatasetItem):
-                    x_values, y_values = item.x_values, item.y_values
-                    model_index = item.model_index
-                    model_params = item.model_params
-                else:
-                    x_values, y_values, model = item
-                    # need to copy the data, otherwise everything will be same
-                    model_params = {name: param.detach().clone()
-                                    for name, param in model.named_parameters()}
-                    model_index = model.index
-                
-                samples_list.append({
-                    'x_values': x_values,
-                    'y_values': y_values,
-                    'model_index': model_index,
-                    'model_params': model_params
-                })
-            else:
-                x_values, y_values = item
-                samples_list.append({
-                    'x_values': x_values,
-                    'y_values': y_values
-                })
+            if has_models and not isinstance(item, GPDatasetItem):
+                x_values, y_values, model = item
+                # need to copy the data, otherwise everything will be same
+                model_params = {name: param.detach().clone()
+                                for name, param in model.named_parameters()}
+                item = GPDatasetItem(x_values, y_values, model, model_params)
+            data.append(item)
 
-        return FunctionSamplesMapDataset(samples_list, dataset.model_sampler)
+        return FunctionSamplesMapDataset(
+            data, dataset.model_sampler if dataset.has_models else None)
 
 
 class FunctionSamplesMapSubset(Subset, FunctionSamplesMapDataset):
