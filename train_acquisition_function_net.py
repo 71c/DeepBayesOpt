@@ -153,7 +153,13 @@ def train_loop(dataloader, model, optimizer, every_n_batches=10,
             print(f"{prefix}: {loss_value:>7f}{suffix}  [{i+1:>4d}/{n_batches:>4d}]")
 
 
-def test_loop(dataloader, model, policy_gradient=False, fit_map_gp=False):
+def to_device(tensor, device):
+    if tensor is None or device is None:
+        return tensor
+    return tensor.to(device)
+
+
+def test_loop(dataloader, model, policy_gradient=False, fit_map_gp=False, nn_device=None):
     model.eval()
 
     test_loss = 0.
@@ -176,14 +182,21 @@ def test_loop(dataloader, model, policy_gradient=False, fit_map_gp=False):
             probabilities_true_model = max_one_hot(ei_values_true_model, cand_mask)
             ei_true_gp = myopic_policy_gradient_loss(probabilities_true_model, improvements).item()
 
+            x_hist_nn = to_device(x_hist, nn_device)
+            y_hist_nn = to_device(y_hist, nn_device)
+            x_cand_nn = to_device(x_cand, nn_device)
+            improvements_nn = to_device(improvements, nn_device)
+            hist_mask_nn = to_device(hist_mask, nn_device)
+            cand_mask_nn = to_device(cand_mask, nn_device)
+
             if policy_gradient:
-                probabilities_nn = model(x_hist, y_hist, x_cand, hist_mask, cand_mask, exponentiate=False, softmax=True)
+                probabilities_nn = model(x_hist_nn, y_hist_nn, x_cand_nn, hist_mask_nn, cand_mask_nn, exponentiate=False, softmax=True)
                 avg_normalized_entropy_nn += get_average_normalized_entropy(probabilities_nn, mask=cand_mask).item()
                 # print(probabilities_nn)
-                test_loss += myopic_policy_gradient_loss(probabilities_nn, improvements).item()
+                test_loss += myopic_policy_gradient_loss(probabilities_nn, improvements_nn).item()
 
                 if cand_mask is None:
-                    always_predict_0_probabilities = torch.ones_like(probabilities_nn) / probabilities_nn.size(1)
+                    always_predict_0_probabilities = torch.ones_like(probabilities_true_model) / probabilities_true_model.size(1)
                 else:
                     always_predict_0_probabilities = cand_mask.double() / cand_mask.sum(dim=1, keepdim=True).double()
                 # print(always_predict_0_probabilities)
@@ -196,18 +209,18 @@ def test_loop(dataloader, model, policy_gradient=False, fit_map_gp=False):
 
                 probabilities_nn_max = max_one_hot(probabilities_nn, cand_mask)
             else:
-                ei_values_nn = model(x_hist, y_hist, x_cand, hist_mask, cand_mask, exponentiate=True)
-                test_loss += mse_loss(ei_values_nn, improvements, cand_mask).item()
+                ei_values_nn = model(x_hist_nn, y_hist_nn, x_cand_nn, hist_mask_nn, cand_mask_nn, exponentiate=True)
+                test_loss += mse_loss(ei_values_nn, improvements_nn, cand_mask_nn).item()
 
-                always_predict_0_loss += mse_loss(torch.zeros_like(ei_values_nn), improvements, cand_mask).item()
+                always_predict_0_loss += mse_loss(torch.zeros_like(ei_values_true_model), improvements, cand_mask).item()
 
                 test_loss_true_gp += mse_loss(ei_values_true_model, improvements, cand_mask).item()
 
                 test_ei_true_gp += ei_true_gp
 
-                probabilities_nn_max = max_one_hot(ei_values_nn, cand_mask)
+                probabilities_nn_max = max_one_hot(ei_values_nn, cand_mask_nn)
             
-            test_loss_max += myopic_policy_gradient_loss(probabilities_nn_max, improvements).item()
+            test_loss_max += myopic_policy_gradient_loss(probabilities_nn_max, improvements_nn).item()
 
         if fit_map_gp:
             ei_values_map = calculate_EI_GP_padded_batch(x_hist, y_hist, x_cand, hist_mask, cand_mask, models, fit_params=True)

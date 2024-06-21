@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from functools import partial
 import torch
 import gpytorch
 import pyro
@@ -1251,7 +1252,7 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
         ]
     
     @staticmethod
-    def _collate_train_acquisition_function_samples(samples_list):
+    def _collate_train_acquisition_function_samples(samples_list, device=None):
         if isinstance(samples_list[0], TrainAcquisitionFunctionDatasetModelItem):
             unzipped_lists_first_4 = list(zip(*
                     [x[:4] for x in samples_list]))
@@ -1273,9 +1274,19 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
         x_cand = max_pad_tensors_batch(x_cands, add_mask=False)
         vals_cand, cand_mask = max_pad_tensors_batch(vals_cands, add_mask=True)
 
+        if device is not None:
+            x_hist = x_hist.to(device)
+            y_hist = y_hist.to(device)
+            x_cand = x_cand.to(device)
+            vals_cand = vals_cand.to(device)
+            if hist_mask is not None:
+                hist_mask = hist_mask.to(device)
+            if cand_mask is not None:
+                cand_mask = cand_mask.to(device)
+
         return [x_hist, y_hist, x_cand, vals_cand, hist_mask, cand_mask] + unzipped_lists[4:]
     
-    def get_dataloader(self, batch_size=32, **kwargs):
+    def get_dataloader(self, batch_size=32, device=None, **kwargs):
         """Returns a DataLoader object for the dataset.
 
         Args:
@@ -1306,8 +1317,11 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
         if 'shuffle' in kwargs and kwargs['shuffle']:
             # Can't do shuffle=True on a IterableDataset
             raise ValueError("shuffle should not be specified as True in get_dataloader; the dataset is already shuffled")
+        collate_fn = TrainAcquisitionFunctionDataset._collate_train_acquisition_function_samples
+        if device is not None:
+            collate_fn = partial(collate_fn, device=device)
         return DataLoader(self, batch_size=batch_size, shuffle=False,
-                          collate_fn=TrainAcquisitionFunctionDataset._collate_train_acquisition_function_samples,
+                          collate_fn=collate_fn,
                           **kwargs)
 
 

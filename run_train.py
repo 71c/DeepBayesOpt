@@ -182,7 +182,6 @@ FIT_MAP_GP = False
 
 # Initialize the acquisition function network
 
-
 # model = AcquisitionFunctionNetV4(DIMENSION,
 #                                  history_enc_hidden_dims=[32, 32], pooling="max",
 #                  include_local_features=True,
@@ -257,13 +256,15 @@ else:
 
 TRAIN_SIZE, TEST_SIZE = get_lengths_from_proportions_or_lengths(dataset_size, [TRAIN_SIZE, TEST_SIZE])
 
-print(next(model.parameters()).is_cuda)
-
-
+# Generating the random GP realizations is faster on CPU than on GPU.
+# This is likely because the random GP realizations are generated one-by-one
+# rather than in batches since the number of points is random so it's difficult
+# to batch this. Hence we set device="cpu".
+# Also, making the padded batches (the creation of zeros, concatenating, and
+# stacking) on CPU rather than on GPU is much faster.
 dataset_kwargs = dict(dimension=DIMENSION, observation_noise=False,
     set_random_model_train_data=False, xvalue_distribution=XVALUE_DISTRIBUTION,
-    device=device, # dataset_size=dataset_size,
-    randomize_params=RANDOMIZE_PARAMS)
+    device="cpu", randomize_params=RANDOMIZE_PARAMS)
 
 train_dataset = GaussianProcessRandomDataset(
     **dataset_kwargs, dataset_size=TRAIN_SIZE,
@@ -306,8 +307,7 @@ print(n_hist_and_candidates_examples)
 # print("Examples of history lengths:", sample_n_points - N_CANDIDATES)
 
 
-
-train_aq_dataloader = train_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_last=True)
+train_aq_dataloader = train_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_last=True, device=device)
 test_aq_dataloader = test_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_last=True)
 
 
@@ -372,7 +372,8 @@ if TRAIN:
         # exit()
 
         test_loop(test_aq_dataloader, model,
-                  policy_gradient=POLICY_GRADIENT, fit_map_gp=FIT_MAP_GP)
+                  policy_gradient=POLICY_GRADIENT, fit_map_gp=FIT_MAP_GP,
+                  nn_device=device)
 
     print("Done training!")
 
