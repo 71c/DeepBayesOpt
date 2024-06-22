@@ -185,7 +185,7 @@ class GPDatasetItem(TupleWithModel):
         self.y_values = y_values
 
 
-class TrainAcquisitionFunctionDatasetModelItem(TupleWithModel):
+class AcquisitionDatasetModelItem(TupleWithModel):
     def __init__(self, x_hist, y_hist, x_cand, vals_cand, model, model_params=None):
         super().__init__(x_hist, y_hist, x_cand, vals_cand, model=model, model_params=model_params)
         self.x_hist = x_hist
@@ -1059,17 +1059,13 @@ class ModelsWithParamsList:
         return type(self) == type(other) and self._models_and_params == other._models_and_params
 
 
-class TrainAcquisitionFunctionDataset(IterableDataset):
-    """
-    An IterableDataset designed for training a "likelihood-free" DNN acquisition
-    function.
-    It processes a FunctionSamplesDataset instance to generate training data
-    consisting of historical observations and candidate points for acquisition
-    function evaluation. The data is generated randomly on-the-fly.
-
+class AcquisitionDataset(Dataset, ABC):
+    """Abstract class for acquisition function datasets.
+    Designed for training a "likelihood-free" DNN acquisition function.
+    Generates training data consisting of historical observations and candidate
+    points for acquisition function training.
+    
     Attributes:
-        n_candidate_points: The number of candidate points to generate for
-            each training example.
         give_improvements (bool): If True, the dataset includes improvement
             values as targets instead of raw y-values of the candidate points.
             Improvement is calculated as the positive difference between the
@@ -1082,10 +1078,11 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
         each item also includes the associated GP model.
 
     Example:
-        dataset = GaussianProcessRandomDataset(n_datapoints=15, dimension=5, dataset_size=100)
+        dataset = GaussianProcessRandomDataset(
+            n_datapoints=15, dimension=5, dataset_size=100)
         
         # Creating the training dataset for acquisition functions
-        training_dataset = TrainAcquisitionFunctionDataset(
+        training_dataset = FunctionSamplesAcquisitionDataset(
             dataset=dataset, n_candidate_points=5, give_improvements=True)
         
         # Iterating over the dataset to train an acquisition function
@@ -1096,6 +1093,109 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
             # y_hist shape: (n_hist,)
             # x_cand shape: (n_cand, dimension)
             # improvements shape: (n_cand,)
+    """
+
+    give_improvements: bool
+    
+    @abstractmethod
+    def random_split(self, lengths: Sequence[Union[int, float]]):
+        """Randomly splits the dataset into multiple subsets.
+
+        Args:
+            lengths (Sequence[Union[int, float]]): A sequence of lengths
+            specifying the size of each subset, or the proportion of the
+            dataset to include in each subset.
+        """
+        pass  # pragma: no cover
+    
+    @staticmethod
+    def _collate_train_acquisition_function_samples(samples_list, device=None):
+        if isinstance(samples_list[0], AcquisitionDatasetModelItem):
+            unzipped_lists_first_4 = list(zip(*
+                    [x[:4] for x in samples_list]))
+            models_list = ModelsWithParamsList(
+                [(x._model, x.model_params) for x in samples_list])
+            unzipped_lists = unzipped_lists_first_4 + [models_list]
+        else:
+            unzipped_lists = list(zip(*samples_list))
+        # Each of these are tuples of tensors
+        x_hists, y_hists, x_cands, vals_cands = unzipped_lists[:4]
+
+        # x_hist shape: (n_hist, dimension)
+        # y_hist shape: (n_hist,)
+        # x_cand shape: (n_cand, dimension)
+        # vals_cand shape: (n_cand,)
+
+        x_hist = max_pad_tensors_batch(x_hists, add_mask=False)
+        y_hist, hist_mask = max_pad_tensors_batch(y_hists, add_mask=True)
+        x_cand = max_pad_tensors_batch(x_cands, add_mask=False)
+        vals_cand, cand_mask = max_pad_tensors_batch(vals_cands, add_mask=True)
+
+        if device is not None:
+            x_hist = x_hist.to(device)
+            y_hist = y_hist.to(device)
+            x_cand = x_cand.to(device)
+            vals_cand = vals_cand.to(device)
+            if hist_mask is not None:
+                hist_mask = hist_mask.to(device)
+            if cand_mask is not None:
+                cand_mask = cand_mask.to(device)
+
+        return [x_hist, y_hist, x_cand, vals_cand, hist_mask, cand_mask] + unzipped_lists[4:]
+    
+    def get_dataloader(self, batch_size=32, device=None, shuffle=True, **kwargs):
+        """Returns a DataLoader object for the dataset.
+
+        Args:
+            batch_size (int): The batch size for the DataLoader. Default is 32.
+            device (torch.device): The device to move the tensors to.
+            shuffle (bool): Whether to shuffle the data. Default is True.
+            **kwargs: Additional keyword arguments to be passed to the DataLoader constructor.
+
+        Raises:
+            ValueError: If 'collate_fn' is specified in kwargs.
+
+        Returns:
+            DataLoader: A DataLoader object for the dataset, where
+            each batch contains a list of tensors
+            [x_hist, y_hist, x_cand, vals_cand, hist_mask, cand_mask, models] or
+            [x_hist, y_hist, x_cand, vals_cand, hist_mask, cand_mask] if models
+            are not associated with the dataset.
+            
+            x_hist has shape (batch_size, n_hist, dimension),
+            y_hist and hist_mask have shape (batch_size, n_hist),
+            x_cand has shape (batch_size, n_cand, dimension),
+            vals_cand and cand_mask have shape (batch_size, n_cand),
+            and models is a batch_size length tuple of GP models associated
+            with the dataset.
+            Everything is padded with zeros along with the corresponding masks.
+        """
+        if 'collate_fn' in kwargs:
+            raise ValueError("collate_fn should not be specified in get_dataloader; we do it for you")
+        collate_fn = self._collate_train_acquisition_function_samples
+        if device is not None:
+            collate_fn = partial(collate_fn, device=device)
+        return DataLoader(self, batch_size=batch_size, shuffle=shuffle,
+                          collate_fn=collate_fn,
+                          **kwargs)
+
+
+class FunctionSamplesAcquisitionDataset(AcquisitionDataset, IterableDataset):
+    """An IterableDataset designed for training a "likelihood-free" DNN
+    acquisition function.
+    It processes a FunctionSamplesDataset instance to generate training data
+    consisting of historical observations and candidate points for acquisition
+    function evaluation. The data is generated randomly on-the-fly.
+
+    Attributes:
+        give_improvements (bool): If True, the dataset includes improvement
+            values as targets instead of raw y-values of the candidate points.
+            Improvement is calculated as the positive difference between the
+            candidate point's y-value and the current best observation.
+        n_candidate_points
+        n_samples
+        min_n_candidates
+        dataset_size_factor
     """
     def __init__(self,
                  dataset: FunctionSamplesDataset,
@@ -1237,18 +1337,20 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
     
     def __len__(self):
         if self._size is None:
-            raise TypeError("Length of the TrainAcquisitionFunctionDataset with an infinite iterable-style dataset and is infinite")
+            raise TypeError("Length of the FunctionSamplesAcquisitionDataset with an infinite iterable-style dataset and is infinite")
         return self._size
     
-    def copy_with_expanded_size(self, size_factor: int) -> "TrainAcquisitionFunctionDataset":
+    def copy_with_expanded_size(self, size_factor: int) -> "FunctionSamplesAcquisitionDataset":
         """Creates a copy of the dataset with an expanded size.
 
         Args:
             size_factor (int): The factor by which to expand the size of the dataset.
 
         Returns:
-            TrainAcquisitionFunctionDataset: A new instance of the dataset with the expanded size.
+            FunctionSamplesAcquisitionDataset: A new instance of the dataset with the expanded size.
         """
+        if not isinstance(size_factor, int) or size_factor <= 0:
+            raise ValueError(f"size_factor should be a positive integer, but got {size_factor=}")
         # Weaker condition than `if isinstance(self.base_dataset, SizedIterableMixin):`
         if callable(getattr(self.base_dataset, "copy_with_new_size", None)):
             return self.copy_with_new_size(self.base_dataset.size * size_factor)
@@ -1259,25 +1361,31 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
                 self.n_samples, self.give_improvements, self.min_n_candidates,
                 size_factor)
     
-    def copy_with_new_size(self, size: int) -> "TrainAcquisitionFunctionDataset":
+    def copy_with_new_size(self, size: int) -> "FunctionSamplesAcquisitionDataset":
         """Creates a copy of the dataset with a new size.
+        If the base dataset has the `copy_with_new_size` method then it is used
+        to create a copy of the base dataset with the specified size.
+        Otherwise, the dataset must be a map-style dataset in which case it is
+        expanded by a factor such that the new size is at least the specified
+        size.
 
         Args:
-            size (int):
-            The new size of the dataset.
+            size (int): the new size of the dataset.
 
         Returns:
-            TrainAcquisitionFunctionDataset: A new instance of the dataset with the specified size.
+            FunctionSamplesAcquisitionDataset:
+                A new instance of the dataset with the specified size.
         """
         # Weaker condition than `if isinstance(self.base_dataset, SizedIterableMixin):`
         if callable(getattr(self.base_dataset, "copy_with_new_size", None)):
+            assert self._dataset_is_iterable_style
             return type(self)(
                 self.base_dataset.copy_with_new_size(size),
                 self.n_candidate_points,
                 self.n_samples, self.give_improvements, self.min_n_candidates)
         else:
             if self._dataset_is_iterable_style:
-                raise TypeError("Cannot create a copy of TrainAcquisitionFunctionDataset with a new size if the base dataset is an iterable-style dataset that cannot be resized.")
+                raise TypeError("Cannot create a copy of FunctionSamplesAcquisitionDataset with a new size if the base dataset is an iterable-style dataset that cannot be resized.")
             if not isinstance(size, int) or size <= 0:
                 raise ValueError("size should be a positive integer.")
             return self.copy_with_expanded_size(math.ceil(size / len(self.base_dataset)))
@@ -1362,7 +1470,7 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
                 vals_cand = y_cand
 
             if has_models:
-                yield TrainAcquisitionFunctionDatasetModelItem(
+                yield AcquisitionDatasetModelItem(
                     x_hist, y_hist, x_cand, vals_cand, model, model_params)
             else:
                 yield x_hist, y_hist, x_cand, vals_cand
@@ -1382,47 +1490,13 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
                        self.dataset_size_factor)
             for split_dataset in split_gp_datasets
         ]
-    
-    @staticmethod
-    def _collate_train_acquisition_function_samples(samples_list, device=None):
-        if isinstance(samples_list[0], TrainAcquisitionFunctionDatasetModelItem):
-            unzipped_lists_first_4 = list(zip(*
-                    [x[:4] for x in samples_list]))
-            models_list = ModelsWithParamsList(
-                [(x._model, x.model_params) for x in samples_list])
-            unzipped_lists = unzipped_lists_first_4 + [models_list]
-        else:
-            unzipped_lists = list(zip(*samples_list))
-        # Each of these are tuples of tensors
-        x_hists, y_hists, x_cands, vals_cands = unzipped_lists[:4]
 
-        # x_hist shape: (n_hist, dimension)
-        # y_hist shape: (n_hist,)
-        # x_cand shape: (n_cand, dimension)
-        # vals_cand shape: (n_cand,)
-
-        x_hist = max_pad_tensors_batch(x_hists, add_mask=False)
-        y_hist, hist_mask = max_pad_tensors_batch(y_hists, add_mask=True)
-        x_cand = max_pad_tensors_batch(x_cands, add_mask=False)
-        vals_cand, cand_mask = max_pad_tensors_batch(vals_cands, add_mask=True)
-
-        if device is not None:
-            x_hist = x_hist.to(device)
-            y_hist = y_hist.to(device)
-            x_cand = x_cand.to(device)
-            vals_cand = vals_cand.to(device)
-            if hist_mask is not None:
-                hist_mask = hist_mask.to(device)
-            if cand_mask is not None:
-                cand_mask = cand_mask.to(device)
-
-        return [x_hist, y_hist, x_cand, vals_cand, hist_mask, cand_mask] + unzipped_lists[4:]
-    
     def get_dataloader(self, batch_size=32, device=None, **kwargs):
         """Returns a DataLoader object for the dataset.
 
         Args:
             batch_size (int): The batch size for the DataLoader. Default is 32.
+            device (torch.device): The device to move the tensors to.
             **kwargs: Additional keyword arguments to be passed to the DataLoader constructor.
 
         Raises:
@@ -1444,14 +1518,9 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
             with the dataset.
             Everything is padded with zeros along with the corresponding masks.
         """
-        if 'collate_fn' in kwargs:
-            raise ValueError("collate_fn should not be specified in get_dataloader; we do it for you")
-        if 'shuffle' in kwargs and kwargs['shuffle']:
+        shuffle = kwargs.pop("shuffle", False)
+        if shuffle:
             # Can't do shuffle=True on a IterableDataset
-            raise ValueError("shuffle should not be specified as True in get_dataloader; the dataset is already shuffled")
-        collate_fn = TrainAcquisitionFunctionDataset._collate_train_acquisition_function_samples
-        if device is not None:
-            collate_fn = partial(collate_fn, device=device)
-        return DataLoader(self, batch_size=batch_size, shuffle=False,
-                          collate_fn=collate_fn,
-                          **kwargs)
+            raise ValueError(f"shuffle should not be specified as True in {self.__class__.__name__}.get_dataloader; the dataset is already shuffled")
+        return super().get_dataloader(batch_size=batch_size, device=device,
+                                      shuffle=False, **kwargs)

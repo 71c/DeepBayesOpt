@@ -5,7 +5,7 @@ if torch.cuda.is_available():
     print(torch.cuda.get_device_name(torch.cuda.current_device()))
 from torch import nn
 
-from generate_gp_data import GaussianProcessRandomDataset, FunctionSamplesMapDataset, TrainAcquisitionFunctionDataset
+from generate_gp_data import GaussianProcessRandomDataset, FunctionSamplesMapDataset, FunctionSamplesAcquisitionDataset
 from utils import get_uniform_randint_generator, get_loguniform_randint_generator, get_lengths_from_proportions_or_lengths
 from acquisition_function_net import AcquisitionFunctionNetV1, AcquisitionFunctionNetV2, AcquisitionFunctionNetV3, AcquisitionFunctionNetV4, AcquisitionFunctionNetDense, LikelihoodFreeNetworkAcquisitionFunction
 from predict_EI_simple import calculate_EI_GP
@@ -198,19 +198,19 @@ if FIX_TEST_DATASET:
     test_dataset = FunctionSamplesMapDataset.from_iterable_dataset(test_dataset)
 
 if FIX_N_CANDIDATES:
-    train_aq_dataset = TrainAcquisitionFunctionDataset(
+    train_aq_dataset = FunctionSamplesAcquisitionDataset(
         train_dataset, n_candidate_points=N_CANDIDATES,
         n_samples="all", give_improvements=True)
-    test_aq_dataset = TrainAcquisitionFunctionDataset(
+    test_aq_dataset = FunctionSamplesAcquisitionDataset(
         test_dataset,
         n_candidate_points=N_CANDIDATES if POLICY_GRADIENT else TEST_N_CANDIDATES,
         n_samples="all", give_improvements=True)
 else:
     assert POLICY_GRADIENT
-    train_aq_dataset = TrainAcquisitionFunctionDataset(
+    train_aq_dataset = FunctionSamplesAcquisitionDataset(
         train_dataset, n_candidate_points="uniform", n_samples="all",
         give_improvements=True, min_n_candidates=MIN_N_CANDIDATES)
-    test_aq_dataset = TrainAcquisitionFunctionDataset(
+    test_aq_dataset = FunctionSamplesAcquisitionDataset(
         test_dataset, n_candidate_points="uniform", n_samples="all",
         give_improvements=True, min_n_candidates=MIN_N_CANDIDATES)
 

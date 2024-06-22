@@ -2,7 +2,7 @@ import torch
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 import os
-from generate_gp_data import GaussianProcessRandomDataset, TrainAcquisitionFunctionDataset
+from generate_gp_data import GaussianProcessRandomDataset, FunctionSamplesAcquisitionDataset
 from utils import get_uniform_randint_generator, get_loguniform_randint_generator, pad_tensor
 from acquisition_function_net import AcquisitionFunctionNetV1, AcquisitionFunctionNetV2, AcquisitionFunctionNetV3
 
@@ -149,7 +149,7 @@ dataset = GaussianProcessRandomDataset(
     device=device,
     dataset_size=BATCH_SIZE * N_BATCHES)
 
-aq_dataset = TrainAcquisitionFunctionDataset(
+aq_dataset = FunctionSamplesAcquisitionDataset(
     dataset, n_candidate_points="uniform", n_samples="all",
     give_improvements=False, min_n_candidates=2)
 
