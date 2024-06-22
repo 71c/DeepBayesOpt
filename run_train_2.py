@@ -6,7 +6,7 @@ if torch.cuda.is_available():
     print(torch.cuda.get_device_name(torch.cuda.current_device()))
 from torch import nn
 
-from generate_gp_data import GaussianProcessRandomDataset, FunctionSamplesMapDataset, TrainAcquisitionFunctionDataset
+from generate_gp_data import GaussianProcessRandomDataset, FunctionSamplesMapDataset, LazyFunctionSamplesMapDataset, TrainAcquisitionFunctionDataset
 from utils import get_uniform_randint_generator, get_loguniform_randint_generator, get_lengths_from_proportions
 from acquisition_function_net import AcquisitionFunctionNetV1, AcquisitionFunctionNetV2, AcquisitionFunctionNetV3, AcquisitionFunctionNetV4, AcquisitionFunctionNetDense, LikelihoodFreeNetworkAcquisitionFunction
 from predict_EI_simple import calculate_EI_GP
@@ -124,7 +124,10 @@ test_dataset = GaussianProcessRandomDataset(
 if FIX_TRAIN_DATASET:
     train_dataset = FunctionSamplesMapDataset.from_iterable_dataset(train_dataset)
 if FIX_TEST_DATASET:
-    test_dataset = FunctionSamplesMapDataset.from_iterable_dataset(test_dataset)
+    ## Either way works, it just depends on when you wanna wait longer --
+    ## preemptively vs when you actually need the data. Same time spent.
+    # test_dataset = FunctionSamplesMapDataset.from_iterable_dataset(test_dataset)
+    test_dataset = LazyFunctionSamplesMapDataset(test_dataset)
 
 
 #### Make train-acquisition-function dataset from function samples dataset #####

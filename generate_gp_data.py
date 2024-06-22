@@ -541,7 +541,7 @@ class GaussianProcessRandomDataset(FunctionSamplesDataset, IterableDataset, Size
             model_probabilities=self.model_sampler.model_probabilities,
             set_random_model_train_data=self.set_random_model_train_data,
             dataset_size=dataset_size, randomize_params=self.model_sampler.randomize_params)
-    
+
     def _next(self):
         """Generate a random Gaussian Process model and sample from it.
 
@@ -587,23 +587,25 @@ class GaussianProcessRandomDataset(FunctionSamplesDataset, IterableDataset, Size
 
 
 class FunctionSamplesMapDatasetBase(FunctionSamplesDataset, ABC):
-    """A dataset class that holds function samples, as well as optionally
-    their associated GP models and parameters.
-
-    Attributes:
-        data: The dataset, where each item is a tuple or GPDatasetItem
-            containing x_values, y_values and also model if models are
-            associated with the dataset.
-        model_sampler (RandomModelSampler): The random model sampler, if models
-            are associated with the dataset.
-
-    Example:
-        ```
-        rand_dataset = GaussianProcessRandomDataset(n_datapoints=15, dimension=5)
-        function_samples_dataset = FunctionSamplesMapDataset.from_iterable_dataset(rand_dataset, 100)
-        function_samples_dataset.save('path/to/directory')
-        loaded_dataset = FunctionSamplesMapDataset.load('path/to/directory')
+    """A base class for `FunctionSamplesDataset` datasets that hold function
+    samples in a map style (i.e. implement `__getitem__` and `__len__`).
+    
+    All subclasses should implement `__getitem__` and `__len__`.
+    `__getitem__` is partially implemented for slices where it returns a
+    `FunctionSamplesMapSubset` instance, so subclasses should check for
+    slices and use super() accordingly.
+    
+    Subclasses should also have the `_model_sampler` attribute, which is a
+    `RandomModelSampler` instance if models are associated with the dataset
+    and is `None` otherwise.
+    
+    The `has_models`, `model_sampler`, `random_split`, and `save` methods
+    are implemented in this class.
+    
+    This class also has the classmethod `_get_items_generator_and_size` that
+    can be used in subclasses.
     """
+
     @abstractmethod
     def __getitem__(self, index):
         """Retrieves a single sample from the dataset at the specified index.
@@ -645,7 +647,7 @@ class FunctionSamplesMapDatasetBase(FunctionSamplesDataset, ABC):
             if not isinstance(n_realizations, int) or n_realizations <= 0:
                 raise ValueError("n_realizations should be a positive integer.")
             if n_realizations > len(dataset_to_save):
-                raise ValueError(f"To save FunctionSamplesMapDataset, cannot make n_realizations > len(dataset). Got {n_realizations=} and len(dataset)={len(dataset_to_save)}")
+                raise ValueError(f"To save {self.__class__.__name__}, cannot make n_realizations > len(dataset). Got {n_realizations=} and len(dataset)={len(dataset_to_save)}")
             dataset_to_save = dataset_to_save[:n_realizations]
 
         if os.path.exists(dir_name):
@@ -690,8 +692,8 @@ class FunctionSamplesMapDatasetBase(FunctionSamplesDataset, ABC):
 
         torch.save(list_of_dicts, os.path.join(dir_name, "data.pt"))
     
-    @staticmethod
-    def _resize_iterable_dataset(dataset, n_realizations):
+    @classmethod
+    def _resize_iterable_dataset(cls, dataset, n_realizations):
         if not (isinstance(dataset, FunctionSamplesDataset) and
                 isinstance(dataset, IterableDataset)):
             raise TypeError("dataset should be an instance of both FunctionSamplesDataset and IterableDataset")
@@ -703,7 +705,7 @@ class FunctionSamplesMapDatasetBase(FunctionSamplesDataset, ABC):
 
         if n_realizations is None:
             if original_dataset_size is None:
-                raise ValueError("Can't create an infinite FunctionSamplesMapDataset from an infinite-sized FunctionSamplesDataset IterableDataset. Either specify n_realizations or use a finite-sized IterableDataset.")
+                raise ValueError(f"Can't create an infinite {cls.__name__} from an infinite-sized FunctionSamplesDataset IterableDataset. Either specify n_realizations or use a finite-sized IterableDataset.")
         else:
             if not isinstance(n_realizations, int) or n_realizations <= 0:
                 raise ValueError("n_realizations should be a positive integer")
@@ -732,11 +734,29 @@ class FunctionSamplesMapDatasetBase(FunctionSamplesDataset, ABC):
                 item = GPDatasetItem(x_values, y_values, model, model_params)
             yield item
     
-    @staticmethod
-    def _get_items_generator_and_size(dataset, n_realizations, verbose=True):
-        dataset_resized = FunctionSamplesMapDataset._resize_iterable_dataset(
+    @classmethod
+    def _get_items_generator_and_size(cls, dataset: FunctionSamplesDataset,
+                                      n_realizations: Optional[int]=None,
+                                      verbose: bool=True):
+        """
+        Args:
+            dataset (`FunctionSamplesDataset` and `IterableDataset`):
+                The dataset from which to generate samples.
+                Must be both a `FunctionSamplesDataset` and a `IterableDataset`.
+            n_realizations (int, positive):
+                The number of function realizations (samples) to generate.
+                Optional if the dataset has finite size, in which case the size
+                of the dataset is used.
+            verbose (bool):
+                Whether to print progress bar or not.
+        
+        Returns: a tuple (items_generator, size) where
+            items_generator (generator): A generator that yields the items.
+            size (int): The size of the resized dataset.
+        """
+        dataset_resized = cls._resize_iterable_dataset(
             dataset, n_realizations)
-        items_generator = FunctionSamplesMapDataset._get_items_generator(
+        items_generator = cls._get_items_generator(
             dataset_resized, dataset.has_models, verbose)
         return items_generator, len(dataset_resized)
 
@@ -746,9 +766,6 @@ class FunctionSamplesMapDataset(FunctionSamplesMapDatasetBase):
     their associated GP models and parameters.
 
     Attributes:
-        data: The dataset, where each item is a tuple or GPDatasetItem
-            containing x_values, y_values and also model if models are
-            associated with the dataset.
         model_sampler (RandomModelSampler): The random model sampler, if models
             are associated with the dataset.
 
@@ -761,8 +778,7 @@ class FunctionSamplesMapDataset(FunctionSamplesMapDatasetBase):
     """
     def __init__(self, data: Union[List[GPDatasetItem], List[tuple]],
                  model_sampler: Optional[RandomModelSampler]=None):
-        """
-        Initializes an instance of the class with the given data.
+        """Initializes an instance of the class with the given data.
 
         Args:
             data: A list of tuples or GPDatasetItem containing the data.
@@ -800,10 +816,9 @@ class FunctionSamplesMapDataset(FunctionSamplesMapDatasetBase):
     def __len__(self):
         return len(self._data)
 
-    @staticmethod
-    def load(dir_name: str):
-        """
-        Loads a dataset from a given directory. The directory must contain a
+    @classmethod
+    def load(cls, dir_name: str):
+        """Loads a dataset from a given directory. The directory must contain a
         saved instance of FunctionSamplesMapDataset, including the data and
         optionally the models.
 
@@ -833,17 +848,17 @@ class FunctionSamplesMapDataset(FunctionSamplesMapDatasetBase):
                     item['x_values'], item['y_values'],
                     model=model_sampler._models[model_index],
                     model_params=item['model_params']))
-            return FunctionSamplesMapDataset(data, model_sampler)
+            return cls(data, model_sampler)
         else:
             data = []
             for item in list_of_dicts:
                 if 'model_index' in item or 'model_params' in item:
                     raise ValueError("Model information should not be present in the data if models are not saved.")
                 data.append((item['x_values'], item['y_values']))
-            return FunctionSamplesMapDataset(data)
+            return cls(data)
     
-    @staticmethod
-    def from_iterable_dataset(dataset: FunctionSamplesDataset,
+    @classmethod
+    def from_iterable_dataset(cls, dataset: FunctionSamplesDataset,
                               n_realizations:Optional[int] = None,
                               verbose: bool = True):
         """Creates an instance of FunctionSamplesMapDataset from a given
@@ -869,7 +884,7 @@ class FunctionSamplesMapDataset(FunctionSamplesMapDatasetBase):
             dataset = GaussianProcessRandomDataset(n_datapoints=15, dimension=5)
             samples_dataset = FunctionSamplesMapDataset.from_iterable_dataset(dataset, 100)
         """
-        items_generator, size = FunctionSamplesMapDatasetBase._get_items_generator_and_size(
+        items_generator, size = cls._get_items_generator_and_size(
             dataset, n_realizations, verbose)
         data = list(items_generator)
         return FunctionSamplesMapDataset(
@@ -877,9 +892,23 @@ class FunctionSamplesMapDataset(FunctionSamplesMapDatasetBase):
 
 
 class LazyFunctionSamplesMapDataset(FunctionSamplesMapDatasetBase):
+    """A dataset class that lazily generates function samples.
+
+    This class extends the `FunctionSamplesMapDatasetBase` class and provides
+    lazy loading of function samples. It generates function samples on-the-fly
+    when accessed, rather than loading all samples into memory at once.
+    """
     def __init__(self, dataset: FunctionSamplesDataset,
                  n_realizations:Optional[int] = None):
-        items_generator, size = FunctionSamplesMapDatasetBase._get_items_generator_and_size(
+        """
+        Args:
+            dataset (FunctionSamplesDataset):
+                The underlying function samples dataset.
+            n_realizations (Optional[int]):
+                The number of realizations to generate.
+                If None, all realizations will be generated.
+        """
+        items_generator, size = self._get_items_generator_and_size(
             dataset, n_realizations, verbose=False)
         self._items_generator = items_generator
         self._size = size
@@ -898,7 +927,13 @@ class LazyFunctionSamplesMapDataset(FunctionSamplesMapDatasetBase):
 
 
 class FunctionSamplesMapSubset(Subset, FunctionSamplesMapDatasetBase):
+    """A subset of a FunctionSamplesMapDatasetBase dataset."""
     def __init__(self, dataset: FunctionSamplesMapDatasetBase, indices: Sequence[int]) -> None:
+        """
+        Args:
+            dataset (FunctionSamplesMapDatasetBase): The original dataset.
+            indices (Sequence[int]): The indices of the samples in the subset.
+        """
         if not isinstance(dataset, FunctionSamplesMapDatasetBase):
             raise ValueError("dataset should be an instance of FunctionSamplesMapDatasetBase")
         
@@ -906,6 +941,8 @@ class FunctionSamplesMapSubset(Subset, FunctionSamplesMapDatasetBase):
         Subset.__init__(self, dataset, indices)
 
     def __getitem__(self, idx):
+        if isinstance(idx, slice):
+            return FunctionSamplesMapDatasetBase.__getitem__(self, idx)
         return Subset.__getitem__(self, idx)
     
     def __len__(self):
@@ -1418,5 +1455,3 @@ class TrainAcquisitionFunctionDataset(IterableDataset):
         return DataLoader(self, batch_size=batch_size, shuffle=False,
                           collate_fn=collate_fn,
                           **kwargs)
-
-
