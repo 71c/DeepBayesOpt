@@ -177,6 +177,10 @@ def test_loop(dataloader, model, policy_gradient=False, fit_map_gp=False, nn_dev
     for batch in tqdm(dataloader):
         x_hist, y_hist, x_cand, improvements, hist_mask, cand_mask, models = batch
         
+        # For testing
+        # test_ei_true_gp += 1. # to avoid division by zero
+        # continue
+        
         with torch.no_grad():
             ei_values_true_model = calculate_EI_GP_padded_batch(x_hist, y_hist, x_cand, hist_mask, cand_mask, models)
             probabilities_true_model = max_one_hot(ei_values_true_model, cand_mask)

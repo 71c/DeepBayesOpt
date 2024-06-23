@@ -287,7 +287,7 @@ def resize_iterable(it, new_length: Optional[int] = None):
                 it = it.copy_with_new_size(new_length)
             else:
                 if new_length > original_length:
-                    raise ValueError(f"new_length should be <= len(it)={original_length} if it is not a SizedInfiniteIterableMixin")
+                    raise ValueError(f"{new_length=} should be <= len(it)={original_length} if it is not a SizedInfiniteIterableMixin")
                 it = FirstNIterable(it, new_length)
 
     return it

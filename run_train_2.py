@@ -68,7 +68,7 @@ else:
 
 ####################### Make the train and test datasets #######################
 
-TRAIN_SIZE = 16 * 100
+TRAIN_SIZE = 64 * 100
 # How many times bigger the big test dataset is than the train dataset, any
 # value > 0.
 TEST_FACTOR = 3.0
@@ -265,7 +265,7 @@ model_path = os.path.join(script_dir, file_name)
 
 ######################## Train the model #######################################
 
-BATCH_SIZE = 16
+BATCH_SIZE = 64
 
 train_aq_dataloader = train_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_last=True, device=device)
 small_test_aq_dataloader = small_test_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_last=True)

@@ -220,6 +220,9 @@ class FunctionSamplesDataset(Dataset, ABC):
         # y_values has shape (n_datapoints,)
         # do something with x_values, y_values, and model
     ```
+
+    This class also has the instance method `_get_items_generator_and_size` that
+    can be used in subclasses.
     """
     
     @property
@@ -247,20 +250,122 @@ class FunctionSamplesDataset(Dataset, ABC):
             dataset to include in each subset.
         """
         pass  # pragma: no cover
+
+    @staticmethod
+    def _get_items_generator(dataset_resized, has_models, verbose, verbose_message=None):
+        if verbose and verbose_message is not None:
+            print(verbose_message)
+        it = tqdm(dataset_resized) if verbose else dataset_resized
+        for item in it:
+            if has_models and not isinstance(item, GPDatasetItem):
+                x_values, y_values, model = item
+                # need to copy the data, otherwise everything will be same
+                model_params = {name: param.detach().clone()
+                                for name, param in model.named_parameters()}
+                item = GPDatasetItem(x_values, y_values, model, model_params)
+            yield item
     
+    def _get_items_generator_and_size(self, n_realizations: Optional[int]=None,
+                                      verbose: bool=True, verbose_message=None):
+        """
+        Args:
+            n_realizations (int, positive):
+                The number of function realizations (samples) to generate.
+                Optional if the dataset has finite size, in which case the size
+                of the dataset is used.
+            verbose (bool):
+                Whether to print progress bar or not.
+            verbose_message (str):
+                The message to print if verbose is True.
+        
+        Returns: a tuple (items_generator, size) where
+            items_generator (generator): A generator that yields the items.
+            size (int): The size of the resized dataset.
+        """
+        dataset = self
+
+        if n_realizations is None:
+            if not iterable_is_finite(dataset):
+                raise ValueError(f"Can't store an infinite-sized {dataset.__class__.__name__} if n_realizations "\
+                                 "is not specified. Either specify n_realizations or use a finite-sized dataset.")
+            # The dataset is finite and we want to save all of it
+            new_data_iterable = dataset
+        else:
+            if not isinstance(n_realizations, int) or n_realizations <= 0:
+                raise ValueError("n_realizations should be a positive integer.")
+            try:
+                new_data_iterable = resize_iterable(dataset, n_realizations)
+            except ValueError as e:
+                raise ValueError(f"To store finite samples from this {dataset.__class__.__name__}, cannot make n_realizations > len(dataset) since it " \
+                                 f"is not a SizedInfiniteIterableMixin. Got {n_realizations=} and len(dataset)={len(dataset)}") from e
+        
+        items_generator = self._get_items_generator(
+            new_data_iterable, dataset.has_models, verbose, verbose_message)
+        return items_generator, len(new_data_iterable)
+
     @abstractmethod
-    def save(self, dir_name: str, n_realizations:Optional[int]=None):
+    def data_is_loaded(self) -> bool:
+        """Returns whether the data is loaded in memory or not."""
+        pass  # pragma: no cover
+
+    def save(self, dir_name: str, n_realizations:Optional[int]=None,
+             verbose:Optional[bool]=None):
         """Saves the dataset to a specified directory. If the dataset includes
         models, the models are saved as well. If the directory does not
         exist, it will be created.
 
         Args:
-            dir_name (str): The directory where the realizations should be saved.
-            n_realizations (int): The number of realizations to save.
-            If unspecified, all the realizations are saved.
-            If specified, the first n_realizations realizations are saved.
+            dir_name (str):
+                The directory where the realizations should be saved.
+            n_realizations (int):
+                The number of realizations to save.
+                If unspecified, all the realizations are saved.
+                If specified, the first n_realizations realizations are saved.
         """
-        pass  # pragma: no cover
+        if verbose is None:
+            verbose = not self.data_is_loaded()
+        if self.data_is_loaded():
+            message = f"Saving realizations from {self.__class__.__name__}"
+        else:
+            message = f"Generating and saving realizations from {self.__class__.__name__}"
+        items_generator, length = self._get_items_generator_and_size(
+            n_realizations, verbose=verbose, verbose_message=message)
+
+        if os.path.exists(dir_name):
+            if not os.path.isdir(dir_name):
+                raise NotADirectoryError(f"Path {dir_name} is not a directory")
+        else:
+            os.mkdir(dir_name)
+        
+        has_models = self.has_models
+
+        # Save the models if we have them
+        if has_models:
+            models = self.model_sampler.initial_models
+            torch.save(models, os.path.join(dir_name, "models.pt"))
+        
+        list_of_dicts = []
+        for item in items_generator:
+            if has_models:
+                list_of_dicts.append({
+                    'x_values': item.x_values,
+                    'y_values': item.y_values,
+                    'model_index': item.model_index,
+                    'model_params': item.model_params
+                })
+            else:
+                x_values, y_values = item
+                list_of_dicts.append({
+                    'x_values': x_values,
+                    'y_values': y_values
+                })
+
+        torch.save(list_of_dicts, os.path.join(dir_name, "data.pt"))
+    
+    def __getitem__(self, index):
+        if isinstance(self, IterableDataset):
+            raise TypeError(f"{self.__class__.__name__} is an IterableDataset and should not be accessed by index.")
+        raise NotImplementedError("Subclass must implement __getitem__ for map-style datasets")
 
 
 class GaussianProcessRandomDataset(
@@ -466,10 +571,9 @@ class GaussianProcessRandomDataset(
                     "Sum of input lengths does not equal the dataset size!")
         return [self.copy_with_new_size(length) for length in lengths]
 
-    def save(self, dir_name:str, n_realizations:Optional[int]=None):
-        dataset = FunctionSamplesMapDataset.from_iterable_dataset(self, n_realizations)
-        dataset.save(dir_name)
-    
+    def data_is_loaded(self):
+        return False
+
     def copy_with_new_size(self, dataset_size:int):
         """Create a copy of the dataset with a new dataset size.
 
@@ -534,7 +638,7 @@ class GaussianProcessRandomDataset(
         return GPDatasetItem(x_values, y_values.squeeze(), model)
 
 
-class FunctionSamplesMapDatasetBase(FunctionSamplesDataset, ABC):
+class FunctionSamplesMapDatasetBase(FunctionSamplesDataset):
     """A base class for `FunctionSamplesDataset` datasets that hold function
     samples in a map style (i.e. implement `__getitem__` and `__len__`).
     
@@ -549,9 +653,6 @@ class FunctionSamplesMapDatasetBase(FunctionSamplesDataset, ABC):
     
     The `has_models`, `model_sampler`, `random_split`, and `save` methods
     are implemented in this class.
-    
-    This class also has the classmethod `_get_items_generator_and_size` that
-    can be used in subclasses.
     """
 
     @abstractmethod
@@ -588,108 +689,6 @@ class FunctionSamplesMapDatasetBase(FunctionSamplesDataset, ABC):
     def random_split(self, lengths: Sequence[Union[int, float]]):
         subsets = random_split(self, lengths)
         return [FunctionSamplesMapSubset.from_subset(subset) for subset in subsets]
-
-    def save(self, dir_name: str, n_realizations:Optional[int]=None):
-        dataset_to_save = self
-        if n_realizations is not None:
-            if not isinstance(n_realizations, int) or n_realizations <= 0:
-                raise ValueError("n_realizations should be a positive integer.")
-            if n_realizations > len(dataset_to_save):
-                raise ValueError(f"To save {self.__class__.__name__}, cannot make n_realizations > len(dataset). Got {n_realizations=} and len(dataset)={len(dataset_to_save)}")
-            dataset_to_save = dataset_to_save[:n_realizations]
-
-        if os.path.exists(dir_name):
-            if not os.path.isdir(dir_name):
-                raise NotADirectoryError(f"Path {dir_name} is not a directory")
-        else:
-            os.mkdir(dir_name)
-        
-        has_models = self.has_models
-
-        # Save the models if we have them
-        if has_models:
-            models = self.model_sampler.initial_models
-            torch.save(models, os.path.join(dir_name, "models.pt"))
-        
-        list_of_dicts = []
-        for item in dataset_to_save:
-            if has_models:
-                if isinstance(item, GPDatasetItem):
-                    x_values, y_values = item.x_values, item.y_values
-                    model_index = item.model_index
-                    model_params = item.model_params
-                else:
-                    x_values, y_values, model = item
-                    # need to copy the data, otherwise everything will be same
-                    model_params = {name: param.detach().clone()
-                                    for name, param in model.named_parameters()}
-                    model_index = model.index
-                
-                list_of_dicts.append({
-                    'x_values': x_values,
-                    'y_values': y_values,
-                    'model_index': model_index,
-                    'model_params': model_params
-                })
-            else:
-                x_values, y_values = item
-                list_of_dicts.append({
-                    'x_values': x_values,
-                    'y_values': y_values
-                })
-
-        torch.save(list_of_dicts, os.path.join(dir_name, "data.pt"))
-
-    @staticmethod
-    def _get_items_generator(dataset_resized, has_models, verbose):
-        if verbose:
-            print("Generating GP realizations:")
-        it = tqdm(dataset_resized) if verbose else dataset_resized
-        for item in it:
-            if has_models and not isinstance(item, GPDatasetItem):
-                x_values, y_values, model = item
-                # need to copy the data, otherwise everything will be same
-                model_params = {name: param.detach().clone()
-                                for name, param in model.named_parameters()}
-                item = GPDatasetItem(x_values, y_values, model, model_params)
-            yield item
-    
-    @classmethod
-    def _get_items_generator_and_size(cls, dataset: FunctionSamplesDataset,
-                                      n_realizations: Optional[int]=None,
-                                      verbose: bool=True):
-        """
-        Args:
-            dataset (`FunctionSamplesDataset` and `IterableDataset`):
-                The dataset from which to generate samples.
-                Must be both a `FunctionSamplesDataset` and a `IterableDataset`.
-            n_realizations (int, positive):
-                The number of function realizations (samples) to generate.
-                Optional if the dataset has finite size, in which case the size
-                of the dataset is used.
-            verbose (bool):
-                Whether to print progress bar or not.
-        
-        Returns: a tuple (items_generator, size) where
-            items_generator (generator): A generator that yields the items.
-            size (int): The size of the resized dataset.
-        """
-        if not (isinstance(dataset, FunctionSamplesDataset) and
-                isinstance(dataset, IterableDataset)):
-            raise TypeError("dataset should be an instance of both FunctionSamplesDataset and IterableDataset")
-
-        if n_realizations is None:
-            if not iterable_is_finite(dataset):
-                raise ValueError(f"Can't create an infinite {cls.__name__} from an infinite-sized {dataset.__class__.__name__}. Either specify n_realizations or use a finite-sized IterableDataset.")
-        else:
-            if not isinstance(n_realizations, int) or n_realizations <= 0:
-                raise ValueError("n_realizations should be a positive integer")
-        
-        dataset_resized = resize_iterable(dataset, n_realizations)
-        
-        items_generator = cls._get_items_generator(
-            dataset_resized, dataset.has_models, verbose)
-        return items_generator, len(dataset_resized)
 
 
 class FunctionSamplesMapDataset(FunctionSamplesMapDatasetBase):
@@ -746,6 +745,9 @@ class FunctionSamplesMapDataset(FunctionSamplesMapDatasetBase):
     
     def __len__(self):
         return len(self._data)
+    
+    def data_is_loaded(self):
+        return True
 
     @classmethod
     def load(cls, dir_name: str):
@@ -815,8 +817,12 @@ class FunctionSamplesMapDataset(FunctionSamplesMapDatasetBase):
             dataset = GaussianProcessRandomDataset(n_datapoints=15, dimension=5)
             samples_dataset = FunctionSamplesMapDataset.from_iterable_dataset(dataset, 100)
         """
-        items_generator, size = cls._get_items_generator_and_size(
-            dataset, n_realizations, verbose)
+        if not (isinstance(dataset, FunctionSamplesDataset) and
+                isinstance(dataset, IterableDataset)):
+            raise TypeError("dataset should be an instance of both FunctionSamplesDataset and IterableDataset")
+        message = f"Saving realizations from {dataset.__class__.__name__} into {cls.__name__}"
+        items_generator, size = dataset._get_items_generator_and_size(
+            n_realizations, verbose, verbose_message=message)
         data = list(items_generator)
         return cls(
             data, dataset.model_sampler if dataset.has_models else None)
@@ -839,8 +845,11 @@ class LazyFunctionSamplesMapDataset(FunctionSamplesMapDatasetBase):
                 The number of realizations to generate.
                 If None, all realizations will be generated.
         """
-        items_generator, size = self._get_items_generator_and_size(
-            dataset, n_realizations, verbose=False)
+        if not (isinstance(dataset, FunctionSamplesDataset) and
+                isinstance(dataset, IterableDataset)):
+            raise TypeError("dataset should be an instance of both FunctionSamplesDataset and IterableDataset")
+        items_generator, size = dataset._get_items_generator_and_size(
+            n_realizations, verbose=False)
         self._items_generator = items_generator
         self._size = size
         self._data = [None] * size
@@ -855,6 +864,9 @@ class LazyFunctionSamplesMapDataset(FunctionSamplesMapDatasetBase):
     
     def __len__(self):
         return self._size
+    
+    def data_is_loaded(self):
+        return all(x is not None for x in self._data)
 
 
 class FunctionSamplesMapSubset(Subset, FunctionSamplesMapDatasetBase):
@@ -881,17 +893,84 @@ class FunctionSamplesMapSubset(Subset, FunctionSamplesMapDatasetBase):
     
     # Can just define _model_sampler and then has_models and model_sampler are
     # inherited from FunctionSamplesMapDatasetBase.
+    # random_split is also inherited from FunctionSamplesMapDatasetBase.
     @property
     def _model_sampler(self):
         return self.dataset._model_sampler
     
-    # random_split is also inherited from FunctionSamplesMapDatasetBase.
+    def data_is_loaded(self):
+        return self.dataset.data_is_loaded()
     
     @classmethod
     def from_subset(cls, subset: Subset):
         if not isinstance(subset, Subset):
             raise ValueError("subset should be an instance of torch.utils.data.Subset")
         return cls(subset.dataset, subset.indices)
+
+
+class RepeatedFunctionSamplesIterableDataset(
+    FunctionSamplesDataset, IterableDataset, SizedIterableMixin):
+    """An iterable-style dataset that repeats the samples from another
+    iterable-style dataset a specified number of times.
+    With each iter(), there are different random samples from the base dataset
+    which are repeated in a random order."""
+    def __init__(self, base_dataset: FunctionSamplesDataset, size_factor: int):
+        """
+        Args:
+            base_dataset (IterableDataset and FunctionSamplesDataset):
+                A finite-sized iterable FunctionSamplesDataset
+                from which to generate samples.
+            size_factor (int): The number of times to repeat the samples.
+        """
+        if not (isinstance(base_dataset, FunctionSamplesDataset) and
+                isinstance(base_dataset, IterableDataset)):
+            raise TypeError("base_dataset should be an instance of " \
+                            "both FunctionSamplesDataset and IterableDataset.")
+        if not iterable_is_finite(base_dataset):
+            raise ValueError(
+                "base_dataset for a RepeatedFunctionSamplesIterableDataset " \
+                "should be a finite-sized IterableDataset")
+        if not isinstance(size_factor, int) or size_factor <= 0:
+            raise ValueError("size_factor should be a positive integer")
+        
+        self.base_dataset = base_dataset
+        self.size_factor = size_factor
+    
+    @property
+    def _size(self):
+        # Required by SizedIterableMixin
+        return len(self.base_dataset) * self.size_factor
+    
+    def __iter__(self):
+        this_iter_base = LazyFunctionSamplesMapDataset(self.base_dataset)
+        sampler = torch.utils.data.RandomSampler(
+            this_iter_base, replacement=False, num_samples=len(self))
+        this_iter = DataLoader(this_iter_base, batch_size=None, sampler=sampler)
+        return iter(this_iter)
+    
+    def has_models(self):
+        return self.base_dataset.has_models
+    
+    def model_sampler(self):
+        return self.base_dataset.model_sampler
+    
+    def random_split(self, lengths: Sequence[Union[int, float]]):
+        # Need to convert from lengths to proportions if absolute lengths were
+        # given...
+        lengths_is_proportions = math.isclose(sum(lengths), 1) and sum(lengths) <= 1
+        if not lengths_is_proportions:
+            if sum(lengths) == len(self):
+                lengths = [length / len(self) for length in lengths]
+            else:
+                # Assume that sum(lengths) == len(self.base_dataset)
+                pass
+
+        return [
+            type(self)(split_dataset, self.size_factor)
+            for split_dataset in self.base_dataset.random_split(lengths)]
+
+    def data_is_loaded(self):
+        return False
 
 
 class ModelsWithParamsList:
@@ -993,6 +1072,22 @@ class AcquisitionDataset(Dataset, ABC):
         """
         pass  # pragma: no cover
     
+    ## TODO: Implement save method
+    # def save(self, dir_name: str, n_samples:Optional[int]=None):
+    #     """Saves the dataset to a specified directory. If the dataset includes
+    #     a base FunctionSamplesDataset which has models, the models are saved as
+    #     well. If the directory does not exist, it will be created.
+
+    #     Args:
+    #         dir_name (str):
+    #             The directory where the samples should be saved.
+    #         n_samples (int):
+    #             The number of samples to save.
+    #             If unspecified, all the samples are saved.
+    #             If specified, the first n_samples samples are saved.
+    #     """
+    #     pass
+    
     @staticmethod
     def _collate_train_acquisition_function_samples(samples_list, device=None):
         if isinstance(samples_list[0], AcquisitionDatasetModelItem):
@@ -1063,62 +1158,6 @@ class AcquisitionDataset(Dataset, ABC):
         return DataLoader(self, batch_size=batch_size, shuffle=shuffle,
                           collate_fn=collate_fn,
                           **kwargs)
-
-
-class RepeatedFunctionSamplesIterableDataset(
-    FunctionSamplesDataset, IterableDataset, SizedIterableMixin):
-    """An iterable-style dataset that repeats the samples from another
-    iterable-style dataset a specified number of times.
-    With each iter(), there are different random samples from the base dataset
-    which are repeated in a random order."""
-    def __init__(self, base_dataset: FunctionSamplesDataset, size_factor: int):
-        """
-        Args:
-            base_dataset (IterableDataset and FunctionSamplesDataset):
-                A finite-sized iterable FunctionSamplesDataset
-                from which to generate samples.
-            size_factor (int): The number of times to repeat the samples.
-        """
-        if not (isinstance(base_dataset, FunctionSamplesDataset) and
-                isinstance(base_dataset, IterableDataset)):
-            raise TypeError("base_dataset should be an instance of " \
-                            "both FunctionSamplesDataset and IterableDataset.")
-        if not iterable_is_finite(base_dataset):
-            raise ValueError(
-                "base_dataset for a RepeatedFunctionSamplesIterableDataset " \
-                "should be a finite-sized IterableDataset")
-        if not isinstance(size_factor, int) or size_factor <= 0:
-            raise ValueError("size_factor should be a positive integer")
-        
-        self.base_dataset = base_dataset
-        self.size_factor = size_factor
-    
-    @property
-    def _size(self):
-        return len(self.base_dataset) * self.size_factor
-    
-    def __iter__(self):
-        this_iter_base = LazyFunctionSamplesMapDataset(self.base_dataset)
-        sampler = torch.utils.data.RandomSampler(
-            this_iter_base, replacement=False, num_samples=len(self))
-        this_iter = DataLoader(this_iter_base, batch_size=None, sampler=sampler)
-        return iter(this_iter)
-    
-    def has_models(self):
-        return self.base_dataset.has_models
-    
-    def model_sampler(self):
-        return self.base_dataset.model_sampler
-    
-    def random_split(self, lengths: Sequence[Union[int, float]]):
-        return [
-            type(self)(x, self.size_factor)
-            for x in self.base_dataset.random_split(lengths)]
-    
-    def save(self, dir_name: str, n_realizations: Optional[int]=None):
-        raise UnsupportedError(
-            "save is not supported for RepeatedFunctionSamplesIterableDataset" \
-            ". Save the base dataset instead.")
 
 
 class FunctionSamplesAcquisitionDataset(
@@ -1416,12 +1455,21 @@ class FunctionSamplesAcquisitionDataset(
                 yield x_hist, y_hist, x_cand, vals_cand
 
     def random_split(self, lengths: Sequence[Union[int, float]]):
-        split_base_datasets = self.base_dataset.random_split(lengths)
+        # Need to convert from lengths to proportions if absolute lengths were
+        # given...
+        lengths_is_proportions = math.isclose(sum(lengths), 1) and sum(lengths) <= 1
+        if not lengths_is_proportions:
+            if sum(lengths) == len(self):
+                lengths = [length / len(self) for length in lengths]
+            else:
+                # Assume that sum(lengths) == len(self.base_dataset)
+                pass
+
         return [
             type(self)(split_dataset, self.n_candidate_points, self.n_samples,
                        self.give_improvements, self.min_n_candidates,
                        self.dataset_size_factor)
-            for split_dataset in split_base_datasets]
+            for split_dataset in self.base_dataset.random_split(lengths)]
 
     def get_dataloader(self, batch_size=32, device=None, **kwargs):
         """Returns a DataLoader object for the dataset.
