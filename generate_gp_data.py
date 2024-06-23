@@ -15,7 +15,8 @@ from torch.utils.data import Dataset, IterableDataset, DataLoader, random_split,
 # https://pytorch.org/tutorials/prototype/maskedtensor_overview
 from torch.masked import is_masked_tensor
 
-from utils import uniform_randint, get_uniform_randint_generator, max_pad_tensors_batch, get_lengths_from_proportions
+from utils import resize_iterable, uniform_randint, get_uniform_randint_generator, max_pad_tensors_batch, get_lengths_from_proportions
+from utils import SizedIterableMixin, SizedInfiniteIterableMixin, len_or_inf, iterable_is_finite
 
 from typing import Iterable, Optional, List, Tuple, Union
 from collections.abc import Sequence
@@ -262,64 +263,8 @@ class FunctionSamplesDataset(Dataset, ABC):
         pass  # pragma: no cover
 
 
-class SizedIterableMixin(Iterable, ABC):
-    """A mixin class that provides functionality for creating iterable objects
-    with a specified size. If the size is None, the object is considered to be
-    infinite and so calling iter() then you can call next() indefinitely wihout
-    any StopIteration exception.
-    If the size is not None, then the object is considered to be finite and
-    calling iter() will return a generator that will yield the next element
-    until the size is reached.
-
-    Attributes:
-        _size (Optional[int]): The size of the iterable object.
-            None if the size is infinite.
-    """
-
-    _size: Optional[int] = None
-
-    @abstractmethod
-    def copy_with_new_size(self, size:int) -> "SizedIterableMixin":
-        """Creates a copy of the object with a new size.
-        Should set the _size attribute of the new object to the specified size.
-
-        Args:
-            size (int): The new size for the object.
-
-        Returns:
-            A new instance of the object with the specified size.
-        """
-        pass  # pragma: no cover
-    
-    @abstractmethod
-    def _next(self):
-        """Returns the next element in the iterable."""
-        pass  # pragma: no cover
-
-    def __iter__(self):
-        if self._size is None:
-            return self
-        else:
-            # Must separate this in a different function because otherwise,
-            # iter will always return a generator, even if self._size is None
-            return self._finite_iterator()
-    
-    def _finite_iterator(self):
-        for _ in range(self._size):
-            yield self._next()
-    
-    def __len__(self):
-        if self._size is None:
-            raise TypeError(f"Length of the {type(self)} is infinite")
-        return self._size
-
-    def __next__(self):
-        if self._size is None:
-            return self._next()
-        raise TypeError(f"Cannot call __next__ on a finitely sized {type(self)}. Use iter() first.")
-
-
-class GaussianProcessRandomDataset(FunctionSamplesDataset, IterableDataset, SizedIterableMixin):
+class GaussianProcessRandomDataset(
+    FunctionSamplesDataset, IterableDataset, SizedInfiniteIterableMixin):
     """An IterableDataset that generates random Gaussian Process data.
 
      Usage example:
@@ -486,8 +431,11 @@ class GaussianProcessRandomDataset(FunctionSamplesDataset, IterableDataset, Size
         self._model_sampler = RandomModelSampler(
             models, model_probabilities, randomize_params=randomize_params)
 
-        if dataset_size is not None and (not isinstance(dataset_size, int) or dataset_size <= 0):
-            raise ValueError("dataset_size should be a positive integer.")
+        if dataset_size is None:
+            dataset_size = math.inf
+        else:
+            if not isinstance(dataset_size, int) or dataset_size <= 0:
+                raise ValueError("dataset_size should be a positive integer.")
         self._size = dataset_size
     
     @property
@@ -504,7 +452,7 @@ class GaussianProcessRandomDataset(FunctionSamplesDataset, IterableDataset, Size
         lengths_is_proportions = math.isclose(sum(lengths), 1) and sum(lengths) <= 1
 
         dataset_size = self._size
-        if dataset_size is None:
+        if dataset_size == math.inf:
             if lengths_is_proportions:
                 raise ValueError(
                     "The GaussianProcessRandomDataset should not be infinite if lengths is a list of proportions")
@@ -691,34 +639,6 @@ class FunctionSamplesMapDatasetBase(FunctionSamplesDataset, ABC):
                 })
 
         torch.save(list_of_dicts, os.path.join(dir_name, "data.pt"))
-    
-    @classmethod
-    def _resize_iterable_dataset(cls, dataset, n_realizations):
-        if not (isinstance(dataset, FunctionSamplesDataset) and
-                isinstance(dataset, IterableDataset)):
-            raise TypeError("dataset should be an instance of both FunctionSamplesDataset and IterableDataset")
-        
-        try:
-            original_dataset_size = len(dataset)
-        except TypeError:
-            original_dataset_size = None
-
-        if n_realizations is None:
-            if original_dataset_size is None:
-                raise ValueError(f"Can't create an infinite {cls.__name__} from an infinite-sized FunctionSamplesDataset IterableDataset. Either specify n_realizations or use a finite-sized IterableDataset.")
-        else:
-            if not isinstance(n_realizations, int) or n_realizations <= 0:
-                raise ValueError("n_realizations should be a positive integer")
-            if n_realizations != original_dataset_size:
-                # Weaker condition than `if isinstance(dataset, SizedIterableMixin):`
-                if callable(getattr(dataset, "copy_with_new_size", None)):
-                    dataset = dataset.copy_with_new_size(n_realizations)
-                else:
-                    if original_dataset_size is not None and n_realizations > original_dataset_size:
-                        raise ValueError(f"n_realizations should be <= len(dataset)={original_dataset_size} if dataset is not a SizedIterableMixin")
-                    dataset = _FirstNIterable(dataset, n_realizations)
-
-        return dataset
 
     @staticmethod
     def _get_items_generator(dataset_resized, has_models, verbose):
@@ -754,8 +674,19 @@ class FunctionSamplesMapDatasetBase(FunctionSamplesDataset, ABC):
             items_generator (generator): A generator that yields the items.
             size (int): The size of the resized dataset.
         """
-        dataset_resized = cls._resize_iterable_dataset(
-            dataset, n_realizations)
+        if not (isinstance(dataset, FunctionSamplesDataset) and
+                isinstance(dataset, IterableDataset)):
+            raise TypeError("dataset should be an instance of both FunctionSamplesDataset and IterableDataset")
+
+        if n_realizations is None:
+            if not iterable_is_finite(dataset):
+                raise ValueError(f"Can't create an infinite {cls.__name__} from an infinite-sized {dataset.__class__.__name__}. Either specify n_realizations or use a finite-sized IterableDataset.")
+        else:
+            if not isinstance(n_realizations, int) or n_realizations <= 0:
+                raise ValueError("n_realizations should be a positive integer")
+        
+        dataset_resized = resize_iterable(dataset, n_realizations)
+        
         items_generator = cls._get_items_generator(
             dataset_resized, dataset.has_models, verbose)
         return items_generator, len(dataset_resized)
@@ -887,7 +818,7 @@ class FunctionSamplesMapDataset(FunctionSamplesMapDatasetBase):
         items_generator, size = cls._get_items_generator_and_size(
             dataset, n_realizations, verbose)
         data = list(items_generator)
-        return FunctionSamplesMapDataset(
+        return cls(
             data, dataset.model_sampler if dataset.has_models else None)
 
 
@@ -961,52 +892,6 @@ class FunctionSamplesMapSubset(Subset, FunctionSamplesMapDatasetBase):
         if not isinstance(subset, Subset):
             raise ValueError("subset should be an instance of torch.utils.data.Subset")
         return cls(subset.dataset, subset.indices)
-
-
-class _FirstNIterable:
-    """
-    Creates an iterable for the first 'n' elements of a given iterable.
-
-    Takes any iterable and an integer 'n', and provides an iterator
-    that yields the first 'n' elements of the given iterable. If the original
-    iterable contains fewer than 'n' elements, the iterator will yield only the
-    available  elements without raising an error.
-
-    Args:
-        iterable (iterable): The iterable to wrap.
-        n (int): The number of elements to yield from the iterable.
-
-    Example:
-        >>> numbers = range(10)  # A range object is an iterable
-        >>> first_five = _FirstNIterable(numbers, 5)
-        >>> list(first_five)
-        [0, 1, 2, 3, 4]
-
-        >>> words = ["apple", "banana", "cherry", "date"]
-        >>> first_two = _FirstNIterable(words, 2)
-        >>> list(first_two)
-        ['apple', 'banana']
-    """
-    def __init__(self, iterable, n):
-        if not isinstance(n, int) or n <= 0:
-            raise ValueError("n should be a positive integer.")
-        self.iterable = iterable
-        self.n = n
-    
-    def __iter__(self):
-        iterator = iter(self.iterable)
-        for _ in range(self.n):
-            try:
-                yield next(iterator)
-            except StopIteration:
-                break
-    
-    def __len__(self):
-        try:
-            original_length = len(self.iterable)
-            return min(original_length, self.n)
-        except TypeError:
-            return self.n
 
 
 class ModelsWithParamsList:
@@ -1180,7 +1065,64 @@ class AcquisitionDataset(Dataset, ABC):
                           **kwargs)
 
 
-class FunctionSamplesAcquisitionDataset(AcquisitionDataset, IterableDataset):
+class RepeatedFunctionSamplesIterableDataset(
+    FunctionSamplesDataset, IterableDataset, SizedIterableMixin):
+    """An iterable-style dataset that repeats the samples from another
+    iterable-style dataset a specified number of times.
+    With each iter(), there are different random samples from the base dataset
+    which are repeated in a random order."""
+    def __init__(self, base_dataset: FunctionSamplesDataset, size_factor: int):
+        """
+        Args:
+            base_dataset (IterableDataset and FunctionSamplesDataset):
+                A finite-sized iterable FunctionSamplesDataset
+                from which to generate samples.
+            size_factor (int): The number of times to repeat the samples.
+        """
+        if not (isinstance(base_dataset, FunctionSamplesDataset) and
+                isinstance(base_dataset, IterableDataset)):
+            raise TypeError("base_dataset should be an instance of " \
+                            "both FunctionSamplesDataset and IterableDataset.")
+        if not iterable_is_finite(base_dataset):
+            raise ValueError(
+                "base_dataset for a RepeatedFunctionSamplesIterableDataset " \
+                "should be a finite-sized IterableDataset")
+        if not isinstance(size_factor, int) or size_factor <= 0:
+            raise ValueError("size_factor should be a positive integer")
+        
+        self.base_dataset = base_dataset
+        self.size_factor = size_factor
+    
+    @property
+    def _size(self):
+        return len(self.base_dataset) * self.size_factor
+    
+    def __iter__(self):
+        this_iter_base = LazyFunctionSamplesMapDataset(self.base_dataset)
+        sampler = torch.utils.data.RandomSampler(
+            this_iter_base, replacement=False, num_samples=len(self))
+        this_iter = DataLoader(this_iter_base, batch_size=None, sampler=sampler)
+        return iter(this_iter)
+    
+    def has_models(self):
+        return self.base_dataset.has_models
+    
+    def model_sampler(self):
+        return self.base_dataset.model_sampler
+    
+    def random_split(self, lengths: Sequence[Union[int, float]]):
+        return [
+            type(self)(x, self.size_factor)
+            for x in self.base_dataset.random_split(lengths)]
+    
+    def save(self, dir_name: str, n_realizations: Optional[int]=None):
+        raise UnsupportedError(
+            "save is not supported for RepeatedFunctionSamplesIterableDataset" \
+            ". Save the base dataset instead.")
+
+
+class FunctionSamplesAcquisitionDataset(
+    AcquisitionDataset, IterableDataset, SizedIterableMixin):
     """An IterableDataset designed for training a "likelihood-free" DNN
     acquisition function.
     It processes a FunctionSamplesDataset instance to generate training data
@@ -1300,68 +1242,67 @@ class FunctionSamplesAcquisitionDataset(AcquisitionDataset, IterableDataset):
         self.base_dataset = dataset
         self.dataset_size_factor = dataset_size_factor
 
-        # Check whether dataset is an iterable-style dataset or not.
-        # Could also check this by checking that it's not a map-style dataset
-        # by checking whether it doesn't have the __getitem__ method:
-        # `not callable(getattr(dataset, "__getitem__", None))`.
+        if dataset_size_factor is None:
+            dataset_size_factor = 1
+        elif not isinstance(dataset_size_factor, int) or dataset_size_factor <= 0:
+            raise ValueError(f"dataset_size_factor should be a positive integer, but got {dataset_size_factor=}")
+
         self._dataset_is_iterable_style = isinstance(dataset, IterableDataset)
 
-        if self._dataset_is_iterable_style: # GaussianProcessRandomDataset
-            if dataset_size_factor is not None:
-                raise ValueError("dataset_size_factor should not be specified if dataset is an iterable-style dataset (GaussianProcessRandomDataset).")
-
-            try:
-                self._size = len(dataset)
-            except TypeError:
-                self._size = None
-            self._data_iterable = dataset
-            
-            if n_samples == "uniform":
-                warnings.warn("n_samples='uniform' for iterable-style dataset (GaussianProcessRandomDataset) is supported but wasteful. Consider using n_samples='all' and setting n_datapoints_random_gen in the dataset instead.")
-        else: # FunctionSamplesMapDataset
-            if dataset_size_factor is None:
-                dataset_size_factor = 1
-            elif not isinstance(dataset_size_factor, int) or dataset_size_factor <= 0:
-                raise ValueError(f"dataset_size_factor should be a positive integer, but got {dataset_size_factor=}")
+        if self._dataset_is_iterable_style: # e.g. GaussianProcessRandomDataset
+            # Then it has __iter__ because IterableDataset is a subclass of
+            # Iterable, but it should not have or not implement __getitem__.
+            # However, can't check that it doesn't have __getitem__ because it
+            # could be that it does have it but it's not implemented.
 
             if dataset_size_factor == 1:
-                self._size = len(dataset)
+                self._data_iterable = dataset
+            else:
+                self._data_iterable = RepeatedFunctionSamplesIterableDataset(
+                    dataset, dataset_size_factor)
+            
+            self._size = len_or_inf(self._data_iterable)
+
+            if n_samples == "uniform" and isinstance(dataset, GaussianProcessRandomDataset):
+                warnings.warn("n_samples='uniform' for GaussianProcessRandomDataset is supported but wasteful. Consider using n_samples='all' and setting n_datapoints_random_gen in the dataset instead.")
+        else: # e.g. FunctionSamplesMapDataset
+            # Then it should be a map-style dataset and have __getitem__.
+            assert callable(getattr(dataset, "__getitem__", None))
+
+            base_dataset_size = len(dataset)
+            if not isinstance(base_dataset_size, int) or base_dataset_size <= 0:
+                raise ValueError(f"len(dataset) should be a positive integer, but got len(dataset)={base_dataset_size}")
+            if dataset_size_factor == 1:
+                self._size = base_dataset_size
                 self._data_iterable = DataLoader(
                     dataset, batch_size=None, shuffle=True)
             else:
-                self._size = dataset_size_factor * len(dataset)
+                self._size = dataset_size_factor * base_dataset_size
                 self._data_iterable = DataLoader(
                     dataset, batch_size=None,
                     sampler=torch.utils.data.RandomSampler(
                         dataset, replacement=False, num_samples=self._size))
     
-    def __len__(self):
-        if self._size is None:
-            raise TypeError("Length of the FunctionSamplesAcquisitionDataset with an infinite iterable-style dataset and is infinite")
-        return self._size
+    # __len__ is implemented by SizedIterableMixin
     
     def copy_with_expanded_size(self, size_factor: int) -> "FunctionSamplesAcquisitionDataset":
         """Creates a copy of the dataset with an expanded size.
 
         Args:
-            size_factor (int): The factor by which to expand the size of the dataset.
+            size_factor (int):
+                The factor by which to expand the size of the dataset.
 
         Returns:
-            FunctionSamplesAcquisitionDataset: A new instance of the dataset with the expanded size.
+            FunctionSamplesAcquisitionDataset:
+                A new instance of the dataset with the expanded size.
         """
-        if not isinstance(size_factor, int) or size_factor <= 0:
-            raise ValueError(f"size_factor should be a positive integer, but got {size_factor=}")
-        # Weaker condition than `if isinstance(self.base_dataset, SizedIterableMixin):`
-        if callable(getattr(self.base_dataset, "copy_with_new_size", None)):
-            return self.copy_with_new_size(self.base_dataset.size * size_factor)
-        else:
-            return type(self)(
+        return type(self)(
                 self.base_dataset,
                 self.n_candidate_points,
                 self.n_samples, self.give_improvements, self.min_n_candidates,
                 size_factor)
     
-    def copy_with_new_size(self, size: int) -> "FunctionSamplesAcquisitionDataset":
+    def copy_with_new_size(self, size: Optional[int] = None) -> "FunctionSamplesAcquisitionDataset":
         """Creates a copy of the dataset with a new size.
         If the base dataset has the `copy_with_new_size` method then it is used
         to create a copy of the base dataset with the specified size.
@@ -1370,24 +1311,23 @@ class FunctionSamplesAcquisitionDataset(AcquisitionDataset, IterableDataset):
         size.
 
         Args:
-            size (int): the new size of the dataset.
+            size (int or None): the new size of the dataset. If None, the size
+                is not changed.
 
         Returns:
             FunctionSamplesAcquisitionDataset:
                 A new instance of the dataset with the specified size.
         """
-        # Weaker condition than `if isinstance(self.base_dataset, SizedIterableMixin):`
-        if callable(getattr(self.base_dataset, "copy_with_new_size", None)):
-            assert self._dataset_is_iterable_style
+        if self._dataset_is_iterable_style:
             return type(self)(
-                self.base_dataset.copy_with_new_size(size),
+                resize_iterable(self.base_dataset, size),
                 self.n_candidate_points,
                 self.n_samples, self.give_improvements, self.min_n_candidates)
         else:
-            if self._dataset_is_iterable_style:
-                raise TypeError("Cannot create a copy of FunctionSamplesAcquisitionDataset with a new size if the base dataset is an iterable-style dataset that cannot be resized.")
+            if size is None:
+                size = len(self.base_dataset)
             if not isinstance(size, int) or size <= 0:
-                raise ValueError("size should be a positive integer.")
+                raise ValueError("size should be a positive integer or None")
             return self.copy_with_expanded_size(math.ceil(size / len(self.base_dataset)))
 
     def _pick_random_n_samples_and_n_candidates(self, n_datapoints_original):
@@ -1476,20 +1416,12 @@ class FunctionSamplesAcquisitionDataset(AcquisitionDataset, IterableDataset):
                 yield x_hist, y_hist, x_cand, vals_cand
 
     def random_split(self, lengths: Sequence[Union[int, float]]):
-        """Randomly splits the dataset into multiple subsets.
-
-        Args:
-            lengths (Sequence[Union[int, float]]): A sequence of lengths
-            specifying the size of each subset, or the proportion of the
-            dataset to include in each subset.
-        """
-        split_gp_datasets = self.base_dataset.random_split(lengths)
+        split_base_datasets = self.base_dataset.random_split(lengths)
         return [
             type(self)(split_dataset, self.n_candidate_points, self.n_samples,
                        self.give_improvements, self.min_n_candidates,
                        self.dataset_size_factor)
-            for split_dataset in split_gp_datasets
-        ]
+            for split_dataset in split_base_datasets]
 
     def get_dataloader(self, batch_size=32, device=None, **kwargs):
         """Returns a DataLoader object for the dataset.

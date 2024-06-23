@@ -1,5 +1,6 @@
+from abc import ABC, abstractmethod
 import math
-from typing import List, Sequence, Union
+from typing import List, Optional, Sequence, Union, Iterable
 import warnings
 import torch
 from functools import partial
@@ -131,6 +132,165 @@ def get_lengths_from_proportions_or_lengths(
     if lengths_is_proportions:
         return get_lengths_from_proportions(total_length, lengths)
     return lengths
+
+
+class SizedIterableMixin(Iterable):
+    """A mixin class that provides functionality 'len()' for iterable objects.
+    All subclasses should implement __iter__ because this class inherits from
+    Iterable.
+
+    Attributes:
+        _size (int or inf): The size of the iterable object.
+            math.inf if the size is infinite.
+            Subclasses must use this attribute to hold the length of the object.
+    """
+    def _len_or_inf(self):
+        if not hasattr(self, "_size"):
+            raise AttributeError(
+                f"{self.__class__.__name__}, a subclass of SizedIterableMixin,"\
+                    "must have attribute '_size' to hold the length.")
+        size = self._size
+        if size != math.inf and (not isinstance(size, int) or size < 0):
+            raise ValueError(
+                f"self._size should inf or a non-negative integer but got {size}")
+        return size
+    
+    def __len__(self):
+        size = self._len_or_inf()
+        if size == math.inf:
+            raise TypeError(f"Length of the {self.__class__.__name__} is infinite")
+        return size
+
+
+class SizedInfiniteIterableMixin(SizedIterableMixin):
+    """A mixin class that provides functionality for creating iterable objects
+    with a specified size. If the size is inf, the object is considered to be
+    infinite and so calling iter() then you can call next() indefinitely wihout
+    any StopIteration exception.
+    If the size is not inf, then the object is considered to be finite and
+    calling iter() will return a generator that will yield the next element
+    until the size is reached.
+
+    Attributes:
+        _size (Optional[int]): The size of the iterable object.
+            inf if the size is infinite.
+    """
+
+    @abstractmethod
+    def copy_with_new_size(self, size:int) -> "SizedInfiniteIterableMixin":
+        """Creates a copy of the object with a new size.
+        Should set the _size attribute of the new object to the specified size.
+
+        Args:
+            size (int): The new size for the object.
+
+        Returns:
+            A new instance of the object with the specified size.
+        """
+        pass  # pragma: no cover
+    
+    @abstractmethod
+    def _next(self):
+        """Returns the next element in the iterable."""
+        pass  # pragma: no cover
+
+    def __iter__(self):
+        if self._len_or_inf() == math.inf:
+            return self
+        # Must separate this in a different function because otherwise,
+        # iter will always return a generator, even if self._size == math.inf
+        return self._finite_iterator()
+    
+    def _finite_iterator(self):
+        for _ in range(len(self)):
+            yield self._next()
+
+    def __next__(self):
+        if self._len_or_inf() == math.inf:
+            return self._next()
+        raise TypeError(f"Cannot call __next__ on a finitely sized {type(self)}. Use iter() first.")
+
+
+class FirstNIterable(Iterable):
+    """
+    Creates an iterable for the first 'n' elements of a given iterable.
+
+    Takes any iterable and an integer 'n', and provides an iterator
+    that yields the first 'n' elements of the given iterable. If the original
+    iterable contains fewer than 'n' elements, the iterator will yield only the
+    available  elements without raising an error.
+
+    Args:
+        iterable (iterable): The iterable to wrap.
+        n (int): The number of elements to yield from the iterable.
+
+    Example:
+        >>> numbers = range(10)  # A range object is an iterable
+        >>> first_five = _FirstNIterable(numbers, 5)
+        >>> list(first_five)
+        [0, 1, 2, 3, 4]
+
+        >>> words = ["apple", "banana", "cherry", "date"]
+        >>> first_two = _FirstNIterable(words, 2)
+        >>> list(first_two)
+        ['apple', 'banana']
+    """
+    def __init__(self, iterable, n):
+        if not isinstance(n, int) or n <= 0:
+            raise ValueError("n should be a positive integer.")
+        self.iterable = iterable
+        self.n = n
+    
+    def __iter__(self):
+        iterator = iter(self.iterable)
+        for _ in range(self.n):
+            try:
+                yield next(iterator)
+            except StopIteration:
+                break
+    
+    def __len__(self):
+        return min(len_or_inf(self.iterable), self.n)
+
+
+def len_or_inf(x):
+    try:
+        l = len(x)
+        if l != math.inf and (not isinstance(l, int) or l < 0):
+            raise ValueError(
+                f"len(x) should be inf or a non-negative integer but got {l}")
+        return l
+    except TypeError:
+        # Then it has no length, so we can only say it's infinite if
+        # it is an iterable.
+        try: # Check if it is an iterable
+            iter(x)
+            return math.inf
+        except TypeError:
+            raise TypeError(
+                f"Object of type {type(x)} is not iterable so it has no length")
+
+
+def iterable_is_finite(x):
+    return len_or_inf(x) != math.inf
+
+
+def resize_iterable(it, new_length: Optional[int] = None):
+    original_length = len_or_inf(it)
+
+    if new_length is not None:
+        if not isinstance(new_length, int) or new_length <= 0:
+            raise ValueError("new_length should be a positive integer")
+        if new_length != original_length:
+            # Weaker condition than `if isinstance(it, SizedInfiniteIterableMixin):`
+            if callable(getattr(it, "copy_with_new_size", None)):
+                it = it.copy_with_new_size(new_length)
+            else:
+                if new_length > original_length:
+                    raise ValueError(f"new_length should be <= len(it)={original_length} if it is not a SizedInfiniteIterableMixin")
+                it = FirstNIterable(it, new_length)
+
+    return it
 
 
 # Based on

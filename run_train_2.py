@@ -68,7 +68,7 @@ else:
 
 ####################### Make the train and test datasets #######################
 
-TRAIN_SIZE = 128 * 100
+TRAIN_SIZE = 16 * 100
 # How many times bigger the big test dataset is than the train dataset, any
 # value > 0.
 TEST_FACTOR = 3.0
@@ -77,7 +77,7 @@ TEST_FACTOR = 3.0
 # each epoch, between 0 and 1
 SMALL_TEST_PROPORTION_OF_TEST = 0.04
 
-FIX_TRAIN_DATASET = True
+FIX_TRAIN_DATASET = False
 FIX_TEST_DATASET = True
 
 # whether to randomize the GP parameters for training data
@@ -132,21 +132,24 @@ if FIX_TEST_DATASET:
 
 #### Make train-acquisition-function dataset from function samples dataset #####
 
+EXPANSION_FACTOR = 4
+
 if FIX_N_CANDIDATES:
     train_aq_dataset = FunctionSamplesAcquisitionDataset(
-        train_dataset, n_candidate_points=TRAIN_N_CANDIDATES,
-        n_samples="all", give_improvements=True)
+        train_dataset, n_candidate_points=TRAIN_N_CANDIDATES, n_samples="all",
+        give_improvements=True, dataset_size_factor=EXPANSION_FACTOR)
     test_aq_dataset = FunctionSamplesAcquisitionDataset(
-        test_dataset,
-        n_candidate_points=TEST_N_CANDIDATES,
-        n_samples="all", give_improvements=True)
+        test_dataset, n_candidate_points=TEST_N_CANDIDATES, n_samples="all",
+        give_improvements=True, dataset_size_factor=EXPANSION_FACTOR)
 else:
     train_aq_dataset = FunctionSamplesAcquisitionDataset(
         train_dataset, n_candidate_points="uniform", n_samples="all",
-        give_improvements=True, min_n_candidates=MIN_N_CANDIDATES)
+        give_improvements=True, min_n_candidates=MIN_N_CANDIDATES,
+        dataset_size_factor=EXPANSION_FACTOR)
     test_aq_dataset = FunctionSamplesAcquisitionDataset(
         test_dataset, n_candidate_points="uniform", n_samples="all",
-        give_improvements=True, min_n_candidates=MIN_N_CANDIDATES)
+        give_improvements=True, min_n_candidates=MIN_N_CANDIDATES,
+        dataset_size_factor=EXPANSION_FACTOR)
 
 sample_n_points = test_n_datapoints_random_gen(30)
 n_samples_and_candidates_examples = [
@@ -262,10 +265,21 @@ model_path = os.path.join(script_dir, file_name)
 
 ######################## Train the model #######################################
 
-BATCH_SIZE = 128
+BATCH_SIZE = 16
 
 train_aq_dataloader = train_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_last=True, device=device)
 small_test_aq_dataloader = small_test_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_last=True)
+
+print("Training dataset size:", len(train_dataset),
+      "number of batches:", len(train_dataset) // BATCH_SIZE)
+print("Training acquisition dataset size:", len(train_aq_dataset),
+      "number of batches:", len(train_aq_dataloader))
+print("Test dataset size:", len(test_dataset),
+      "number of batches:", len(test_dataset) // BATCH_SIZE)
+print("Test acquisition dataset size:", len(test_aq_dataset),
+      "number of batches:", len(test_aq_dataset) // BATCH_SIZE)
+print("Small test acquisition dataset size:", len(small_test_aq_dataset),
+        "number of batches:", len(small_test_aq_dataloader))
 
 # Whether to train the model. If False, will load a saved model.
 TRAIN = True
@@ -277,11 +291,15 @@ FIT_MAP_GP = False
 if TRAIN:
     EPOCHS = 5
     LEARNING_RATE = 3e-4
-    N_BATCHES = TRAIN_SIZE // BATCH_SIZE
-    EVERY_N_BATCHES = N_BATCHES // 10
     # Whether to train to predict the EI rather than predict the I
     # Only used if POLICY_GRADIENT is False
     TRAIN_WITH_EI = False
+
+    N_BATCHES = len(train_aq_dataloader)
+    EVERY_N_BATCHES = N_BATCHES // 10
+    if EVERY_N_BATCHES == 0:
+        EVERY_N_BATCHES = 1
+    
 
     if LOAD_SAVED_MODEL_TO_TRAIN:
         # Load the model
