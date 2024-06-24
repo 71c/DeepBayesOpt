@@ -599,73 +599,6 @@ def concat_y_hist_with_best_y(y_hist, hist_mask, subtract=False):
     return torch.cat((best_f, y_hist), dim=-1)
 
 
-class AcquisitionFunctionNetV1(AcquisitionFunctionNetWithFinalMLP):
-    def __init__(self,
-                 dimension, history_enc_hidden_dims=[256, 256], pooling="max",
-                 encoded_history_dim=1024, aq_func_hidden_dims=[256, 64],
-                 include_alpha=False, learn_alpha=False, initial_alpha=1.0,
-                 layer_norm_pointnet=False, layer_norm_before_end_mlp=False,
-                 layer_norm_at_end_mlp=False, include_best_y=False,
-                 activation_pointnet=nn.ReLU,
-                 activation_mlp=nn.ReLU):
-        """
-        Args:
-            dimension (int): The dimensionality of the input space.
-            history_enc_hidden_dims: sequence of integers representing the
-                hidden layer dimensions of the history encoder network.
-                Default is [256, 256].
-            pooling (str): The pooling method used in the history encoder.
-                Must be either "max" or "sum". Default is "max".
-            encoded_history_dim (int): The dimensionality of the encoded history
-                representation. Default is 1024.
-            aq_func_hidden_dims: sequence of integers representing the hidden
-                layer dimensions of the acquisition function network.
-                Default is [256, 64].
-            include_alpha (bool, default: False):
-                Whether to include an alpha parameter.
-            learn_alpha (bool, default: False):
-                Whether to learn the alpha parameter.
-            initial_alpha (float, default: 1.0):
-                The initial value for the alpha parameter.
-        """
-        initial_modules = OrderedDict([
-            ('history_encoder', PointNetLayer(
-            dimension+1+int(include_best_y), history_enc_hidden_dims, encoded_history_dim, pooling, activation_at_end=True,
-            layer_norm_before_end=layer_norm_pointnet,
-            layer_norm_at_end=layer_norm_pointnet,
-            activation=activation_pointnet)
-            )])
-        super().__init__(initial_modules, dimension + encoded_history_dim,
-                         aq_func_hidden_dims, include_alpha,
-                         learn_alpha, initial_alpha,
-                         layer_norm_before_end_mlp, layer_norm_at_end_mlp,
-                         activation=activation_mlp)
-        self.dimension = dimension
-        self.include_best_y = include_best_y
-    
-    def _get_mlp_input(self, x_hist, y_hist, x_cand,
-                       hist_mask=None, cand_mask=None):
-        if self.include_best_y:
-            y_hist = concat_y_hist_with_best_y(y_hist, hist_mask, subtract=False)
-
-        ## Encode the history inputs into a global feature
-        # shape (*, n_hist, dimension+1)
-        xy_hist = torch.cat((x_hist, y_hist), dim=-1)
-        # shape (*, 1, encoded_history_dim)
-        encoded_history = self.history_encoder(xy_hist, mask=hist_mask, keepdim=True)
-
-        ## Prepare input to the acquisition function network final dense layer
-        n_cand = x_cand.size(-2)
-        # shape (*, n_cand, encoded_history_dim)
-        encoded_history_expanded = expand_dim(encoded_history, -2, n_cand)
-        # Maybe neeed to match dimensions (?): (TODO: test this)
-        encoded_history_expanded = match_batch_shape(encoded_history_expanded, x_cand)
-        # shape (*, n_cand, dimension+encoded_history_dim)
-        x_cand_encoded_history = torch.cat((x_cand, encoded_history_expanded), dim=-1)
-
-        return x_cand_encoded_history
-
-
 def _get_xy_hist_and_cand(x_hist, y_hist, x_cand, hist_mask=None, include_y=True):
     # shape (*, n_hist, dimension+1)
     xy_hist = torch.cat((x_hist, y_hist), dim=-1)
@@ -697,10 +630,12 @@ def _get_xy_hist_and_cand(x_hist, y_hist, x_cand, hist_mask=None, include_y=True
         return xy_hist, x_hist_and_cand, mask
 
 
-class AcquisitionFunctionNetV2(AcquisitionFunctionNetWithFinalMLP):
+class AcquisitionFunctionNetV1and2(AcquisitionFunctionNetWithFinalMLP):
     def __init__(self,
                  dimension, history_enc_hidden_dims=[256, 256], pooling="max",
                  encoded_history_dim=1024, aq_func_hidden_dims=[256, 64],
+                 input_xcand_to_local_nn=True,
+                 input_xcand_to_final_mlp=False,
                  include_alpha=False, learn_alpha=False, initial_alpha=1.0,
                  activation_at_end_pointnet=True,
                  layer_norm_pointnet=False,
@@ -708,7 +643,8 @@ class AcquisitionFunctionNetV2(AcquisitionFunctionNetWithFinalMLP):
                  layer_norm_at_end_mlp=False,
                  include_best_y=False,
                  activation_pointnet=nn.ReLU,
-                 activation_mlp=nn.ReLU):
+                 activation_mlp=nn.ReLU,
+                 n_pointnets=1):
         """
         Args:
             dimension (int): The dimensionality of the input space.
@@ -722,42 +658,67 @@ class AcquisitionFunctionNetV2(AcquisitionFunctionNetWithFinalMLP):
             aq_func_hidden_dims: sequence of integers representing the hidden
                 layer dimensions of the acquisition function network.
                 Default is [256, 64].
+            input_xcand_to_local_nn:
+                Whether to input the candidate points to the local neural network.
+            input_xcand_to_final_mlp:
+                Whether to input the candidate points to the final MLP.
             include_alpha (bool, default: False):
                 Whether to include an alpha parameter.
             learn_alpha (bool, default: False):
                 Whether to learn the alpha parameter.
             initial_alpha (float, default: 1.0):
                 The initial value for the alpha parameter.
+            activation_at_end_pointnet (bool, default: True):
+                Whether to apply the activation function at the end of the PointNet.
+            layer_norm_pointnet (bool, default: False):
+                Whether to use layer normalization in the PointNet.
+            layer_norm_before_end_mlp (bool, default: False):
+                Whether to use layer normalization before the end of the MLP.
+            layer_norm_at_end_mlp (bool, default: False):
+                Whether to use layer normalization at the end of the MLP.
+            include_best_y (bool, default: False):
+                Whether to include the best y value in the input to the local neural network.
+            activation_pointnet:
+                The activation function to use in the PointNet.
+            activation_mlp:
+                The activation function to use in the final MLP.
+            n_pointnets (int, default: 1):
+                The number of PointNets to use. Default is 1.
         """
-    #     class MultiLayerPointNet(nn.Module):
-    # def __init__(self, input_dim: int, hidden_dims: Sequence[Sequence[int]],
-    #              output_dims: Sequence[int], poolings: Sequence[str],
-    #              dense_kwargs_list: List[dict]):
+        assert isinstance(n_pointnets, int) and n_pointnets >= 1
 
-        initial_modules = OrderedDict([
-            ('pointnet', PointNetLayer(
-            2 * dimension + 1 + int(include_best_y), history_enc_hidden_dims, encoded_history_dim, pooling,
-            activation_at_end=activation_at_end_pointnet,
-            layer_norm_before_end=layer_norm_pointnet,
-            layer_norm_at_end=layer_norm_pointnet,
-            activation=activation_pointnet)
-            )])
+        if not (input_xcand_to_local_nn or input_xcand_to_final_mlp):
+            raise ValueError("At least one of input_xcand_to_local_nn and input_xcand_to_final_mlp must be True.")
+        self.input_xcand_to_local_nn = input_xcand_to_local_nn
+        self.input_xcand_to_final_mlp = input_xcand_to_final_mlp
 
-        # n_pointnets = 2
-        # kwargs_list = [dict(activation_at_end=activation_at_end_pointnet,
-        #     layer_norm_before_end=layer_norm_pointnet,
-        #     layer_norm_at_end=layer_norm_pointnet,
-        #     activation=activation_pointnet)] * n_pointnets
-        # initial_modules = OrderedDict([
-        #     ('pointnet', MultiLayerPointNet(
-        #     2 * dimension + 1 + int(include_best_y),
-        #     [history_enc_hidden_dims] * n_pointnets,
-        #     [encoded_history_dim] * n_pointnets,
-        #     [pooling] * n_pointnets,
-        #     kwargs_list)
-        #     )])
+        pointnet_input_dim = dimension + 1 + int(include_best_y) + (dimension if input_xcand_to_local_nn else 0)
+
+        pointnet_kwargs = dict(activation_at_end=activation_at_end_pointnet,
+                layer_norm_before_end=layer_norm_pointnet,
+                layer_norm_at_end=layer_norm_pointnet,
+                activation=activation_pointnet)
+        
+        if n_pointnets == 1:
+            initial_modules = OrderedDict([
+                ('pointnet', PointNetLayer(
+                pointnet_input_dim, history_enc_hidden_dims,
+                encoded_history_dim, pooling, **pointnet_kwargs)
+                )])
+        else:
+            kwargs_list = [pointnet_kwargs] * n_pointnets
+            initial_modules = OrderedDict([
+                ('pointnet', MultiLayerPointNet(
+                pointnet_input_dim,
+                [history_enc_hidden_dims] * n_pointnets,
+                [encoded_history_dim] * n_pointnets,
+                [pooling] * n_pointnets,
+                kwargs_list, use_local_features=True)
+                )])
+
+        final_layer_input_dim = encoded_history_dim + (dimension if input_xcand_to_final_mlp else 0)
     
-        super().__init__(initial_modules, encoded_history_dim,
+        super().__init__(initial_modules, final_layer_input_dim,
                          aq_func_hidden_dims, include_alpha,
                          learn_alpha, initial_alpha,
                          layer_norm_before_end_mlp, layer_norm_at_end_mlp,
@@ -769,11 +730,28 @@ class AcquisitionFunctionNetV2(AcquisitionFunctionNetWithFinalMLP):
                        hist_mask=None, cand_mask=None):
         if self.include_best_y:
             y_hist = concat_y_hist_with_best_y(y_hist, hist_mask, subtract=False)
-        
-        xy_hist, xy_hist_and_cand, mask = _get_xy_hist_and_cand(x_hist, y_hist, x_cand, hist_mask)
 
-        # shape (*, n_cand, encoded_history_dim)
-        return self.pointnet(xy_hist_and_cand, mask=mask, keepdim=False)
+        if self.input_xcand_to_local_nn: # V2
+            xy_hist, xy_hist_and_cand, mask = _get_xy_hist_and_cand(x_hist, y_hist, x_cand, hist_mask)
+            # shape (*, n_cand, encoded_history_dim)
+            out = self.pointnet(xy_hist_and_cand, mask=mask, keepdim=False)
+        else: # V1
+            xy_hist = torch.cat((x_hist, y_hist), dim=-1)
+            # shape (*, 1, encoded_history_dim)
+            out = self.pointnet(xy_hist, mask=hist_mask, keepdim=True)
+            
+            ## Prepare input to the acquisition function network final dense layer
+            n_cand = x_cand.size(-2)
+            # shape (*, n_cand, encoded_history_dim)
+            out = expand_dim(out, -2, n_cand)
+            # Maybe neeed to match dimensions (?): (TODO: test this)
+            out = match_batch_shape(out, x_cand)
+        
+        if self.input_xcand_to_final_mlp: # V1
+            # shape (*, n_cand, dimension+encoded_history_dim)
+            out = torch.cat((x_cand, out), dim=-1)
+
+        return out
 
 
 class AcquisitionFunctionNetV3(AcquisitionFunctionNetWithFinalMLP):

@@ -7,7 +7,7 @@ if torch.cuda.is_available():
 from torch import nn
 
 from gp_acquisition_dataset import create_gp_acquisition_dataset
-from acquisition_function_net import (AcquisitionFunctionNetV1, AcquisitionFunctionNetV2, AcquisitionFunctionNetV3,
+from acquisition_function_net import (AcquisitionFunctionNetV1and2, AcquisitionFunctionNetV3,
                                       AcquisitionFunctionNetV4, AcquisitionFunctionNetDense, LikelihoodFreeNetworkAcquisitionFunction)
 from predict_EI_simple import calculate_EI_GP
 import numpy as np
@@ -123,11 +123,13 @@ ALPHA_INCREMENT = None # equivalent to 0.0
 #                                  learn_alpha=LEARN_ALPHA,
 #                                  initial_alpha=INITIAL_ALPHA).to(device)
 
-model = AcquisitionFunctionNetV2(DIMENSION,
+model = AcquisitionFunctionNetV1and2(DIMENSION,
                                  pooling="max",
                                  history_enc_hidden_dims=[32, 32],
                                  encoded_history_dim=32,
                                  aq_func_hidden_dims=[32, 32],
+                                 input_xcand_to_local_nn=False,
+                                 input_xcand_to_final_mlp=True,
                                  include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
                                  learn_alpha=LEARN_ALPHA,
                                  initial_alpha=INITIAL_ALPHA,
@@ -139,20 +141,6 @@ model = AcquisitionFunctionNetV2(DIMENSION,
                                  activation_pointnet=nn.ReLU,
                                  activation_mlp=nn.ReLU).to(device)
 
-# model = AcquisitionFunctionNetV1(DIMENSION,
-#                                  pooling="max",
-#                                  history_enc_hidden_dims=[32, 32],
-#                                  encoded_history_dim=32,
-#                                  aq_func_hidden_dims=[32, 32],
-#                                  include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
-#                                  learn_alpha=LEARN_ALPHA,
-#                                  initial_alpha=INITIAL_ALPHA,
-#                                  layer_norm_pointnet=False,
-#                                  layer_norm_before_end_mlp=False,
-#                                  layer_norm_at_end_mlp=False,
-#                                  include_best_y=True,
-#                                  activation_pointnet=nn.ReLU,
-#                                  activation_mlp=nn.ReLU).to(device)
 
 # model = AcquisitionFunctionNetDense(DIMENSION, MAX_HISTORY,
 #                                     hidden_dims=[128, 128, 64, 32],

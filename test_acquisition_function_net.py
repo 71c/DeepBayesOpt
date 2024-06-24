@@ -5,7 +5,7 @@ import os
 from function_samples_dataset import GaussianProcessRandomDataset
 from acquisition_dataset import FunctionSamplesAcquisitionDataset
 from utils import get_uniform_randint_generator, get_loguniform_randint_generator, pad_tensor
-from acquisition_function_net import AcquisitionFunctionNetV1, AcquisitionFunctionNetV2, AcquisitionFunctionNetV3
+from acquisition_function_net import AcquisitionFunctionNetV1and2, AcquisitionFunctionNetV3
 
 
 # This means whether n history points is log-uniform
@@ -168,17 +168,23 @@ model = AcquisitionFunctionNetV3(DIMENSION,
                                  learn_alpha=LEARN_ALPHA,
                                  initial_alpha=INITIAL_ALPHA).to(device)
 
-# model = AcquisitionFunctionNetV1(DIMENSION,
+# model = AcquisitionFunctionNetV1and2(DIMENSION,
 #                                  pooling="max",
 #                                  history_enc_hidden_dims=[32, 32],
 #                                  encoded_history_dim=32,
 #                                  aq_func_hidden_dims=[32, 32],
+#                                  input_xcand_to_local_nn=False,
+#                                  input_xcand_to_final_mlp=True,
 #                                  include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
 #                                  learn_alpha=LEARN_ALPHA,
 #                                  initial_alpha=INITIAL_ALPHA,
-#                                  layer_norm_pointnet=True,
-#                                  layer_norm_before_end_mlp=True,
-#                                  layer_norm_at_end_mlp=False).to(device)
+#                                  activation_at_end_pointnet=True,
+#                                  layer_norm_pointnet=False,
+#                                  layer_norm_before_end_mlp=False,
+#                                  layer_norm_at_end_mlp=False,
+#                                  include_best_y=False,
+#                                  activation_pointnet=nn.ReLU,
+#                                  activation_mlp=nn.ReLU).to(device)
 
 # model = AcquisitionFunctionNetV1(DIMENSION)
 print(model)
