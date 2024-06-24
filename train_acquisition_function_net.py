@@ -177,7 +177,7 @@ def test_loop(dataloader, model, policy_gradient=False, fit_map_gp=False, nn_dev
     for batch in tqdm(dataloader):
         x_hist, y_hist, x_cand, improvements, hist_mask, cand_mask, models = batch
         
-        # For testing
+        # # For testing
         # test_ei_true_gp += 1. # to avoid division by zero
         # continue
         

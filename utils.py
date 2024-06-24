@@ -147,7 +147,7 @@ class SizedIterableMixin(Iterable):
     def _len_or_inf(self):
         if not hasattr(self, "_size"):
             raise AttributeError(
-                f"{self.__class__.__name__}, a subclass of SizedIterableMixin,"\
+                f"{self.__class__.__name__}, a subclass of SizedIterableMixin, "\
                     "must have attribute '_size' to hold the length.")
         size = self._size
         if size != math.inf and (not isinstance(size, int) or size < 0):

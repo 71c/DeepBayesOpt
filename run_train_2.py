@@ -6,7 +6,8 @@ if torch.cuda.is_available():
     print(torch.cuda.get_device_name(torch.cuda.current_device()))
 from torch import nn
 
-from generate_gp_data import GaussianProcessRandomDataset, FunctionSamplesMapDataset, LazyFunctionSamplesMapDataset, FunctionSamplesAcquisitionDataset
+from function_samples_dataset import GaussianProcessRandomDataset, ListMapFunctionSamplesDataset, LazyMapFunctionSamplesDataset
+from acquisition_dataset import FunctionSamplesAcquisitionDataset
 from utils import get_uniform_randint_generator, get_loguniform_randint_generator, get_lengths_from_proportions
 from acquisition_function_net import AcquisitionFunctionNetV1, AcquisitionFunctionNetV2, AcquisitionFunctionNetV3, AcquisitionFunctionNetV4, AcquisitionFunctionNetDense, LikelihoodFreeNetworkAcquisitionFunction
 from predict_EI_simple import calculate_EI_GP
@@ -36,7 +37,7 @@ FIX_N_CANDIDATES = True
 if FIX_N_CANDIDATES:
     # Number of candidate points. More relevant for the policy gradient case.
     # Doesn't matter that much for the MSE EI case; for MSE, could just set to 1.
-    TRAIN_N_CANDIDATES = 1
+    TRAIN_N_CANDIDATES = 50
     MIN_HISTORY = 1
     MAX_HISTORY = 8
 
@@ -122,12 +123,12 @@ test_dataset = GaussianProcessRandomDataset(
     n_datapoints_random_gen=test_n_datapoints_random_gen)
 
 if FIX_TRAIN_DATASET:
-    train_dataset = FunctionSamplesMapDataset.from_iterable_dataset(train_dataset)
+    train_dataset = ListMapFunctionSamplesDataset.from_iterable_dataset(train_dataset)
 if FIX_TEST_DATASET:
     ## Either way works, it just depends on when you wanna wait longer --
     ## preemptively vs when you actually need the data. Same time spent.
-    # test_dataset = FunctionSamplesMapDataset.from_iterable_dataset(test_dataset)
-    test_dataset = LazyFunctionSamplesMapDataset(test_dataset)
+    # test_dataset = ListMapFunctionSamplesDataset.from_iterable_dataset(test_dataset)
+    test_dataset = LazyMapFunctionSamplesDataset(test_dataset)
 
 
 #### Make train-acquisition-function dataset from function samples dataset #####
@@ -164,7 +165,7 @@ small_test_aq_dataset, _ = test_aq_dataset.random_split(
     [SMALL_TEST_PROPORTION_OF_TEST, 1 - SMALL_TEST_PROPORTION_OF_TEST])
 
 # True for the softmax thing, False for MSE
-POLICY_GRADIENT = False
+POLICY_GRADIENT = True
 
 ################# Initialize the acquisition function network #################
 
