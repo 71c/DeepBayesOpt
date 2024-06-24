@@ -7,7 +7,7 @@ if torch.cuda.is_available():
 from torch import nn
 
 from function_samples_dataset import GaussianProcessRandomDataset, ListMapFunctionSamplesDataset, LazyMapFunctionSamplesDataset
-from acquisition_dataset import FunctionSamplesAcquisitionDataset
+from acquisition_dataset import FunctionSamplesAcquisitionDataset, LazyMapAcquisitionDataset
 from utils import get_uniform_randint_generator, get_loguniform_randint_generator
 from acquisition_function_net import (AcquisitionFunctionNetV1, AcquisitionFunctionNetV2, AcquisitionFunctionNetV3,
                                       AcquisitionFunctionNetV4, AcquisitionFunctionNetDense, LikelihoodFreeNetworkAcquisitionFunction)
@@ -79,8 +79,11 @@ TEST_FACTOR = 3.0
 # each epoch, between 0 and 1
 SMALL_TEST_PROPORTION_OF_TEST = 0.04
 
-FIX_TRAIN_DATASET = False
-FIX_TEST_DATASET = True
+FIX_TRAIN_SAMPLES_DATASET = False
+FIX_TEST_SAMPLES_DATASET = False
+
+FIX_TRAIN_ACQUISITION_DATASET = False
+FIX_TEST_ACQUISITION_DATASET = True
 
 # whether to randomize the GP parameters for training data
 RANDOMIZE_PARAMS = False
@@ -123,9 +126,9 @@ test_dataset = GaussianProcessRandomDataset(
     **dataset_kwargs, dataset_size=TEST_SIZE,
     n_datapoints_random_gen=test_n_datapoints_random_gen)
 
-if FIX_TRAIN_DATASET:
+if FIX_TRAIN_SAMPLES_DATASET:
     train_dataset = ListMapFunctionSamplesDataset.from_iterable_dataset(train_dataset)
-if FIX_TEST_DATASET:
+if FIX_TEST_SAMPLES_DATASET:
     ## Either way works, it just depends on when you wanna wait longer --
     ## preemptively vs when you actually need the data. Same time spent.
     # test_dataset = ListMapFunctionSamplesDataset.from_iterable_dataset(test_dataset)
@@ -162,8 +165,21 @@ n_hist_and_candidates_examples = [
     for n_samples, n_candidates in n_samples_and_candidates_examples]
 print(n_hist_and_candidates_examples)
 
+if FIX_TRAIN_ACQUISITION_DATASET:
+    train_aq_dataset = LazyMapAcquisitionDataset(train_aq_dataset)
+if FIX_TEST_ACQUISITION_DATASET:
+    test_aq_dataset = LazyMapAcquisitionDataset(test_aq_dataset)
+
 small_test_aq_dataset, _ = test_aq_dataset.random_split(
     [SMALL_TEST_PROPORTION_OF_TEST, 1 - SMALL_TEST_PROPORTION_OF_TEST])
+
+print("Train acquisition dataset:")
+print(train_aq_dataset)
+print("\nTest acquisition dataset:")
+print(test_aq_dataset)
+print("\nSmall test acquisition dataset:")
+print(small_test_aq_dataset)
+print("\n")
 
 # True for the softmax thing, False for MSE
 POLICY_GRADIENT = True

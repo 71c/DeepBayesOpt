@@ -416,6 +416,15 @@ class FunctionSamplesAcquisitionDataset(
                     sampler=torch.utils.data.RandomSampler(
                         dataset, replacement=False, num_samples=self._size))
     
+    def _init_params(self):
+        return (self.base_dataset,), dict(
+            n_candidate_points=self.n_candidate_points,
+            n_samples=self.n_samples,
+            give_improvements=self.give_improvements,
+            min_n_candidates=self.min_n_candidates,
+            dataset_size_factor=self.dataset_size_factor
+        )
+    
     @property
     def data_is_loaded(self):
         return self.base_dataset.data_is_loaded

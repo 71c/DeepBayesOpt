@@ -190,6 +190,10 @@ class TupleWithModel:
         }
 
 
+def add_indent(s):
+    return '\n'.join(['  ' + line for line in s.split('\n')])
+
+
 class DatasetWithModels(Dataset, ABC):
     """A base class for datasets that have models.
 
@@ -209,17 +213,6 @@ class DatasetWithModels(Dataset, ABC):
     # to be used in subclasses of that class
     _base_class: type
 
-    def __new__(cls, *args, **kwargs):
-        # Ensure the required class attribute is set correctly
-        if not (hasattr(cls, '_tuple_class') and
-                issubclass(cls._tuple_class, TupleWithModel)):
-            raise AttributeError(
-                f"{cls.__name__} must have attribute '_tuple_class' that is a subclass of TupleWithModel.")
-        if not (hasattr(cls, '_base_class')):
-            raise AttributeError(
-                f"{cls.__name__} must have attribute '_base_class'.")
-        return Dataset.__new__(cls)
-
     @abstractmethod
     def random_split(self, lengths: Sequence[Union[int, float]]) -> List['DatasetWithModels']:
         """Randomly splits the dataset into multiple subsets.
@@ -235,6 +228,57 @@ class DatasetWithModels(Dataset, ABC):
     def data_is_loaded(self) -> bool:
         """Returns whether the data is loaded in memory or not."""
         pass  # pragma: no cover
+
+    @abstractmethod
+    def _init_params(self) -> tuple[tuple, dict]:
+        """Returns a tuple of the arguments and keyword arguments that are
+        passed to the constructor of the class."""
+        pass  # pragma: no cover
+
+    @classmethod
+    def _str_helper(cls, args, kwargs, is_str, include_class=True):
+        if is_str:
+            def f(x):
+                if isinstance(x, str):
+                    return repr(x)
+                return str(x)
+        else:
+            f = repr
+        
+        args_str = ',\n'.join(f(arg) for arg in args)
+        kwargs_str = ',\n'.join(f"{key}={f(value)}" for key, value in kwargs.items())
+
+        things = []
+        if args_str != '':
+            things.append(add_indent(args_str))
+        if kwargs_str != '':
+            things.append(add_indent(kwargs_str))
+
+        parts = ',\n'.join(things)
+
+        if not include_class:
+            return parts
+
+        return f"{cls.__name__}(\n{parts}\n)"
+    
+    def __repr__(self):
+        args, kwargs = self._init_params()
+        return self._str_helper(args, kwargs, is_str=False)
+    
+    def __str__(self):
+        args, kwargs = self._init_params()
+        return self._str_helper(args, kwargs, is_str=True)
+
+    def __new__(cls, *args, **kwargs):
+        # Ensure the required class attribute is set correctly
+        if not (hasattr(cls, '_tuple_class') and
+                issubclass(cls._tuple_class, TupleWithModel)):
+            raise AttributeError(
+                f"{cls.__name__} must have attribute '_tuple_class' that is a subclass of TupleWithModel.")
+        if not (hasattr(cls, '_base_class')):
+            raise AttributeError(
+                f"{cls.__name__} must have attribute '_base_class'.")
+        return Dataset.__new__(cls)
 
     @property
     def has_models(self):
@@ -445,6 +489,23 @@ class ListMapDatasetWithModels(MapDatasetWithModels):
 
         self._data = data
         self._model_sampler = model_sampler
+    
+    def _init_params(self):
+        kwargs = {'model_sampler': self._model_sampler} if self.has_models else {}
+        return (self._data,), kwargs
+    
+    def __str__(self):
+        args, kwargs = self._init_params()
+        if len(self._data) <= 2:
+            short_list = self._data
+        else:
+            short_list = self._data[:1] + ["..."] + self._data[-1:]
+        tmp1 = self._str_helper(short_list, {},
+                                is_str=True, include_class=False)
+        tmp = self._str_helper(
+            ("[\n" + tmp1 + "\n]",),
+            kwargs, is_str=True)
+        return f"{tmp} of length {len(self)}"
 
     def __getitem__(self, index):
         if isinstance(index, slice):
@@ -555,12 +616,21 @@ class LazyMapDatasetWithModels(MapDatasetWithModels):
         if not (isinstance(dataset, self._base_class) and
                 isinstance(dataset, IterableDataset)):
             raise TypeError(f"dataset should be an instance of both {self._base_class.__name__} and IterableDataset")
+        
+        # For __repr__
+        self._dataset = dataset
+        self._n_realizations = n_realizations
+        
         items_generator, size = dataset._get_items_generator_and_size(
             n_realizations, verbose=False)
         self._items_generator = items_generator
         self._size = size
         self._data = [None] * size
         self._model_sampler = dataset.model_sampler if dataset.has_models else None
+    
+    def _init_params(self):
+        kwargs = {'n_realizations': self._n_realizations} if self._n_realizations is not None else {}
+        return (self._dataset,), kwargs
     
     def __getitem__(self, index):
         if isinstance(index, slice):
@@ -590,6 +660,13 @@ class MapDatasetWithModelsSubset(Subset, MapDatasetWithModels):
         
         # Equivalent to self.dataset = dataset; self.indices = indices
         Subset.__init__(self, dataset, indices)
+    
+    def _init_params(self):
+        return (self.dataset, self.indices), {}
+
+    def __str__(self):
+        tmp = self._str_helper((self.dataset,), {}, is_str=True)
+        return f"{tmp} of length {len(self)}/{len(self.dataset)}"
 
     def __getitem__(self, idx):
         if isinstance(idx, slice):
@@ -710,4 +787,3 @@ if __name__ == "__main__":
     print(isinstance(boo2, MapBaseDataset), isinstance(boo2, ListDataset), isinstance(boo2, MapSubset))
 
     print(MapSubset.__doc__)
-

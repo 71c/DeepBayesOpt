@@ -267,6 +267,33 @@ class GaussianProcessRandomDataset(
                 raise ValueError("dataset_size should be a positive integer or None.")
         self._size = dataset_size
     
+    def _init_params(self):
+        return tuple(), dict(
+            n_datapoints=self.n_datapoints,
+            n_datapoints_random_gen=self.n_datapoints_random_gen,
+            observation_noise=self.observation_noise,
+            xvalue_distribution=self.xvalue_distribution,
+            models=self.model_sampler.initial_models,
+            model_probabilities=self.model_sampler.model_probabilities,
+            set_random_model_train_data=self.set_random_model_train_data,
+            dataset_size=self._size,
+            randomize_params=self.model_sampler.randomize_params
+        )
+
+    def copy_with_new_size(self, dataset_size:int):
+        """Create a copy of the dataset with a new dataset size.
+
+        Args:
+            dataset_size (int): The new dataset size for the copied dataset.
+
+        Returns:
+            GaussianProcessRandomDataset: A new instance of the dataset with the
+            specified dataset size.
+        """
+        t, d = self._get_params_dict()
+        d['dataset_size'] = dataset_size
+        return GaussianProcessRandomDataset(*t, **d)
+    
     def random_split(self, lengths: Sequence[Union[int, float]]):
         # Same check that pytorch does in torch.utils.data.random_split
         # https://pytorch.org/docs/stable/_modules/torch/utils/data/dataset.html#random_split
@@ -289,26 +316,6 @@ class GaussianProcessRandomDataset(
 
     def data_is_loaded(self):
         return False
-
-    def copy_with_new_size(self, dataset_size:int):
-        """Create a copy of the dataset with a new dataset size.
-
-        Args:
-            dataset_size (int): The new dataset size for the copied dataset.
-
-        Returns:
-            GaussianProcessRandomDataset: A new instance of the dataset with the
-            specified dataset size.
-        """
-        return GaussianProcessRandomDataset(
-            n_datapoints=self.n_datapoints,
-            n_datapoints_random_gen=self.n_datapoints_random_gen,
-            observation_noise=self.observation_noise,
-            xvalue_distribution=self.xvalue_distribution,
-            models=self.model_sampler.initial_models,
-            model_probabilities=self.model_sampler.model_probabilities,
-            set_random_model_train_data=self.set_random_model_train_data,
-            dataset_size=dataset_size, randomize_params=self.model_sampler.randomize_params)
 
     def _next(self):
         """Generate a random Gaussian Process model and sample from it.
@@ -354,7 +361,6 @@ class GaussianProcessRandomDataset(
         return GPDatasetItem(x_values, y_values.squeeze(), model)
 
 
-
 class RepeatedFunctionSamplesIterableDataset(
     FunctionSamplesDataset, IterableDataset, SizedIterableMixin):
     """An iterable-style dataset that repeats the samples from another
@@ -382,6 +388,9 @@ class RepeatedFunctionSamplesIterableDataset(
         
         self.base_dataset = base_dataset
         self.size_factor = size_factor
+    
+    def _init_params(self):
+        return (self.base_dataset, self.size_factor), dict()
     
     @property
     def _size(self):
