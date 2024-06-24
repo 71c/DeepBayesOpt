@@ -1,16 +1,14 @@
-from typing import Optional, List, Tuple, Union
+from typing import Optional, List, Union
 from collections.abc import Sequence
-from dataset_with_models import (
-    DatasetWithModels, MapDatasetWithModels, LazyMapDatasetWithModels,
-    TupleWithModel, create_classes, RandomModelSampler)
+from dataset_with_models import TupleWithModel, create_classes, RandomModelSampler
 import torch
+from torch.utils.data import IterableDataset, DataLoader
 from torch.distributions import Uniform, Normal, Independent, Distribution
 from botorch.models.gp_regression import SingleTaskGP
 from botorch.exceptions import UnsupportedError
 import gpytorch
 from gpytorch.likelihoods import GaussianLikelihood, FixedNoiseGaussianLikelihood
 from gpytorch.constraints.constraints import GreaterThan
-from torch.utils.data import Dataset, IterableDataset, DataLoader, random_split, Subset
 from utils import SizedInfiniteIterableMixin, SizedIterableMixin, get_lengths_from_proportions, iterable_is_finite
 import math
 

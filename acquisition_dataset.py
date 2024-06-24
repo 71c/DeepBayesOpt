@@ -1,17 +1,14 @@
-from abc import ABC, abstractmethod
 from functools import partial
 import torch
-import pyro
 from botorch.models.gp_regression import SingleTaskGP
 
-from torch.distributions import Uniform, Normal, Independent, Distribution
-from torch.utils.data import Dataset, IterableDataset, DataLoader, random_split, Subset
+from torch.utils.data import IterableDataset, DataLoader
 
-from dataset_with_models import TupleWithModel, RandomModelSampler, create_classes
+from dataset_with_models import TupleWithModel, create_classes
 from function_samples_dataset import FunctionSamplesDataset, GaussianProcessRandomDataset, RepeatedFunctionSamplesIterableDataset, GPDatasetItem
 
-from utils import resize_iterable, uniform_randint, get_uniform_randint_generator, max_pad_tensors_batch, get_lengths_from_proportions
-from utils import SizedIterableMixin, SizedInfiniteIterableMixin, len_or_inf, iterable_is_finite
+from utils import resize_iterable, uniform_randint, get_uniform_randint_generator, max_pad_tensors_batch
+from utils import SizedIterableMixin, len_or_inf
 
 from typing import Optional, List, Tuple, Union
 from collections.abc import Sequence

@@ -39,10 +39,11 @@ def pad_tensor(vec, length, dim, add_mask=False):
         vec - tensor to pad
         length - the size to pad to in dimension 'dim'
         dim - dimension to pad
-        add_mask - whether to return the mask as well as (tensor, mask)
+        add_mask - whether to return the mask as well
 
-    return:
-        a new tensor padded to 'length' in dimension 'dim'
+    returns:
+        If add_mask=True, return a tuple (padded, mask).
+        Otherwise, return the padded tensor only.
     """
     pad_size = length - vec.size(dim)
     if pad_size < 0:
@@ -66,18 +67,19 @@ def pad_tensor(vec, length, dim, add_mask=False):
 
 
 def max_pad_tensors_batch(tensors, dim=0, add_mask=False):
-    """Pads a batch of tensors along a dimension to match the maximum length.
+    """Pads a batch of tensors with zeros along a dimension to match the maximum
+    length.
 
     Args:
         tensors (List[torch.Tensor]): A list of tensors to be padded.
         dim (int, default: 0): The dimension along which to pad the tensors.
         add_mask (bool, optional, default: False):
-            If add_mask=True AND tensors are of different lengths
-            (padding is necessary), return mask as well as (tensor, mask).
-            Otherwise, returns a regular tensor padded with zeros.
+            Whether to also return a mask tensor
 
     Returns:
-        Tensor or MaskedTensor: The padded batch of tensors.
+        If add_mask=True, return a tuple (padded, mask).
+        If all tensors have the same length, mask is None.
+        Otherwise, returns the padded tensor only.
     """
     lengths = [x.shape[dim] for x in tensors]
     max_length = max(lengths)

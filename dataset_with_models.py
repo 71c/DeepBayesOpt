@@ -1,19 +1,18 @@
 from abc import ABC, abstractmethod
-from typing import Iterable, Optional, List, Tuple, Union
+from typing import Optional, List, Union
 from collections.abc import Sequence
 
 import os
 from tqdm import tqdm
 
 import torch
-from torch.utils.data import Dataset, IterableDataset, DataLoader, random_split, Subset
+from torch.utils.data import Dataset, IterableDataset, random_split, Subset
 
 from botorch.models.gp_regression import SingleTaskGP
 from botorch.exceptions import UnsupportedError
 import pyro
 
-from utils import resize_iterable, iterable_is_finite, uniform_randint, get_uniform_randint_generator, max_pad_tensors_batch, get_lengths_from_proportions
-from utils import SizedIterableMixin, SizedInfiniteIterableMixin, len_or_inf
+from utils import resize_iterable, iterable_is_finite
 
 
 # https://docs.gpytorch.ai/en/stable/_modules/gpytorch/module.html#Module.pyro_sample_from_prior
