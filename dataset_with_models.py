@@ -634,7 +634,7 @@ class LazyMapDatasetWithModels(MapDatasetWithModels):
     
     def __getitem__(self, index):
         if isinstance(index, slice):
-            return super().__getitem__(index)
+            return self._map_base_class.__getitem__(self, index)
         if self._data[index] is None:
             self._data[index] = next(self._items_generator)
         return self._data[index]
