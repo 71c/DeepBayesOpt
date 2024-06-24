@@ -6,9 +6,7 @@ if torch.cuda.is_available():
     print(torch.cuda.get_device_name(torch.cuda.current_device()))
 from torch import nn
 
-from function_samples_dataset import GaussianProcessRandomDataset, ListMapFunctionSamplesDataset, LazyMapFunctionSamplesDataset
-from acquisition_dataset import FunctionSamplesAcquisitionDataset, LazyMapAcquisitionDataset
-from utils import get_uniform_randint_generator, get_loguniform_randint_generator
+from gp_acquisition_dataset import create_gp_acquisition_dataset
 from acquisition_function_net import (AcquisitionFunctionNetV1, AcquisitionFunctionNetV2, AcquisitionFunctionNetV3,
                                       AcquisitionFunctionNetV4, AcquisitionFunctionNetDense, LikelihoodFreeNetworkAcquisitionFunction)
 from predict_EI_simple import calculate_EI_GP
@@ -24,167 +22,73 @@ import cProfile
 from tictoc import tic, toc, tocl
 
 
+##################### Settings for this script #################################
+# Whether to train the model. If False, will load a saved model.
+TRAIN = True
+# Whether to load a saved model to train
+LOAD_SAVED_MODEL_TO_TRAIN = False
+# Whether to fit maximum a posteriori GP for testing
+FIT_MAP_GP = False
+
+
+############################ FIXED DATASET SETTINGS ############################
+########## Set number of history and candidate points generation ###############
+# This means whether n history points or whether the total number of points
+# is log-uniform
+LOGUNIFORM = True
+PRE_OFFSET = 3.0
+
+# Whether to fix the number of candidate points (as opposed to randomized)
+FIX_N_CANDIDATES = True
+
+# If FIX_N_CANDIDATES is True, then the following are used:
+TEST_N_CANDIDATES = 50
+MIN_HISTORY = 1
+MAX_HISTORY = 8
+
+# If FIX_N_CANDIDATES is False, then the following are used:
+MIN_N_CANDIDATES = 2
+MAX_POINTS = 30
+
+###################### GP realization characteristics ##########################
 # Dimension of the optimization problem
 DIMENSION = 1
-
-
-########## Set number of history and candidate points generation ###############
-
-# This means whether n history points is log-uniform
-# or whether the total number of points is log-uniform
-LOGUNIFORM = True
-# Whether to fix the number of candidate poitns (as opposed to randomized)
-FIX_N_CANDIDATES = True
-if FIX_N_CANDIDATES:
-    # Number of candidate points. More relevant for the policy gradient case.
-    # Doesn't matter that much for the MSE EI case; for MSE, could just set to 1.
-    TRAIN_N_CANDIDATES = 50
-    MIN_HISTORY = 1
-    MAX_HISTORY = 8
-
-    TEST_N_CANDIDATES = 50
-
-    if LOGUNIFORM:
-        train_n_datapoints_random_gen = get_loguniform_randint_generator(
-            MIN_HISTORY, MAX_HISTORY, pre_offset=3.0, offset=TRAIN_N_CANDIDATES)
-        test_n_datapoints_random_gen = get_loguniform_randint_generator(
-            MIN_HISTORY, MAX_HISTORY, pre_offset=3.0, offset=TEST_N_CANDIDATES)
-    else:
-        train_n_datapoints_random_gen = get_uniform_randint_generator(
-            TRAIN_N_CANDIDATES+MIN_HISTORY, TRAIN_N_CANDIDATES+MAX_HISTORY)
-        test_n_datapoints_random_gen = get_uniform_randint_generator(
-            TEST_N_CANDIDATES+MIN_HISTORY, TEST_N_CANDIDATES+MAX_HISTORY)
-else:
-    MIN_N_CANDIDATES = 2
-    MIN_POINTS = MIN_N_CANDIDATES + 1
-    MAX_POINTS = 30
-
-    if LOGUNIFORM:
-        train_n_datapoints_random_gen = get_loguniform_randint_generator(
-            MIN_POINTS, MAX_POINTS, pre_offset=3.0, offset=0)
-    else:
-        train_n_datapoints_random_gen = get_uniform_randint_generator(
-            MIN_POINTS, MAX_POINTS)
-        test_n_datapoints_random_gen = train_n_datapoints_random_gen
-
-
-####################### Make the train and test datasets #######################
-
-TRAIN_SIZE = 64 * 100
-# How many times bigger the big test dataset is than the train dataset, any
-# value > 0.
-TEST_FACTOR = 3.0
-
-# The proportion of the test dataset that is used for evaluating the model after
-# each epoch, between 0 and 1
-SMALL_TEST_PROPORTION_OF_TEST = 0.04
-
-FIX_TRAIN_SAMPLES_DATASET = False
-FIX_TEST_SAMPLES_DATASET = False
-
-FIX_TRAIN_ACQUISITION_DATASET = False
-FIX_TEST_ACQUISITION_DATASET = True
-
 # whether to randomize the GP parameters for training data
 RANDOMIZE_PARAMS = False
 # choose either "uniform" or "normal" (or a custom distribution)
 XVALUE_DISTRIBUTION = "uniform"
 
-
-## 1 - TRAIN_SIZE / DATASET_SIZE == TEST_SIZE
-# DATASET_SIZE = math.ceil(TRAIN_SIZE / (1 - TEST_SIZE))
-DATASET_SIZE = math.ceil(TRAIN_SIZE * (1 + TEST_FACTOR))
-
-#### Calculate test size
-TEST_SIZE = DATASET_SIZE - TRAIN_SIZE
-## Could alternatively calculate test size like this if going by
-## proportions of an original dataset:
-# TEST_PROPORTION = TEST_FACTOR / (1 + TEST_FACTOR)
-# TRAIN_PROPORTION = 1 - TEST_PROPORTION
-# TRAIN_SIZE, TEST_SIZE = get_lengths_from_proportions(DATASET_SIZE, [TRAIN_PROPORTION, TEST_PROPORTION])
-
-print(f"Small test proportion of test: {SMALL_TEST_PROPORTION_OF_TEST:.4f}")
-# SMALL_TEST_PROPORTION_OF_TEST = 1 / ((1 / SMALL_TEST_PROPORTION_OF_TRAIN_AND_SMALL_TEST - 1) * TEST_FACTOR)
-SMALL_TEST_PROPORTION_OF_TRAIN_AND_SMALL_TEST = 1 / (1 + 1 / (SMALL_TEST_PROPORTION_OF_TEST * TEST_FACTOR))
-print(f"Small test proportion of train + small test: {SMALL_TEST_PROPORTION_OF_TRAIN_AND_SMALL_TEST:.4f}")
+####################### Other fixed dataset settings ###########################
+# How many times bigger the big test dataset is than the train dataset, > 0
+TEST_FACTOR = 3.0
+# The proportion of the test dataset that is used for evaluating the model after
+# each epoch, between 0 and 1
+SMALL_TEST_PROPORTION_OF_TEST = 0.04
+# The following two should be kept as they are.
+FIX_TEST_SAMPLES_DATASET = False
+FIX_TEST_ACQUISITION_DATASET = True
+# The following two are not important.
+LAZY_TRAIN = False
+LAZY_TEST = True
 
 
-# Generating the random GP realizations is faster on CPU than on GPU.
-# This is likely because the random GP realizations are generated one-by-one
-# rather than in batches since the number of points is random so it's difficult
-# to batch this. Hence we set device="cpu".
-# Also, making the padded batches (the creation of zeros, concatenating, and
-# stacking) on CPU rather than on GPU is much faster.
-dataset_kwargs = dict(dimension=DIMENSION, observation_noise=False,
-    set_random_model_train_data=False, xvalue_distribution=XVALUE_DISTRIBUTION,
-    device="cpu", randomize_params=RANDOMIZE_PARAMS)
-
-train_dataset = GaussianProcessRandomDataset(
-    **dataset_kwargs, dataset_size=TRAIN_SIZE,
-    n_datapoints_random_gen=train_n_datapoints_random_gen)
-test_dataset = GaussianProcessRandomDataset(
-    **dataset_kwargs, dataset_size=TEST_SIZE,
-    n_datapoints_random_gen=test_n_datapoints_random_gen)
-
-if FIX_TRAIN_SAMPLES_DATASET:
-    train_dataset = ListMapFunctionSamplesDataset.from_iterable_dataset(train_dataset)
-if FIX_TEST_SAMPLES_DATASET:
-    ## Either way works, it just depends on when you wanna wait longer --
-    ## preemptively vs when you actually need the data. Same time spent.
-    # test_dataset = ListMapFunctionSamplesDataset.from_iterable_dataset(test_dataset)
-    test_dataset = LazyMapFunctionSamplesDataset(test_dataset)
-
-
-#### Make train-acquisition-function dataset from function samples dataset #####
-
+################## Settings for dataset size and generation ####################
+# The size of the training dataset
+TRAIN_SIZE = 64 * 100
+# The amount that the dataset is expanded to save compute of GP realizations
 EXPANSION_FACTOR = 4
+# Whether and how to fix the training dataset
+FIX_TRAIN_SAMPLES_DATASET = False
+FIX_TRAIN_ACQUISITION_DATASET = False
 
-if FIX_N_CANDIDATES:
-    train_aq_dataset = FunctionSamplesAcquisitionDataset(
-        train_dataset, n_candidate_points=TRAIN_N_CANDIDATES, n_samples="all",
-        give_improvements=True, dataset_size_factor=EXPANSION_FACTOR)
-    test_aq_dataset = FunctionSamplesAcquisitionDataset(
-        test_dataset, n_candidate_points=TEST_N_CANDIDATES, n_samples="all",
-        give_improvements=True, dataset_size_factor=EXPANSION_FACTOR)
-else:
-    train_aq_dataset = FunctionSamplesAcquisitionDataset(
-        train_dataset, n_candidate_points="uniform", n_samples="all",
-        give_improvements=True, min_n_candidates=MIN_N_CANDIDATES,
-        dataset_size_factor=EXPANSION_FACTOR)
-    test_aq_dataset = FunctionSamplesAcquisitionDataset(
-        test_dataset, n_candidate_points="uniform", n_samples="all",
-        give_improvements=True, min_n_candidates=MIN_N_CANDIDATES,
-        dataset_size_factor=EXPANSION_FACTOR)
-
-sample_n_points = test_n_datapoints_random_gen(30)
-n_samples_and_candidates_examples = [
-    test_aq_dataset._pick_random_n_samples_and_n_candidates(n)
-    for n in sample_n_points]
-n_hist_and_candidates_examples = [
-    (n_samples - n_candidates, n_candidates)
-    for n_samples, n_candidates in n_samples_and_candidates_examples]
-print(n_hist_and_candidates_examples)
-
-if FIX_TRAIN_ACQUISITION_DATASET:
-    train_aq_dataset = LazyMapAcquisitionDataset(train_aq_dataset)
-if FIX_TEST_ACQUISITION_DATASET:
-    test_aq_dataset = LazyMapAcquisitionDataset(test_aq_dataset)
-
-small_test_aq_dataset, _ = test_aq_dataset.random_split(
-    [SMALL_TEST_PROPORTION_OF_TEST, 1 - SMALL_TEST_PROPORTION_OF_TEST])
-
-print("Train acquisition dataset:")
-print(train_aq_dataset)
-print("\nTest acquisition dataset:")
-print(test_aq_dataset)
-print("\nSmall test acquisition dataset:")
-print(small_test_aq_dataset)
-print("\n")
-
-# True for the softmax thing, False for MSE
-POLICY_GRADIENT = True
-
-################# Initialize the acquisition function network #################
+# Number of candidate points for training. For MSE EI, could just set to 1.
+# Only used if FIX_N_CANDIDATES is True.
+TRAIN_N_CANDIDATES = 50
+############################# Settings for training ############################
+POLICY_GRADIENT = True # True for the softmax thing, False for MSE EI
+BATCH_SIZE = 64
+LEARNING_RATE = 3e-4
+EPOCHS = 5
 
 # Only used if POLICY_GRADIENT is True
 INCLUDE_ALPHA = True
@@ -192,6 +96,9 @@ INCLUDE_ALPHA = True
 LEARN_ALPHA = True
 INITIAL_ALPHA = 1.0
 ALPHA_INCREMENT = None # equivalent to 0.0
+################################################################################
+
+######################### Neural network architecture ##########################
 
 # model = AcquisitionFunctionNetV4(DIMENSION,
 #                                  history_enc_hidden_dims=[32, 32], pooling="max",
@@ -204,8 +111,6 @@ ALPHA_INCREMENT = None # equivalent to 0.0
 #                  include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
 #                                  learn_alpha=LEARN_ALPHA,
 #                                  initial_alpha=INITIAL_ALPHA).to(device)
-
-
 
 # model = AcquisitionFunctionNetV3(DIMENSION,
 #                                  history_enc_hidden_dims=[32, 32], pooling="max",
@@ -223,9 +128,6 @@ model = AcquisitionFunctionNetV2(DIMENSION,
                                  history_enc_hidden_dims=[32, 32],
                                  encoded_history_dim=32,
                                  aq_func_hidden_dims=[32, 32],
-                                #  history_enc_hidden_dims=[64, 64],
-                                #  encoded_history_dim=128,
-                                #  aq_func_hidden_dims=[64, 64],
                                  include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
                                  learn_alpha=LEARN_ALPHA,
                                  initial_alpha=INITIAL_ALPHA,
@@ -257,6 +159,64 @@ model = AcquisitionFunctionNetV2(DIMENSION,
 #                                     include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
 #                                     learn_alpha=LEARN_ALPHA,
 #                                     initial_alpha=INITIAL_ALPHA).to(device)
+################################################################################
+
+
+####################### Make the train and test datasets #######################
+DATASET_SIZE = math.ceil(TRAIN_SIZE * (1 + TEST_FACTOR))
+
+#### Calculate test size
+TEST_SIZE = DATASET_SIZE - TRAIN_SIZE
+## Could alternatively calculate test size like this if going by
+## proportions of an original dataset:
+# TEST_PROPORTION = TEST_FACTOR / (1 + TEST_FACTOR)
+# TRAIN_PROPORTION = 1 - TEST_PROPORTION
+# TRAIN_SIZE, TEST_SIZE = get_lengths_from_proportions(DATASET_SIZE, [TRAIN_PROPORTION, TEST_PROPORTION])
+
+print(f"Small test proportion of test: {SMALL_TEST_PROPORTION_OF_TEST:.4f}")
+# SMALL_TEST_PROPORTION_OF_TEST = 1 / ((1 / SMALL_TEST_PROPORTION_OF_TRAIN_AND_SMALL_TEST - 1) * TEST_FACTOR)
+SMALL_TEST_PROPORTION_OF_TRAIN_AND_SMALL_TEST = 1 / (1 + 1 / (SMALL_TEST_PROPORTION_OF_TEST * TEST_FACTOR))
+print(f"Small test proportion of train + small test: {SMALL_TEST_PROPORTION_OF_TRAIN_AND_SMALL_TEST:.4f}")
+
+# Generating the random GP realizations is faster on CPU than on GPU.
+# This is likely because the random GP realizations are generated one-by-one
+# rather than in batches since the number of points is random so it's difficult
+# to batch this. Hence we set device="cpu".
+# Also, making the padded batches (the creation of zeros, concatenating, and
+# stacking) on CPU rather than on GPU is much faster.
+common_kwargs = dict(dimension=DIMENSION, randomize_params=RANDOMIZE_PARAMS,
+    device="cpu", observation_noise=False,
+    xvalue_distribution=XVALUE_DISTRIBUTION, expansion_factor=EXPANSION_FACTOR,
+    loguniform=LOGUNIFORM, pre_offset=PRE_OFFSET if LOGUNIFORM else None)
+
+if FIX_N_CANDIDATES:
+    train_n_points_kwargs = dict(min_history=MIN_HISTORY, max_history=MAX_HISTORY,
+                                 n_candidates=TRAIN_N_CANDIDATES)
+    test_n_points_kwargs = dict(min_history=MIN_HISTORY, max_history=MAX_HISTORY,
+                                n_candidates=TEST_N_CANDIDATES)
+else:
+    train_n_points_kwargs = dict(min_n_candidates=MIN_N_CANDIDATES, max_points=MAX_POINTS)
+    test_n_points_kwargs = train_n_points_kwargs
+
+train_dataset, train_aq_dataset = create_gp_acquisition_dataset(
+    TRAIN_SIZE, **common_kwargs, **train_n_points_kwargs,
+    fix_gp_samples=FIX_TRAIN_SAMPLES_DATASET,
+    fix_acquisition_samples=FIX_TRAIN_ACQUISITION_DATASET, lazy=LAZY_TRAIN)
+test_dataset, test_aq_dataset = create_gp_acquisition_dataset(
+    TEST_SIZE, **common_kwargs, **test_n_points_kwargs,
+    fix_gp_samples=FIX_TEST_SAMPLES_DATASET,
+    fix_acquisition_samples=FIX_TEST_ACQUISITION_DATASET, lazy=LAZY_TEST)
+
+small_test_aq_dataset, _ = test_aq_dataset.random_split(
+    [SMALL_TEST_PROPORTION_OF_TEST, 1 - SMALL_TEST_PROPORTION_OF_TEST])
+
+print("Train acquisition dataset:")
+print(train_aq_dataset)
+print("\nTest acquisition dataset:")
+print(test_aq_dataset)
+print("\nSmall test acquisition dataset:")
+print(small_test_aq_dataset)
+print("\n")
 
 print(model)
 print("Number of trainable parameters:", count_trainable_parameters(model))
@@ -273,7 +233,8 @@ file_name = f"acquisition_function_net_{model_class_name}_{DIMENSION}d_{loss_str
 if FIX_N_CANDIDATES:
     file_name += f"_history{MIN_HISTORY}-{MAX_HISTORY}_{'loguniform' if LOGUNIFORM else 'uniform'}_{TRAIN_N_CANDIDATES}cand.pth"
 else:
-    file_name += f"_points{MIN_POINTS}-{MAX_POINTS}_{'loguniform' if LOGUNIFORM else 'uniform'}.pth"
+    min_points = MIN_N_CANDIDATES + 1
+    file_name += f"_points{min_points}-{MAX_POINTS}_{'loguniform' if LOGUNIFORM else 'uniform'}.pth"
 
 # file_name = "acquisition_function_net_AcquisitionFunctionNetV4_1d_policy_gradient_myopic_fixed_kernel_uniform_x_history1-8_loguniform_50cand_200epochs.pth"
 
@@ -282,8 +243,6 @@ model_path = os.path.join(script_dir, file_name)
 
 
 ######################## Train the model #######################################
-
-BATCH_SIZE = 64
 
 train_aq_dataloader = train_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_last=True, device=device)
 small_test_aq_dataloader = small_test_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_last=True)
@@ -299,26 +258,12 @@ print("Test acquisition dataset size:", len(test_aq_dataset),
 print("Small test acquisition dataset size:", len(small_test_aq_dataset),
         "number of batches:", len(small_test_aq_dataloader))
 
-# Whether to train the model. If False, will load a saved model.
-TRAIN = True
-# Whether to load a saved model to train
-LOAD_SAVED_MODEL_TO_TRAIN = False
-# Whether to fit maximum a posteriori GP for testing
-FIT_MAP_GP = False
-
 if TRAIN:
-    EPOCHS = 5
-    LEARNING_RATE = 3e-4
-    # Whether to train to predict the EI rather than predict the I
-    # Only used if POLICY_GRADIENT is False
-    TRAIN_WITH_EI = False
-
     N_BATCHES = len(train_aq_dataloader)
     EVERY_N_BATCHES = N_BATCHES // 10
     if EVERY_N_BATCHES == 0:
         EVERY_N_BATCHES = 1
     
-
     if LOAD_SAVED_MODEL_TO_TRAIN:
         # Load the model
         print(f"Loading model from {model_path}")
@@ -336,7 +281,7 @@ if TRAIN:
                    every_n_batches=EVERY_N_BATCHES,
                    policy_gradient=POLICY_GRADIENT,
                    alpha_increment=ALPHA_INCREMENT,
-                   train_with_ei=TRAIN_WITH_EI)
+                   train_with_ei=False)
 
         tocl()
 
@@ -401,14 +346,6 @@ def plot_nn_vs_gp_acquisition_function_1d_grid(
         plot_map=True):
     fig, axs = plt.subplots(nrows=nrows, ncols=ncols, figsize=(2.5*ncols, 2.5*nrows),
                             sharex=True, sharey=False)
-    
-    # Failure case:
-    # for x_hist, y_hist, x_cand, improvements, gp_model in test_aq_dataset_big:
-    #     if x_hist.size(0) != 2:
-    #         continue
-    #     if x_hist[0, 0].item() > 0.05 or x_hist[1, 0].item() < 0.95:
-    #         continue
-    #     break
 
     it = iter(aq_dataset)
     for row in range(nrows):

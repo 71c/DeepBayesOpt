@@ -96,6 +96,9 @@ def train_loop(dataloader, model, optimizer, every_n_batches=10,
             Whether to use policy gradient loss
         alpha_increment (float, default=None):
             The amount to increase alpha by after each batch.
+        train_with_ei:
+            Whether to train to predict the EI rather than predict the I.
+            Only used if policy_gradient is False.
     """
     model.train()
 

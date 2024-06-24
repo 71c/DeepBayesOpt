@@ -19,6 +19,8 @@ def loguniform_randint(min_val, max_val, size=1, pre_offset=0.0, offset=0):
         raise ValueError("min_val, max_val, and offset must be integers")
     if not (1 <= min_val <= max_val):
         raise ValueError("min_val must be between 1 and max_val")
+    if not (pre_offset >= 0):
+        raise ValueError("pre_offset must be non-negative")
 
     min_log = torch.log(torch.tensor(min_val + pre_offset))
     max_log = torch.log(torch.tensor(max_val+1 + pre_offset))

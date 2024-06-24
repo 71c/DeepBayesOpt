@@ -209,9 +209,45 @@ class DatasetWithModels(Dataset, ABC):
     # subclass of TupleWithModel that the dataset holds
     _tuple_class: type
     
-    # whatever concrete class corresponds to DatasetWithModels,
-    # to be used in subclasses of that class
+    # Corresponds to DatasetWithModels
     _base_class: type
+
+    # Corresponds to MapDatasetWithModels
+    _map_base_class: type
+
+    # Corresponds to ListMapDatasetWithModels
+    _list_map_class: type
+
+    # Corresponds to LazyMapDatasetWithModels
+    _lazy_map_class: type
+
+    def __new__(cls, *args, **kwargs):
+        # Ensure the required class attribute is set correctly
+        if not (hasattr(cls, '_tuple_class') and
+                issubclass(cls._tuple_class, TupleWithModel)):
+            raise AttributeError(
+                f"{cls.__name__} must have attribute '_tuple_class' that is a subclass of TupleWithModel.")
+        
+        if not (hasattr(cls, '_base_class')):
+            raise AttributeError(
+                f"{cls.__name__} must have attribute '_base_class'.")
+        
+        if not (hasattr(cls, '_map_base_class') and
+                issubclass(cls._map_base_class, cls._base_class)):
+            raise AttributeError(
+                f"{cls.__name__} must have attribute '_map_base_class' that is a subclass of {cls._base_class.__name__}.")
+        
+        if not (hasattr(cls, '_list_map_class') and
+                issubclass(cls._list_map_class, cls._map_base_class)):
+            raise AttributeError(
+                f"{cls.__name__} must have attribute '_list_map_class' that is a subclass of {cls._map_base_class.__name__}.")
+        
+        if not (hasattr(cls, '_lazy_map_class') and
+                issubclass(cls._lazy_map_class, cls._map_base_class)):
+            raise AttributeError(
+                f"{cls.__name__} must have attribute '_lazy_map_class' that is a subclass of {cls._map_base_class.__name__}.")
+                
+        return Dataset.__new__(cls)
 
     @abstractmethod
     def random_split(self, lengths: Sequence[Union[int, float]]) -> List['DatasetWithModels']:
@@ -269,16 +305,13 @@ class DatasetWithModels(Dataset, ABC):
         args, kwargs = self._init_params()
         return self._str_helper(args, kwargs, is_str=True)
 
-    def __new__(cls, *args, **kwargs):
-        # Ensure the required class attribute is set correctly
-        if not (hasattr(cls, '_tuple_class') and
-                issubclass(cls._tuple_class, TupleWithModel)):
-            raise AttributeError(
-                f"{cls.__name__} must have attribute '_tuple_class' that is a subclass of TupleWithModel.")
-        if not (hasattr(cls, '_base_class')):
-            raise AttributeError(
-                f"{cls.__name__} must have attribute '_base_class'.")
-        return Dataset.__new__(cls)
+    def fix_samples(self, n_realizations:Optional[int]=None, lazy=True):
+        if not isinstance(self, IterableDataset):
+            raise TypeError(f"{self.__class__.__name__} is a map-style dataset" \
+                            " so cannot fix samples; it is already fixed.")
+        if lazy:
+            return self._lazy_map_class(self, n_realizations)
+        return self._list_map_class.from_iterable_dataset(self, n_realizations)
 
     @property
     def has_models(self):
@@ -410,17 +443,11 @@ class MapDatasetWithModels(DatasetWithModels):
     `MapDatasetWithModelsSubset` instance, so subclasses should check for
     slices and use super() accordingly."""
 
-    # direct subclass of MapDatasetWithModels that the dataset is a subclass of
-    _map_base_class: type
-    # subclass of MapDatasetWithModelsSubset
+    # Corresponds to MapDatasetWithModelsSubset
     _map_subset_class: type
     
     def __new__(cls, *args, **kwargs):
         # Ensure the required class attribute is set correctly
-        if not (hasattr(cls, '_map_base_class') and
-                issubclass(cls._map_base_class, cls._base_class)):
-            raise AttributeError(
-                f"{cls.__name__} must have attribute '_map_base_class' that is a subclass of {cls._base_class.__name__}.")
         if not (hasattr(cls, '_map_subset_class') and
                 issubclass(cls._map_subset_class, cls._map_base_class)):
             raise AttributeError(
@@ -734,13 +761,10 @@ def create_classes(dataset_base_name="DatasetWithModels",
     BaseDataset = type(dataset_base_name,
                        DatasetWithModels.__bases__,
                        dict(DatasetWithModels.__dict__))
-    BaseDataset._tuple_class = tuple_class
-    BaseDataset._base_class = BaseDataset
     
     MapBaseDataset = type(map_dataset_base_name,
                           (BaseDataset,),
                           dict(MapDatasetWithModels.__dict__))
-    MapBaseDataset._map_base_class = MapBaseDataset
     
     ListDataset = type(list_dataset_name,
                        (MapBaseDataset,),
@@ -753,6 +777,12 @@ def create_classes(dataset_base_name="DatasetWithModels",
     MapSubset = type(map_subset_name,
                      (Subset, MapBaseDataset),
                      dict(MapDatasetWithModelsSubset.__dict__))
+    
+    BaseDataset._tuple_class = tuple_class
+    BaseDataset._base_class = BaseDataset
+    BaseDataset._map_base_class = MapBaseDataset
+    BaseDataset._list_map_class = ListDataset
+    BaseDataset._lazy_map_class = LazyDataset
 
     MapBaseDataset._map_subset_class = MapSubset
     

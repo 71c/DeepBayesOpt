@@ -142,8 +142,9 @@ class GaussianProcessRandomDataset(
                 outputscale; and noise level also if observation_noise==True.
             model_probabilities: list of probabilities of choosing each model
             dimension: int, optional -- The dimension d of the feature space.
-                Is only used if xvalue_distribution is None or models is None;
-                in this case, it is required. Otherwise, it is ignored.
+                Is only used if xvalue_distribution is "uniform" or "normal",
+                or if models is None; in these cases, it is required.
+                Otherwise, it is ignored.
             device: torch.device, optional -- the desired device to use for
                 computations. Is only used if xvalue_distribution is None or
                 models is None; otherwise, it is ignored.
@@ -211,6 +212,10 @@ class GaussianProcessRandomDataset(
 
             models = [SingleTaskGP(train_X, train_Y, likelihood=likelihood)]
             model_probabilities = torch.tensor([1.0])
+        
+        if device is not None:
+            for model in models:
+                model.to(device)
         
         for i, model in enumerate(models):
             if not isinstance(model, SingleTaskGP):
