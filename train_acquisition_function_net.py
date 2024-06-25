@@ -117,7 +117,7 @@ def train_loop(dataloader, model, optimizer, every_n_batches=10,
     model.train()
 
     n_batches = len(dataloader)
-    average_train_loss = 0.
+    # average_train_loss = 0.
 
     for i, batch in enumerate(_unsupported_improvements(dataloader)):
         x_hist, y_hist, x_cand, improvements, hist_mask, cand_mask = batch.tuple_no_model
@@ -145,7 +145,7 @@ def train_loop(dataloader, model, optimizer, every_n_batches=10,
             output = model(x_hist, y_hist, x_cand, hist_mask, cand_mask, exponentiate=True, softmax=False)
             loss = mse_loss(output, improvements, cand_mask)
         
-        average_train_loss += loss.item()
+        # average_train_loss += loss.item()
 
         optimizer.zero_grad()
         loss.backward()
@@ -167,11 +167,11 @@ def train_loop(dataloader, model, optimizer, every_n_batches=10,
             loss_value = -loss.item() if policy_gradient else loss.item()
             print(f"{prefix}: {loss_value:>7f}{suffix}  [{i+1:>4d}/{n_batches:>4d}]")
 
-    multiplier = -1 if policy_gradient else 1
-    average_train_loss /= multiplier * n_batches
+    # multiplier = -1 if policy_gradient else 1
+    # average_train_loss /= multiplier * n_batches
 
-    print(f"Average train loss: {average_train_loss:>7f}")
-    return average_train_loss
+    # print(f"Average train loss: {average_train_loss:>7f}")
+    # return average_train_loss
 
 
 def to_device(tensor, device):
@@ -181,7 +181,7 @@ def to_device(tensor, device):
 
 
 
-def test_loop_nn(dataloader, model, policy_gradient=False, nn_device=None):
+def compute_stats_nn(dataloader, model, policy_gradient=False, nn_device=None):
     if not isinstance(dataloader.dataset, AcquisitionDataset):
         raise ValueError("The dataloader must contain an AcquisitionDataset")
     
@@ -243,7 +243,7 @@ def test_loop_nn(dataloader, model, policy_gradient=False, nn_device=None):
     return ret
 
 
-def test_loop_stats(dataloader, fit_map_gp=False):
+def compute_stats(dataloader, compute_gp_stats=True, fit_map_gp=False):
     dataset = dataloader.dataset
 
     if not isinstance(dataset, AcquisitionDataset):
@@ -256,45 +256,52 @@ def test_loop_stats(dataloader, fit_map_gp=False):
     else:
         assert not has_stats
     
+    has_models = dataset.has_models
+    
     mse_always_predict_0 = 0.
     ei_ideal = 0.
     ei_random_search = 0.
 
-    if dataset.has_models:
+    if has_models and compute_gp_stats:
         mse_true_gp = 0.
         ei_true_gp = 0.
-    if fit_map_gp:
-        mse_map_gp = 0.
-        ei_map_gp = 0.
+        if fit_map_gp:
+            mse_map_gp = 0.
+            ei_map_gp = 0.
 
     for batch in _unsupported_improvements(tqdm(dataloader)):
-        x_hist, y_hist, x_cand, improvements, hist_mask, cand_mask, models = batch
+        x_hist, y_hist, x_cand, improvements, hist_mask, cand_mask = batch.tuple_no_model
+
+        if has_models:
+            models = batch.model
         
         with torch.no_grad():
-            # Calculate true GP EI values
-            ei_values_true_model = calculate_EI_GP_padded_batch(x_hist, y_hist, x_cand, hist_mask, cand_mask, models)
+            if has_models and compute_gp_stats:
+                # Calculate true GP EI values
+                ei_values_true_model = calculate_EI_GP_padded_batch(x_hist, y_hist, x_cand, hist_mask, cand_mask, models)
 
-            # Calculate the MSE loss of the true GP model
-            mse_true_gp += mse_loss(ei_values_true_model, improvements, cand_mask).item()
+                # Calculate the MSE loss of the true GP model
+                mse_true_gp += mse_loss(ei_values_true_model, improvements, cand_mask).item()
 
-            # Calculate the MSE loss of always predicting 0
-            mse_always_predict_0 += mse_loss(torch.zeros_like(ei_values_true_model), improvements, cand_mask).item()
-
-            # Calculate true GP actual E(I) of slecting the point with maximum EI
-            probabilities_true_model = max_one_hot(ei_values_true_model, cand_mask)
-            ei_true_gp += myopic_policy_gradient_loss(probabilities_true_model, improvements).item()
+                # Calculate true GP actual E(I) of slecting the point with maximum EI
+                probabilities_true_model = max_one_hot(ei_values_true_model, cand_mask)
+                ei_true_gp += myopic_policy_gradient_loss(probabilities_true_model, improvements).item()
 
             # Calculate the E(I) of selecting a point at random
             if cand_mask is None:
-                random_search_probabilities = torch.ones_like(probabilities_true_model) / probabilities_true_model.size(1)
+                random_search_probabilities = torch.ones_like(improvements) / improvements.size(1)
             else:
                 random_search_probabilities = cand_mask.double() / cand_mask.sum(dim=1, keepdim=True).double()
             ei_random_search += myopic_policy_gradient_loss(random_search_probabilities, improvements).item()
             
+            # Calculate the MSE loss of always predicting 0
+            mse_always_predict_0 += mse_loss(torch.zeros_like(improvements), improvements, cand_mask).item()
+            
             # Calculate the E(I) of selecting the point with the maximum I (cheating)
             ideal_probabilities = max_one_hot(improvements, cand_mask)
             ei_ideal += myopic_policy_gradient_loss(ideal_probabilities, improvements).item()
-        if fit_map_gp:
+        
+        if has_models and fit_map_gp and compute_gp_stats:
             # Calculate the MAP GP EI values
             ei_values_map = calculate_EI_GP_padded_batch(x_hist, y_hist, x_cand, hist_mask, cand_mask, models, fit_params=True)
 
@@ -307,25 +314,29 @@ def test_loop_stats(dataloader, fit_map_gp=False):
 
     n_batches = len(dataloader)
     
-    mse_true_gp /= n_batches
+    
     mse_always_predict_0 /= n_batches
     ei_ideal /= -n_batches
     ei_random_search /= -n_batches
-    ei_true_gp /= -n_batches
 
     ret = {
-        "mse_true_gp": mse_true_gp,
         "mse_always_predict_0": mse_always_predict_0,
         "ei_ideal": ei_ideal,
-        "ei_random_search": ei_random_search,
-        "ei_true_gp": ei_true_gp
+        "ei_random_search": ei_random_search
     }
 
-    if fit_map_gp:
-        mse_map_gp /= n_batches
-        ei_map_gp /= -n_batches
-        ret["mse_map_gp"] = mse_map_gp
-        ret["ei_map_gp"] = ei_map_gp
+    if has_models and compute_gp_stats:
+        mse_true_gp /= n_batches
+        ei_true_gp /= -n_batches
+        ret.update({
+            "mse_true_gp": mse_true_gp,
+            "ei_true_gp": ei_true_gp})
+
+        if fit_map_gp:
+            mse_map_gp /= n_batches
+            ei_map_gp /= -n_batches
+            ret["mse_map_gp"] = mse_map_gp
+            ret["ei_map_gp"] = ei_map_gp
     
     if dataloader.dataset.data_is_fixed:
         dataloader.dataset._cached_stats = ret
@@ -333,22 +344,4 @@ def test_loop_stats(dataloader, fit_map_gp=False):
     return ret
 
 
-    # mse_desc = "Expected 1-step improvement" if policy_gradient else"Improvement MSE"
-    # map_str = f" MAP GP: {test_loss_gp_map:>8f}\n" if fit_map_gp else ""
-    # naive_desc = "Random search" if policy_gradient else "Always predict 0"
-    # eval_str = f"Test {mse_desc}:\n NN ({'softmax' if policy_gradient else 'loss'}): {test_loss:>8f}\n"
-    # if policy_gradient:
-    #     eval_str += f" NN (max): {test_loss_max:>8f}\n"
-    # eval_str += f" True GP: {test_loss_true_gp:>8f}\n"
-    # if policy_gradient:
-    #     eval_str += f" Ratio: {test_loss_max/test_loss_true_gp:>8f}\n"
-    # eval_str += f"{map_str} {naive_desc}: {mse_always_predict_0:>8f}\n"
-    # if policy_gradient:
-    #     eval_str += f" Ideal: {ei_ideal:>8f}\n NN avg normalized entropy: {avg_normalized_entropy_nn:>8f}\n"
-    # if not policy_gradient:
-    #     eval_str += "Expected 1-step improvement\n"
-    #     eval_str += f" NN (max): {test_loss_max:>8f}\n"
-    #     eval_str += f" True GP: {ei_true_gp:>8f}\n"
-    #     eval_str += f" Ratio: {test_loss_max/ei_true_gp:>8f}\n"
-    # print(eval_str)
 
