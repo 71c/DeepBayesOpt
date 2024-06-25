@@ -4,7 +4,7 @@ from botorch.models.gp_regression import SingleTaskGP
 
 from torch.utils.data import IterableDataset, DataLoader
 
-from dataset_with_models import TupleWithModel, create_classes
+from dataset_with_models import ModelsWithParamsList, TupleWithModel, create_classes
 from function_samples_dataset import FunctionSamplesDataset, GaussianProcessRandomDataset, RepeatedFunctionSamplesIterableDataset, GPDatasetItem
 
 from utils import resize_iterable, uniform_randint, get_uniform_randint_generator, max_pad_tensors_batch
@@ -21,32 +21,8 @@ torch.set_default_dtype(torch.double)
 
 
 class AcquisitionDatasetModelItem(TupleWithModel):
-    def __init__(self, x_hist, y_hist, x_cand, vals_cand,
-                 model:Optional[SingleTaskGP]=None,
-                 model_params:Optional[dict]=None):
-        super().__init__(x_hist, y_hist, x_cand, vals_cand,
-                         model=model, model_params=model_params)
-        self.x_hist = x_hist
-        self.y_hist = y_hist
-        self.x_cand = x_cand
-        self.vals_cand = vals_cand
-    
-    def to_dict(self):
-        if not self.has_model:
-            return {
-                'x_hist': self.x_hist,
-                'y_hist': self.y_hist,
-                'x_cand': self.x_cand,
-                'vals_cand': self.vals_cand
-            }
-        return {
-            'x_hist': self.x_hist,
-            'y_hist': self.y_hist,
-            'x_cand': self.x_cand,
-            'vals_cand': self.vals_cand,
-            'model_index': self.model_index,
-            'model_params': self.model_params
-        }
+    args_names = ['x_hist', 'y_hist', 'x_cand', 'vals_cand']
+    kwargs_names = ['give_improvements']
 
 
 (AcquisitionDataset,
@@ -105,78 +81,36 @@ class AcquisitionDatasetModelItem(TupleWithModel):
      tuple_class=AcquisitionDatasetModelItem)
 
 
-
-class ModelsWithParamsList:
-    """
-    A class representing a list of models with their corresponding parameters.
-    """
-
-    def __init__(self, models_and_params: List[Tuple[SingleTaskGP, dict]]):
-        """Initializes a ModelsWithParamsList object.
-
-        Args:
-            models_and_params (List[Tuple[SingleTaskGP, dict]]): A list of tuples where each tuple contains a SingleTaskGP model and its corresponding parameters.
-        """
-        self._models_and_params = models_and_params
-    
-    def __getitem__(self, index):
-        """Returns the model at the specified index or a slice of models.
-
-        Args:
-            index: The index or slice to retrieve the model(s) from.
-
-        Returns:
-            SingleTaskGP or ModelsWithParamsList:
-            If `index` is an integer, the model at the specified index with its
-            parameters initialized.
-            If `index` is a slice, a new ModelsWithParamsList object containing
-            the models in the specified slice.
-        """
-        if isinstance(index, slice):
-            # `return [self[i] for i in range(*index.indices(len(self)))]``
-            # would not work because there might be a single or a few model
-            # instances that are shared among the items.
-            # Instead, here is what should be done:
-            return ModelsWithParamsList(self._models_and_params[index])
-        
-        model, params = self._models_and_params[index]
-        model.initialize(**params)
-        return model
-
-    def __len__(self):
-        return len(self._models_and_params)
-    
-    def __repr__(self):
-        return f"ModelsWithParamsList({repr(self._models_and_params)})"
-
-    def __str__(self):
-        return f"ModelsWithParamsList({str(self._models_and_params)})"
-
-    def __eq__(self, other):
-        return type(self) == type(other) and self._models_and_params == other._models_and_params
+class AcquisitionDatasetBatch(TupleWithModel):
+    args_names = ['x_hist', 'y_hist', 'x_cand', 'vals_cand', 'hist_mask', 'cand_mask']
+    kwargs_names = ['give_improvements']
 
 
 @staticmethod
 def _collate_train_acquisition_function_samples(samples_list, has_models, device=None):
+    give_improvements = samples_list[0].give_improvements
     for x in samples_list:
         if not isinstance(x, AcquisitionDatasetModelItem):
             raise TypeError("All items in samples_list should be AcquisitionDatasetModelItem")
+        if x.give_improvements != give_improvements:
+            raise ValueError(
+                "All items in samples_list should have the same value for give_improvements")
         if x.has_model != has_models:
             raise ValueError(
                 "All items in samples_list should have the same value for has_models " \
                 "and should be consistent with the dataset's has_models attribute")
 
     if has_models:
-        unzipped_lists_first_4 = list(zip(*
+        unzipped_lists = list(zip(*
                 [x[:4] for x in samples_list]))
         models_list = ModelsWithParamsList(
             [(x._model, x.model_params) for x in samples_list])
-        unzipped_lists = unzipped_lists_first_4 + [models_list]
     else:
         unzipped_lists = list(zip(*samples_list))
+        models_list = None
 
     # Each of these are tuples of tensors
-    x_hists, y_hists, x_cands, vals_cands = unzipped_lists[:4]
+    x_hists, y_hists, x_cands, vals_cands = unzipped_lists
 
     # x_hist shape: (n_hist, dimension)
     # y_hist shape: (n_hist,)
@@ -198,7 +132,9 @@ def _collate_train_acquisition_function_samples(samples_list, has_models, device
         if cand_mask is not None:
             cand_mask = cand_mask.to(device)
 
-    return [x_hist, y_hist, x_cand, vals_cand, hist_mask, cand_mask] + unzipped_lists[4:]
+    return AcquisitionDatasetBatch(
+        x_hist, y_hist, x_cand, vals_cand, hist_mask, cand_mask,
+        model=models_list, give_improvements=give_improvements)
 
 
 def get_dataloader(self, batch_size=32, device=None, shuffle=None, **kwargs):
@@ -424,6 +360,10 @@ class FunctionSamplesAcquisitionDataset(
             min_n_candidates=self.min_n_candidates,
             dataset_size_factor=self.dataset_size_factor
         )
+
+    @property
+    def data_is_fixed(self):
+        return False
     
     @property
     def data_is_loaded(self):
@@ -556,7 +496,8 @@ class FunctionSamplesAcquisitionDataset(
                 vals_cand = y_cand
 
             yield AcquisitionDatasetModelItem(
-                x_hist, y_hist, x_cand, vals_cand, model, model_params)
+                x_hist, y_hist, x_cand, vals_cand, model, model_params,
+                give_improvements=self.give_improvements)
 
     def random_split(self, lengths: Sequence[Union[int, float]]):
         # Need to convert from lengths to proportions if absolute lengths were

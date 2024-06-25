@@ -14,7 +14,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 
-from train_acquisition_function_net import train_loop, test_loop, count_trainable_parameters, count_parameters
+from train_acquisition_function_net import train_loop, test_loop_nn, test_loop_stats, count_trainable_parameters, count_parameters
 
 import torch.distributions as dist
 
@@ -78,7 +78,7 @@ TRAIN_SIZE = 64 * 100
 # The amount that the dataset is expanded to save compute of GP realizations
 EXPANSION_FACTOR = 4
 # Whether and how to fix the training dataset
-FIX_TRAIN_SAMPLES_DATASET = False
+FIX_TRAIN_SAMPLES_DATASET = True
 FIX_TRAIN_ACQUISITION_DATASET = False
 
 # Number of candidate points for training. For MSE EI, could just set to 1.
@@ -235,6 +235,7 @@ model_path = os.path.join(script_dir, file_name)
 train_aq_dataloader = train_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_last=True, device=device)
 small_test_aq_dataloader = small_test_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_last=True)
 
+
 print("Training dataset size:", len(train_dataset),
       "number of batches:", len(train_dataset) // BATCH_SIZE)
 print("Training acquisition dataset size:", len(train_aq_dataset),
@@ -268,8 +269,7 @@ if TRAIN:
         train_loop(train_aq_dataloader, model, optimizer,
                    every_n_batches=EVERY_N_BATCHES,
                    policy_gradient=POLICY_GRADIENT,
-                   alpha_increment=ALPHA_INCREMENT,
-                   train_with_ei=False)
+                   alpha_increment=ALPHA_INCREMENT)
 
         tocl()
 

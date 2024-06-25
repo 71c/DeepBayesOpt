@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Optional, List, Union
+from typing import Optional, List, Tuple, Union
 from collections.abc import Sequence
 
 import os
@@ -116,24 +116,139 @@ class RandomModelSampler:
         return [self.get_model(i) for i in range(len(self._models))]
 
 
+class ModelsWithParamsList:
+    """
+    A class representing a list of models with their corresponding parameters.
+    """
+
+    def __init__(self, models_and_params: List[Tuple[SingleTaskGP, dict]]):
+        """Initializes a ModelsWithParamsList object.
+
+        Args:
+            models_and_params (List[Tuple[SingleTaskGP, dict]]): A list of tuples where each tuple contains a SingleTaskGP model and its corresponding parameters.
+        """
+        self._models_and_params = models_and_params
+    
+    def __getitem__(self, index):
+        """Returns the model at the specified index or a slice of models.
+
+        Args:
+            index: The index or slice to retrieve the model(s) from.
+
+        Returns:
+            SingleTaskGP or ModelsWithParamsList:
+            If `index` is an integer, the model at the specified index with its
+            parameters initialized.
+            If `index` is a slice, a new ModelsWithParamsList object containing
+            the models in the specified slice.
+        """
+        if isinstance(index, slice):
+            # `return [self[i] for i in range(*index.indices(len(self)))]``
+            # would not work because there might be a single or a few model
+            # instances that are shared among the items.
+            # Instead, here is what should be done:
+            return ModelsWithParamsList(self._models_and_params[index])
+        
+        model, params = self._models_and_params[index]
+        model.initialize(**params)
+        return model
+
+    def __len__(self):
+        return len(self._models_and_params)
+    
+    def __repr__(self):
+        return f"ModelsWithParamsList({repr(self._models_and_params)})"
+
+    def __str__(self):
+        return f"ModelsWithParamsList({str(self._models_and_params)})"
+
+    def __eq__(self, other):
+        return type(self) == type(other) and self._models_and_params == other._models_and_params
+
+
 class TupleWithModel:
     def __init__(self, *items, model:Optional[SingleTaskGP]=None,
-                 model_params:Optional[dict]=None, items_list=None):
+                 model_params:Optional[dict]=None, items_list=None,
+                 **kwargs):
         if items_list is not None:
             assert len(items) == 0
             items = tuple(items_list)
+        
+        if hasattr(self, "args_names"):
+            if len(items) != len(self.args_names):
+                if len(items) == 0:
+                    if set(self.args_names) <= set(kwargs.keys()):
+                        items = []
+                        for name in self.args_names:
+                            items.append(kwargs.pop(name))
+                        items = tuple(items)
+                    else:
+                        missing_keys = set(self.args_names) - set(kwargs.keys())
+                        missing_keys_str = ", ".join(map(repr, missing_keys))
+                        raise ValueError(f"{self.__class__.__name__}.__init__: Missing key{'' if len(missing_keys) == 1 else 's'} {missing_keys_str} in {self.__class__.__name__}")
+                elif len(items) == len(self.args_names) + 1 and model is None:
+                    model = items[-1]
+                    items = items[:-1]
+                elif len(items) == len(self.args_names) + 2 and model is None and model_params is None:
+                    model_params = items[-1]
+                    model = items[-2]
+                    items = items[:-2]
+                else:
+                    raise ValueError(f"{self.__class__.__name__}.__init__: Number of items in should be {len(self.args_names)} but got {len(items)}")
+            
+            for name, item in zip(self.args_names, items):
+                setattr(self, name, item)
+        
+            for key in kwargs:
+                if key in self.args_names:
+                    raise ValueError(
+                        f"{self.__class__.__name__}.__init__: Keyword argument {key} should not be in the keyword arguments " \
+                        f"because it is already the name of an element in the tuple of {self.__class__.__name__}.")
+        
         self._items = items
+
+        if hasattr(self, "kwargs_names"):
+            given_kwargs_keys = set(kwargs.keys())
+            expected_kwargs_keys = set(self.kwargs_names)
+            if given_kwargs_keys < expected_kwargs_keys:
+                missing_keys = expected_kwargs_keys - given_kwargs_keys
+                missing_keys_str = ", ".join(map(repr, missing_keys))
+                raise ValueError(f"{self.__class__.__name__}.__init__: Keyword arguments for {self.__class__.__name__} " \
+                    f"should be {self.kwargs_names}; "\
+                    f"missing key{'' if len(missing_keys) == 1 else 's'} {missing_keys_str}")
+            elif given_kwargs_keys > expected_kwargs_keys:
+                extra_keys = given_kwargs_keys - expected_kwargs_keys
+                extra_keys_str = ", ".join(map(repr, extra_keys))
+                raise ValueError(f"{self.__class__.__name__}.__init__: Keyword arguments for {self.__class__.__name__} " \
+                    f"should be {self.kwargs_names} but got extra key" \
+                    f"{'' if len(extra_keys) == 1 else 's'} {extra_keys_str}")
+            elif given_kwargs_keys != expected_kwargs_keys:
+                raise ValueError(f"{self.__class__.__name__}.__init__: Keyword arguments for {self.__class__.__name__} " \
+                    f"should be {self.kwargs_names} but got {given_kwargs_keys}")
+
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+
+        self._kwargs = kwargs
+        
         self._model = model
         self._indices = list(range(len(self)))
         if self.has_model:
-            if not isinstance(model, SingleTaskGP):
-                raise ValueError("model should be a SingleTaskGP instance.")
-            if model_params is None:
-                # need to copy the data, otherwise everything will be the same
-                model_params = {name: param.detach().clone()
-                                for name, param in model.named_parameters()}
-            self.model_params = model_params
-            self.model_index = model.index if hasattr(model, "index") else None
+            if isinstance(model, ModelsWithParamsList):
+                if model_params is not None:
+                    raise ValueError(f"{self.__class__.__name__}.__init__: model_params should not be specified if model is a ModelsWithParamsList instance.")
+            elif isinstance(model, SingleTaskGP):
+                if model_params is None:
+                    # need to copy the data, otherwise everything will be the same
+                    model_params = {name: param.detach().clone()
+                                    for name, param in model.named_parameters()}
+                self.model_params = model_params
+                self.model_index = model.index if hasattr(model, "index") else None
+            else:
+                raise ValueError(f"{self.__class__.__name__}.__init__: model should be a SingleTaskGP or ModelsWithParamsList instance.")
+        elif model_params is not None:
+            raise ValueError(
+                f"{self.__class__.__name__}.__init__: model_params should not be specified if model is not specified.")
     
     @property
     def has_model(self):
@@ -144,6 +259,9 @@ class TupleWithModel:
         if not self.has_model:
             raise AttributeError(
                 "This TupleWithModel instance does not have a model.")
+        if isinstance(self._model, ModelsWithParamsList):
+            return self._model
+        # otherwise, it is a SingleTaskGP instance:
         self._model.initialize(**self.model_params)
         return self._model
 
@@ -152,6 +270,10 @@ class TupleWithModel:
         if not self.has_model:
             return self._items
         return self._items + (self.model,)
+
+    @property
+    def tuple_no_model(self):
+        return self._items
     
     def __getitem__(self, index):
         # return self._tuple[index] # basically equivalent to the below
@@ -169,25 +291,57 @@ class TupleWithModel:
     def __len__(self):
         return len(self._items) + (1 if self.has_model else 0)
 
-    def __str__(self):
-        return str(self._tuple)
-
     def __repr__(self):
-        return repr(self._tuple)
+        ret = repr(self._tuple)[1:-1]
+        if self._kwargs:
+            u = ", ".join(f"{key}={value!r}" for key, value in self._kwargs.items())
+            ret += ", " + u
+        return f"{self.__class__.__name__}({ret})"
     
     def __eq__(self, other):
-        return type(self) == type(other) and self._tuple == other._tuple
+        return type(self) == type(other) and self._tuple == other._tuple and self._kwargs == other._kwargs
     
     def to_dict(self):
-        if not self.has_model:
-            return {
-                'items_list': list(self._items)
-            }
-        return {
-            'items_list': list(self._items),
-            'model_index': self.model_index,
-            'model_params': self.model_params
-        }
+        if hasattr(self, "args_names"):
+            x = {name: item for name, item in zip(self.args_names, self._items)}
+        else:
+            x = {'items_list': list(self._items)}
+        if self.has_model:
+            if isinstance(self.model, ModelsWithParamsList):
+                # Honestly I don't care about this case ...
+                # It would probably be possible to make this work with
+                # ModelsWithParamsList better but we don't need this functionality.
+                x.update({
+                    'model': self.model
+                })
+            else: # SingleTaskGP
+                x.update({
+                    'model_index': self.model_index,
+                    'model_params': self.model_params
+                })
+        x.update(self._kwargs)
+        return x
+
+    @classmethod
+    def from_dict(cls, x, model_sampler:Optional[RandomModelSampler]=None):
+        if 'model' in x:
+            # assume that model is a ModelsWithParamsList instance
+            assert isinstance(x['model'], ModelsWithParamsList)
+            model = x.pop('model')
+            model_params = None
+        else: # then assume that model is a SingleTaskGP instance
+            if 'model_index' in x:
+                if model_sampler is None:
+                    raise ValueError("model_sampler should be specified if model information is present.")
+                model_index = x.pop('model_index')
+                model = model_sampler._models[model_index]
+                model_params = x.pop('model_params', None)
+            else:
+                assert 'model_params' not in x
+                if model_sampler is not None:
+                    raise ValueError("model_sampler should not be specified if model information is not present.")
+                model, model_params = None, None
+        return cls(**x, model=model, model_params=model_params)
 
 
 def add_indent(s):
@@ -263,6 +417,11 @@ class DatasetWithModels(Dataset, ABC):
     @abstractmethod
     def data_is_loaded(self) -> bool:
         """Returns whether the data is loaded in memory or not."""
+        pass  # pragma: no cover
+    
+    @property
+    @abstractmethod
+    def data_is_fixed(self) -> bool:
         pass  # pragma: no cover
 
     @abstractmethod
@@ -454,6 +613,10 @@ class MapDatasetWithModels(DatasetWithModels):
                 f"{cls.__name__} must have attribute '_map_subset_class' that is a subclass of {cls._map_base_class.__name__}.")
         return cls._base_class.__new__(cls)
 
+    @property
+    def data_is_fixed(self):
+        return True
+
     @abstractmethod
     def __getitem__(self, index):
         """Retrieves a single item from the dataset at the specified index.
@@ -478,6 +641,14 @@ class MapDatasetWithModels(DatasetWithModels):
     def random_split(self, lengths: Sequence[Union[int, float]]):
         return [self._map_subset_class.from_subset(subset)
                 for subset in random_split(self, lengths)]
+
+
+class _Dummy:
+    def __init__(self, x):
+        self.x = x
+    
+    def __repr__(self):
+        return str(self.x)
 
 
 class ListMapDatasetWithModels(MapDatasetWithModels):
@@ -530,7 +701,7 @@ class ListMapDatasetWithModels(MapDatasetWithModels):
         tmp1 = self._str_helper(short_list, {},
                                 is_str=True, include_class=False)
         tmp = self._str_helper(
-            ("[\n" + tmp1 + "\n]",),
+            (_Dummy("[\n" + tmp1 + "\n]"),),
             kwargs, is_str=True)
         return f"{tmp} of length {len(self)}"
 
@@ -576,18 +747,12 @@ class ListMapDatasetWithModels(MapDatasetWithModels):
         data = []
         for item in list_of_dicts:
             if has_models:
-                model_index = item.pop('model_index')
-                model = model_sampler._models[model_index]
-                model_params = item.pop('model_params')
+                if 'model_index' not in item:
+                    raise ValueError("Model information should be present in the data if models are saved.")
             else:
                 if 'model_index' in item or 'model_params' in item:
                     raise ValueError("Model information should not be present in the data if models are not saved.")
-                model = None
-                model_params = None
-            data.append(cls._tuple_class(
-                **item,
-                model=model,
-                model_params=model_params))
+            data.append(cls._tuple_class.from_dict(item, model_sampler))
         return cls(data, model_sampler)
     
     @classmethod

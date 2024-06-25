@@ -13,25 +13,30 @@ from utils import SizedInfiniteIterableMixin, SizedIterableMixin, get_lengths_fr
 import math
 
 
-class GPDatasetItem(TupleWithModel):
-    def __init__(self, x_values, y_values, model:Optional[SingleTaskGP]=None,
-                 model_params:Optional[dict]=None):
-        super().__init__(x_values, y_values, model=model, model_params=model_params)
-        self.x_values = x_values
-        self.y_values = y_values
+# class GPDatasetItem(TupleWithModel):
+#     def __init__(self, x_values, y_values, model:Optional[SingleTaskGP]=None,
+#                  model_params:Optional[dict]=None):
+#         super().__init__(x_values, y_values, model=model, model_params=model_params)
+#         self.x_values = x_values
+#         self.y_values = y_values
     
-    def to_dict(self):
-        if not self.has_model:
-            return {
-                'x_values': self.x_values,
-                'y_values': self.y_values
-            }
-        return {
-            'x_values': self.x_values,
-            'y_values': self.y_values,
-            'model_index': self.model_index,
-            'model_params': self.model_params
-        }
+#     def to_dict(self):
+#         if not self.has_model:
+#             return {
+#                 'x_values': self.x_values,
+#                 'y_values': self.y_values
+#             }
+#         return {
+#             'x_values': self.x_values,
+#             'y_values': self.y_values,
+#             'model_index': self.model_index,
+#             'model_params': self.model_params
+#         }
+
+class GPDatasetItem(TupleWithModel):
+    args_names = ['x_values', 'y_values']
+    kwargs_names = []
+
 
 (FunctionSamplesDataset,
  MapFunctionSamplesDataset,
@@ -272,6 +277,13 @@ class GaussianProcessRandomDataset(
                 raise ValueError("dataset_size should be a positive integer or None.")
         self._size = dataset_size
     
+    @property
+    def data_is_fixed(self):
+        return False
+    
+    def data_is_loaded(self):
+        return False
+    
     def _init_params(self):
         return tuple(), dict(
             n_datapoints=self.n_datapoints,
@@ -318,9 +330,6 @@ class GaussianProcessRandomDataset(
                 raise ValueError(
                     "Sum of input lengths does not equal the dataset size!")
         return [self.copy_with_new_size(length) for length in lengths]
-
-    def data_is_loaded(self):
-        return False
 
     def _next(self):
         """Generate a random Gaussian Process model and sample from it.
@@ -394,6 +403,13 @@ class RepeatedFunctionSamplesIterableDataset(
         self.base_dataset = base_dataset
         self.size_factor = size_factor
     
+    @property
+    def data_is_fixed(self):
+        return self.base_dataset.data_is_fixed
+
+    def data_is_loaded(self):
+        return self.base_dataset.data_is_loaded()
+    
     def _init_params(self):
         return (self.base_dataset, self.size_factor), dict()
     
@@ -430,6 +446,5 @@ class RepeatedFunctionSamplesIterableDataset(
             type(self)(split_dataset, self.size_factor)
             for split_dataset in self.base_dataset.random_split(lengths)]
 
-    def data_is_loaded(self):
-        return False
+    
 
