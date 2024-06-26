@@ -68,7 +68,9 @@ TEST_FACTOR = 1.0
 # SMALL_TEST_PROPORTION_OF_TEST = 0.04
 SMALL_TEST_PROPORTION_OF_TEST = 1.0
 
-# The following two should be kept as they are.
+# The following two should be kept as they are -- ALWAYS want to fix the test.
+# As long as the acqisition dataset is fixed, then whether the function samples
+# dataset is fixed doesn't matter.
 FIX_TEST_SAMPLES_DATASET = False
 FIX_TEST_ACQUISITION_DATASET = True
 # The following two are not important.
@@ -82,7 +84,7 @@ TRAIN_SIZE = 32 * 50
 # The amount that the dataset is expanded to save compute of GP realizations
 EXPANSION_FACTOR = 4
 # Whether and how to fix the training dataset
-FIX_TRAIN_SAMPLES_DATASET = True
+FIX_TRAIN_SAMPLES_DATASET = False
 FIX_TRAIN_ACQUISITION_DATASET = True
 
 # Number of candidate points for training. For MSE EI, could just set to 1.
@@ -271,7 +273,7 @@ if TRAIN:
             verbose=True, desc=f"Epoch {t+1} train",
             n_train_printouts=10, optimizer=optimizer,
             alpha_increment=ALPHA_INCREMENT,
-            get_true_gp_stats=False, get_map_gp_stats=False, get_basic_stats=True)
+            get_true_gp_stats=COMPUTE_TRAIN_GP_STATS, get_map_gp_stats=False, get_basic_stats=True)
 
         train_stats_eval = train_or_test_loop(
             train_aq_dataloader, model, train=False,
