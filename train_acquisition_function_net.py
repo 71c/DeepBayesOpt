@@ -87,27 +87,6 @@ def mse_loss(pred_improvements, improvements, mask):
     return F.mse_loss(pred_improvements, improvements, reduction="sum") / mask.sum()
 
 
-
-
-
-
-from utils import to_device
-from train_loop import train_loop
-from compute_stats_nn import compute_stats_nn
-from compute_stats import compute_stats
-
-
-# def train_loop(dataloader, model, optimizer, every_n_batches=10,
-#                policy_gradient=False, alpha_increment=None):
-
-# def compute_stats_nn(dataloader, model, policy_gradient=False,
-#                      verbose=True, desc=None,
-#                      nn_device=None):
-
-# def compute_stats(dataloader, compute_gp_stats=True, fit_map_gp=False,
-#                   verbose=True, desc=None):
-
-
 def compute_ei_max(output, improvements, cand_mask):
     probs_max = max_one_hot(output, cand_mask)
     return myopic_policy_gradient_ei(probs_max, improvements).item()
@@ -177,7 +156,8 @@ def print_stats(stats, dataset_name):
         ('ei_max', 'NN (max)', True),
         ('true_gp_ei_max', 'True GP', False),
         ('ei_random_search', 'Random search', True),
-        ('ei_ideal', 'Ideal', True)]
+        ('ei_ideal', 'Ideal', True),
+        ('avg_normalized_entropy', 'Avg norm. entropy', False)]
 
     direct_things_to_print = []
     for stat_key, stat_print_name, print_ratio in things_to_print:
@@ -209,7 +189,6 @@ def print_stats(stats, dataset_name):
                     this_thing.extend(['  RMSE Ratio', f'{ratio:>8f}'])
                 direct_things_to_print.append(this_thing)
         print_things(direct_things_to_print, prefix="  ")
-       
 
 
 def print_train_batch_stats(nn_batch_stats, nn_model, policy_gradient, batch_index, n_batches):
@@ -318,7 +297,7 @@ def train_or_test_loop(dataloader: DataLoader,
     elif desc is not None:
         raise ValueError("desc must be None if not verbose")
     
-    has_true_gp_stats = hasattr(dataset, "_true_gp_stats") # and False # test
+    has_true_gp_stats = hasattr(dataset, "_true_gp_stats")
     has_map_gp_stats = hasattr(dataset, "_map_gp_stats")
     has_basic_stats = hasattr(dataset, "_basic_stats")
     if not dataset.data_is_fixed:
@@ -423,20 +402,33 @@ def train_or_test_loop(dataloader: DataLoader,
     if verbose:
         toc(desc)
     
-    if compute_true_gp_stats:
-        dataset._true_gp_stats = get_average_stats(true_gp_stats_list)
-    if compute_map_gp_stats:
-        dataset._map_gp_stats = get_average_stats(map_gp_stats_list)
-    if compute_basic_stats:
-        dataset._basic_stats = get_average_stats(basic_stats_list)
-    
     ret = {}
+
     if get_true_gp_stats:
-        ret.update(dataset._true_gp_stats)
+        if not has_true_gp_stats:
+            true_gp_stats = get_average_stats(true_gp_stats_list)
+            if dataset.data_is_fixed:
+                dataset._true_gp_stats = true_gp_stats
+        else:
+            true_gp_stats = dataset._true_gp_stats
+        ret.update(true_gp_stats)
     if get_map_gp_stats:
-        ret.update(dataset._map_gp_stats)
+        if not has_map_gp_stats:
+            map_gp_stats = get_average_stats(map_gp_stats_list)
+            if dataset.data_is_fixed:
+                dataset._map_gp_stats = map_gp_stats
+        else:
+            map_gp_stats = dataset._map_gp_stats
+        ret.update(map_gp_stats)
     if get_basic_stats:
-        ret.update(dataset._basic_stats)
+        if not has_basic_stats:
+            basic_stats = get_average_stats(basic_stats_list)
+            if dataset.data_is_fixed:
+                dataset._basic_stats = basic_stats
+        else:
+            basic_stats = dataset._basic_stats
+    
     if nn_model is not None:
         ret.update(get_average_stats(nn_batch_stats_list))
+    
     return ret
