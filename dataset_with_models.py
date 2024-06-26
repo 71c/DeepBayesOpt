@@ -1,8 +1,10 @@
 from abc import ABC, abstractmethod
+import math
 from typing import Optional, List, Tuple, Union
 from collections.abc import Sequence
 
 import os
+import warnings
 from tqdm import tqdm
 
 import torch
@@ -12,7 +14,7 @@ from botorch.models.gp_regression import SingleTaskGP
 from botorch.exceptions import UnsupportedError
 import pyro
 
-from utils import resize_iterable, iterable_is_finite
+from utils import get_lengths_from_proportions, resize_iterable, iterable_is_finite, get_lengths_from_proportions_or_lengths
 
 
 # https://docs.gpytorch.ai/en/stable/_modules/gpytorch/module.html#Module.pyro_sample_from_prior
@@ -274,6 +276,17 @@ class TupleWithModel:
     @property
     def tuple_no_model(self):
         return self._items
+    
+    def to(self, *args, **kwargs):
+        new_items = tuple(
+            item.to(*args, **kwargs) if torch.is_tensor(item) else item
+            for item in self._items)
+        if new_items == self._items:
+            return self
+        return self.__class__(*new_items,
+                              model=self._model,
+                              model_params=getattr(self, "model_params", None),
+                              **self._kwargs)
     
     def __getitem__(self, index):
         # return self._tuple[index] # basically equivalent to the below
@@ -639,7 +652,11 @@ class MapDatasetWithModels(DatasetWithModels):
     # Subclasses should implement data_is_loaded
 
     def random_split(self, lengths: Sequence[Union[int, float]]):
-        return [self._map_subset_class.from_subset(subset)
+        # Check if any of the lengths are the length of the entire dataset.
+        # If so, make that one be self.
+        # This will have slightly different behavior because then it won't be
+        # shuffled, but it doesn't matter.
+        return [self if len(subset) == len(self) else self._map_subset_class.from_subset(subset)
                 for subset in random_split(self, lengths)]
 
 
@@ -697,7 +714,7 @@ class ListMapDatasetWithModels(MapDatasetWithModels):
         if len(self._data) <= 2:
             short_list = self._data
         else:
-            short_list = self._data[:1] + ["..."] + self._data[-1:]
+            short_list = self._data[:1] + [_Dummy("...")] + self._data[-1:]
         tmp1 = self._str_helper(short_list, {},
                                 is_str=True, include_class=False)
         tmp = self._str_helper(

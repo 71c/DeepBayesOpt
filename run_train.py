@@ -14,7 +14,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import os
 
-from train_acquisition_function_net import train_loop, compute_stats_nn, compute_stats, count_trainable_parameters, count_parameters
+from train_acquisition_function_net import train_or_test_loop, print_stats, train_loop, compute_stats_nn, compute_stats, count_trainable_parameters, count_parameters
 
 import torch.distributions as dist
 
@@ -59,34 +59,37 @@ RANDOMIZE_PARAMS = False
 XVALUE_DISTRIBUTION = "uniform"
 
 ####################### Other fixed dataset settings ###########################
-# How many times bigger the big test dataset is than the train dataset, > 0
-TEST_FACTOR = 3.0
-# The proportion of the test dataset that is used for evaluating the model after
-# each epoch, between 0 and 1
-SMALL_TEST_PROPORTION_OF_TEST = 0.04
+## How many times bigger the big test dataset is than the train dataset, > 0
+# TEST_FACTOR = 3.0
+TEST_FACTOR = 1.0
+## The proportion of the test dataset that is used for evaluating the model after
+## each epoch, between 0 and 1
+# SMALL_TEST_PROPORTION_OF_TEST = 0.04
+SMALL_TEST_PROPORTION_OF_TEST = 1.0
+
 # The following two should be kept as they are.
 FIX_TEST_SAMPLES_DATASET = False
 FIX_TEST_ACQUISITION_DATASET = True
 # The following two are not important.
-LAZY_TRAIN = False
+LAZY_TRAIN = True
 LAZY_TEST = True
 
 
 ################## Settings for dataset size and generation ####################
 # The size of the training dataset
-TRAIN_SIZE = 64 * 100
+TRAIN_SIZE = 32 * 50
 # The amount that the dataset is expanded to save compute of GP realizations
 EXPANSION_FACTOR = 4
 # Whether and how to fix the training dataset
-FIX_TRAIN_SAMPLES_DATASET = True
-FIX_TRAIN_ACQUISITION_DATASET = False
+FIX_TRAIN_SAMPLES_DATASET = False
+FIX_TRAIN_ACQUISITION_DATASET = True
 
 # Number of candidate points for training. For MSE EI, could just set to 1.
 # Only used if FIX_N_CANDIDATES is True.
 TRAIN_N_CANDIDATES = 50
 ############################# Settings for training ############################
 POLICY_GRADIENT = True # True for the softmax thing, False for MSE EI
-BATCH_SIZE = 64
+BATCH_SIZE = 32
 LEARNING_RATE = 3e-4
 EPOCHS = 5
 
@@ -232,23 +235,23 @@ model_path = os.path.join(script_dir, file_name)
 
 ######################## Train the model #######################################
 
-train_aq_dataloader = train_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_last=True, device=device)
+train_aq_dataloader = train_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_last=True)
 small_test_aq_dataloader = small_test_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_last=True)
 
 
 print("Training dataset size:", len(train_dataset),
-      "number of batches:", len(train_dataset) // BATCH_SIZE)
+      "number of batches:", len(train_dataset) // BATCH_SIZE, len(train_dataset) % BATCH_SIZE)
 print("Training acquisition dataset size:", len(train_aq_dataset),
       "number of batches:", len(train_aq_dataloader))
 print("Test dataset size:", len(test_dataset),
-      "number of batches:", len(test_dataset) // BATCH_SIZE)
+      "number of batches:", len(test_dataset) // BATCH_SIZE, len(test_dataset) % BATCH_SIZE)
 print("Test acquisition dataset size:", len(test_aq_dataset),
-      "number of batches:", len(test_aq_dataset) // BATCH_SIZE)
+      "number of batches:", len(test_aq_dataset) // BATCH_SIZE, len(test_aq_dataset) % BATCH_SIZE)
 print("Small test acquisition dataset size:", len(small_test_aq_dataset),
         "number of batches:", len(small_test_aq_dataloader))
 
 
-def print_stats(stats):
+def print_stats_old(stats, dataset_name):
     mse_desc = "Expected 1-step improvement" if POLICY_GRADIENT else"Improvement MSE"
     
     test_loss_gp_map = None
@@ -262,7 +265,7 @@ def print_stats(stats):
     
     naive_desc = "Random search" if POLICY_GRADIENT else "Always predict 0"
     test_loss = stats["ei_softmax"] if POLICY_GRADIENT else stats["mse"]
-    eval_str = f"Test {mse_desc}:\n NN ({'softmax' if POLICY_GRADIENT else 'loss'}): {test_loss:>8f}\n"
+    eval_str = f"{dataset_name} {mse_desc}:\n NN ({'softmax' if POLICY_GRADIENT else 'loss'}): {test_loss:>8f}\n"
     test_loss_max = stats["ei_max"]
 
     if POLICY_GRADIENT:
@@ -274,13 +277,16 @@ def print_stats(stats):
         if POLICY_GRADIENT:
             eval_str += f" Ratio: {test_loss_max/test_loss_true_gp:>8f}\n"
     
-    mse_always_predict_0 = stats["ei_random_search"] if POLICY_GRADIENT else stats["mse_always_predict_0"]
-    eval_str += f"{map_str} {naive_desc}: {mse_always_predict_0:>8f}\n"
-    ei_ideal = stats["ei_ideal"]
+    if "ei_random_search" in stats:
+        mse_always_predict_0 = stats["ei_random_search"] if POLICY_GRADIENT else stats["mse_always_predict_0"]
+        eval_str += f"{map_str} {naive_desc}: {mse_always_predict_0:>8f}\n"
     if POLICY_GRADIENT:
+        if "ei_ideal" in stats:
+            ei_ideal = stats["ei_ideal"]
+            eval_str += f" Ideal: {ei_ideal:>8f}\n"
         avg_normalized_entropy_nn = stats["avg_normalized_entropy"]
-        eval_str += f" Ideal: {ei_ideal:>8f}\n NN avg normalized entropy: {avg_normalized_entropy_nn:>8f}\n"
-    if not POLICY_GRADIENT:
+        eval_str += f" NN avg normalized entropy: {avg_normalized_entropy_nn:>8f}\n"
+    else:
         eval_str += "Expected 1-step improvement\n"
         eval_str += f" NN (max): {test_loss_max:>8f}\n"
 
@@ -288,8 +294,64 @@ def print_stats(stats):
             ei_true_gp = stats["ei_true_gp"]
             eval_str += f" True GP: {ei_true_gp:>8f}\n"
             eval_str += f" Ratio: {test_loss_max/ei_true_gp:>8f}\n"
+    
     print(eval_str)
 
+## Example with POLICY_GRADIENT=True:
+# Train Expected 1-step improvement:
+#  NN (softmax): 0.136604
+#  NN (max): 0.186045
+#  True GP: 0.202096
+#  Ratio: 0.920575
+#  Random search: 0.067000
+#  Ideal: 0.244747
+#  NN avg normalized entropy: 0.811104
+
+## Example with POLICY_GRADIENT=False:
+# Train Improvement MSE:
+#  NN (loss): 0.032991
+#  True GP: 0.019933
+#  Always predict 0: 0.038817
+# Expected 1-step improvement
+#  NN (max): 0.108322
+#  True GP: 0.185925
+#  Ratio: 0.582613
+
+## New format with POLICY_GRADIENT=False idea (numbers aren't right)
+#        NN EI:         max: 0.186045   softmax: 0.136604
+#        GP EI:              0.185925            
+#        Ratio:              0.582613            0.799945
+#                     Ideal: 0.244747    Random: 0.067000
+# Train Improvement MSE:
+# NN (loss):        0.032991
+# True GP:          0.019933
+# Always predict 0: 0.038817
+
+## Or,
+## Example with POLICY_GRADIENT=False:
+# Expected 1-step improvement
+#  NN (max): 0.108322, Ratio: 0.582613
+#  True GP: 0.185925
+#  Random search: 0.067000
+#  Ideal: 0.244747
+# Train Improvement MSE:
+#  NN (loss): 0.032991
+#  True GP: 0.019933
+#  Always predict 0: 0.038817
+#
+## Example with POLICY_GRADIENT=True:
+# Train Expected 1-step improvement:
+#  NN (softmax): 0.136604, Ratio: 0.920575
+#      NN (max): 0.186045, Ratio: 0.920575
+#  True GP: 0.202096
+#  Random search: 0.067000
+#  Ideal: 0.244747
+#  NN avg normalized entropy: 0.811104
+
+
+
+COMPUTE_TRAIN_STATS = True
+COMPUTE_TRAIN_GP_STATS = True
 
 if TRAIN:
     N_BATCHES = len(train_aq_dataloader)
@@ -309,45 +371,76 @@ if TRAIN:
         print(f"Epoch {t+1}\n-------------------------------")
 
 
-        tic(f"Epoch {t+1} train")
-        train_loop(train_aq_dataloader, model, optimizer,
-                   every_n_batches=EVERY_N_BATCHES,
-                   policy_gradient=POLICY_GRADIENT,
-                   alpha_increment=ALPHA_INCREMENT)
-        tocl()
+        # tic(f"Epoch {t+1} train")
+        # train_loop(train_aq_dataloader, model, optimizer,
+        #            every_n_batches=EVERY_N_BATCHES,
+        #            policy_gradient=POLICY_GRADIENT,
+        #            alpha_increment=ALPHA_INCREMENT)
+        # tocl()
+
+        # nn_stats_train = compute_stats_nn(train_aq_dataloader, model,
+        #                                   policy_gradient=POLICY_GRADIENT,
+        #                                   verbose=True,
+        #                                   desc=f"Epoch {t+1} compute NN train stats")
+        # if COMPUTE_TRAIN_STATS:
+        #     gp_stats_train = compute_stats(train_aq_dataloader,
+        #                                 compute_gp_stats=COMPUTE_TRAIN_GP_STATS,
+        #                                 fit_map_gp=FIT_MAP_GP,
+        #                                 verbose=True,
+        #                                 desc=f"Epoch {t+1} compute train stats")
+        #     train_stats = {**nn_stats_train, **gp_stats_train}
+        # else:
+        #     train_stats = nn_stats_train
+
+        # nn_stats_test = compute_stats_nn(small_test_aq_dataloader, model,
+        #                                  verbose=True,
+        #                                  desc=f"Epoch {t+1} compute NN test stats",
+        #                                  policy_gradient=POLICY_GRADIENT,
+        #                                  nn_device=device)
+        # gp_stats_test = compute_stats(small_test_aq_dataloader,
+        #                               fit_map_gp=FIT_MAP_GP,
+        #                               verbose=True,
+        #                               desc=f"Epoch {t+1} compute GP test stats")
+        # test_stats = {**nn_stats_test, **gp_stats_test}
+
+        # print_stats_old(train_stats, "Train")
+        # print_stats_old(test_stats, "Test")
 
 
-        tic(f"Epoch {t+1} compute NN train stats")
-        nn_stats_train = compute_stats_nn(train_aq_dataloader, model,
-                                          policy_gradient=POLICY_GRADIENT)
-        tocl()
-        tic(f"Epoch {t+1} compute GP train stats")
-        gp_stats_train = compute_stats(train_aq_dataloader,
-                                       compute_gp_stats=False,
-                                       fit_map_gp=FIT_MAP_GP)
-        tocl()
-        train_stats = {**nn_stats_train, **gp_stats_train}
+        train_stats_while_training = train_or_test_loop(
+            train_aq_dataloader, model, train=True,
+            nn_device=device, policy_gradient=POLICY_GRADIENT,
+            verbose=True, desc=f"Epoch {t+1} train",
+            n_train_printouts=10, optimizer=optimizer,
+            alpha_increment=ALPHA_INCREMENT,
+            get_true_gp_stats=False, get_map_gp_stats=False, get_basic_stats=True)
+
+        train_stats_eval = train_or_test_loop(
+            train_aq_dataloader, model, train=False,
+            nn_device=device, policy_gradient=POLICY_GRADIENT,
+            verbose=True, desc=f"Epoch {t+1} compute train stats",
+            get_true_gp_stats=True, get_map_gp_stats=False, get_basic_stats=True)
+
+        test_stats = train_or_test_loop(
+            small_test_aq_dataloader, model, train=False,
+            nn_device=device, policy_gradient=POLICY_GRADIENT,
+            verbose=True, desc=f"Epoch {t+1} compute test stats",
+            get_true_gp_stats=True, get_map_gp_stats=False, get_basic_stats=True)
+
+        print("Train stats while training:")
+        print(train_stats_while_training)
+        print_stats(train_stats_while_training, "Train stats while training")
+        print()
 
         print("Train stats:")
-        print_stats(train_stats)
+        print(train_stats_eval)
+        print_stats(train_stats_eval, "Train stats")
+        print()
 
-
-        tic(f"Epoch {t+1} compute NN test stats")
-        nn_stats_test = compute_stats_nn(small_test_aq_dataloader, model,
-                                          policy_gradient=POLICY_GRADIENT,
-                                          nn_device=device)
-        tocl()
-        tic(f"Epoch {t+1} compute GP test stats")
-        gp_stats_test = compute_stats(small_test_aq_dataloader, fit_map_gp=FIT_MAP_GP)
-        tocl()
-
-        test_stats = {**nn_stats_test, **gp_stats_test}
         print("Test stats:")
-        print_stats(test_stats)
-
-        # test_loop(small_test_aq_dataloader, model,
-        #           policy_gradient=POLICY_GRADIENT, fit_map_gp=FIT_MAP_GP,
-        #           nn_device=device)
+        print(test_stats)
+        print_stats(test_stats, "Test stats")
+        print()
 
     print("Done training!")
 
@@ -361,25 +454,15 @@ else:
 
 
 ###################### Evaluate performance of model ###########################
-model.eval()
-
-
 test_aq_dataloader = test_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_last=True)
-# test_loop(test_aq_dataloader, model, policy_gradient=POLICY_GRADIENT,
-#           fit_map_gp=FIT_MAP_GP, nn_device=device)
 
-tic(f"compute NN test stats")
-nn_stats_test = compute_stats_nn(test_aq_dataloader, model,
-                                    policy_gradient=POLICY_GRADIENT,
-                                    nn_device=device)
-tocl()
-tic(f"compute GP test stats")
-gp_stats_test = compute_stats(test_aq_dataloader, fit_map_gp=FIT_MAP_GP)
-tocl()
+test_stats = train_or_test_loop(
+            test_aq_dataloader, model, train=False,
+            nn_device=device, policy_gradient=POLICY_GRADIENT,
+            verbose=True, desc=f"compute final test stats",
+            get_true_gp_stats=True, get_map_gp_stats=False, get_basic_stats=True)
 
-test_stats = {**nn_stats_test, **gp_stats_test}
-print("Test stats:")
-print_stats(test_stats)
+
 
 def plot_gp_posterior(ax, posterior, test_x, train_x, train_y, color, name=None):
     lower, upper = posterior.mvn.confidence_region()

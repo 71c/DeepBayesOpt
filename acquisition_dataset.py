@@ -87,7 +87,7 @@ class AcquisitionDatasetBatch(TupleWithModel):
 
 
 @staticmethod
-def _collate_train_acquisition_function_samples(samples_list, has_models, device=None):
+def _collate_train_acquisition_function_samples(samples_list, has_models):
     give_improvements = samples_list[0].give_improvements
     for x in samples_list:
         if not isinstance(x, AcquisitionDatasetModelItem):
@@ -122,29 +122,17 @@ def _collate_train_acquisition_function_samples(samples_list, has_models, device
     x_cand = max_pad_tensors_batch(x_cands, add_mask=False)
     vals_cand, cand_mask = max_pad_tensors_batch(vals_cands, add_mask=True)
 
-    if device is not None:
-        x_hist = x_hist.to(device)
-        y_hist = y_hist.to(device)
-        x_cand = x_cand.to(device)
-        vals_cand = vals_cand.to(device)
-        if hist_mask is not None:
-            hist_mask = hist_mask.to(device)
-        if cand_mask is not None:
-            cand_mask = cand_mask.to(device)
-
     return AcquisitionDatasetBatch(
         x_hist, y_hist, x_cand, vals_cand, hist_mask, cand_mask,
         model=models_list, give_improvements=give_improvements)
 
 
-def get_dataloader(self, batch_size=32, device=None, shuffle=None, **kwargs):
+def get_dataloader(self, batch_size=32, shuffle=None, **kwargs):
     """Returns a DataLoader object for the dataset.
 
     Args:
         batch_size (int):
             The batch size for the DataLoader. Default is 32.
-        device (torch.device):
-            The device to move the tensors to.
         shuffle (bool):
             Whether to shuffle the data. If self is an IterableDataset, then the
             data is already shuffled and this parameter is ignored, and shuffle
@@ -180,7 +168,7 @@ def get_dataloader(self, batch_size=32, device=None, shuffle=None, **kwargs):
     if 'collate_fn' in kwargs:
         raise ValueError("collate_fn should not be specified in get_dataloader; we do it for you")
     collate_fn = partial(self._collate_train_acquisition_function_samples,
-                         has_models=self.has_models, device=device)
+                         has_models=self.has_models)
 
     return DataLoader(self, batch_size=batch_size, shuffle=shuffle,
                         collate_fn=collate_fn, **kwargs)

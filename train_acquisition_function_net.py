@@ -1,10 +1,16 @@
+import math
+from typing import Optional
 import torch
+from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from torch.distributions import Categorical
+from acquisition_function_net import AcquisitionFunctionNet
 from predict_EI_simple import calculate_EI_GP_padded_batch
 from tqdm import tqdm
 from acquisition_dataset import AcquisitionDataset
 from botorch.exceptions import UnsupportedError
+from utils import to_device, unsupported_improvements
+from tictoc import tic, toc
 
 
 def count_trainable_parameters(model):
@@ -48,8 +54,8 @@ def get_average_normalized_entropy(probabilities, mask=None):
     return (entropy / torch.log(counts)).mean()
 
 
-def myopic_policy_gradient_loss(probabilities, improvements):
-    """Calculate the policy gradient loss.
+def myopic_policy_gradient_ei(probabilities, improvements):
+    """Calculate the policy gradient expected 1-step improvement.
 
     Args:
         probabilities (Tensor): The output tensor from the model, assumed to be
@@ -61,7 +67,7 @@ def myopic_policy_gradient_loss(probabilities, improvements):
         computation works out even if there is a mask.
     """
     expected_improvements_per_batch = torch.sum(probabilities * improvements, dim=1)
-    return -expected_improvements_per_batch.mean()
+    return expected_improvements_per_batch.mean()
 
 
 def mse_loss(pred_improvements, improvements, mask):
@@ -81,267 +87,356 @@ def mse_loss(pred_improvements, improvements, mask):
     return F.mse_loss(pred_improvements, improvements, reduction="sum") / mask.sum()
 
 
-def _unsupported_improvements(dataloader):
-    for batch in dataloader:
-        if not batch.give_improvements:
-            raise UnsupportedError(
-                "The acquisition dataset must provide improvements; calculating " \
-                "them from a batch would be possible but is currently unsupported.")
-        yield batch
-
-
-def train_loop(dataloader, model, optimizer, every_n_batches=10,
-               policy_gradient=False, alpha_increment=None):
-    """Trains the acquisition function network.
-
-    Args:
-        dataloader (torch.utils.data.DataLoader):
-            The dataloader containing the training data.
-        model (AcquisitionFunctionNet):
-            The acquisition function network model.
-        optimizer (torch.optim.Optimizer):
-            The optimizer used for training.
-        every_n_batches (int, optional, default=10):
-            The frequency at which to print the training progress.
-        policy_gradient (bool, default=False):
-            Whether to use policy gradient loss
-        alpha_increment (float, default=None):
-            The amount to increase alpha by after each batch.
-        train_with_ei:
-            Whether to train to predict the EI rather than predict the I.
-            Only used if policy_gradient is False.
-    """
-    if not isinstance(dataloader.dataset, AcquisitionDataset):
-        raise ValueError("The dataloader must contain an AcquisitionDataset")
-    
-    model.train()
-
-    n_batches = len(dataloader)
-    # average_train_loss = 0.
-
-    for i, batch in enumerate(_unsupported_improvements(dataloader)):
-        x_hist, y_hist, x_cand, improvements, hist_mask, cand_mask = batch.tuple_no_model
-
-        # if i % every_n_batches == 0:
-        #     print("Test")
-        # continue
-
-        # print(type(models))
-        # for gp_model in models:
-        #     print(gp_model)
-        #     for name, param in gp_model.named_parameters():
-        #         print(name, param)
-        #     print()
-        #     print("lengthscale:", gp_model.covar_module.base_kernel.lengthscale)
-        #     print("outputscale:", gp_model.covar_module.outputscale)
-        #     print("mean:", gp_model.mean_module.constant)
-        # print()
-        # exit()
-
-        if policy_gradient:
-            output = model(x_hist, y_hist, x_cand, hist_mask, cand_mask, exponentiate=False, softmax=True)
-            loss = myopic_policy_gradient_loss(output, improvements)
-        else:
-            output = model(x_hist, y_hist, x_cand, hist_mask, cand_mask, exponentiate=True, softmax=False)
-            loss = mse_loss(output, improvements, cand_mask)
-        
-        # average_train_loss += loss.item()
-
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-        if model.includes_alpha and alpha_increment is not None:
-            model.set_alpha(model.get_alpha() + alpha_increment)
-
-        if i % every_n_batches == 0:
-            prefix = "Expected 1-step improvement" if policy_gradient else "MSE"
-            
-            suffix = ""
-            if policy_gradient:
-                avg_normalized_entropy = get_average_normalized_entropy(output, mask=cand_mask).item()
-                suffix += f", avg normalized entropy={avg_normalized_entropy:>7f}"
-            if model.includes_alpha:
-                suffix += f", alpha={model.get_alpha():>7f}"
-            
-            loss_value = -loss.item() if policy_gradient else loss.item()
-            print(f"{prefix}: {loss_value:>7f}{suffix}  [{i+1:>4d}/{n_batches:>4d}]")
-
-    # multiplier = -1 if policy_gradient else 1
-    # average_train_loss /= multiplier * n_batches
-
-    # print(f"Average train loss: {average_train_loss:>7f}")
-    # return average_train_loss
-
-
-def to_device(tensor, device):
-    if tensor is None or device is None:
-        return tensor
-    return tensor.to(device)
 
 
 
-def compute_stats_nn(dataloader, model, policy_gradient=False, nn_device=None):
-    if not isinstance(dataloader.dataset, AcquisitionDataset):
-        raise ValueError("The dataloader must contain an AcquisitionDataset")
-    
-    model.eval()
 
-    test_loss = 0.
-    test_ei_max = 0.
-    if policy_gradient:
-        avg_normalized_entropy = 0.
-    
-    for batch in _unsupported_improvements(tqdm(dataloader)):
-        x_hist, y_hist, x_cand, improvements, hist_mask, cand_mask = batch.tuple_no_model
-        
-        # # For testing
-        # test_ei_true_gp += 1. # to avoid division by zero
-        # continue
-        
-        with torch.no_grad():
-            x_hist_nn = to_device(x_hist, nn_device)
-            y_hist_nn = to_device(y_hist, nn_device)
-            x_cand_nn = to_device(x_cand, nn_device)
-            improvements_nn = to_device(improvements, nn_device)
-            hist_mask_nn = to_device(hist_mask, nn_device)
-            cand_mask_nn = to_device(cand_mask, nn_device)
+from utils import to_device
+from train_loop import train_loop
+from compute_stats_nn import compute_stats_nn
+from compute_stats import compute_stats
 
-            if policy_gradient:
-                # Calculate the softmax EI of the NN
-                probabilities_nn = model(x_hist_nn, y_hist_nn, x_cand_nn, hist_mask_nn, cand_mask_nn, exponentiate=False, softmax=True)
-                avg_normalized_entropy += get_average_normalized_entropy(probabilities_nn, mask=cand_mask).item()
-                test_loss += myopic_policy_gradient_loss(probabilities_nn, improvements_nn).item()
 
-                probabilities_nn_max = max_one_hot(probabilities_nn, cand_mask)
-            else:
-                # Calculate the MSE of the NN
-                ei_values_nn = model(x_hist_nn, y_hist_nn, x_cand_nn, hist_mask_nn, cand_mask_nn, exponentiate=True)
-                test_loss += mse_loss(ei_values_nn, improvements_nn, cand_mask_nn).item()
+# def train_loop(dataloader, model, optimizer, every_n_batches=10,
+#                policy_gradient=False, alpha_increment=None):
 
-                probabilities_nn_max = max_one_hot(ei_values_nn, cand_mask_nn)
-            
-            test_ei_max += myopic_policy_gradient_loss(probabilities_nn_max, improvements_nn).item()
+# def compute_stats_nn(dataloader, model, policy_gradient=False,
+#                      verbose=True, desc=None,
+#                      nn_device=None):
 
-    n_batches = len(dataloader)
-    
+# def compute_stats(dataloader, compute_gp_stats=True, fit_map_gp=False,
+#                   verbose=True, desc=None):
+
+
+def compute_ei_max(output, improvements, cand_mask):
+    probs_max = max_one_hot(output, cand_mask)
+    return myopic_policy_gradient_ei(probs_max, improvements).item()
+
+
+def compute_myopic_acquisition_output_batch_stats(
+        output, improvements, cand_mask, policy_gradient:bool,
+        return_loss:bool=False, name:str=""):
+    if not isinstance(policy_gradient, bool):
+        raise ValueError("policy_gradient should be a boolean")
+    if not isinstance(return_loss, bool):
+        raise ValueError("return_loss should be a boolean")
+    if not isinstance(name, str):
+        raise ValueError("name should be a string")
+    if name != "":
+        name = name + "_"
+
+    output_detached = output.detach()
+
     ret = {}
-
     if policy_gradient:
-        test_loss /= -n_batches
-        ret["ei_softmax"] = test_loss
-        
-        avg_normalized_entropy /= n_batches
-        ret["avg_normalized_entropy"] = avg_normalized_entropy
-    else:
-        test_loss /= n_batches
-        ret["mse"] = test_loss
+        ret[name+"avg_normalized_entropy"] = get_average_normalized_entropy(
+            output_detached, mask=cand_mask).item()
 
-    test_ei_max /= -n_batches
-    ret["ei_max"] = test_ei_max
+        ei_softmax = myopic_policy_gradient_ei(
+            output if return_loss else output_detached, improvements)
+        ret[name+"ei_softmax"] = ei_softmax.item()
+        if return_loss:
+            ret[name+"loss"] = -ei_softmax  # Note the negative sign
+    else:
+        mse = mse_loss(output if return_loss else output_detached,
+                       improvements, cand_mask)
+        ret[name+"mse"] = mse.item()
+        if return_loss:
+            ret[name+"loss"] = mse
+
+    ret[name+"ei_max"] = compute_ei_max(output_detached, improvements, cand_mask)
 
     return ret
 
 
-def compute_stats(dataloader, compute_gp_stats=True, fit_map_gp=False):
+def print_things(rows, prefix=''):
+    # Calculate the maximum width for each column
+    col_widths = [
+        max(len(row[col_idx]) for row in rows if len(row) > col_idx)
+        for col_idx in range(max(map(len, rows)))]
+
+    # Print each row with appropriate spacing
+    row_strings = [
+        prefix + " ".join(
+            col_val.rjust(col_widths[col_idx])
+            for col_idx, col_val in enumerate(row)
+        ) for row in rows]
+    print("\n".join(row_strings))
+
+
+def print_stats(stats, dataset_name):
+    print(f'{dataset_name}:\nExpected 1-step improvement:')
+    
+    has_true_gp = 'true_gp_ei_max' in stats
+    if has_true_gp:
+        true_gp_ei_max = stats['true_gp_ei_max']
+        true_gp_mse = stats['true_gp_mse']
+    
+    things_to_print = [
+        ('ei_softmax', 'NN (softmax)', True),
+        ('ei_max', 'NN (max)', True),
+        ('true_gp_ei_max', 'True GP', False),
+        ('ei_random_search', 'Random search', True),
+        ('ei_ideal', 'Ideal', True)]
+
+    direct_things_to_print = []
+    for stat_key, stat_print_name, print_ratio in things_to_print:
+        if stat_key in stats:
+            val = stats[stat_key]
+            this_thing = [stat_print_name+':', f'{val:>8f}']
+            if has_true_gp and print_ratio:
+                ratio = val / true_gp_ei_max
+                this_thing.extend(['  Ratio:', f'{ratio:>8f}'])
+            direct_things_to_print.append(this_thing)
+    print_things(direct_things_to_print, prefix="  ")
+    
+    policy_gradient = 'ei_softmax' in stats
+    if not policy_gradient:
+        print('Improvement MSE:')
+
+        things_to_print = [
+            ('mse', 'NN', True),
+            ('true_gp_mse', 'True GP', False),
+            ('mse_always_predict_0', 'Always predict 0', True)]
+        
+        direct_things_to_print = []
+        for stat_key, stat_print_name, print_ratio in things_to_print:
+            if stat_key in stats:
+                val = stats[stat_key]
+                this_thing = [stat_print_name+':', f'{val:>8f}']
+                if has_true_gp and print_ratio:
+                    ratio = math.sqrt(true_gp_mse / val)
+                    this_thing.extend(['  RMSE Ratio', f'{ratio:>8f}'])
+                direct_things_to_print.append(this_thing)
+        print_things(direct_things_to_print, prefix="  ")
+       
+
+
+def print_train_batch_stats(nn_batch_stats, nn_model, policy_gradient, batch_index, n_batches):
+    prefix = "Expected 1-step improvement" if policy_gradient else "MSE"
+    suffix = ""
+    if policy_gradient:
+        avg_normalized_entropy = nn_batch_stats["avg_normalized_entropy"]
+        suffix += f", avg normalized entropy={avg_normalized_entropy:>7f}"
+        loss_value = nn_batch_stats["ei_softmax"]
+    else:
+        loss_value = nn_batch_stats["mse"]
+    if nn_model.includes_alpha:
+        suffix += f", alpha={nn_model.get_alpha():>7f}"
+    print(f"{prefix}: {loss_value:>7f}{suffix}  [{batch_index+1:>4d}/{n_batches:>4d}]")
+
+
+def get_average_stats(stats_list):
+    return {key: sum(d[key] for d in stats_list) / len(stats_list)
+            for key in stats_list[0]}
+
+
+def train_or_test_loop(dataloader: DataLoader,
+                       nn_model: Optional[AcquisitionFunctionNet]=None,
+                       train:Optional[bool]=None,
+                       nn_device=None,
+                       policy_gradient:Optional[bool]=None,
+                       verbose:bool=True,
+                       desc:Optional[str]=None,
+                       
+                       n_train_printouts:Optional[int]=None,
+                       optimizer=None, 
+                       alpha_increment:Optional[float]=None,
+
+                       get_true_gp_stats:bool=True,
+                       get_map_gp_stats:bool=False,
+                       get_basic_stats:bool=True):
+    if not isinstance(dataloader, DataLoader):
+        raise ValueError("dataloader must be a torch DataLoader")
+    
+    n_batches = len(dataloader)
     dataset = dataloader.dataset
+    has_models = dataset.has_models
 
     if not isinstance(dataset, AcquisitionDataset):
         raise ValueError("The dataloader must contain an AcquisitionDataset")
-    
-    has_stats = hasattr(dataset, "_cached_stats")
-    if dataset.data_is_fixed:
-        if has_stats:
-            return dataset._cached_stats
-    else:
-        assert not has_stats
-    
-    has_models = dataset.has_models
-    
-    mse_always_predict_0 = 0.
-    ei_ideal = 0.
-    ei_random_search = 0.
 
-    if has_models and compute_gp_stats:
-        mse_true_gp = 0.
-        ei_true_gp = 0.
-        if fit_map_gp:
-            mse_map_gp = 0.
-            ei_map_gp = 0.
+    if not isinstance(verbose, bool):
+        raise ValueError("verbose must be a boolean")
+    if not isinstance(get_true_gp_stats, bool):
+        raise ValueError("get_true_gp_stats must be a boolean")
+    if not isinstance(get_map_gp_stats, bool):
+        raise ValueError("get_map_gp_stats must be a boolean")
+    if not isinstance(get_basic_stats, bool):
+        raise ValueError("get_basic_stats must be a boolean")
+    if not has_models:
+        if get_true_gp_stats:
+            raise ValueError("get_true_gp_stats must be False if no models are present")
+        if get_map_gp_stats:
+            raise ValueError("get_map_gp_stats must be False if no models are present")
+    
+    if nn_model is not None: # evaluating a NN model
+        if not isinstance(nn_model, AcquisitionFunctionNet):
+            raise ValueError("nn_model must be a AcquisitionFunctionNet instance")
+        if not isinstance(policy_gradient, bool):
+            raise ValueError("'policy_gradient' must be a boolean if evaluating a NN model")
+        if not isinstance(train, bool):
+            raise ValueError("'train' must be a boolean if evaluating a NN model")
+        
+        if train:
+            if optimizer is None:
+                raise ValueError("optimizer must be specified if training")
+            if not isinstance(optimizer, torch.optim.Optimizer):
+                raise ValueError("optimizer must be a torch Optimizer instance")
+            if verbose:
+                if n_train_printouts is None:
+                    n_train_printouts = 10
+                if not (isinstance(n_train_printouts, int) and n_train_printouts > 0):
+                    raise ValueError("n_train_printouts must be a positive integer")
+                every_n_batches = n_batches // n_train_printouts
+            if alpha_increment is not None:
+                if not (isinstance(alpha_increment, float) and alpha_increment >= 0):
+                    raise ValueError("alpha_increment must be a positive float")
+            nn_model.train()
+        else:
+            nn_model.eval()
 
-    for batch in _unsupported_improvements(tqdm(dataloader)):
+    else: # just evaluating the dataset, no NN model
+        if policy_gradient is not None:
+            raise ValueError("'policy_gradient' must not be specified if not evaluating a NN model")
+        if train is not None:
+            raise ValueError("'train' must not be specified if not evaluating a NN model")
+
+    if not (train and verbose):
+        if n_train_printouts is not None:
+            raise ValueError("n_train_printouts can't be be specified if train != True or verbose != True")
+    
+    if not train:
+        if optimizer is not None:
+            raise ValueError("optimizer must not be specified if train != True")
+        if alpha_increment is not None:
+            raise ValueError("alpha_increment must not be specified if train != True")
+    
+    if verbose:
+        if not (desc is None or isinstance(desc, str)):
+            raise ValueError("desc must be a string or None if verbose")
+    elif desc is not None:
+        raise ValueError("desc must be None if not verbose")
+    
+    has_true_gp_stats = hasattr(dataset, "_true_gp_stats") # and False # test
+    has_map_gp_stats = hasattr(dataset, "_map_gp_stats")
+    has_basic_stats = hasattr(dataset, "_basic_stats")
+    if not dataset.data_is_fixed:
+        assert not (has_true_gp_stats or has_map_gp_stats or has_basic_stats)
+    
+    compute_true_gp_stats = get_true_gp_stats and not has_true_gp_stats
+    compute_map_gp_stats = get_map_gp_stats and not has_map_gp_stats
+    compute_basic_stats = get_basic_stats and not has_basic_stats
+
+    if compute_true_gp_stats:
+        true_gp_stats_list = []
+    if compute_map_gp_stats:
+        map_gp_stats_list = []
+    if compute_basic_stats:
+        basic_stats_list = []
+    if nn_model is not None:
+        nn_batch_stats_list = []
+
+    it = dataloader
+    if verbose:
+        if train:
+            print(desc)
+        else:
+            it = tqdm(it, desc=desc)
+        tic(desc)
+    
+    # If we are not computing any stats, then don't actually need to go through the dataset.
+    # This probably won't happen in practice though because we always will be evaluating the NN.
+    if not (compute_true_gp_stats or compute_map_gp_stats or compute_basic_stats or nn_model is not None):
+        it = []
+    
+    for i, batch in enumerate(unsupported_improvements(it)):
         x_hist, y_hist, x_cand, improvements, hist_mask, cand_mask = batch.tuple_no_model
 
+        if nn_model is not None:
+            (x_hist_nn, y_hist_nn, x_cand_nn, improvements_nn,
+             hist_mask_nn, cand_mask_nn) = batch.to(nn_device).tuple_no_model
+
+            with torch.set_grad_enabled(train):
+                nn_output = nn_model(
+                    x_hist_nn, y_hist_nn, x_cand_nn, hist_mask_nn, cand_mask_nn,
+                    exponentiate=not policy_gradient, softmax=policy_gradient)
+                
+                nn_batch_stats = compute_myopic_acquisition_output_batch_stats(
+                    nn_output, improvements_nn, cand_mask_nn, policy_gradient,
+                    return_loss=train)
+                
+                if train:
+                    loss = nn_batch_stats.pop("loss")
+                    
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+
+                    if nn_model.includes_alpha and alpha_increment is not None:
+                        nn_model.set_alpha(nn_model.get_alpha() + alpha_increment)
+                    
+                    if verbose and i % every_n_batches == 0:
+                        print_train_batch_stats(nn_batch_stats, nn_model,
+                                                policy_gradient, i, n_batches)
+                
+                nn_batch_stats_list.append(nn_batch_stats)
+        
         if has_models:
             models = batch.model
         
         with torch.no_grad():
-            if has_models and compute_gp_stats:
-                # Calculate true GP EI values
-                ei_values_true_model = calculate_EI_GP_padded_batch(x_hist, y_hist, x_cand, hist_mask, cand_mask, models)
-
-                # Calculate the MSE loss of the true GP model
-                mse_true_gp += mse_loss(ei_values_true_model, improvements, cand_mask).item()
-
-                # Calculate true GP actual E(I) of slecting the point with maximum EI
-                probabilities_true_model = max_one_hot(ei_values_true_model, cand_mask)
-                ei_true_gp += myopic_policy_gradient_loss(probabilities_true_model, improvements).item()
-
-            # Calculate the E(I) of selecting a point at random
-            if cand_mask is None:
-                random_search_probabilities = torch.ones_like(improvements) / improvements.size(1)
-            else:
-                random_search_probabilities = cand_mask.double() / cand_mask.sum(dim=1, keepdim=True).double()
-            ei_random_search += myopic_policy_gradient_loss(random_search_probabilities, improvements).item()
+            if compute_true_gp_stats:
+                # Calculate true GP EI stats
+                ei_values_true_model = calculate_EI_GP_padded_batch(
+                    x_hist, y_hist, x_cand, hist_mask, cand_mask, models)
+                true_gp_batch_stats = compute_myopic_acquisition_output_batch_stats(
+                    ei_values_true_model, improvements, cand_mask,
+                    policy_gradient=False, return_loss=False, name="true_gp")
+                true_gp_stats_list.append(true_gp_batch_stats)
             
-            # Calculate the MSE loss of always predicting 0
-            mse_always_predict_0 += mse_loss(torch.zeros_like(improvements), improvements, cand_mask).item()
-            
-            # Calculate the E(I) of selecting the point with the maximum I (cheating)
-            ideal_probabilities = max_one_hot(improvements, cand_mask)
-            ei_ideal += myopic_policy_gradient_loss(ideal_probabilities, improvements).item()
+            if compute_basic_stats:
+                # Calculate the E(I) of selecting a point at random,
+                # the E(I) of selecting the point with the maximum I (cheating), and
+                # the MSE loss of always predicting 0
+                if cand_mask is None:
+                    random_search_probs = torch.ones_like(improvements) / improvements.size(1)
+                else:
+                    random_search_probs = cand_mask.double() / cand_mask.sum(dim=1, keepdim=True).double()
+                basic_stats_list.append({
+                    "ei_random_search": myopic_policy_gradient_ei(
+                        random_search_probs, improvements).item(),
+                    "ei_ideal": compute_ei_max(improvements, improvements, cand_mask),
+                    "mse_always_predict_0": mse_loss(torch.zeros_like(improvements),
+                                                    improvements, cand_mask).item()
+                })
         
-        if has_models and fit_map_gp and compute_gp_stats:
+        if compute_map_gp_stats:
             # Calculate the MAP GP EI values
-            ei_values_map = calculate_EI_GP_padded_batch(x_hist, y_hist, x_cand, hist_mask, cand_mask, models, fit_params=True)
-
-            # Calculate the MSE loss of the MAP GP model
-            mse_map_gp += mse_loss(ei_values_map, improvements, cand_mask).item()
-            
-            # Calculate MAP GP actual E(I) of slecting the point with maximum EI
-            probabilities_ei_map = max_one_hot(ei_values_map, cand_mask)
-            ei_map_gp += myopic_policy_gradient_loss(probabilities_ei_map, improvements).item()
-
-    n_batches = len(dataloader)
+            ei_values_map = calculate_EI_GP_padded_batch(
+                x_hist, y_hist, x_cand, hist_mask, cand_mask, models, fit_params=True)
+            map_gp_batch_stats = compute_myopic_acquisition_output_batch_stats(
+                    ei_values_map, improvements, cand_mask,
+                    policy_gradient=False, return_loss=False, name="map_gp")
+            map_gp_stats_list.append(map_gp_batch_stats)
     
+    if verbose:
+        toc(desc)
     
-    mse_always_predict_0 /= n_batches
-    ei_ideal /= -n_batches
-    ei_random_search /= -n_batches
-
-    ret = {
-        "mse_always_predict_0": mse_always_predict_0,
-        "ei_ideal": ei_ideal,
-        "ei_random_search": ei_random_search
-    }
-
-    if has_models and compute_gp_stats:
-        mse_true_gp /= n_batches
-        ei_true_gp /= -n_batches
-        ret.update({
-            "mse_true_gp": mse_true_gp,
-            "ei_true_gp": ei_true_gp})
-
-        if fit_map_gp:
-            mse_map_gp /= n_batches
-            ei_map_gp /= -n_batches
-            ret["mse_map_gp"] = mse_map_gp
-            ret["ei_map_gp"] = ei_map_gp
+    if compute_true_gp_stats:
+        dataset._true_gp_stats = get_average_stats(true_gp_stats_list)
+    if compute_map_gp_stats:
+        dataset._map_gp_stats = get_average_stats(map_gp_stats_list)
+    if compute_basic_stats:
+        dataset._basic_stats = get_average_stats(basic_stats_list)
     
-    if dataloader.dataset.data_is_fixed:
-        dataloader.dataset._cached_stats = ret
-    
+    ret = {}
+    if get_true_gp_stats:
+        ret.update(dataset._true_gp_stats)
+    if get_map_gp_stats:
+        ret.update(dataset._map_gp_stats)
+    if get_basic_stats:
+        ret.update(dataset._basic_stats)
+    if nn_model is not None:
+        ret.update(get_average_stats(nn_batch_stats_list))
     return ret
-
-
-

@@ -4,6 +4,7 @@ from typing import List, Optional, Sequence, Union, Iterable
 import warnings
 import torch
 from functools import partial
+from botorch.exceptions import UnsupportedError
 
 
 def uniform_randint(min_val, max_val):
@@ -295,6 +296,21 @@ def resize_iterable(it, new_length: Optional[int] = None):
                 it = FirstNIterable(it, new_length)
 
     return it
+
+
+def to_device(tensor, device):
+    if tensor is None or device is None:
+        return tensor
+    return tensor.to(device)
+
+
+def unsupported_improvements(dataloader):
+    for batch in dataloader:
+        if not batch.give_improvements:
+            raise UnsupportedError(
+                "The acquisition dataset must provide improvements; calculating " \
+                "them from a batch would be possible but is currently unsupported.")
+        yield batch
 
 
 # Based on
