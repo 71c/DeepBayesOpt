@@ -80,7 +80,7 @@ LAZY_TEST = False
 
 ################## Settings for dataset size and generation ####################
 # The size of the training acquisition dataset
-TRAIN_ACQUISITION_SIZE = 200_000
+TRAIN_ACQUISITION_SIZE = 50_000
 # The amount that the dataset is expanded to save compute of GP realizations
 EXPANSION_FACTOR = 4
 # Whether and how to fix the training dataset
@@ -94,7 +94,7 @@ TRAIN_N_CANDIDATES = 50
 POLICY_GRADIENT = True # True for the softmax thing, False for MSE EI
 BATCH_SIZE = 128
 LEARNING_RATE = 3e-5
-EPOCHS = 3
+EPOCHS = 5
 
 # Only used if POLICY_GRADIENT is True
 INCLUDE_ALPHA = True
@@ -254,9 +254,13 @@ if small_test_aq_dataset != test_aq_dataset:
 
 import json
 
+CPROFILE = True
+TIME = False
+VERBOSE = True
+
 import cProfile, pstats, io
 from pstats import SortKey
-
+from tictoc import tic, tocl
 
 
 if TRAIN:    
@@ -268,12 +272,16 @@ if TRAIN:
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
     # optimizer = torch.optim.RMSprop(model.parameters(), lr=learning_rate)
 
-    pr = cProfile.Profile()
-    pr.enable()
+    if CPROFILE:
+        pr = cProfile.Profile()
+        pr.enable()
+    
+    if TIME:
+        tic("Training!")
 
     data = train_acquisition_function_net(
         model, train_aq_dataset, optimizer, POLICY_GRADIENT, EPOCHS, BATCH_SIZE,
-        device, ALPHA_INCREMENT, verbose=True, n_train_printouts_per_epoch=10,
+        device, ALPHA_INCREMENT, verbose=VERBOSE, n_train_printouts_per_epoch=10,
         test_dataset=test_aq_dataset, small_test_dataset=small_test_aq_dataset,
         get_train_stats_while_training=True,
         get_train_stats_after_training=True,
@@ -283,13 +291,19 @@ if TRAIN:
         get_test_true_gp_stats=False
     )
 
-    pr.disable()
-    s = io.StringIO()
-    sortby = SortKey.CUMULATIVE
-    ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
-    ps.print_stats()
-    print(s.getvalue())
-    exit()
+    if TIME:
+        tocl()
+        exit()
+
+    if CPROFILE:
+        pr.disable()
+        s = io.StringIO()
+        sortby = SortKey.CUMULATIVE
+        ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+        ps.print_stats()
+        print(s.getvalue())
+        exit()
+
 
     print(json.dumps(data, indent=4))
 

@@ -7,7 +7,7 @@ from torch.utils.data import IterableDataset, DataLoader
 from dataset_with_models import ModelsWithParamsList, TupleWithModel, create_classes
 from function_samples_dataset import FunctionSamplesDataset, GaussianProcessRandomDataset, RepeatedFunctionSamplesIterableDataset, FunctionSamplesItem
 
-from utils import resize_iterable, uniform_randint, get_uniform_randint_generator, max_pad_tensors_batch
+from utils import resize_iterable, uniform_randint, get_uniform_randint_generator, max_pad_tensors_batch, pad_tensor
 from utils import SizedIterableMixin, len_or_inf
 
 from typing import Optional, List, Tuple, Union
@@ -15,6 +15,8 @@ from collections.abc import Sequence
 
 import warnings
 import math
+from tqdm import tqdm
+from tictoc import tic, tocl
 
 
 torch.set_default_dtype(torch.double)
@@ -87,7 +89,7 @@ class AcquisitionDatasetBatch(TupleWithModel):
 
 
 @staticmethod
-def _collate_train_acquisition_function_samples(samples_list, has_models):
+def _collate_train_acquisition_function_samples(samples_list, has_models, cached_pads=False):
     give_improvements = samples_list[0].give_improvements
     for x in samples_list:
         if not isinstance(x, AcquisitionDatasetModelItem):
@@ -100,27 +102,43 @@ def _collate_train_acquisition_function_samples(samples_list, has_models):
                 "All items in samples_list should have the same value for has_models " \
                 "and should be consistent with the dataset's has_models attribute")
 
+
     if has_models:
-        unzipped_lists = list(zip(*
-                [x[:4] for x in samples_list]))
         models_list = ModelsWithParamsList(
             [(x._model, x.model_params) for x in samples_list])
     else:
-        unzipped_lists = list(zip(*samples_list))
         models_list = None
+    
+    if cached_pads:
+        unzipped_lists = list(zip(*
+            [x._padded_tensors for x in samples_list]))
+        (x_hist_paddeds, y_hist_paddeds, x_cand_paddeds,
+            vals_cand_paddeds, hist_masks, cand_masks) = unzipped_lists
+        x_hist = torch.stack(x_hist_paddeds)
+        y_hist = torch.stack(y_hist_paddeds)
+        hist_mask = torch.stack(hist_masks)
+        x_cand = torch.stack(x_cand_paddeds)
+        vals_cand = torch.stack(vals_cand_paddeds)
+        cand_mask = torch.stack(cand_masks)
+    else:
+        if has_models:
+            unzipped_lists = list(zip(*
+                    [x[:4] for x in samples_list]))
+        else:
+            unzipped_lists = list(zip(*samples_list))
 
-    # Each of these are tuples of tensors
-    x_hists, y_hists, x_cands, vals_cands = unzipped_lists
+        # Each of these are tuples of tensors
+        x_hists, y_hists, x_cands, vals_cands = unzipped_lists
 
-    # x_hist shape: (n_hist, dimension)
-    # y_hist shape: (n_hist,)
-    # x_cand shape: (n_cand, dimension)
-    # vals_cand shape: (n_cand,)
+        # x_hist shape: (n_hist, dimension)
+        # y_hist shape: (n_hist,)
+        # x_cand shape: (n_cand, dimension)
+        # vals_cand shape: (n_cand,)
 
-    x_hist = max_pad_tensors_batch(x_hists, add_mask=False)
-    y_hist, hist_mask = max_pad_tensors_batch(y_hists, add_mask=True)
-    x_cand = max_pad_tensors_batch(x_cands, add_mask=False)
-    vals_cand, cand_mask = max_pad_tensors_batch(vals_cands, add_mask=True)
+        x_hist = max_pad_tensors_batch(x_hists, add_mask=False)
+        y_hist, hist_mask = max_pad_tensors_batch(y_hists, add_mask=True)
+        x_cand = max_pad_tensors_batch(x_cands, add_mask=False)
+        vals_cand, cand_mask = max_pad_tensors_batch(vals_cands, add_mask=True)
 
     return AcquisitionDatasetBatch(
         x_hist, y_hist, x_cand, vals_cand, hist_mask, cand_mask,
@@ -165,10 +183,39 @@ def get_dataloader(self, batch_size=32, shuffle=None, **kwargs):
     elif shuffle is None:
         shuffle = True  # Default to shuffle=True for map-style datasets
     
+    # x_hist = max_pad_tensors_batch(x_hists, add_mask=False)
+    # y_hist, hist_mask = max_pad_tensors_batch(y_hists, add_mask=True)
+    # x_cand = max_pad_tensors_batch(x_cands, add_mask=False)
+    # vals_cand, cand_mask = max_pad_tensors_batch(vals_cands, add_mask=True)
+
+    # return AcquisitionDatasetBatch(
+    #     x_hist, y_hist, x_cand, vals_cand, hist_mask, cand_mask,
+    #     model=models_list, give_improvements=give_improvements)
+
     if 'collate_fn' in kwargs:
         raise ValueError("collate_fn should not be specified in get_dataloader; we do it for you")
+    
+    self._has_cached_pads = getattr(self, '_has_cached_pads', False)
+    if self.data_is_fixed:
+        if not self._has_cached_pads:
+            max_hist = max(item.x_hist.size(0) for item in self)
+            max_cand = max(item.x_cand.size(0) for item in self)
+            print(f"max_hist={max_hist}")
+            tic("Padding.")
+            for item in tqdm(self, desc="Padding."):
+                x_hist, y_hist, x_cand, vals_cand = item.tuple_no_model
+                x_hist_padded = pad_tensor(x_hist, max_hist, dim=0, add_mask=False)
+                y_hist_padded, hist_mask = pad_tensor(y_hist, max_hist, dim=0, add_mask=True)
+                x_cand_padded = pad_tensor(x_cand, max_cand, dim=0, add_mask=False)
+                vals_cand_padded, cand_mask = pad_tensor(vals_cand, max_cand, dim=0, add_mask=True)
+                item._padded_tensors = (x_hist_padded, y_hist_padded, x_cand_padded,
+                                        vals_cand_padded, hist_mask, cand_mask)
+            tocl()
+            self._has_cached_pads = True
+
     collate_fn = partial(self._collate_train_acquisition_function_samples,
-                         has_models=self.has_models)
+                        has_models=self.has_models,
+                        cached_pads=self._has_cached_pads)
 
     return DataLoader(self, batch_size=batch_size, shuffle=shuffle,
                         collate_fn=collate_fn, **kwargs)

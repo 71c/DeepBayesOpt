@@ -106,13 +106,76 @@ def pad_tensor(vec, length, dim, add_mask=False):
     return padded
 
 
-def max_pad_tensors_batch(tensors, dim=0, add_mask=False):
+# Training took 5.717105 seconds
+# Training took 4.495734 seconds
+# Training took 4.565008 seconds
+# Training took 4.320932 seconds
+# def max_pad_tensors_batch(tensors, dim=0, add_mask=False):
+#     """Pads a batch of tensors with zeros along a dimension to match the maximum
+#     length.
+
+#     Args:
+#         tensors (List[torch.Tensor]): A list of tensors to be padded.
+#         dim (int, default: 0): The dimension along which to pad the tensors.
+#         add_mask (bool, optional, default: False):
+#             Whether to also return a mask tensor
+
+#     Returns:
+#         If add_mask=True, return a tuple (padded, mask).
+#         If all tensors have the same length, mask is None.
+#         Otherwise, returns the padded tensor only.
+#     """
+#     lengths = [x.shape[dim] for x in tensors]
+#     max_length = max(lengths)
+#     if all(length == max_length for length in lengths):
+#         stacked = torch.stack(tensors) # Don't pad if we don't need to
+#         if add_mask:
+#             mask = None
+#     else:
+#         if add_mask:
+#             padded_tensors, masks = zip(*[
+#                 pad_tensor(x, max_length, dim=dim, add_mask=True)
+#                 for x in tensors])
+#             mask = torch.stack(masks)
+#         else:
+#             padded_tensors = [
+#                 pad_tensor(x, max_length, dim=dim, add_mask=False)
+#                 for x in tensors]
+#         stacked = torch.stack(padded_tensors)
+    
+#     if add_mask:
+#         return stacked, mask
+#     return stacked
+
+
+def equals(a, b):
+    try:
+        iter(a)
+        is_iterable = True
+    except TypeError:
+        is_iterable = False
+    if is_iterable:
+        if len(a) != len(b):
+            return False
+        return type(b) is type(a) and all(equals(x, y) for x, y in zip(a, b))
+    if torch.is_tensor(a):
+        return torch.is_tensor(b) and torch.equal(a, b)
+    return a == b
+
+
+# Training took 4.215692 seconds
+# Training took 3.932536 seconds
+# Training took 4.084472 seconds
+# Training took 4.148941 seconds
+# Training took 4.345846 seconds
+# Training took 4.416536 seconds
+## I don't know maybe this is a bit faster
+def max_pad_tensors_batch(tensors, add_mask=False):
     """Pads a batch of tensors with zeros along a dimension to match the maximum
     length.
 
     Args:
         tensors (List[torch.Tensor]): A list of tensors to be padded.
-        dim (int, default: 0): The dimension along which to pad the tensors.
         add_mask (bool, optional, default: False):
             Whether to also return a mask tensor
 
@@ -121,27 +184,33 @@ def max_pad_tensors_batch(tensors, dim=0, add_mask=False):
         If all tensors have the same length, mask is None.
         Otherwise, returns the padded tensor only.
     """
-    lengths = [x.shape[dim] for x in tensors]
+    lengths = [x.shape[0] for x in tensors]
     max_length = max(lengths)
     if all(length == max_length for length in lengths):
-        stacked = torch.stack(tensors) # Don't pad if we don't need to
+        padded = torch.stack(tensors) # Don't pad if we don't need to
         if add_mask:
             mask = None
     else:
         if add_mask:
-            padded_tensors, masks = zip(*[
-                pad_tensor(x, max_length, dim=dim, add_mask=True)
-                for x in tensors])
-            mask = torch.stack(masks)
-        else:
-            padded_tensors = [
-                pad_tensor(x, max_length, dim=dim, add_mask=False)
-                for x in tensors]
-        stacked = torch.stack(padded_tensors)
+            mask = torch.zeros(len(tensors), max_length, *tensors[0].shape[1:],
+                               dtype=torch.bool, device=tensors[0].device)
+            for i, x in enumerate(tensors):
+                mask[i, :x.shape[0], ...] = True
+        
+        padded = torch.zeros(len(tensors), max_length, *tensors[0].shape[1:],
+                             dtype=tensors[0].dtype, device=tensors[0].device)
+        for i, x in enumerate(tensors):
+            padded[i, :x.shape[0], ...] = x
     
     if add_mask:
-        return stacked, mask
-    return stacked
+        ret = padded, mask
+    else:
+        ret = padded
+
+    # Testing
+    # assert equals(ret, max_pad_tensors_batch_old(tensors, dim=0, add_mask=add_mask))
+
+    return ret
 
 
 # Taken from

@@ -342,9 +342,10 @@ def train_or_test_loop(dataloader: DataLoader,
         if nn_device is not None:
             raise ValueError("'nn_device' must not be specified if not evaluating a NN model")
 
-    if not (train and verbose):
-        if n_train_printouts is not None:
-            raise ValueError("n_train_printouts can't be be specified if train != True or verbose != True")
+    # More of an annoyance than anything, so just ignore
+    # if not (train and verbose):
+    #     if n_train_printouts is not None:
+    #         raise ValueError("n_train_printouts can't be be specified if train != True or verbose != True")
     
     if not train:
         if optimizer is not None:
