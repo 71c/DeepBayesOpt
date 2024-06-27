@@ -311,6 +311,8 @@ class TupleWithModel:
         self._items[index] = value
     
     def __getattr__(self, name):
+        if name == "args_names":
+            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
         if name in self._kwargs:
             return self._kwargs[name]
         if hasattr(self, "args_names") and name in self.args_names:
