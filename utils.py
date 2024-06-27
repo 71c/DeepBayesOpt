@@ -1,9 +1,11 @@
 from abc import ABC, abstractmethod
 import math
+import numpy as np
+from scipy.optimize import root_scalar
 from typing import List, Optional, Sequence, Union, Iterable
 import warnings
 import torch
-from functools import partial
+from functools import partial, lru_cache
 from botorch.exceptions import UnsupportedError
 
 
@@ -34,6 +36,41 @@ def loguniform_randint(min_val, max_val, size=1, pre_offset=0.0, offset=0):
 
 def get_loguniform_randint_generator(min_val, max_val, pre_offset=0.0, offset=0):
     return partial(loguniform_randint, min_val, max_val, pre_offset=pre_offset, offset=offset)
+
+
+def _int_linspace_naive(start, stop, num):
+    return np.unique(np.round(np.linspace(start, stop, num)).astype(int))
+
+
+@lru_cache(maxsize=128) # Not necessary but why not.
+def int_linspace(start, stop, num):
+    if not (isinstance(start, int) and isinstance(stop, int)):
+        raise ValueError("start and stop should be integers")
+
+    if num > stop - start + 1:
+        raise ValueError('num must be less than or equal to stop - start + 1')
+    ret = _int_linspace_naive(start, stop, num)
+    length = len(ret)
+    
+    if length < num:
+        sol = root_scalar(
+            lambda x: len(_int_linspace_naive(start, stop, int(x))) - num,
+            method='secant', x0=num, x1=2*num, xtol=1e-12, rtol=1e-12)
+        
+        k = int(sol.root)
+        ret = _int_linspace_naive(start, stop, k)
+
+        if len(ret) != num:
+            if len(ret) > num:
+                while len(ret) > num:
+                    k -= 1
+                    ret = _int_linspace_naive(start, stop, k)
+            else:
+                while len(ret) < num:
+                    k += 1
+                    ret = _int_linspace_naive(start, stop, k)
+
+    return ret
 
 
 def pad_tensor(vec, length, dim, add_mask=False):

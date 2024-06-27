@@ -278,6 +278,10 @@ class TupleWithModel:
         return self._items
     
     def to(self, *args, **kwargs):
+        """Does the torch Tensor.to() operation on all of the tuple's items,
+        but NOT on the kwargs or on the model(s). If any of the tensors
+        changed by doing to() then returns a new object which is a copy of the
+        current object but with the tensors moved. Otherwise, returns self."""
         new_items = tuple(
             item.to(*args, **kwargs) if torch.is_tensor(item) else item
             for item in self._items)
@@ -478,9 +482,8 @@ class DatasetWithModels(Dataset, ABC):
         return self._str_helper(args, kwargs, is_str=True)
 
     def fix_samples(self, n_realizations:Optional[int]=None, lazy=True):
-        if not isinstance(self, IterableDataset):
-            raise TypeError(f"{self.__class__.__name__} is a map-style dataset" \
-                            " so cannot fix samples; it is already fixed.")
+        if self.data_is_fixed:
+            raise ValueError(f"{self.__class__.__name__} is already fixed so don't need to fix.")
         if lazy:
             return self._lazy_map_class(self, n_realizations)
         return self._list_map_class.from_iterable_dataset(self, n_realizations)

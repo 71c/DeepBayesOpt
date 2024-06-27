@@ -16,7 +16,7 @@ from utils import pad_tensor
 logging.basicConfig(level=logging.WARNING)
 
 # Set to True to enable debug logging
-DEBUG = True
+DEBUG = False
 
 # Create a logger for your application
 logger = logging.getLogger('acquisition_function_net')
@@ -991,10 +991,10 @@ class AcquisitionFunctionNetV4(AcquisitionFunctionNetWithFinalMLP):
             # cand_mask_expanded = expand_dim(cand_mask.unsqueeze(-2), -2, n_hist)
             # # shape (*, n_cand, n_hist, n_hist, 1)
             # cand_mask_expanded = expand_dim(cand_mask_expanded.unsqueeze(-2), -2, n_hist)
-            # print(cand_mask_expanded.shape)
+            # logger.debug(cand_mask_expanded.shape)
 
-        # print(x_cand_and_xy_hist_pairwise - x_cand_and_xy_hist_pairwise * mask)
-        # print(x_cand_and_xy_hist_pairwise)
+        # logger.debug(x_cand_and_xy_hist_pairwise - x_cand_and_xy_hist_pairwise * mask)
+        # logger.debug(x_cand_and_xy_hist_pairwise)
         # exit()
 
         # shape (*, n_cand, n_hist, encoded_history_dim)

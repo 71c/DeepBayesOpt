@@ -445,6 +445,3 @@ class RepeatedFunctionSamplesIterableDataset(
         return [
             type(self)(split_dataset, self.size_factor)
             for split_dataset in self.base_dataset.random_split(lengths)]
-
-    
-

@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 import os
 
 from train_acquisition_function_net import (
-    train_or_test_loop, print_stats, count_trainable_parameters, count_parameters)
+    train_acquisition_function_net, count_trainable_parameters, count_parameters)
 
 import torch.distributions as dist
 
@@ -237,23 +237,20 @@ model_path = os.path.join(script_dir, file_name)
 
 ######################## Train the model #######################################
 
-train_aq_dataloader = train_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_last=True)
-small_test_aq_dataloader = small_test_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_last=True)
-
-
-print("Training dataset size:", len(train_dataset),
-      "number of batches:", len(train_dataset) // BATCH_SIZE, len(train_dataset) % BATCH_SIZE)
+print("Training dataset size:", len(train_dataset))
 print("Training acquisition dataset size:", len(train_aq_dataset),
-      "number of batches:", len(train_aq_dataloader))
-print("Test dataset size:", len(test_dataset),
-      "number of batches:", len(test_dataset) // BATCH_SIZE, len(test_dataset) % BATCH_SIZE)
+      "number of batches:", len(train_aq_dataset) // BATCH_SIZE, len(train_aq_dataset) % BATCH_SIZE)
+
+print("Test dataset size:", len(test_dataset))
 print("Test acquisition dataset size:", len(test_aq_dataset),
       "number of batches:", len(test_aq_dataset) // BATCH_SIZE, len(test_aq_dataset) % BATCH_SIZE)
-print("Small test acquisition dataset size:", len(small_test_aq_dataset),
-        "number of batches:", len(small_test_aq_dataloader))
+if small_test_aq_dataset != test_aq_dataset:
+    print("Small test acquisition dataset size:", len(small_test_aq_dataset),
+            "number of batches:", len(small_test_aq_dataset) // BATCH_SIZE, len(small_test_aq_dataset) % BATCH_SIZE)
 
 
-COMPUTE_TRAIN_GP_STATS = train_aq_dataset.data_is_fixed  # == FIX_TRAIN_ACQUISITION_DATASET
+import json
+
 
 if TRAIN:    
     if LOAD_SAVED_MODEL_TO_TRAIN:
@@ -264,43 +261,19 @@ if TRAIN:
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
     # optimizer = torch.optim.RMSprop(model.parameters(), lr=learning_rate)
 
-    for t in range(EPOCHS):
-        print(f"Epoch {t+1}\n-------------------------------")
+    data = train_acquisition_function_net(
+        model, train_aq_dataset, optimizer, POLICY_GRADIENT, EPOCHS, BATCH_SIZE,
+        device, ALPHA_INCREMENT, verbose=True, n_train_printouts_per_epoch=10,
+        test_dataset=test_aq_dataset, small_test_dataset=small_test_aq_dataset,
+        get_train_stats_while_training=True,
+        get_train_stats_after_training=True,
+        ## These both default to reasonable values depending on whether the
+        ## acquisition datasets are fixed
+        # get_train_true_gp_stats=True 
+        # get_test_true_gp_stats=True
+    )
 
-        train_stats_while_training = train_or_test_loop(
-            train_aq_dataloader, model, train=True,
-            nn_device=device, policy_gradient=POLICY_GRADIENT,
-            verbose=True, desc=f"Epoch {t+1} train",
-            n_train_printouts=10, optimizer=optimizer,
-            alpha_increment=ALPHA_INCREMENT,
-            get_true_gp_stats=COMPUTE_TRAIN_GP_STATS, get_map_gp_stats=False, get_basic_stats=True)
-
-        train_stats_eval = train_or_test_loop(
-            train_aq_dataloader, model, train=False,
-            nn_device=device, policy_gradient=POLICY_GRADIENT,
-            verbose=True, desc=f"Epoch {t+1} compute train stats",
-            get_true_gp_stats=COMPUTE_TRAIN_GP_STATS, get_map_gp_stats=False, get_basic_stats=True)
-
-        test_stats = train_or_test_loop(
-            small_test_aq_dataloader, model, train=False,
-            nn_device=device, policy_gradient=POLICY_GRADIENT,
-            verbose=True, desc=f"Epoch {t+1} compute test stats",
-            get_true_gp_stats=True, get_map_gp_stats=False, get_basic_stats=True)
-
-        print("Train stats while training:")
-        print(train_stats_while_training)
-        print_stats(train_stats_while_training, "Train stats while training")
-        print()
-
-        print("Train stats:")
-        print(train_stats_eval)
-        print_stats(train_stats_eval, "Train stats")
-        print()
-
-        print("Test stats:")
-        print(test_stats)
-        print_stats(test_stats, "Test stats")
-        print()
+    print(json.dumps(data, indent=4))
 
     print("Done training!")
 
@@ -312,17 +285,9 @@ else:
     model.load_state_dict(torch.load(model_path))
 
 
-###################### Evaluate performance of model ###########################
-test_aq_dataloader = test_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_last=True)
+######################## Plot performance of model #############################
 
-test_stats = train_or_test_loop(
-            test_aq_dataloader, model, train=False,
-            nn_device=device, policy_gradient=POLICY_GRADIENT,
-            verbose=True, desc=f"compute final test stats",
-            get_true_gp_stats=True, get_map_gp_stats=False, get_basic_stats=True)
-
-
-def plot_gp_posterior(ax, posterior, test_x, train_x, train_y, color, name=None):
+def plot_gp_posterior(ax, posterior, test_x, train_x, train_y, color, name=None):#
     lower, upper = posterior.mvn.confidence_region()
     mean = posterior.mean.detach().squeeze().cpu().numpy()
     lower = lower.detach().squeeze().cpu().numpy()

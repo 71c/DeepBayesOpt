@@ -11,6 +11,7 @@ from acquisition_dataset import AcquisitionDataset
 from botorch.exceptions import UnsupportedError
 from utils import to_device, unsupported_improvements
 from tictoc import tic, toc
+from utils import int_linspace
 
 
 def count_trainable_parameters(model):
@@ -155,6 +156,7 @@ def print_stats(stats, dataset_name):
         ('ei_softmax', 'NN (softmax)', True),
         ('ei_max', 'NN (max)', True),
         ('true_gp_ei_max', 'True GP', False),
+        ('map_gp_ei_max', 'MAP GP', True),
         ('ei_random_search', 'Random search', True),
         ('ei_ideal', 'Ideal', True),
         ('avg_normalized_entropy', 'Avg norm. entropy', False)]
@@ -177,6 +179,7 @@ def print_stats(stats, dataset_name):
         things_to_print = [
             ('mse', 'NN', True),
             ('true_gp_mse', 'True GP', False),
+            ('map_gp_mse', 'MAP GP', True),
             ('mse_always_predict_0', 'Always predict 0', True)]
         
         direct_things_to_print = []
@@ -219,10 +222,10 @@ def train_or_test_loop(dataloader: DataLoader,
                        desc:Optional[str]=None,
                        
                        n_train_printouts:Optional[int]=None,
-                       optimizer=None, 
+                       optimizer:Optional[torch.optim.Optimizer]=None, 
                        alpha_increment:Optional[float]=None,
 
-                       get_true_gp_stats:bool=True,
+                       get_true_gp_stats:Optional[bool]=None,
                        get_map_gp_stats:bool=False,
                        get_basic_stats:bool=True):
     if not isinstance(dataloader, DataLoader):
@@ -237,17 +240,24 @@ def train_or_test_loop(dataloader: DataLoader,
 
     if not isinstance(verbose, bool):
         raise ValueError("verbose must be a boolean")
+    
+    if get_true_gp_stats is None:
+        get_true_gp_stats = has_models and dataset.data_is_fixed
     if not isinstance(get_true_gp_stats, bool):
         raise ValueError("get_true_gp_stats must be a boolean")
     if not isinstance(get_map_gp_stats, bool):
         raise ValueError("get_map_gp_stats must be a boolean")
     if not isinstance(get_basic_stats, bool):
         raise ValueError("get_basic_stats must be a boolean")
+    
     if not has_models:
         if get_true_gp_stats:
             raise ValueError("get_true_gp_stats must be False if no models are present")
         if get_map_gp_stats:
             raise ValueError("get_map_gp_stats must be False if no models are present")
+    
+    if n_train_printouts == 0:
+        n_train_printouts = None
     
     if nn_model is not None: # evaluating a NN model
         if not isinstance(nn_model, AcquisitionFunctionNet):
@@ -263,11 +273,9 @@ def train_or_test_loop(dataloader: DataLoader,
             if not isinstance(optimizer, torch.optim.Optimizer):
                 raise ValueError("optimizer must be a torch Optimizer instance")
             if verbose:
-                if n_train_printouts is None:
-                    n_train_printouts = 10
-                if not (isinstance(n_train_printouts, int) and n_train_printouts > 0):
-                    raise ValueError("n_train_printouts must be a positive integer")
-                every_n_batches = n_batches // n_train_printouts
+                if n_train_printouts is not None:
+                    if not (isinstance(n_train_printouts, int) and n_train_printouts >= 0):
+                        raise ValueError("n_train_printouts must be a non-negative integer")
             if alpha_increment is not None:
                 if not (isinstance(alpha_increment, float) and alpha_increment >= 0):
                     raise ValueError("alpha_increment must be a positive float")
@@ -280,6 +288,8 @@ def train_or_test_loop(dataloader: DataLoader,
             raise ValueError("'policy_gradient' must not be specified if not evaluating a NN model")
         if train is not None:
             raise ValueError("'train' must not be specified if not evaluating a NN model")
+        if nn_device is not None:
+            raise ValueError("'nn_device' must not be specified if not evaluating a NN model")
 
     if not (train and verbose):
         if n_train_printouts is not None:
@@ -294,8 +304,8 @@ def train_or_test_loop(dataloader: DataLoader,
     if verbose:
         if not (desc is None or isinstance(desc, str)):
             raise ValueError("desc must be a string or None if verbose")
-    elif desc is not None:
-        raise ValueError("desc must be None if not verbose")
+    # elif desc is not None:  # Just ignore desc in this case.
+    #     raise ValueError("desc must be None if not verbose")
     
     has_true_gp_stats = hasattr(dataset, "_true_gp_stats")
     has_map_gp_stats = hasattr(dataset, "_map_gp_stats")
@@ -318,8 +328,11 @@ def train_or_test_loop(dataloader: DataLoader,
 
     it = dataloader
     if verbose:
-        if train:
+        if train and n_train_printouts is not None:
             print(desc)
+            print_indices = set(int_linspace(
+                0, n_batches - 1, min(n_train_printouts, n_batches)
+            ))
         else:
             it = tqdm(it, desc=desc)
         tic(desc)
@@ -355,7 +368,7 @@ def train_or_test_loop(dataloader: DataLoader,
                     if nn_model.includes_alpha and alpha_increment is not None:
                         nn_model.set_alpha(nn_model.get_alpha() + alpha_increment)
                     
-                    if verbose and i % every_n_batches == 0:
+                    if verbose and n_train_printouts is not None and i in print_indices:
                         print_train_batch_stats(nn_batch_stats, nn_model,
                                                 policy_gradient, i, n_batches)
                 
@@ -427,8 +440,212 @@ def train_or_test_loop(dataloader: DataLoader,
                 dataset._basic_stats = basic_stats
         else:
             basic_stats = dataset._basic_stats
+        ret.update(basic_stats)
     
     if nn_model is not None:
         ret.update(get_average_stats(nn_batch_stats_list))
+    
+    return ret
+
+
+BASIC_STATS = {"ei_random_search", "ei_ideal", "mse_always_predict_0"}
+
+def split_nn_stats(stats):
+    nn_stats = stats.copy()
+    non_nn_stats = {}
+    for stat_name in stats:
+        if stat_name in BASIC_STATS or stat_name.startswith("true_gp") or stat_name.startswith("map_gp"):
+            non_nn_stats[stat_name] = nn_stats.pop(stat_name)
+    return nn_stats, non_nn_stats
+
+
+def train_acquisition_function_net(
+        nn_model: AcquisitionFunctionNet,
+        train_dataset: AcquisitionDataset,
+        optimizer: torch.optim.Optimizer,
+        policy_gradient: bool,
+        n_epochs: int,
+        batch_size: int,
+        nn_device=None,
+        alpha_increment:Optional[float]=None,
+        verbose:bool=True,
+        n_train_printouts_per_epoch:Optional[int]=None,
+        
+        test_dataset: Optional[AcquisitionDataset]=None,
+        small_test_dataset:Optional[AcquisitionDataset]=None,
+        test_during_training:Optional[bool]=None,
+
+        get_train_stats_while_training:bool=True,
+        get_train_stats_after_training:bool=True,
+        
+        get_train_true_gp_stats:Optional[bool]=None,
+        get_train_map_gp_stats:bool=False,
+        get_test_true_gp_stats:Optional[bool]=None,
+        get_test_map_gp_stats:Optional[bool]=None,
+        ):
+    if not (isinstance(n_epochs, int) and n_epochs >= 1):
+        raise ValueError("n_epochs must be a positive integer")
+    if not (isinstance(batch_size, int) and batch_size >= 1):
+        raise ValueError("batch_size must be a positive integer")
+    if not (test_during_training is None or isinstance(test_during_training, bool)):
+        raise ValueError("test_during_training must be a boolean or None")
+    if not isinstance(verbose, bool):
+        raise ValueError("verbose should be a boolean")
+
+    if not isinstance(get_train_stats_while_training, bool):
+        raise ValueError("get_train_stats_while_training should be a boolean")
+    if not isinstance(get_train_stats_after_training, bool):
+        raise ValueError("get_train_stats_after_training should be a boolean")
+    if not (get_train_stats_while_training or get_train_stats_after_training):
+        raise ValueError("You probably want to get some train stats...specify "
+                         "either get_train_stats_while_training=True or "
+                         "get_train_stats_after_training=True or both.")
+
+    if test_dataset is not None:
+        test_dataloader = test_dataset.get_dataloader(batch_size=batch_size, drop_last=True)
+
+        if small_test_dataset is not None: # Both test and small-test specified
+            # Test during & after training
+            if test_during_training == False:
+                raise ValueError("Small and big test datasets specified but test_during_training == False")
+            test_during_training = True # it can be either None or True
+            test_after_training = True
+            small_test_dataloader = small_test_dataset.get_dataloader(batch_size=batch_size, drop_last=True)
+        else: # Only test but not small-test specified
+            # Whether to test during & after training is ambiguous
+            if test_during_training is None:
+                raise ValueError("test but not small-test dataset is specified but test_during_training is not specified")
+            if test_during_training:
+                # Then the during-train & after-train dataset are the same, and
+                # we can test after training too (which is kind of redundant)
+                small_test_dataset = test_dataset
+                small_test_dataloader = test_dataloader
+            test_after_training = True # want to test after training both cases
+    else: # Test dataset not specified
+        if small_test_dataset is not None: # Small-test but not test specified
+            # Test during but not after training
+            if test_during_training == False:
+                raise ValueError("Small-test but not test specified, but test_during_training == False")
+            test_during_training = True # it can be either None or True
+            test_after_training = False
+            small_test_dataloader = small_test_dataset.get_dataloader(batch_size=batch_size, drop_last=True)
+        else: # Neither are specified
+            # Test neither during nor after training
+            if test_during_training:
+                raise ValueError("No test datasets were specified but got test_during_training == True")
+            test_during_training = False
+            test_after_training = False
+
+    if test_during_training or test_after_training:
+        if get_test_map_gp_stats is None:
+            get_test_map_gp_stats = False # default
+
+        
+    elif get_test_true_gp_stats or get_test_map_gp_stats:
+        raise ValueError("Can't get GP stats of test dataset because there is none specified")
+    
+    # If get_train_stats_after_training=True, then we are running through the
+    # train dataset twice each epoch. If furthermore the training data is not
+    # fixed, then with these two runs through it, the data will be different.
+    # But we'd like to have the stats of during training vs after training
+    # directly comparable, so we will freeze the data with each epoch.
+    fix_train_dataset_each_epoch = get_train_stats_after_training and not train_dataset.data_is_fixed
+
+    # Due to this, need to explicitly set the default value here because train_or_test_loop
+    # won't get it right because we'll fix the data even though it isn't fixed
+    if get_train_true_gp_stats is None:
+        get_train_true_gp_stats = train_dataset.has_models and train_dataset.data_is_fixed
+
+    if not fix_train_dataset_each_epoch:
+        train_dataloader = train_dataset.get_dataloader(batch_size=batch_size, drop_last=True)
+
+    train_stats_list = []
+    if test_during_training:
+        test_stats_list = []
+
+    for t in range(n_epochs):
+        if verbose:
+            print(f"Epoch {t+1}\n-------------------------------")
+        
+        if fix_train_dataset_each_epoch:
+            train_dataloader = train_dataset.fix_samples(lazy=True) \
+                .get_dataloader(batch_size=batch_size, drop_last=True)
+        
+        train_stats = {}
+        
+        train_stats_while_training = train_or_test_loop(
+            train_dataloader, nn_model, train=True,
+            nn_device=nn_device, policy_gradient=policy_gradient,
+            verbose=verbose, desc=f"Epoch {t+1} train",
+            n_train_printouts=n_train_printouts_per_epoch,
+            optimizer=optimizer,
+            alpha_increment=alpha_increment,
+            get_true_gp_stats=get_train_true_gp_stats,
+            get_map_gp_stats=get_train_map_gp_stats,
+            get_basic_stats=True)
+
+        (train_nn_stats_while_training,
+         non_nn_train_stats) = split_nn_stats(train_stats_while_training)
+        train_stats['non_nn_stats'] = non_nn_train_stats
+        
+        if get_train_stats_while_training:
+            train_stats['while_training'] = train_nn_stats_while_training
+            if verbose:
+                print_stats({**train_stats['while_training'], **non_nn_train_stats},
+                            "Train stats while training")
+
+        if get_train_stats_after_training:
+            train_stats['after_training'] = train_or_test_loop(
+                train_dataloader, nn_model, train=False,
+                nn_device=nn_device, policy_gradient=policy_gradient,
+                verbose=verbose, desc=f"Epoch {t+1} compute train stats",
+                # Don't need to compute non-NN stats because already computed them
+                # while training, and we ensured that the train dataset is fixed for this epoch.
+                get_true_gp_stats=False,
+                get_map_gp_stats=False,
+                get_basic_stats=False)
+            if verbose:
+                print_stats({**train_stats['after_training'], **non_nn_train_stats},
+                            "Train stats after training")
+        
+        train_stats_list.append(train_stats)
+
+        if test_during_training:
+            test_stats = train_or_test_loop(
+                small_test_dataloader, nn_model, train=False,
+                nn_device=nn_device, policy_gradient=policy_gradient,
+                verbose=verbose, desc=f"Epoch {t+1} compute test stats",
+                get_true_gp_stats=get_test_true_gp_stats,
+                get_map_gp_stats=get_test_map_gp_stats,
+                get_basic_stats=True)
+            test_stats_list.append(test_stats)
+            if verbose:
+                print_stats(test_stats, "Test stats")
+    
+    ret = {
+        'train_stats_epochs': train_stats_list
+    }
+    if test_during_training:
+        ret['test_stats_epochs'] = test_stats_list
+    
+    if test_after_training:
+        # Consider if the test datasets are not fixed.
+        # Then the test-after-training default is not good.
+        if get_test_true_gp_stats is None and not test_dataset.data_is_fixed and test_dataset.has_models:
+            get_test_true_gp_stats_after_training = True
+        else:
+            get_test_true_gp_stats_after_training = get_test_true_gp_stats
+        
+        test_dataloader = test_dataset.get_dataloader(batch_size=batch_size, drop_last=True)
+        final_test_stats = train_or_test_loop(
+            test_dataloader, nn_model, train=False,
+            nn_device=nn_device, policy_gradient=policy_gradient,
+            verbose=verbose, desc=f"Compute final test stats",
+            get_true_gp_stats=get_test_true_gp_stats_after_training,
+            get_map_gp_stats=get_test_map_gp_stats,
+            get_basic_stats=True)
+        ret['final_test_stats'] = final_test_stats
+        if verbose:
+            print_stats(final_test_stats, "Final test stats")
     
     return ret
