@@ -174,8 +174,13 @@ class TupleWithModel:
                  **kwargs):
         if items_list is not None:
             assert len(items) == 0
-            items = tuple(items_list)
+            items = items_list
+        else:
+            items = list(items)
         
+        # Need to do this first to avoid RecursionError in __getattr__
+        self._kwargs = {}
+
         if hasattr(self, "args_names"):
             if len(items) != len(self.args_names):
                 if len(items) == 0:
@@ -183,7 +188,6 @@ class TupleWithModel:
                         items = []
                         for name in self.args_names:
                             items.append(kwargs.pop(name))
-                        items = tuple(items)
                     else:
                         missing_keys = set(self.args_names) - set(kwargs.keys())
                         missing_keys_str = ", ".join(map(repr, missing_keys))
@@ -197,10 +201,7 @@ class TupleWithModel:
                     items = items[:-2]
                 else:
                     raise ValueError(f"{self.__class__.__name__}.__init__: Number of items in should be {len(self.args_names)} but got {len(items)}")
-            
-            for name, item in zip(self.args_names, items):
-                setattr(self, name, item)
-        
+
             for key in kwargs:
                 if key in self.args_names:
                     raise ValueError(
@@ -227,15 +228,15 @@ class TupleWithModel:
             elif given_kwargs_keys != expected_kwargs_keys:
                 raise ValueError(f"{self.__class__.__name__}.__init__: Keyword arguments for {self.__class__.__name__} " \
                     f"should be {self.kwargs_names} but got {given_kwargs_keys}")
-
-        for key, value in kwargs.items():
-            setattr(self, key, value)
-
-        self._kwargs = kwargs
         
-        self._model = model
+        self._kwargs = kwargs
+
+        self._set_model(model, model_params)
+
         self._indices = list(range(len(self)))
-        if self.has_model:
+    
+    def _set_model(self, model, model_params=None):
+        if model is not None:
             if isinstance(model, ModelsWithParamsList):
                 if model_params is not None:
                     raise ValueError(f"{self.__class__.__name__}.__init__: model_params should not be specified if model is a ModelsWithParamsList instance.")
@@ -251,7 +252,8 @@ class TupleWithModel:
         elif model_params is not None:
             raise ValueError(
                 f"{self.__class__.__name__}.__init__: model_params should not be specified if model is not specified.")
-    
+        self._model = model
+
     @property
     def has_model(self):
         return self._model is not None
@@ -270,12 +272,12 @@ class TupleWithModel:
     @property
     def _tuple(self):
         if not self.has_model:
-            return self._items
-        return self._items + (self.model,)
+            return tuple(self._items)
+        return tuple(self._items) + (self.model,)
 
     @property
     def tuple_no_model(self):
-        return self._items
+        return tuple(self._items)
     
     def to(self, *args, **kwargs):
         """Does the torch Tensor.to() operation on all of the tuple's items,
@@ -285,7 +287,7 @@ class TupleWithModel:
         new_items = tuple(
             item.to(*args, **kwargs) if torch.is_tensor(item) else item
             for item in self._items)
-        if new_items == self._items:
+        if all(a is b for a, b in zip(new_items, self._items)):
             return self
         return self.__class__(*new_items,
                               model=self._model,
@@ -294,17 +296,41 @@ class TupleWithModel:
     
     def __getitem__(self, index):
         # return self._tuple[index] # basically equivalent to the below
-
         if isinstance(index, slice):
             return tuple(self[i] for i in range(*index.indices(len(self))))
-
         # This is to handle the edge case of -1, -2, etc.
         index = self._indices[index]
-        
         if self.has_model and index == len(self._items):
             return self.model
         return self._items[index]
+
+    def __setitem__(self, index, value):
+        index = self._indices[index]
+        if self.has_model and index == len(self._items):
+            self._set_model(value)
+        self._items[index] = value
     
+    def __getattr__(self, name):
+        if name in self._kwargs:
+            return self._kwargs[name]
+        if hasattr(self, "args_names") and name in self.args_names:
+            return self._items[self.args_names.index(name)]
+        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+    
+    def __setattr__(self, name, value):
+        if name == "_kwargs":
+            super().__setattr__(name, value)
+            return
+        if name == "model":
+            self._set_model(value)
+            return
+        if name in self._kwargs:
+            self._kwargs[name] = value
+            return
+        if hasattr(self, "args_names") and name in self.args_names:
+            self._items[self.args_names.index(name)] = value
+        super().__setattr__(name, value)
+
     def __len__(self):
         return len(self._items) + (1 if self.has_model else 0)
 

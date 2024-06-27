@@ -80,7 +80,7 @@ LAZY_TEST = True
 
 ################## Settings for dataset size and generation ####################
 # The size of the training dataset
-TRAIN_SIZE = 32 * 50
+TRAIN_SIZE = 32 * 20
 # The amount that the dataset is expanded to save compute of GP realizations
 EXPANSION_FACTOR = 4
 # Whether and how to fix the training dataset
@@ -322,20 +322,27 @@ def normalize_by_quantile(x, dim=-1):
 
 def plot_nn_vs_gp_acquisition_function_1d_grid(
         aq_dataset, n_candidates, nrows, ncols, min_x=0., max_x=1.,
-        plot_map=True):
+        plot_map=True, nn_device=None):
     fig, axs = plt.subplots(nrows=nrows, ncols=ncols, figsize=(2.5*ncols, 2.5*nrows),
                             sharex=True, sharey=False)
 
     it = iter(aq_dataset)
     for row in range(nrows):
         for col in range(ncols):
-            x_hist, y_hist, x_cand, improvements, gp_model = next(it)
+            item = next(it)
 
+            gp_model = item.model
+
+            x_hist, y_hist, x_cand, improvements = item.tuple_no_model
             x_cand = torch.linspace(0, 1, n_candidates).unsqueeze(1)
+            item.x_cand = x_cand
+
+            x_hist_nn, y_hist_nn, x_cand_nn, improvements_nn = item.to(nn_device).tuple_no_model
 
             aq_fn = LikelihoodFreeNetworkAcquisitionFunction.from_net(
-                model, x_hist, y_hist, exponentiate=not POLICY_GRADIENT, softmax=False)
-            ei_nn = aq_fn(x_cand.unsqueeze(1))
+                model, x_hist_nn, y_hist_nn, exponentiate=not POLICY_GRADIENT, softmax=False)
+            ei_nn = aq_fn(x_cand_nn.unsqueeze(1))
+            ei_nn = ei_nn.cpu()
 
             gp_model.set_train_data(x_hist, y_hist.squeeze(-1), strict=False)
             posterior_true = gp_model.posterior(x_cand, observation_noise=False)
@@ -399,7 +406,7 @@ if DIMENSION == 1:
     nrows, ncols = 5, 5
     fig, axs = plot_nn_vs_gp_acquisition_function_1d_grid(
         test_aq_dataset, n_candidates, nrows=nrows, ncols=ncols,
-        plot_map=PLOT_MAP)
+        plot_map=PLOT_MAP, nn_device=device)
     fname = f'acqusion_function_net_vs_gp_acquisition_function_1d_grid_{nrows}x{ncols}.pdf'
     fig.savefig(fname, bbox_inches='tight')
 else:

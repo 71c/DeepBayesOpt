@@ -5,7 +5,7 @@ from botorch.models.gp_regression import SingleTaskGP
 from torch.utils.data import IterableDataset, DataLoader
 
 from dataset_with_models import ModelsWithParamsList, TupleWithModel, create_classes
-from function_samples_dataset import FunctionSamplesDataset, GaussianProcessRandomDataset, RepeatedFunctionSamplesIterableDataset, GPDatasetItem
+from function_samples_dataset import FunctionSamplesDataset, GaussianProcessRandomDataset, RepeatedFunctionSamplesIterableDataset, FunctionSamplesItem
 
 from utils import resize_iterable, uniform_randint, get_uniform_randint_generator, max_pad_tensors_batch
 from utils import SizedIterableMixin, len_or_inf
@@ -455,8 +455,8 @@ class FunctionSamplesAcquisitionDataset(
         # x_values has shape (n_datapoints, dimension)
         # y_values has shape (n_datapoints,)
         for item in self._data_iterable:
-            if not isinstance(item, GPDatasetItem):
-                raise TypeError(f"item should be an instance of GPDatasetItem, but got {item=}")
+            if not isinstance(item, FunctionSamplesItem):
+                raise TypeError(f"item should be an instance of FunctionSamplesItem, but got {item=}")
             x_values, y_values = item.x_values, item.y_values
             if has_models:
                 model, model_params = item._model, item.model_params

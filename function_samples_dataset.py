@@ -13,27 +13,7 @@ from utils import SizedInfiniteIterableMixin, SizedIterableMixin, get_lengths_fr
 import math
 
 
-# class GPDatasetItem(TupleWithModel):
-#     def __init__(self, x_values, y_values, model:Optional[SingleTaskGP]=None,
-#                  model_params:Optional[dict]=None):
-#         super().__init__(x_values, y_values, model=model, model_params=model_params)
-#         self.x_values = x_values
-#         self.y_values = y_values
-    
-#     def to_dict(self):
-#         if not self.has_model:
-#             return {
-#                 'x_values': self.x_values,
-#                 'y_values': self.y_values
-#             }
-#         return {
-#             'x_values': self.x_values,
-#             'y_values': self.y_values,
-#             'model_index': self.model_index,
-#             'model_params': self.model_params
-#         }
-
-class GPDatasetItem(TupleWithModel):
+class FunctionSamplesItem(TupleWithModel):
     args_names = ['x_values', 'y_values']
     kwargs_names = []
 
@@ -93,8 +73,7 @@ class GPDatasetItem(TupleWithModel):
      
      map_subset_name='MapFunctionSamplesSubset',
      
-     tuple_class=GPDatasetItem)
-
+     tuple_class=FunctionSamplesItem)
 
 
 class GaussianProcessRandomDataset(
@@ -120,7 +99,7 @@ class GaussianProcessRandomDataset(
                  set_random_model_train_data=False,
                  dataset_size:Optional[int]=None,
                  randomize_params=True):
-        """Create a dataset that generates random Gaussian Process data.
+        r"""Create a dataset that generates random Gaussian Process data.
         
         Args:
             n_datapoints: number of (x,y) pairs to generate with each sample;
@@ -372,7 +351,7 @@ class GaussianProcessRandomDataset(
             model.set_train_data(
                 x_values_botorch, y_values.squeeze(-1), strict=False)
 
-        return GPDatasetItem(x_values, y_values.squeeze(), model)
+        return FunctionSamplesItem(x_values, y_values.squeeze(), model)
 
 
 class RepeatedFunctionSamplesIterableDataset(
