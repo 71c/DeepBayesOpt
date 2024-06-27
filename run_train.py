@@ -62,7 +62,7 @@ XVALUE_DISTRIBUTION = "uniform"
 ####################### Other fixed dataset settings ###########################
 ## How many times bigger the big test dataset is than the train dataset, > 0
 # TEST_FACTOR = 3.0
-TEST_FACTOR = 1.0
+TEST_FACTOR = 0.2
 ## The proportion of the test dataset that is used for evaluating the model after
 ## each epoch, between 0 and 1
 # SMALL_TEST_PROPORTION_OF_TEST = 0.04
@@ -74,26 +74,26 @@ SMALL_TEST_PROPORTION_OF_TEST = 1.0
 FIX_TEST_SAMPLES_DATASET = False
 FIX_TEST_ACQUISITION_DATASET = True
 # The following two are not important.
-LAZY_TRAIN = True
+LAZY_TRAIN = False
 LAZY_TEST = True
 
 
 ################## Settings for dataset size and generation ####################
-# The size of the training dataset
-TRAIN_SIZE = 32 * 20
+# The size of the training acquisition dataset
+TRAIN_ACQUISITION_SIZE = 50_000
 # The amount that the dataset is expanded to save compute of GP realizations
 EXPANSION_FACTOR = 4
 # Whether and how to fix the training dataset
-FIX_TRAIN_SAMPLES_DATASET = False
-FIX_TRAIN_ACQUISITION_DATASET = True
+FIX_TRAIN_SAMPLES_DATASET = True
+FIX_TRAIN_ACQUISITION_DATASET = False
 
 # Number of candidate points for training. For MSE EI, could just set to 1.
 # Only used if FIX_N_CANDIDATES is True.
 TRAIN_N_CANDIDATES = 50
 ############################# Settings for training ############################
 POLICY_GRADIENT = True # True for the softmax thing, False for MSE EI
-BATCH_SIZE = 32
-LEARNING_RATE = 3e-4
+BATCH_SIZE = 128
+LEARNING_RATE = 3e-5
 EPOCHS = 5
 
 # Only used if POLICY_GRADIENT is True
@@ -157,15 +157,17 @@ model = AcquisitionFunctionNetV1and2(DIMENSION,
 
 
 ####################### Make the train and test datasets #######################
-DATASET_SIZE = math.ceil(TRAIN_SIZE * (1 + TEST_FACTOR))
+TRAIN_SAMPLES_SIZE = math.ceil(TRAIN_ACQUISITION_SIZE / EXPANSION_FACTOR)
+
+DATASET_SIZE = math.ceil(TRAIN_SAMPLES_SIZE * (1 + TEST_FACTOR))
 
 #### Calculate test size
-TEST_SIZE = DATASET_SIZE - TRAIN_SIZE
+TEST_SAMPLES_SIZE = DATASET_SIZE - TRAIN_SAMPLES_SIZE
 ## Could alternatively calculate test size like this if going by
 ## proportions of an original dataset:
 # TEST_PROPORTION = TEST_FACTOR / (1 + TEST_FACTOR)
 # TRAIN_PROPORTION = 1 - TEST_PROPORTION
-# TRAIN_SIZE, TEST_SIZE = get_lengths_from_proportions(DATASET_SIZE, [TRAIN_PROPORTION, TEST_PROPORTION])
+# TRAIN_SAMPLES_SIZE, TEST_SAMPLES_SIZE = get_lengths_from_proportions(DATASET_SIZE, [TRAIN_PROPORTION, TEST_PROPORTION])
 
 print(f"Small test proportion of test: {SMALL_TEST_PROPORTION_OF_TEST:.4f}")
 # SMALL_TEST_PROPORTION_OF_TEST = 1 / ((1 / SMALL_TEST_PROPORTION_OF_TRAIN_AND_SMALL_TEST - 1) * TEST_FACTOR)
@@ -193,24 +195,24 @@ else:
     test_n_points_kwargs = train_n_points_kwargs
 
 train_dataset, train_aq_dataset = create_gp_acquisition_dataset(
-    TRAIN_SIZE, **common_kwargs, **train_n_points_kwargs,
+    TRAIN_SAMPLES_SIZE, **common_kwargs, **train_n_points_kwargs,
     fix_gp_samples=FIX_TRAIN_SAMPLES_DATASET,
     fix_acquisition_samples=FIX_TRAIN_ACQUISITION_DATASET, lazy=LAZY_TRAIN)
 test_dataset, test_aq_dataset = create_gp_acquisition_dataset(
-    TEST_SIZE, **common_kwargs, **test_n_points_kwargs,
+    TEST_SAMPLES_SIZE, **common_kwargs, **test_n_points_kwargs,
     fix_gp_samples=FIX_TEST_SAMPLES_DATASET,
     fix_acquisition_samples=FIX_TEST_ACQUISITION_DATASET, lazy=LAZY_TEST)
 
 small_test_aq_dataset, _ = test_aq_dataset.random_split(
     [SMALL_TEST_PROPORTION_OF_TEST, 1 - SMALL_TEST_PROPORTION_OF_TEST])
 
-print("Train acquisition dataset:")
-print(train_aq_dataset)
-print("\nTest acquisition dataset:")
-print(test_aq_dataset)
-print("\nSmall test acquisition dataset:")
-print(small_test_aq_dataset)
-print("\n")
+# print("Train acquisition dataset:")
+# print(train_aq_dataset)
+# print("\nTest acquisition dataset:")
+# print(test_aq_dataset)
+# print("\nSmall test acquisition dataset:")
+# print(small_test_aq_dataset)
+# print("\n")
 
 print(model)
 print("Number of trainable parameters:", count_trainable_parameters(model))
@@ -237,11 +239,12 @@ model_path = os.path.join(script_dir, file_name)
 
 ######################## Train the model #######################################
 
-print("Training dataset size:", len(train_dataset))
+print("Training function samples dataset size:", len(train_dataset))
+print("Original training acquisition dataset size parameter:", TRAIN_ACQUISITION_SIZE)
 print("Training acquisition dataset size:", len(train_aq_dataset),
       "number of batches:", len(train_aq_dataset) // BATCH_SIZE, len(train_aq_dataset) % BATCH_SIZE)
 
-print("Test dataset size:", len(test_dataset))
+print("Test function samples dataset size:", len(test_dataset))
 print("Test acquisition dataset size:", len(test_aq_dataset),
       "number of batches:", len(test_aq_dataset) // BATCH_SIZE, len(test_aq_dataset) % BATCH_SIZE)
 if small_test_aq_dataset != test_aq_dataset:
@@ -269,8 +272,8 @@ if TRAIN:
         get_train_stats_after_training=True,
         ## These both default to reasonable values depending on whether the
         ## acquisition datasets are fixed
-        # get_train_true_gp_stats=True 
-        # get_test_true_gp_stats=True
+        get_train_true_gp_stats=False,
+        get_test_true_gp_stats=True
     )
 
     print(json.dumps(data, indent=4))
