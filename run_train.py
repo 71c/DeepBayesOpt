@@ -75,17 +75,17 @@ FIX_TEST_SAMPLES_DATASET = False
 FIX_TEST_ACQUISITION_DATASET = True
 # The following two are not important.
 LAZY_TRAIN = False
-LAZY_TEST = True
+LAZY_TEST = False
 
 
 ################## Settings for dataset size and generation ####################
 # The size of the training acquisition dataset
-TRAIN_ACQUISITION_SIZE = 50_000
+TRAIN_ACQUISITION_SIZE = 200_000
 # The amount that the dataset is expanded to save compute of GP realizations
 EXPANSION_FACTOR = 4
 # Whether and how to fix the training dataset
-FIX_TRAIN_SAMPLES_DATASET = True
-FIX_TRAIN_ACQUISITION_DATASET = False
+FIX_TRAIN_SAMPLES_DATASET = False
+FIX_TRAIN_ACQUISITION_DATASET = True
 
 # Number of candidate points for training. For MSE EI, could just set to 1.
 # Only used if FIX_N_CANDIDATES is True.
@@ -94,7 +94,7 @@ TRAIN_N_CANDIDATES = 50
 POLICY_GRADIENT = True # True for the softmax thing, False for MSE EI
 BATCH_SIZE = 128
 LEARNING_RATE = 3e-5
-EPOCHS = 5
+EPOCHS = 3
 
 # Only used if POLICY_GRADIENT is True
 INCLUDE_ALPHA = True
@@ -254,6 +254,10 @@ if small_test_aq_dataset != test_aq_dataset:
 
 import json
 
+import cProfile, pstats, io
+from pstats import SortKey
+
+
 
 if TRAIN:    
     if LOAD_SAVED_MODEL_TO_TRAIN:
@@ -264,6 +268,9 @@ if TRAIN:
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
     # optimizer = torch.optim.RMSprop(model.parameters(), lr=learning_rate)
 
+    pr = cProfile.Profile()
+    pr.enable()
+
     data = train_acquisition_function_net(
         model, train_aq_dataset, optimizer, POLICY_GRADIENT, EPOCHS, BATCH_SIZE,
         device, ALPHA_INCREMENT, verbose=True, n_train_printouts_per_epoch=10,
@@ -273,8 +280,16 @@ if TRAIN:
         ## These both default to reasonable values depending on whether the
         ## acquisition datasets are fixed
         get_train_true_gp_stats=False,
-        get_test_true_gp_stats=True
+        get_test_true_gp_stats=False
     )
+
+    pr.disable()
+    s = io.StringIO()
+    sortby = SortKey.CUMULATIVE
+    ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+    ps.print_stats()
+    print(s.getvalue())
+    exit()
 
     print(json.dumps(data, indent=4))
 
