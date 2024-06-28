@@ -276,6 +276,9 @@ class GaussianProcessRandomDataset(
             randomize_params=self.model_sampler.randomize_params
         )
 
+    def save(self, dir_name: str, verbose:bool=True):
+        raise NotImplementedError("GaussianProcessRandomDataset does not support saving to a file")
+
     def copy_with_new_size(self, dataset_size:int):
         """Create a copy of the dataset with a new dataset size.
 
@@ -381,6 +384,10 @@ class RepeatedFunctionSamplesIterableDataset(
         
         self.base_dataset = base_dataset
         self.size_factor = size_factor
+    
+    def save(self, dir_name: str, verbose:bool=True):
+        raise NotImplementedError(
+            "RepeatedFunctionSamplesIterableDataset does not support saving to a file")
     
     @property
     def data_is_fixed(self):

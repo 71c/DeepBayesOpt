@@ -98,5 +98,5 @@ def create_gp_acquisition_dataset(
     if fix_acquisition_samples:
         aq_dataset = aq_dataset.fix_samples(lazy=lazy)
     
-    return function_samples_dataset, aq_dataset
+    return aq_dataset
 

@@ -1,4 +1,5 @@
 from functools import partial
+import os
 import torch
 from botorch.models.gp_regression import SingleTaskGP
 
@@ -8,7 +9,7 @@ from dataset_with_models import ModelsWithParamsList, TupleWithModel, create_cla
 from function_samples_dataset import FunctionSamplesDataset, GaussianProcessRandomDataset, RepeatedFunctionSamplesIterableDataset, FunctionSamplesItem
 
 from utils import resize_iterable, uniform_randint, get_uniform_randint_generator, max_pad_tensors_batch, pad_tensor
-from utils import SizedIterableMixin, len_or_inf
+from utils import SizedIterableMixin, len_or_inf, save_json, load_json
 
 from typing import Optional, List, Tuple, Union
 from collections.abc import Sequence
@@ -145,7 +146,8 @@ def _collate_train_acquisition_function_samples(samples_list, has_models, cached
         model=models_list, give_improvements=give_improvements)
 
 
-def get_dataloader(self, batch_size=32, shuffle=None, **kwargs):
+def get_dataloader(self, batch_size=32, shuffle=None,
+                   cache_pads:Optional[bool]=None, **kwargs):
     """Returns a DataLoader object for the dataset.
 
     Args:
@@ -188,16 +190,16 @@ def get_dataloader(self, batch_size=32, shuffle=None, **kwargs):
     # x_cand = max_pad_tensors_batch(x_cands, add_mask=False)
     # vals_cand, cand_mask = max_pad_tensors_batch(vals_cands, add_mask=True)
 
-    # return AcquisitionDatasetBatch(
-    #     x_hist, y_hist, x_cand, vals_cand, hist_mask, cand_mask,
-    #     model=models_list, give_improvements=give_improvements)
-
     if 'collate_fn' in kwargs:
         raise ValueError("collate_fn should not be specified in get_dataloader; we do it for you")
-    
+
     self._has_cached_pads = getattr(self, '_has_cached_pads', False)
+    if self._has_cached_pads or cache_pads:
+        assert self.data_is_fixed
     if self.data_is_fixed:
-        if not self._has_cached_pads:
+        if cache_pads is None:
+            cache_pads = True
+        if cache_pads and not self._has_cached_pads:
             max_hist = max(item.x_hist.size(0) for item in self)
             max_cand = max(item.x_cand.size(0) for item in self)
             print(f"max_hist={max_hist}")
@@ -395,6 +397,25 @@ class FunctionSamplesAcquisitionDataset(
             min_n_candidates=self.min_n_candidates,
             dataset_size_factor=self.dataset_size_factor
         )
+
+    def save(self, dir_name: str, verbose:bool=True):
+        super().save(dir_name, verbose)
+
+        base_dataset_path = os.path.join(dir_name, "base_dataset")
+        kwargs_path = os.path.join(dir_name, "kwargs")
+
+        (base_dataset,), kwargs = self._init_params()
+        base_dataset.save(base_dataset_path, verbose)
+        save_json(kwargs, kwargs_path)
+    
+    @classmethod
+    def load(cls, dir_name: str, verbose=True):
+        base_dataset_path = os.path.join(dir_name, "base_dataset")
+        kwargs_path = os.path.join(dir_name, "kwargs")
+
+        base_dataset = FunctionSamplesDataset.load(base_dataset_path)
+        kwargs = load_json(kwargs_path)
+        return cls(base_dataset, **kwargs)
 
     @property
     def data_is_fixed(self):

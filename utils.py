@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 import math
+import os
 import numpy as np
 from scipy.optimize import root_scalar
 from typing import List, Optional, Sequence, Union, Iterable
@@ -7,6 +8,7 @@ import warnings
 import torch
 from functools import partial, lru_cache
 from botorch.exceptions import UnsupportedError
+import json
 
 
 def uniform_randint(min_val, max_val):
@@ -417,6 +419,16 @@ def unsupported_improvements(dataloader):
                 "The acquisition dataset must provide improvements; calculating " \
                 "them from a batch would be possible but is currently unsupported.")
         yield batch
+
+
+def save_json(data, fname, **kwargs):
+    with open(fname, 'w') as json_file:
+        json.dump(data, json_file, **kwargs)
+
+
+def load_json(fname, **kwargs):
+    with open(fname, 'r') as json_file:
+        return json.load(json_file)
 
 
 # Based on

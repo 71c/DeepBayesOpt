@@ -6,6 +6,8 @@ from collections.abc import Sequence
 import os
 import warnings
 from tqdm import tqdm
+from tictoc import tic, tocl
+import json
 
 import torch
 from torch.utils.data import Dataset, IterableDataset, random_split, Subset
@@ -14,7 +16,7 @@ from botorch.models.gp_regression import SingleTaskGP
 from botorch.exceptions import UnsupportedError
 import pyro
 
-from utils import get_lengths_from_proportions, resize_iterable, iterable_is_finite, get_lengths_from_proportions_or_lengths
+from utils import get_lengths_from_proportions, resize_iterable, iterable_is_finite, get_lengths_from_proportions_or_lengths, save_json, load_json
 
 
 # https://docs.gpytorch.ai/en/stable/_modules/gpytorch/module.html#Module.pyro_sample_from_prior
@@ -312,12 +314,12 @@ class TupleWithModel:
     
     def __getattr__(self, name):
         if name == "args_names":
-            raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+            raise_attribute_error(self, name)
         if name in self._kwargs:
             return self._kwargs[name]
         if hasattr(self, "args_names") and name in self.args_names:
             return self._items[self.args_names.index(name)]
-        raise AttributeError(f"'{type(self).__name__}' object has no attribute '{name}'")
+        raise_attribute_error(self, name)
     
     def __setattr__(self, name, value):
         if name == "_kwargs":
@@ -391,6 +393,10 @@ class TupleWithModel:
 
 def add_indent(s):
     return '\n'.join(['  ' + line for line in s.split('\n')])
+
+
+def raise_attribute_error(obj, name):
+    raise AttributeError(f"'{type(obj).__name__}' object has no attribute '{name}'")
 
 
 class DatasetWithModels(Dataset, ABC):
@@ -470,7 +476,7 @@ class DatasetWithModels(Dataset, ABC):
         pass  # pragma: no cover
 
     @abstractmethod
-    def _init_params(self) -> tuple[tuple, dict]:
+    def _init_params(self) -> Tuple[tuple, dict]:
         """Returns a tuple of the arguments and keyword arguments that are
         passed to the constructor of the class."""
         pass  # pragma: no cover
@@ -579,11 +585,44 @@ class DatasetWithModels(Dataset, ABC):
             new_data_iterable, verbose, verbose_message)
         return items_generator, len(new_data_iterable)
     
-    def save(self, dir_name: str, n_realizations:Optional[int]=None,
-             verbose:Optional[bool]=None):
-        """Saves the dataset to a specified directory. If the dataset includes
-        models, the models are saved as well. If the directory does not
-        exist, it will be created.
+    @abstractmethod
+    def save(self, dir_name: str, verbose:bool=True):
+        os.makedirs(dir_name)
+        data = {'class_name': self.__class__.__name__}
+        save_json(data, os.path.join(dir_name, "info.json"))
+    
+    _subclasses = {}
+    
+    def __init_subclass__(cls, **kwargs):
+        # super().__init_subclass__(**kwargs)
+        cls._subclasses[cls.__name__] = cls
+
+    @classmethod
+    def load(cls, dir_name: str, verbose=True):
+        if cls is cls._base_class:
+            try:
+                data = load_json(os.path.join(dir_name, "info.json"))
+                class_name = data['class_name']
+            except (FileNotFoundError, json.decoder.JSONDecodeError, KeyError) as e:
+                raise RuntimeError(f"Could not load dataset") from e
+
+            try:
+                class_type = cls._subclasses[class_name]
+            except KeyError:
+                raise RuntimeError(f"Subclass {class_name} of {cls.__name__} does not exist")
+
+            if not issubclass(class_type, cls._base_class):
+                raise RuntimeError(f"{class_type.__name__} is not a subclass of {cls._base_class.__name__} so cannot load")
+            
+            return class_type.load(dir_name, verbose)
+        
+        raise NotImplementedError(f"{cls.__name__} does not support loading from a file.")
+    
+    def save_samples(self, dir_name: str, n_realizations:Optional[int]=None,
+             verbose:bool=True):
+        """Saves samples from the dataset to a specified directory. If the
+        dataset includes models, the models are saved as well. If the directory
+        does not exist, it will be created.
 
         Args:
             dir_name (str):
@@ -593,20 +632,17 @@ class DatasetWithModels(Dataset, ABC):
                 If unspecified, all the realizations are saved.
                 If specified, the first n_realizations realizations are saved.
         """
-        if verbose is None:
-            verbose = not self.data_is_loaded()
+        if not isinstance(verbose, bool):
+            raise ValueError("'verbose' should be a boolean in save_samples")
         if self.data_is_loaded():
             message = f"Saving realizations from {self.__class__.__name__}"
         else:
             message = f"Generating and saving realizations from {self.__class__.__name__}"
         items_generator, length = self._get_items_generator_and_size(
-            n_realizations, verbose=verbose, verbose_message=message)
+            n_realizations, verbose=not self.data_is_loaded(),
+            verbose_message=message)
 
-        if os.path.exists(dir_name):
-            if not os.path.isdir(dir_name):
-                raise NotADirectoryError(f"Path {dir_name} is not a directory")
-        else:
-            os.mkdir(dir_name)
+        os.makedirs(dir_name, exist_ok=True)
         
         has_models = self.has_models
 
@@ -660,6 +696,33 @@ class MapDatasetWithModels(DatasetWithModels):
     @property
     def data_is_fixed(self):
         return True
+
+    def __getattr__(self, name):
+        if name == '_cache':
+            self._cache = {}
+            return self._cache
+        if name.startswith("_cached_"):
+            cache_name = name[8:]
+            cache = self._cache
+            if cache_name not in cache:
+                raise_attribute_error(self, name)
+            return cache[cache_name]
+        raise_attribute_error(self, name)
+    
+    def __setattr__(self, name, value):
+        if name.startswith("_cached_"):
+            cache_name = name[8:]
+            self._cache[cache_name] = value
+            return
+        self._base_class.__setattr__(self, name, value)
+
+    def save(self, dir_name: str, verbose:bool=True):
+        self._base_class.save(self, dir_name, verbose)
+        self.save_samples(dir_name, verbose=verbose)
+        cache = self._cache
+        if cache:
+            cache_path = os.path.join(dir_name, "cache")
+            save_json(cache, cache_path)
 
     @abstractmethod
     def __getitem__(self, index):
@@ -766,7 +829,7 @@ class ListMapDatasetWithModels(MapDatasetWithModels):
         return True
 
     @classmethod
-    def load(cls, dir_name: str):
+    def load(cls, dir_name: str, verbose=True):
         """Loads a dataset from a given directory. The directory must contain a
         saved instance of ListMapDatasetWithModels, including the data and
         optionally the models.
@@ -778,6 +841,8 @@ class ListMapDatasetWithModels(MapDatasetWithModels):
         Returns:
             ListMapDatasetWithModels: The loaded dataset instance.
         """
+        if verbose:
+            tic(f"Loading realizations into {cls.__name__}", say_name=True)
         if not os.path.exists(dir_name): # Error if path doesn't exist
             raise FileNotFoundError(f"Path {dir_name} does not exist")
         if not os.path.isdir(dir_name): # Error if path isn't directory
@@ -801,7 +866,15 @@ class ListMapDatasetWithModels(MapDatasetWithModels):
                 if 'model_index' in item or 'model_params' in item:
                     raise ValueError("Model information should not be present in the data if models are not saved.")
             data.append(cls._tuple_class.from_dict(item, model_sampler))
-        return cls(data, model_sampler)
+        ret = cls(data, model_sampler)
+
+        cache_path = os.path.join(dir_name, "cache")
+        if os.path.exists(cache_path):
+            ret._cache = load_json(cache_path)
+
+        if verbose:
+            tocl()
+        return ret
     
     @classmethod
     def from_iterable_dataset(cls, dataset: DatasetWithModels,
@@ -980,15 +1053,15 @@ def create_classes(dataset_base_name="DatasetWithModels",
                           dict(MapDatasetWithModels.__dict__))
     
     ListDataset = type(list_dataset_name,
-                       (MapBaseDataset,),
+                       (MapBaseDataset, BaseDataset),
                        dict(ListMapDatasetWithModels.__dict__))
     
     LazyDataset = type(lazy_dataset_name,
-                       (MapBaseDataset,),
+                       (MapBaseDataset, BaseDataset),
                        dict(LazyMapDatasetWithModels.__dict__))
     
     MapSubset = type(map_subset_name,
-                     (Subset, MapBaseDataset),
+                     (Subset, MapBaseDataset, BaseDataset),
                      dict(MapDatasetWithModelsSubset.__dict__))
     
     BaseDataset._tuple_class = tuple_class
@@ -996,6 +1069,13 @@ def create_classes(dataset_base_name="DatasetWithModels",
     BaseDataset._map_base_class = MapBaseDataset
     BaseDataset._list_map_class = ListDataset
     BaseDataset._lazy_map_class = LazyDataset
+
+    BaseDataset._subclasses = {
+        map_dataset_base_name: MapBaseDataset,
+        list_dataset_name: ListDataset,
+        lazy_dataset_name: LazyDataset,
+        map_subset_name: MapSubset
+    }
 
     MapBaseDataset._map_subset_class = MapSubset
     

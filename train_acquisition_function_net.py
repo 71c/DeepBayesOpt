@@ -359,9 +359,9 @@ def train_or_test_loop(dataloader: DataLoader,
     # elif desc is not None:  # Just ignore desc in this case.
     #     raise ValueError("desc must be None if not verbose")
     
-    has_true_gp_stats = hasattr(dataset, "_true_gp_stats")
-    has_map_gp_stats = hasattr(dataset, "_map_gp_stats")
-    has_basic_stats = hasattr(dataset, "_basic_stats")
+    has_true_gp_stats = hasattr(dataset, "_cached_true_gp_stats")
+    has_map_gp_stats = hasattr(dataset, "_cached_map_gp_stats")
+    has_basic_stats = hasattr(dataset, "_cached_basic_stats")
     if not dataset.data_is_fixed:
         assert not (has_true_gp_stats or has_map_gp_stats or has_basic_stats)
     
@@ -491,25 +491,25 @@ def train_or_test_loop(dataloader: DataLoader,
         if not has_true_gp_stats:
             true_gp_stats = get_average_stats(true_gp_stats_list, "sum", dataset_length)
             if dataset.data_is_fixed:
-                dataset._true_gp_stats = true_gp_stats
+                dataset._cached_true_gp_stats = true_gp_stats
         else:
-            true_gp_stats = dataset._true_gp_stats
+            true_gp_stats = dataset._cached_true_gp_stats
         ret.update(true_gp_stats)
     if get_map_gp_stats:
         if not has_map_gp_stats:
             map_gp_stats = get_average_stats(map_gp_stats_list, "sum", dataset_length)
             if dataset.data_is_fixed:
-                dataset._map_gp_stats = map_gp_stats
+                dataset._cached_map_gp_stats = map_gp_stats
         else:
-            map_gp_stats = dataset._map_gp_stats
+            map_gp_stats = dataset._cached_map_gp_stats
         ret.update(map_gp_stats)
     if get_basic_stats:
         if not has_basic_stats:
             basic_stats = get_average_stats(basic_stats_list, "sum", dataset_length)
             if dataset.data_is_fixed:
-                dataset._basic_stats = basic_stats
+                dataset._cached_basic_stats = basic_stats
         else:
-            basic_stats = dataset._basic_stats
+            basic_stats = dataset._cached_basic_stats
         ret.update(basic_stats)
     
     if nn_model is not None:
@@ -638,8 +638,10 @@ def train_acquisition_function_net(
             print(f"Epoch {t+1}\n-------------------------------")
         
         if fix_train_dataset_each_epoch:
+            # cache_pads=True: Training! took 85.434673 seconds
+            # cache_pads=False: Training! took 80.610601 seconds
             train_dataloader = train_dataset.fix_samples(lazy=True) \
-                .get_dataloader(batch_size=batch_size, drop_last=False)
+                .get_dataloader(batch_size=batch_size, drop_last=False, cache_pads=False)
         
         train_stats = {}
         
