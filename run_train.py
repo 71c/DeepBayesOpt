@@ -1,4 +1,3 @@
-import math
 import torch
 
 from utils import get_lengths_from_proportions
@@ -8,7 +7,7 @@ if torch.cuda.is_available():
     print(torch.cuda.get_device_name(torch.cuda.current_device()))
 from torch import nn
 
-from gp_acquisition_dataset import create_gp_acquisition_dataset
+from gp_acquisition_dataset import create_train_and_test_gp_acquisition_datasets
 from acquisition_function_net import (
     AcquisitionFunctionNetV1and2, AcquisitionFunctionNetV3, AcquisitionFunctionNetV4,
     AcquisitionFunctionNetDense, LikelihoodFreeNetworkAcquisitionFunction)
@@ -16,10 +15,9 @@ from predict_EI_simple import calculate_EI_GP
 import numpy as np
 import matplotlib.pyplot as plt
 import os
-from acquisition_dataset import ListMapAcquisitionDataset, AcquisitionDataset
 
 from train_acquisition_function_net import (
-    train_acquisition_function_net, train_or_test_loop,
+    train_acquisition_function_net,
     count_trainable_parameters, count_parameters)
 
 import torch.distributions as dist
@@ -44,9 +42,52 @@ VERBOSE = True
 
 CACHE_DATASETS = True
 
+# The following two are not important.
+LAZY_TRAIN = True
+LAZY_TEST = True
+
+# Generating the random GP realizations is faster on CPU than on GPU.
+# This is likely because the random GP realizations are generated one-by-one
+# rather than in batches since the number of points is random so it's difficult
+# to batch this. Hence we set device="cpu".
+# Also, making the padded batches (the creation of zeros, concatenating, and
+# stacking) on CPU rather than on GPU is much faster.
+GP_GEN_DEVICE = "cpu"
+
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
-############################ FIXED DATASET SETTINGS ############################
+
+########################### Test dataset settings ##############################
+## How many times bigger the big test dataset is than the train dataset, > 0
+# TEST_FACTOR = 3.0
+TEST_FACTOR = 0.3
+## The proportion of the test dataset that is used for evaluating the model after
+## each epoch, between 0 and 1
+# SMALL_TEST_PROPORTION_OF_TEST = 0.04
+SMALL_TEST_PROPORTION_OF_TEST = 0.2
+# The following two should be kept as they are -- ALWAYS want to fix the test.
+# As long as the acqisition dataset is fixed, then whether the function samples
+# dataset is fixed doesn't matter.
+FIX_TEST_SAMPLES_DATASET = False
+FIX_TEST_ACQUISITION_DATASET = True
+
+
+###################### GP realization characteristics ##########################
+# Dimension of the optimization problem
+DIMENSION = 1
+# whether to randomize the GP parameters for training data
+RANDOMIZE_PARAMS = True
+# choose either "uniform" or "normal" (or a custom distribution)
+XVALUE_DISTRIBUTION = "uniform"
+
+################## Settings for dataset size and generation ####################
+# The size of the training acquisition dataset
+TRAIN_ACQUISITION_SIZE = 12345
+# The amount that the dataset is expanded to save compute of GP realizations
+EXPANSION_FACTOR = 4
+# Whether and how to fix the training dataset
+FIX_TRAIN_SAMPLES_DATASET = True
+
 ########## Set number of history and candidate points generation ###############
 # This means whether n history points or whether the total number of points
 # is log-uniform
@@ -57,6 +98,10 @@ PRE_OFFSET = 3.0
 FIX_N_CANDIDATES = True
 
 # If FIX_N_CANDIDATES is True, then the following are used:
+# Number of candidate points for training. For MSE EI, could just set to 1.
+# Only used if FIX_N_CANDIDATES is True.
+TRAIN_N_CANDIDATES = 50
+# Number of candidate points for testing.
 TEST_N_CANDIDATES = 50
 MIN_HISTORY = 1
 MAX_HISTORY = 8
@@ -65,50 +110,13 @@ MAX_HISTORY = 8
 MIN_N_CANDIDATES = 2
 MAX_POINTS = 30
 
-###################### GP realization characteristics ##########################
-# Dimension of the optimization problem
-DIMENSION = 1
-# whether to randomize the GP parameters for training data
-RANDOMIZE_PARAMS = True
-# choose either "uniform" or "normal" (or a custom distribution)
-XVALUE_DISTRIBUTION = "uniform"
 
-####################### Other fixed dataset settings ###########################
-## How many times bigger the big test dataset is than the train dataset, > 0
-# TEST_FACTOR = 3.0
-TEST_FACTOR = 0.3
-## The proportion of the test dataset that is used for evaluating the model after
-## each epoch, between 0 and 1
-# SMALL_TEST_PROPORTION_OF_TEST = 0.04
-SMALL_TEST_PROPORTION_OF_TEST = 0.2
-
-# The following two should be kept as they are -- ALWAYS want to fix the test.
-# As long as the acqisition dataset is fixed, then whether the function samples
-# dataset is fixed doesn't matter.
-FIX_TEST_SAMPLES_DATASET = False
-FIX_TEST_ACQUISITION_DATASET = True
-# The following two are not important.
-LAZY_TRAIN = True
-LAZY_TEST = True
-
-
-################## Settings for dataset size and generation ####################
-# The size of the training acquisition dataset
-TRAIN_ACQUISITION_SIZE = 12345
-# The amount that the dataset is expanded to save compute of GP realizations
-EXPANSION_FACTOR = 4
-# Whether and how to fix the training dataset
-FIX_TRAIN_SAMPLES_DATASET = True
-FIX_TRAIN_ACQUISITION_DATASET = False
-
-# Number of candidate points for training. For MSE EI, could just set to 1.
-# Only used if FIX_N_CANDIDATES is True.
-TRAIN_N_CANDIDATES = 50
 ############################# Settings for training ############################
 POLICY_GRADIENT = True # True for the softmax thing, False for MSE EI
 BATCH_SIZE = 128
 LEARNING_RATE = 3e-4
 EPOCHS = 20
+FIX_TRAIN_ACQUISITION_DATASET = False
 
 # Only used if POLICY_GRADIENT is True
 INCLUDE_ALPHA = True
@@ -117,6 +125,7 @@ LEARN_ALPHA = True
 INITIAL_ALPHA = 1.0
 ALPHA_INCREMENT = None # equivalent to 0.0
 ################################################################################
+
 
 ######################### Neural network architecture ##########################
 
@@ -171,81 +180,34 @@ model = AcquisitionFunctionNetV1and2(DIMENSION,
 
 
 ####################### Make the train and test datasets #######################
-TRAIN_SAMPLES_SIZE = math.ceil(TRAIN_ACQUISITION_SIZE / EXPANSION_FACTOR)
+train_aq_dataset, test_aq_dataset, small_test_aq_dataset = create_train_and_test_gp_acquisition_datasets(
+        dimension=DIMENSION,
+        randomize_params=RANDOMIZE_PARAMS,
+        xvalue_distribution=XVALUE_DISTRIBUTION,
 
-DATASET_SIZE = math.ceil(TRAIN_SAMPLES_SIZE * (1 + TEST_FACTOR))
+        train_acquisition_size=TRAIN_ACQUISITION_SIZE,
+        expansion_factor=EXPANSION_FACTOR,
+        fix_train_samples_dataset=FIX_TRAIN_SAMPLES_DATASET,
 
-#### Calculate test size
-TEST_SAMPLES_SIZE = DATASET_SIZE - TRAIN_SAMPLES_SIZE
-## Could alternatively calculate test size like this if going by
-## proportions of an original dataset:
-# TEST_PROPORTION = TEST_FACTOR / (1 + TEST_FACTOR)
-# TRAIN_PROPORTION = 1 - TEST_PROPORTION
-# TRAIN_SAMPLES_SIZE, TEST_SAMPLES_SIZE = get_lengths_from_proportions(DATASET_SIZE, [TRAIN_PROPORTION, TEST_PROPORTION])
+        loguniform=LOGUNIFORM, pre_offset=PRE_OFFSET, fix_n_candidates=FIX_N_CANDIDATES,
+        train_n_candidates=TRAIN_N_CANDIDATES, test_n_candidates=TEST_N_CANDIDATES,
+        min_history=MIN_HISTORY, max_history=MAX_HISTORY,
+        min_n_candidates=MIN_N_CANDIDATES, max_points=MAX_POINTS,
 
-print(f"Small test proportion of test: {SMALL_TEST_PROPORTION_OF_TEST:.4f}")
-# SMALL_TEST_PROPORTION_OF_TEST = 1 / ((1 / SMALL_TEST_PROPORTION_OF_TRAIN_AND_SMALL_TEST - 1) * TEST_FACTOR)
-SMALL_TEST_PROPORTION_OF_TRAIN_AND_SMALL_TEST = 1 / (1 + 1 / (SMALL_TEST_PROPORTION_OF_TEST * TEST_FACTOR))
-print(f"Small test proportion of train + small test: {SMALL_TEST_PROPORTION_OF_TRAIN_AND_SMALL_TEST:.4f}")
-
-# Generating the random GP realizations is faster on CPU than on GPU.
-# This is likely because the random GP realizations are generated one-by-one
-# rather than in batches since the number of points is random so it's difficult
-# to batch this. Hence we set device="cpu".
-# Also, making the padded batches (the creation of zeros, concatenating, and
-# stacking) on CPU rather than on GPU is much faster.
-GP_GEN_DEVICE = "cpu"
-
-if FIX_N_CANDIDATES:
-    train_n_points_kwargs = dict(min_history=MIN_HISTORY, max_history=MAX_HISTORY,
-                                 n_candidates=TRAIN_N_CANDIDATES)
-    test_n_points_kwargs = dict(min_history=MIN_HISTORY, max_history=MAX_HISTORY,
-                                n_candidates=TEST_N_CANDIDATES)
-else:
-    train_n_points_kwargs = dict(min_n_candidates=MIN_N_CANDIDATES, max_points=MAX_POINTS)
-    test_n_points_kwargs = train_n_points_kwargs
-
-
-common_kwargs = dict(dimension=DIMENSION, randomize_params=RANDOMIZE_PARAMS,
-    observation_noise=False, xvalue_distribution=XVALUE_DISTRIBUTION,
-    expansion_factor=EXPANSION_FACTOR, loguniform=LOGUNIFORM,
-    pre_offset=PRE_OFFSET if LOGUNIFORM else None,
-    device=GP_GEN_DEVICE, cache=CACHE_DATASETS)
-
-train_aq_dataset = create_gp_acquisition_dataset(
-    TRAIN_SAMPLES_SIZE, lazy=LAZY_TRAIN,
-    fix_gp_samples=FIX_TRAIN_SAMPLES_DATASET,
-    fix_acquisition_samples=FIX_TRAIN_ACQUISITION_DATASET,
-    batch_size=BATCH_SIZE, get_true_gp_stats=GET_TRAIN_TRUE_GP_STATS,
-    name="train", **common_kwargs, **train_n_points_kwargs)
-
-test_dataset_kwargs = dict(lazy=LAZY_TEST,
-    fix_gp_samples=FIX_TEST_SAMPLES_DATASET,
-    fix_acquisition_samples=FIX_TEST_ACQUISITION_DATASET,
-    batch_size=BATCH_SIZE, get_true_gp_stats=GET_TEST_TRUE_GP_STATS,
-    **common_kwargs, **test_n_points_kwargs)
-
-small_test_size, small_test_complement_size = get_lengths_from_proportions(
-    TEST_SAMPLES_SIZE,
-    [SMALL_TEST_PROPORTION_OF_TEST, 1 - SMALL_TEST_PROPORTION_OF_TEST])
-
-
-if TEST_SAMPLES_SIZE != small_test_size \
-        and FIX_TEST_ACQUISITION_DATASET and CACHE_DATASETS:
-    print("Making small test acquisition dataset and complement")
-    small_test_aq_dataset = create_gp_acquisition_dataset(
-        small_test_size, name="small-test", **test_dataset_kwargs)
-    small_test_complement_aq_dataset = create_gp_acquisition_dataset(
-        small_test_complement_size, name="small-test-complement",
-        **test_dataset_kwargs)
-    print("concatenating small test acquisition dataset and complement")
-    test_aq_dataset = small_test_aq_dataset.concat(
-        small_test_complement_aq_dataset)
-else:
-    test_aq_dataset = create_gp_acquisition_dataset(
-        TEST_SAMPLES_SIZE, name="test", **test_dataset_kwargs)
-    small_test_aq_dataset, _ = test_aq_dataset.random_split(
-        [SMALL_TEST_PROPORTION_OF_TEST, 1 - SMALL_TEST_PROPORTION_OF_TEST])
+        test_factor=TEST_FACTOR,
+        small_test_proportion_of_test=SMALL_TEST_PROPORTION_OF_TEST,
+        fix_test_samples_dataset=FIX_TEST_SAMPLES_DATASET,
+        fix_test_acquisition_dataset=FIX_TEST_ACQUISITION_DATASET,
+        
+        get_train_true_gp_stats=GET_TRAIN_TRUE_GP_STATS,
+        get_test_true_gp_stats=GET_TEST_TRUE_GP_STATS,
+        cache_datasets=CACHE_DATASETS,
+        lazy_train=LAZY_TRAIN,
+        lazy_test=LAZY_TEST,
+        gp_gen_device=GP_GEN_DEVICE,
+        
+        batch_size=BATCH_SIZE,
+        fix_train_acquisition_dataset=FIX_TRAIN_ACQUISITION_DATASET)
 
 
 # print("Train acquisition dataset:")

@@ -1,10 +1,14 @@
 import hashlib
+import math
 import os
-from typing import Optional
+from typing import Optional, Union
 from function_samples_dataset import GaussianProcessRandomDataset, ListMapFunctionSamplesDataset
 from acquisition_dataset import AcquisitionDataset, FunctionSamplesAcquisitionDataset
 from train_acquisition_function_net import train_or_test_loop
-from utils import get_uniform_randint_generator, get_loguniform_randint_generator
+from utils import (get_uniform_randint_generator,
+                   get_loguniform_randint_generator,
+                   get_lengths_from_proportions)
+from torch.distributions import Distribution
 
 
 def get_n_datapoints_random_gen_fixed_n_candidates(
@@ -62,9 +66,8 @@ DATASETS_DIR = os.path.join(script_dir, "datasets")
 
 def create_gp_acquisition_dataset(base_dataset_size,
         # gp_dataset_kwargs_non_datapoints
-        dimension, randomize_params=False,
+        dimension, randomize_params=False, xvalue_distribution="uniform",
         observation_noise=False, models=None, model_probabilities=None,
-        xvalue_distribution="uniform",
         
         # n_datapoints_kwargs
         loguniform=True, pre_offset=None,
@@ -148,7 +151,7 @@ def create_gp_acquisition_dataset(base_dataset_size,
         function_dataset_path = os.path.join(DATASETS_DIR, function_dataset_name)
 
     if not (cache and os.path.exists(aq_dataset_path)):
-        if cache and os.path.exists(function_dataset_path):
+        if cache and os.path.exists(function_dataset_path) and fix_gp_samples:
             function_samples_dataset = ListMapFunctionSamplesDataset.load(
                 function_dataset_path)
         else:
@@ -189,3 +192,101 @@ def create_gp_acquisition_dataset(base_dataset_size,
             aq_dataset.save(aq_dataset_path, verbose=True)
     
     return aq_dataset
+
+
+def create_train_and_test_gp_acquisition_datasets(
+        dimension:int,
+        randomize_params:bool,
+        xvalue_distribution: Union[Distribution,str],
+
+        train_acquisition_size:int,
+        expansion_factor:int,
+        fix_train_samples_dataset:bool,
+
+        loguniform:bool, pre_offset:Optional[float], fix_n_candidates:bool,
+        train_n_candidates:Optional[int], test_n_candidates:Optional[int],
+        min_history:Optional[int], max_history:Optional[int],
+        min_n_candidates:Optional[int], max_points:Optional[int],
+
+        test_factor:float,
+        small_test_proportion_of_test:float,
+        fix_test_samples_dataset:bool,
+        fix_test_acquisition_dataset:bool,
+        
+        get_train_true_gp_stats:bool,
+        get_test_true_gp_stats:bool,
+        cache_datasets:bool,
+        lazy_train:bool,
+        lazy_test:bool,
+        gp_gen_device,
+        
+        batch_size:int,
+        fix_train_acquisition_dataset:bool):
+    train_samples_size = math.ceil(train_acquisition_size / expansion_factor)
+
+    total_samples_dataset_size = math.ceil(train_samples_size * (1 + test_factor))
+
+    ### Calculate test size
+    test_samples_size = total_samples_dataset_size - train_samples_size
+    ## Could alternatively calculate test size like this if going by
+    ## proportions of an original dataset:
+    # test_proportion = test_factor / (1 + test_factor)
+    # train_proportion = 1 - test_proportion
+    # train_samples_size, test_samples_size = get_lengths_from_proportions(
+    #     total_samples_dataset_size, [train_proportion, test_proportion])
+
+    print(f"Small test proportion of test: {small_test_proportion_of_test:.4f}")
+    # small_test_proportion_of_test = 1 / ((1 / small_test_proportion_of_train_and_small_test - 1) * test_factor)
+    small_test_proportion_of_train_and_small_test = 1 / (1 + 1 / (small_test_proportion_of_test * test_factor))
+    print(f"Small test proportion of train + small test: {small_test_proportion_of_train_and_small_test:.4f}")
+
+    if fix_n_candidates:
+        train_n_points_kwargs = dict(min_history=min_history, max_history=max_history,
+                                    n_candidates=train_n_candidates)
+        test_n_points_kwargs = dict(min_history=min_history, max_history=max_history,
+                                    n_candidates=test_n_candidates)
+    else:
+        train_n_points_kwargs = dict(min_n_candidates=min_n_candidates, max_points=max_points)
+        test_n_points_kwargs = train_n_points_kwargs
+
+    common_kwargs = dict(dimension=dimension, randomize_params=randomize_params,
+        observation_noise=False, xvalue_distribution=xvalue_distribution,
+        expansion_factor=expansion_factor, loguniform=loguniform,
+        pre_offset=pre_offset if loguniform else None, batch_size=batch_size,
+        device=gp_gen_device, cache=cache_datasets)
+
+    train_aq_dataset = create_gp_acquisition_dataset(
+        train_samples_size, lazy=lazy_train,
+        fix_gp_samples=fix_train_samples_dataset,
+        fix_acquisition_samples=fix_train_acquisition_dataset,
+        get_true_gp_stats=get_train_true_gp_stats,
+        name="train", **common_kwargs, **train_n_points_kwargs)
+
+    test_dataset_kwargs = dict(lazy=lazy_test,
+        fix_gp_samples=fix_test_samples_dataset,
+        fix_acquisition_samples=fix_test_acquisition_dataset,
+        get_true_gp_stats=get_test_true_gp_stats,
+        **common_kwargs, **test_n_points_kwargs)
+
+    small_test_size, small_test_complement_size = get_lengths_from_proportions(
+        test_samples_size,
+        [small_test_proportion_of_test, 1 - small_test_proportion_of_test])
+
+    if test_samples_size != small_test_size \
+            and fix_test_acquisition_dataset and cache_datasets:
+        print("Making small test acquisition dataset and complement")
+        small_test_aq_dataset = create_gp_acquisition_dataset(
+            small_test_size, name="small-test", **test_dataset_kwargs)
+        small_test_complement_aq_dataset = create_gp_acquisition_dataset(
+            small_test_complement_size, name="small-test-complement",
+            **test_dataset_kwargs)
+        print("concatenating small test acquisition dataset and complement")
+        test_aq_dataset = small_test_aq_dataset.concat(
+            small_test_complement_aq_dataset)
+    else:
+        test_aq_dataset = create_gp_acquisition_dataset(
+            test_samples_size, name="test", **test_dataset_kwargs)
+        small_test_aq_dataset, _ = test_aq_dataset.random_split(
+            [small_test_proportion_of_test, 1 - small_test_proportion_of_test])
+    
+    return train_aq_dataset, test_aq_dataset, small_test_aq_dataset
