@@ -43,12 +43,6 @@ VERBOSE = True
 CACHE_DATASETS = True
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
-DATASETS_DIR = os.path.join(script_dir, "datasets")
-
-if CACHE_DATASETS:
-    os.makedirs(DATASETS_DIR, exist_ok=True)
-
-
 
 ############################ FIXED DATASET SETTINGS ############################
 ########## Set number of history and candidate points generation ###############
@@ -80,7 +74,7 @@ XVALUE_DISTRIBUTION = "uniform"
 ####################### Other fixed dataset settings ###########################
 ## How many times bigger the big test dataset is than the train dataset, > 0
 # TEST_FACTOR = 3.0
-TEST_FACTOR = 0.1
+TEST_FACTOR = 1.0
 ## The proportion of the test dataset that is used for evaluating the model after
 ## each epoch, between 0 and 1
 # SMALL_TEST_PROPORTION_OF_TEST = 0.04
@@ -92,8 +86,8 @@ SMALL_TEST_PROPORTION_OF_TEST = 1.0
 FIX_TEST_SAMPLES_DATASET = False
 FIX_TEST_ACQUISITION_DATASET = True
 # The following two are not important.
-LAZY_TRAIN = False
-LAZY_TEST = False
+LAZY_TRAIN = True
+LAZY_TEST = True
 
 
 ################## Settings for dataset size and generation ####################
@@ -103,7 +97,7 @@ TRAIN_ACQUISITION_SIZE = 10_000
 EXPANSION_FACTOR = 4
 # Whether and how to fix the training dataset
 FIX_TRAIN_SAMPLES_DATASET = True
-FIX_TRAIN_ACQUISITION_DATASET = False
+FIX_TRAIN_ACQUISITION_DATASET = True
 
 # Number of candidate points for training. For MSE EI, could just set to 1.
 # Only used if FIX_N_CANDIDATES is True.
@@ -200,11 +194,6 @@ print(f"Small test proportion of train + small test: {SMALL_TEST_PROPORTION_OF_T
 # stacking) on CPU rather than on GPU is much faster.
 GP_GEN_DEVICE = "cpu"
 
-common_kwargs = dict(dimension=DIMENSION, randomize_params=RANDOMIZE_PARAMS,
-    observation_noise=False, xvalue_distribution=XVALUE_DISTRIBUTION,
-    expansion_factor=EXPANSION_FACTOR, loguniform=LOGUNIFORM,
-    pre_offset=PRE_OFFSET if LOGUNIFORM else None)
-
 if FIX_N_CANDIDATES:
     train_n_points_kwargs = dict(min_history=MIN_HISTORY, max_history=MAX_HISTORY,
                                  n_candidates=TRAIN_N_CANDIDATES)
@@ -215,52 +204,66 @@ else:
     test_n_points_kwargs = train_n_points_kwargs
 
 
-def dict_to_str(d):
-    return ','.join(f"{key}={value!r}" for key, value in sorted(d.items()))
+common_kwargs = dict(dimension=DIMENSION, randomize_params=RANDOMIZE_PARAMS,
+    observation_noise=False, xvalue_distribution=XVALUE_DISTRIBUTION,
+    expansion_factor=EXPANSION_FACTOR, loguniform=LOGUNIFORM,
+    pre_offset=PRE_OFFSET if LOGUNIFORM else None,
+    device=GP_GEN_DEVICE, cache=CACHE_DATASETS)
+
+train_aq_dataset = create_gp_acquisition_dataset(
+    TRAIN_SAMPLES_SIZE, lazy=LAZY_TRAIN,
+    fix_gp_samples=FIX_TRAIN_SAMPLES_DATASET,
+    fix_acquisition_samples=FIX_TRAIN_ACQUISITION_DATASET,
+    batch_size=BATCH_SIZE, get_true_gp_stats=GET_TRAIN_TRUE_GP_STATS,
+    name="train", **common_kwargs, **train_n_points_kwargs)
+test_aq_dataset = create_gp_acquisition_dataset(
+    TEST_SAMPLES_SIZE, lazy=LAZY_TEST,
+    fix_gp_samples=FIX_TEST_SAMPLES_DATASET,
+    fix_acquisition_samples=FIX_TEST_ACQUISITION_DATASET,
+    batch_size=BATCH_SIZE, get_true_gp_stats=GET_TEST_TRUE_GP_STATS,
+    name="test", **common_kwargs, **test_n_points_kwargs)
 
 
-train_gp_dataset_save_kwargs = dict(base_dataset_size=TRAIN_SAMPLES_SIZE,
-                               **common_kwargs, **train_n_points_kwargs)
-test_gp_dataset_save_kwargs = dict(base_dataset_size=TEST_SAMPLES_SIZE,
-                               **common_kwargs, **test_n_points_kwargs)
+# def dict_to_str(d):
+#     return ','.join(f"{key}={value!r}" for key, value in sorted(d.items()))
 
-train_gp_dataset_save_name = f'train_{FIX_TRAIN_SAMPLES_DATASET}_{FIX_TRAIN_ACQUISITION_DATASET}_' + dict_to_str(train_gp_dataset_save_kwargs)
-train_gp_dataset_fname = os.path.join(DATASETS_DIR, train_gp_dataset_save_name)
+# train_gp_dataset_save_name = f'train_{FIX_TRAIN_SAMPLES_DATASET}_{FIX_TRAIN_ACQUISITION_DATASET}_' + dict_to_str(train_gp_dataset_save_kwargs)
+# train_gp_dataset_fname = os.path.join(DATASETS_DIR, train_gp_dataset_save_name)
 
-test_gp_dataset_save_name = f'test_{FIX_TEST_SAMPLES_DATASET}_{FIX_TEST_ACQUISITION_DATASET}_' + dict_to_str(test_gp_dataset_save_kwargs)
-test_gp_dataset_fname = os.path.join(DATASETS_DIR, test_gp_dataset_save_name)
+# test_gp_dataset_save_name = f'test_{FIX_TEST_SAMPLES_DATASET}_{FIX_TEST_ACQUISITION_DATASET}_' + dict_to_str(test_gp_dataset_save_kwargs)
+# test_gp_dataset_fname = os.path.join(DATASETS_DIR, test_gp_dataset_save_name)
 
-if CACHE_DATASETS and os.path.exists(train_gp_dataset_fname):
-    train_aq_dataset = AcquisitionDataset.load(train_gp_dataset_fname)
-else:
-    train_aq_dataset = create_gp_acquisition_dataset(
-        device=GP_GEN_DEVICE, lazy=LAZY_TRAIN,
-        fix_gp_samples=FIX_TRAIN_SAMPLES_DATASET,
-        fix_acquisition_samples=FIX_TRAIN_ACQUISITION_DATASET,
-        **train_gp_dataset_save_kwargs)
-    if CACHE_DATASETS:
-        if FIX_TRAIN_ACQUISITION_DATASET:
-            train_or_test_loop(
-                train_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_last=False),
-                verbose=True, desc="Getting train dataset stats to cache",
-                get_true_gp_stats=GET_TRAIN_TRUE_GP_STATS)
-        train_aq_dataset.save(train_gp_dataset_fname, verbose=True)
+# if CACHE_DATASETS and os.path.exists(train_gp_dataset_fname):
+#     train_aq_dataset = AcquisitionDataset.load(train_gp_dataset_fname)
+# else:
+#     train_aq_dataset = create_gp_acquisition_dataset(
+#         device=GP_GEN_DEVICE, lazy=LAZY_TRAIN,
+#         fix_gp_samples=FIX_TRAIN_SAMPLES_DATASET,
+#         fix_acquisition_samples=FIX_TRAIN_ACQUISITION_DATASET,
+#         **train_gp_dataset_save_kwargs)
+#     if CACHE_DATASETS:
+#         if FIX_TRAIN_ACQUISITION_DATASET:
+#             train_or_test_loop(
+#                 train_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_last=False),
+#                 verbose=True, desc="Getting train dataset stats to cache",
+#                 get_true_gp_stats=GET_TRAIN_TRUE_GP_STATS)
+#         train_aq_dataset.save(train_gp_dataset_fname, verbose=True)
 
-if CACHE_DATASETS and os.path.exists(test_gp_dataset_fname):
-    test_aq_dataset = AcquisitionDataset.load(test_gp_dataset_fname)
-else:
-    test_aq_dataset = create_gp_acquisition_dataset(
-        device=GP_GEN_DEVICE, lazy=LAZY_TEST,
-        fix_gp_samples=FIX_TEST_SAMPLES_DATASET,
-        fix_acquisition_samples=FIX_TEST_ACQUISITION_DATASET,
-        **test_gp_dataset_save_kwargs)
-    if CACHE_DATASETS:
-        if FIX_TEST_ACQUISITION_DATASET:
-            train_or_test_loop(
-                test_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_last=False),
-                verbose=True, desc="Getting test dataset stats to cache",
-                get_true_gp_stats=GET_TEST_TRUE_GP_STATS)
-        test_aq_dataset.save(test_gp_dataset_fname, verbose=True)
+# if CACHE_DATASETS and os.path.exists(test_gp_dataset_fname):
+#     test_aq_dataset = AcquisitionDataset.load(test_gp_dataset_fname)
+# else:
+#     test_aq_dataset = create_gp_acquisition_dataset(
+#         device=GP_GEN_DEVICE, lazy=LAZY_TEST,
+#         fix_gp_samples=FIX_TEST_SAMPLES_DATASET,
+#         fix_acquisition_samples=FIX_TEST_ACQUISITION_DATASET,
+#         **test_gp_dataset_save_kwargs)
+#     if CACHE_DATASETS:
+#         if FIX_TEST_ACQUISITION_DATASET:
+#             train_or_test_loop(
+#                 test_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_last=False),
+#                 verbose=True, desc="Getting test dataset stats to cache",
+#                 get_true_gp_stats=GET_TEST_TRUE_GP_STATS)
+#         test_aq_dataset.save(test_gp_dataset_fname, verbose=True)
 
 small_test_aq_dataset, _ = test_aq_dataset.random_split(
     [SMALL_TEST_PROPORTION_OF_TEST, 1 - SMALL_TEST_PROPORTION_OF_TEST])
@@ -275,7 +278,6 @@ print(test_aq_dataset)
 # print(small_test_aq_dataset)
 print("\n")
 
-exit()
 
 print(model)
 print("Number of trainable parameters:", count_trainable_parameters(model))

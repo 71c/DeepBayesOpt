@@ -377,6 +377,14 @@ def train_or_test_loop(dataloader: DataLoader,
         basic_stats_list = []
     if nn_model is not None:
         nn_batch_stats_list = []
+    
+    # If we are not computing any stats, then don't actually need to go through
+    # the dataset. This probably won't happen in practice though because we
+    # always will be evaluating the NN. Also make verbose=False in this case.
+    if not (compute_true_gp_stats or compute_map_gp_stats or
+            compute_basic_stats or nn_model is not None):
+        it = []
+        verbose = False
 
     it = dataloader
     if verbose:
@@ -388,11 +396,6 @@ def train_or_test_loop(dataloader: DataLoader,
         else:
             it = tqdm(it, desc=desc)
         tic(desc)
-    
-    # If we are not computing any stats, then don't actually need to go through the dataset.
-    # This probably won't happen in practice though because we always will be evaluating the NN.
-    if not (compute_true_gp_stats or compute_map_gp_stats or compute_basic_stats or nn_model is not None):
-        it = []
     
     dataset_length = 0
     for i, batch in enumerate(unsupported_improvements(it)):

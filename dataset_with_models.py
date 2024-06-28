@@ -587,7 +587,7 @@ class DatasetWithModels(Dataset, ABC):
     
     @abstractmethod
     def save(self, dir_name: str, verbose:bool=True):
-        os.makedirs(dir_name)
+        os.makedirs(dir_name, exist_ok=True)
         data = {'class_name': self.__class__.__name__}
         save_json(data, os.path.join(dir_name, "info.json"))
     
