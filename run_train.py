@@ -332,7 +332,6 @@ if TRAIN:
 
     if TIME:
         tocl()
-        exit()
 
     if CPROFILE:
         pr.disable()
@@ -341,7 +340,6 @@ if TRAIN:
         ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
         ps.print_stats()
         print(s.getvalue())
-        exit()
 
 
     # print(json.dumps(data, indent=4))
