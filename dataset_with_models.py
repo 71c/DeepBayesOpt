@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import copy
 import math
 from typing import Optional, List, Tuple, Union
 from collections.abc import Sequence
@@ -294,6 +295,18 @@ class TupleWithModel:
         return self.__class__(*new_items,
                               model=self._model,
                               model_params=getattr(self, "model_params", None),
+                              **self._kwargs)
+    
+    def copy(self):
+        # Implementation is similar to that of to
+        new_items = tuple(
+            item.clone() if torch.is_tensor(item) else copy.deepcopy(item)
+            for item in self._items)
+        # Probably not necessary to copy the model params but just in case
+        new_model_params = copy.deepcopy(getattr(self, "model_params", None))
+        return self.__class__(*new_items,
+                              model=self._model,
+                              model_params=new_model_params,
                               **self._kwargs)
     
     def __getitem__(self, index):
@@ -762,6 +775,20 @@ class _Dummy:
         return str(self.x)
 
 
+def combine_probabilities(prob_tensor1, prob_tensor2):
+    # Normalize the probability tensors
+    prob_tensor1 /= prob_tensor1.sum()
+    prob_tensor2 /= prob_tensor2.sum()
+    
+    # Concatenate the tensors
+    combined_tensor = torch.cat((prob_tensor1, prob_tensor2))
+    
+    # Normalize the concatenated tensor
+    combined_tensor /= combined_tensor.sum()
+    
+    return combined_tensor
+
+
 class ListMapDatasetWithModels(MapDatasetWithModels):
     """A base class for `DatasetWithModels` datasets that hold items in a list
     and can be accessed by index."""
@@ -790,6 +817,9 @@ class ListMapDatasetWithModels(MapDatasetWithModels):
                     if item.model_index is None:
                         raise ValueError(f"model_index should be specified for each {self._tuple_class.__name__}")
                     else:
+                        # print("Model index:", item.model_index)
+                        # print("Model indices:", [
+                        #     model.index for model in model_sampler._models])
                         assert model_sampler._models[item.model_index] is item._model
         elif all(isinstance(x, tuple) for x in data):
             return type(self).__init__(self, [self._tuple_class(*x) for x in data], model_sampler)
@@ -875,6 +905,68 @@ class ListMapDatasetWithModels(MapDatasetWithModels):
         if verbose:
             tocl()
         return ret
+
+    @classmethod
+    def _combine_caches(cls, cache1, cache2, size_1, size_2):
+        new_cache = {}
+        for key, value1 in cache1.items():
+            if key not in cache2:
+                raise ValueError(f"Cache key {key} is not present in both caches")
+            value2 = cache2[key]
+            if type(value1) is not type(value2):
+                raise ValueError(f"Value corresponding to cache key {key} has different types in the two caches")
+            if isinstance(value1, float):
+                new_cache[key] = (value1 * size_1 + value2 * size_2) / (size_1 + size_2)
+            elif isinstance(value1, dict):
+                new_cache[key] = cls._combine_caches(value1, value2, size_1, size_2)
+            else:
+                raise ValueError(f"Value corresponding to cache key {key} has an unsupported type")
+        return new_cache
+
+    def concat(self, other: 'ListMapDatasetWithModels') -> 'ListMapDatasetWithModels':
+        """Concatenates the current dataset with another ListMapDatasetWithModels.
+
+        Args:
+            other (ListMapDatasetWithModels): The dataset to concatenate with.
+
+        Returns:
+            ListMapDatasetWithModels: A new instance of ListMapDatasetWithModels
+            that is the concatenation of the two datasets.
+        """
+        if not isinstance(other, self._list_map_class):
+            raise ValueError(f"Other dataset must be an instance of {self._list_map_class.__name__}")
+        
+        # Create a new model sampler if both datasets have models
+        if self.has_models != other.has_models:
+            raise ValueError("Both datasets must have models or neither can have models.")
+        
+        new_other_data = other._data
+        if self.has_models:
+            if self.model_sampler.randomize_params != other.model_sampler.randomize_params:
+                raise ValueError("Both datasets must have the same randomize_params.")
+            if self.model_sampler.initial_models == other.model_sampler.initial_models:
+                new_model_sampler = self.model_sampler
+            else:
+                new_model_sampler = RandomModelSampler(
+                    self.model_sampler.initial_models + other.model_sampler.initial_models,
+                    combine_probabilities(self.model_sampler.model_probabilities,
+                                        other.model_sampler.model_probabilities),
+                    randomize_params=self.model_sampler.randomize_params)
+                new_other_data = [item.copy() for item in new_other_data]
+        else:
+            new_model_sampler = None
+        new_data = self._data + new_other_data
+        
+        # Create the new concatenated dataset
+        new_dataset = self.__class__(new_data, new_model_sampler)
+
+        # Concatenate caches if they exist
+        if bool(self._cache) != bool(other._cache):
+            raise ValueError("Both datasets must have caches or neither can have caches")
+        if self._cache:
+            new_dataset._cache = self._combine_caches(self._cache, other._cache, len(self), len(other))
+
+        return new_dataset
     
     @classmethod
     def from_iterable_dataset(cls, dataset: DatasetWithModels,

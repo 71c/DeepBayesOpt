@@ -124,7 +124,7 @@ def create_gp_acquisition_dataset(base_dataset_size,
             dict(fix_acquisition_samples=fix_acquisition_samples,
             expansion_factor=expansion_factor))
         
-        base_name = f"{name_}{function_dataset_hash}_base_size={base_dataset_size}"
+        base_name = f"{name_}base_size={base_dataset_size}_{function_dataset_hash}"
 
         aq_dataset_name = f"{base_name}_acquisition_{gp_aq_dataset_extra_info_str}"
         aq_dataset_path = os.path.join(DATASETS_DIR, aq_dataset_name)

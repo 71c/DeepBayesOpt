@@ -1,5 +1,7 @@
 import math
 import torch
+
+from utils import get_lengths_from_proportions
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 if torch.cuda.is_available():
     print(torch.cuda.current_device())
@@ -74,11 +76,11 @@ XVALUE_DISTRIBUTION = "uniform"
 ####################### Other fixed dataset settings ###########################
 ## How many times bigger the big test dataset is than the train dataset, > 0
 # TEST_FACTOR = 3.0
-TEST_FACTOR = 1.0
+TEST_FACTOR = 0.3
 ## The proportion of the test dataset that is used for evaluating the model after
 ## each epoch, between 0 and 1
 # SMALL_TEST_PROPORTION_OF_TEST = 0.04
-SMALL_TEST_PROPORTION_OF_TEST = 1.0
+SMALL_TEST_PROPORTION_OF_TEST = 0.2
 
 # The following two should be kept as they are -- ALWAYS want to fix the test.
 # As long as the acqisition dataset is fixed, then whether the function samples
@@ -92,12 +94,12 @@ LAZY_TEST = True
 
 ################## Settings for dataset size and generation ####################
 # The size of the training acquisition dataset
-TRAIN_ACQUISITION_SIZE = 10_000
+TRAIN_ACQUISITION_SIZE = 12345
 # The amount that the dataset is expanded to save compute of GP realizations
 EXPANSION_FACTOR = 4
 # Whether and how to fix the training dataset
 FIX_TRAIN_SAMPLES_DATASET = True
-FIX_TRAIN_ACQUISITION_DATASET = True
+FIX_TRAIN_ACQUISITION_DATASET = False
 
 # Number of candidate points for training. For MSE EI, could just set to 1.
 # Only used if FIX_N_CANDIDATES is True.
@@ -106,7 +108,7 @@ TRAIN_N_CANDIDATES = 50
 POLICY_GRADIENT = True # True for the softmax thing, False for MSE EI
 BATCH_SIZE = 128
 LEARNING_RATE = 3e-4
-EPOCHS = 30
+EPOCHS = 20
 
 # Only used if POLICY_GRADIENT is True
 INCLUDE_ALPHA = True
@@ -216,67 +218,44 @@ train_aq_dataset = create_gp_acquisition_dataset(
     fix_acquisition_samples=FIX_TRAIN_ACQUISITION_DATASET,
     batch_size=BATCH_SIZE, get_true_gp_stats=GET_TRAIN_TRUE_GP_STATS,
     name="train", **common_kwargs, **train_n_points_kwargs)
-test_aq_dataset = create_gp_acquisition_dataset(
-    TEST_SAMPLES_SIZE, lazy=LAZY_TEST,
+
+test_dataset_kwargs = dict(lazy=LAZY_TEST,
     fix_gp_samples=FIX_TEST_SAMPLES_DATASET,
     fix_acquisition_samples=FIX_TEST_ACQUISITION_DATASET,
     batch_size=BATCH_SIZE, get_true_gp_stats=GET_TEST_TRUE_GP_STATS,
-    name="test", **common_kwargs, **test_n_points_kwargs)
+    **common_kwargs, **test_n_points_kwargs)
 
-
-# def dict_to_str(d):
-#     return ','.join(f"{key}={value!r}" for key, value in sorted(d.items()))
-
-# train_gp_dataset_save_name = f'train_{FIX_TRAIN_SAMPLES_DATASET}_{FIX_TRAIN_ACQUISITION_DATASET}_' + dict_to_str(train_gp_dataset_save_kwargs)
-# train_gp_dataset_fname = os.path.join(DATASETS_DIR, train_gp_dataset_save_name)
-
-# test_gp_dataset_save_name = f'test_{FIX_TEST_SAMPLES_DATASET}_{FIX_TEST_ACQUISITION_DATASET}_' + dict_to_str(test_gp_dataset_save_kwargs)
-# test_gp_dataset_fname = os.path.join(DATASETS_DIR, test_gp_dataset_save_name)
-
-# if CACHE_DATASETS and os.path.exists(train_gp_dataset_fname):
-#     train_aq_dataset = AcquisitionDataset.load(train_gp_dataset_fname)
-# else:
-#     train_aq_dataset = create_gp_acquisition_dataset(
-#         device=GP_GEN_DEVICE, lazy=LAZY_TRAIN,
-#         fix_gp_samples=FIX_TRAIN_SAMPLES_DATASET,
-#         fix_acquisition_samples=FIX_TRAIN_ACQUISITION_DATASET,
-#         **train_gp_dataset_save_kwargs)
-#     if CACHE_DATASETS:
-#         if FIX_TRAIN_ACQUISITION_DATASET:
-#             train_or_test_loop(
-#                 train_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_last=False),
-#                 verbose=True, desc="Getting train dataset stats to cache",
-#                 get_true_gp_stats=GET_TRAIN_TRUE_GP_STATS)
-#         train_aq_dataset.save(train_gp_dataset_fname, verbose=True)
-
-# if CACHE_DATASETS and os.path.exists(test_gp_dataset_fname):
-#     test_aq_dataset = AcquisitionDataset.load(test_gp_dataset_fname)
-# else:
-#     test_aq_dataset = create_gp_acquisition_dataset(
-#         device=GP_GEN_DEVICE, lazy=LAZY_TEST,
-#         fix_gp_samples=FIX_TEST_SAMPLES_DATASET,
-#         fix_acquisition_samples=FIX_TEST_ACQUISITION_DATASET,
-#         **test_gp_dataset_save_kwargs)
-#     if CACHE_DATASETS:
-#         if FIX_TEST_ACQUISITION_DATASET:
-#             train_or_test_loop(
-#                 test_aq_dataset.get_dataloader(batch_size=BATCH_SIZE, drop_last=False),
-#                 verbose=True, desc="Getting test dataset stats to cache",
-#                 get_true_gp_stats=GET_TEST_TRUE_GP_STATS)
-#         test_aq_dataset.save(test_gp_dataset_fname, verbose=True)
-
-small_test_aq_dataset, _ = test_aq_dataset.random_split(
+small_test_size, small_test_complement_size = get_lengths_from_proportions(
+    TEST_SAMPLES_SIZE,
     [SMALL_TEST_PROPORTION_OF_TEST, 1 - SMALL_TEST_PROPORTION_OF_TEST])
 
 
+if TEST_SAMPLES_SIZE != small_test_size \
+        and FIX_TEST_ACQUISITION_DATASET and CACHE_DATASETS:
+    print("Making small test acquisition dataset and complement")
+    small_test_aq_dataset = create_gp_acquisition_dataset(
+        small_test_size, name="small-test", **test_dataset_kwargs)
+    small_test_complement_aq_dataset = create_gp_acquisition_dataset(
+        small_test_complement_size, name="small-test-complement",
+        **test_dataset_kwargs)
+    print("concatenating small test acquisition dataset and complement")
+    test_aq_dataset = small_test_aq_dataset.concat(
+        small_test_complement_aq_dataset)
+else:
+    test_aq_dataset = create_gp_acquisition_dataset(
+        TEST_SAMPLES_SIZE, name="test", **test_dataset_kwargs)
+    small_test_aq_dataset, _ = test_aq_dataset.random_split(
+        [SMALL_TEST_PROPORTION_OF_TEST, 1 - SMALL_TEST_PROPORTION_OF_TEST])
 
-print("Train acquisition dataset:")
-print(train_aq_dataset)
-print("\nTest acquisition dataset:")
-print(test_aq_dataset)
-# print("\nSmall test acquisition dataset:")
-# print(small_test_aq_dataset)
-print("\n")
+
+# print("Train acquisition dataset:")
+# print(train_aq_dataset)
+# print("\nTest acquisition dataset:")
+# print(test_aq_dataset)
+# if small_test_aq_dataset != test_aq_dataset:
+#     print("\nSmall test acquisition dataset:")
+#     print(small_test_aq_dataset)
+# print("\n")
 
 
 print(model)

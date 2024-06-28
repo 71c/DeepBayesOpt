@@ -286,6 +286,10 @@ def train_or_test_loop(dataloader: DataLoader,
     batch_size = dataloader.batch_size
     has_models = dataset.has_models
 
+    n_training_batches = n_batches
+    if len(dataset) % batch_size != 0:
+        n_training_batches -= 1
+    
     if not isinstance(dataset, AcquisitionDataset):
         raise ValueError("The dataloader must contain an AcquisitionDataset")
 
@@ -391,8 +395,8 @@ def train_or_test_loop(dataloader: DataLoader,
         if train and n_train_printouts is not None:
             print(desc)
             print_indices = set(int_linspace(
-                0, n_batches - 1, min(n_train_printouts, n_batches)
-            ))
+                0, n_training_batches - 1,
+                min(n_train_printouts, n_training_batches)))
         else:
             it = tqdm(it, desc=desc)
         tic(desc)
@@ -435,7 +439,8 @@ def train_or_test_loop(dataloader: DataLoader,
                     
                     if verbose and n_train_printouts is not None and i in print_indices:
                         print_train_batch_stats(nn_batch_stats, nn_model,
-                                                policy_gradient, i, n_batches,
+                                                policy_gradient, i,
+                                                n_training_batches,
                                                 reduction="sum",
                                                 batch_size=this_batch_size)
                 
