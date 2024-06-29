@@ -74,7 +74,7 @@ FIX_TEST_ACQUISITION_DATASET = True
 
 ###################### GP realization characteristics ##########################
 # Dimension of the optimization problem
-DIMENSION = 1
+DIMENSION = 4
 # whether to randomize the GP parameters for training data
 RANDOMIZE_PARAMS = True
 # choose either "uniform" or "normal" (or a custom distribution)
@@ -86,7 +86,7 @@ TRAIN_ACQUISITION_SIZE = 12345
 # The amount that the dataset is expanded to save compute of GP realizations
 EXPANSION_FACTOR = 4
 # Whether and how to fix the training dataset
-FIX_TRAIN_SAMPLES_DATASET = True
+FIX_TRAIN_SAMPLES_DATASET = False
 
 ########## Set number of history and candidate points generation ###############
 # This means whether n history points or whether the total number of points

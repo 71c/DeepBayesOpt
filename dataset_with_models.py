@@ -84,12 +84,8 @@ class RandomModelSampler:
         # https://discuss.pytorch.org/t/torch-equivalent-of-numpy-random-choice/16146
         model_index = self.model_probabilities.multinomial(num_samples=1, 
                                                            replacement=True)[0]
-        model = self._models[model_index]
-
-        # Initialize the model with the initial parameters
-        # because they could have been changed by maximizing mll.
-        # in particular the parameters that don't have priors.
-        model.initialize(**model.initial_params)
+        
+        model = self.get_model(model_index)
 
         # Randomly set the parameters based on the priors of the model.
         # Instead of doing  `random_model = model.pyro_sample_from_prior()`
@@ -113,6 +109,9 @@ class RandomModelSampler:
         model.train_targets = None
         model.prediction_strategy = None
 
+        # Initialize the model with the initial parameters
+        # because they could have been changed by maximizing mll.
+        # in particular the parameters that don't have priors.
         model.initialize(**model_params)
         return model
     

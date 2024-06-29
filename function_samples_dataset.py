@@ -179,6 +179,7 @@ class GaussianProcessRandomDataset(
             if dimension is None:
                 raise ValueError("dimension should be specified if models is None")
 
+            # SingleTaskGP doesn't support initializing with no data.
             train_X = torch.zeros(0, dimension, device=device)
             train_Y = torch.zeros(0, 1, device=device)
 
@@ -194,9 +195,14 @@ class GaussianProcessRandomDataset(
                     )
                 )
 
-            models = [SingleTaskGP(train_X, train_Y, likelihood=likelihood)]
+            model = SingleTaskGP(train_X, train_Y, likelihood=likelihood)
+            # hack to make it as if we initialized without any data
+            model.train_inputs = None
+            model.train_targets = None
+
+            models = [model]
             model_probabilities = torch.tensor([1.0])
-        
+
         if device is not None:
             for model in models:
                 model.to(device)
@@ -204,6 +210,13 @@ class GaussianProcessRandomDataset(
         for i, model in enumerate(models):
             if not isinstance(model, SingleTaskGP):
                 raise UnsupportedError(f"models[{i}] should be a SingleTaskGP instance.")
+
+            # Verify that the model is single-batch
+            if len(model.batch_shape) != 0:
+                raise UnsupportedError(f"All models must be single-batch, but models[{i}] has batch shape {model.batch_shape}")
+            # Verify that the model is single-output
+            if model.num_outputs != 1:
+                raise UnsupportedError(f"All models must be single-output, but models[{i}] is {model.num_outputs}-output")
 
             if not observation_noise:
                 # If no observation noise, then keep the noise
@@ -241,10 +254,6 @@ class GaussianProcessRandomDataset(
             else:
                 raise UnsupportedError(
                     f"models[{i}] has likelihood {model.likelihood.__class__.__name__} which is not supported in GaussianProcessRandomDataset. Use GaussianLikelihood instead.")
-
-            # Verify that the model is single-batch
-            t = len(model.batch_shape)
-            assert t == 0 or t == 1 and model.batch_shape[0] == 1
         
         self._model_sampler = RandomModelSampler(
             models, model_probabilities, randomize_params=randomize_params)
@@ -337,24 +346,22 @@ class GaussianProcessRandomDataset(
         x_values = self.xvalue_distribution.sample(torch.Size([n_datapoints]))
         assert x_values.dim() == 2 # should have shape (n_datapoints, dimension)
         
-        # make x_values have 1 batch for Botorch
-        x_values_botorch = x_values.unsqueeze(0) if len(model.batch_shape) == 1 else x_values
-
         with gpytorch.settings.prior_mode(True): # sample from prior
             prior = model.posterior(
-                x_values_botorch, 
-                observation_noise=self.observation_noise)
+                x_values, observation_noise=self.observation_noise)
 
-        # shape (batch_shape, n_datapoints, 1)
+        # shape (n_datapoints, 1)
         y_values = prior.sample(torch.Size([]))
+        assert y_values.dim() == 2 and y_values.size(1) == 1
+        y_values_1dim = y_values.squeeze(1)
 
         if self.set_random_model_train_data:
             # As a hack, need to remove last dimension of y_values because
             # set_train_data isn't really supported in BoTorch
             model.set_train_data(
-                x_values_botorch, y_values.squeeze(-1), strict=False)
+                x_values, y_values_1dim, strict=False)
 
-        return FunctionSamplesItem(x_values, y_values.squeeze(), model)
+        return FunctionSamplesItem(x_values, y_values_1dim, model)
 
 
 class RepeatedFunctionSamplesIterableDataset(
