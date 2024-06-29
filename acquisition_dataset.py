@@ -146,7 +146,8 @@ def _collate_train_acquisition_function_samples(samples_list, has_models, cached
         model=models_list, give_improvements=give_improvements)
 
 
-def get_dataloader(self, batch_size=32, shuffle=None,
+# get_dataloader is a method of AcquisitionDataset
+def _get_dataloader(self, batch_size=32, shuffle=None,
                    cache_pads:Optional[bool]=None, **kwargs):
     """Returns a DataLoader object for the dataset.
 
@@ -224,7 +225,7 @@ def get_dataloader(self, batch_size=32, shuffle=None,
 
 
 AcquisitionDataset._collate_train_acquisition_function_samples = _collate_train_acquisition_function_samples
-AcquisitionDataset.get_dataloader = get_dataloader
+AcquisitionDataset.get_dataloader = _get_dataloader
 
 
 class FunctionSamplesAcquisitionDataset(
@@ -421,9 +422,8 @@ class FunctionSamplesAcquisitionDataset(
     def data_is_fixed(self):
         return False
     
-    @property
     def data_is_loaded(self):
-        return self.base_dataset.data_is_loaded
+        return self.base_dataset.data_is_loaded()
 
     @property
     def _model_sampler(self):

@@ -17,7 +17,8 @@ from botorch.models.gp_regression import SingleTaskGP
 from botorch.exceptions import UnsupportedError
 import pyro
 
-from utils import get_lengths_from_proportions, resize_iterable, iterable_is_finite, get_lengths_from_proportions_or_lengths, save_json, load_json
+from utils import resize_iterable, iterable_is_finite, save_json, load_json
+from random_gp_function import RandomGPFunction
 
 
 # https://docs.gpytorch.ai/en/stable/_modules/gpytorch/module.html#Module.pyro_sample_from_prior
@@ -47,7 +48,8 @@ def _pyro_sample_from_prior(module, memo=None, prefix=""):
 class RandomModelSampler:
     """A class that samples a random model with random parameters from its prior
     from a list of models."""
-    def __init__(self, models: List[SingleTaskGP], model_probabilities=None, randomize_params=True):
+    def __init__(self, models: List[SingleTaskGP],
+                 model_probabilities=None, randomize_params=True):
         """Initializes the RandomModelSampler instance.
 
         Args:
@@ -118,6 +120,10 @@ class RandomModelSampler:
     @property
     def initial_models(self):
         return [self.get_model(i) for i in range(len(self._models))]
+    
+    def get_random_functions(self, n: int):
+        return [
+            RandomGPFunction(copy.deepcopy(self.sample())) for _ in range(n)]
 
 
 class ModelsWithParamsList:
@@ -171,7 +177,8 @@ class ModelsWithParamsList:
 
 
 class TupleWithModel:
-    def __init__(self, *items, model:Optional[SingleTaskGP]=None,
+    def __init__(self, *items,
+                 model:Optional[Union[SingleTaskGP, ModelsWithParamsList]]=None,
                  model_params:Optional[dict]=None, items_list=None,
                  **kwargs):
         if items_list is not None:
@@ -297,6 +304,11 @@ class TupleWithModel:
                               **self._kwargs)
     
     def copy(self):
+        """Creates a deep copy of the current object.
+
+        Returns:
+            A new instance of the current object with the same attribute values.
+        """
         # Implementation is similar to that of to
         new_items = tuple(
             item.clone() if torch.is_tensor(item) else copy.deepcopy(item)
@@ -530,6 +542,8 @@ class DatasetWithModels(Dataset, ABC):
     def fix_samples(self, n_realizations:Optional[int]=None, lazy=True):
         if self.data_is_fixed:
             raise ValueError(f"{self.__class__.__name__} is already fixed so don't need to fix.")
+        if not isinstance(lazy, bool):
+            raise ValueError("'lazy' parameter must be a boolean.")
         if lazy:
             return self._lazy_map_class(self, n_realizations)
         return self._list_map_class.from_iterable_dataset(self, n_realizations)
@@ -762,7 +776,8 @@ class MapDatasetWithModels(DatasetWithModels):
         # If so, make that one be self.
         # This will have slightly different behavior because then it won't be
         # shuffled, but it doesn't matter.
-        return [self if len(subset) == len(self) else self._map_subset_class.from_subset(subset)
+        return [self if len(subset) == len(self) else
+                self._map_subset_class.from_subset(subset)
                 for subset in random_split(self, lengths)]
 
 
@@ -1019,10 +1034,12 @@ class LazyMapDatasetWithModels(MapDatasetWithModels):
         # DatasetWithModels
         if not (isinstance(dataset, self._base_class) and
                 isinstance(dataset, IterableDataset)):
-            raise TypeError(f"dataset should be an instance of both {self._base_class.__name__} and IterableDataset")
+            raise TypeError(
+                "dataset should be an instance of both "
+                f"{self._base_class.__name__} and IterableDataset")
         
         # For __repr__
-        self._dataset = dataset
+        self.dataset = dataset
         self._n_realizations = n_realizations
         
         items_generator, size = dataset._get_items_generator_and_size(
@@ -1030,11 +1047,15 @@ class LazyMapDatasetWithModels(MapDatasetWithModels):
         self._items_generator = items_generator
         self._size = size
         self._data = [None] * size
-        self._model_sampler = dataset.model_sampler if dataset.has_models else None
     
+    @property
+    def _model_sampler(self):
+        return self.dataset._model_sampler
+
     def _init_params(self):
-        kwargs = {'n_realizations': self._n_realizations} if self._n_realizations is not None else {}
-        return (self._dataset,), kwargs
+        kwargs = {'n_realizations': self._n_realizations} if \
+            self._n_realizations is not None else {}
+        return (self.dataset,), kwargs
     
     def __getitem__(self, index):
         if isinstance(index, slice):

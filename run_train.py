@@ -1,11 +1,13 @@
 import torch
+from torch import nn
 
 from utils import get_lengths_from_proportions
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 if torch.cuda.is_available():
     print(torch.cuda.current_device())
     print(torch.cuda.get_device_name(torch.cuda.current_device()))
-from torch import nn
+
+from botorch.models.transforms.outcome import Power
 
 from gp_acquisition_dataset import create_train_and_test_gp_acquisition_datasets
 from acquisition_function_net import (
@@ -79,6 +81,20 @@ DIMENSION = 4
 RANDOMIZE_PARAMS = True
 # choose either "uniform" or "normal" (or a custom distribution)
 XVALUE_DISTRIBUTION = "uniform"
+# Choose an outcome transform. Can be None if no outcome transform
+# OUTCOME_TRANSFORM = None
+# TODO (bug): str(Power(2)) = "Power()" but we'd like it to be "Power(2)" so it
+# can be saved uniquely. Maybe use the attributes of the class or something
+# instead. Or alternateively, just don't save the acquisition datasets, or
+# transform the acquisition datasets directly. I think it would be easiest to
+# just not save the acquisition datasets anymore.
+OUTCOME_TRANSFORM = Power(2)
+
+if OUTCOME_TRANSFORM is not None:
+    # If we transform the outcomes, then the model information will disappear
+    # so can't meausre the true GP stats because it's not a GP anymore.
+    GET_TRAIN_TRUE_GP_STATS = False
+    GET_TEST_TRUE_GP_STATS = False
 
 ################## Settings for dataset size and generation ####################
 # The size of the training acquisition dataset
@@ -86,7 +102,7 @@ TRAIN_ACQUISITION_SIZE = 12345
 # The amount that the dataset is expanded to save compute of GP realizations
 EXPANSION_FACTOR = 4
 # Whether and how to fix the training dataset
-FIX_TRAIN_SAMPLES_DATASET = False
+FIX_TRAIN_SAMPLES_DATASET = True
 
 ########## Set number of history and candidate points generation ###############
 # This means whether n history points or whether the total number of points
@@ -184,6 +200,7 @@ train_aq_dataset, test_aq_dataset, small_test_aq_dataset = create_train_and_test
         dimension=DIMENSION,
         randomize_params=RANDOMIZE_PARAMS,
         xvalue_distribution=XVALUE_DISTRIBUTION,
+        outcome_transform=OUTCOME_TRANSFORM,
 
         train_acquisition_size=TRAIN_ACQUISITION_SIZE,
         expansion_factor=EXPANSION_FACTOR,

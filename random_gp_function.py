@@ -21,6 +21,7 @@ def _gp_model_has_no_data(model: ExactGP):
     return n_points == 0
 
 
+# Can consider using botorch.models.utils.assorted.consolidate_duplicates instead
 def get_unique(x):
     unique_indices_list = []
     for input_index in range(x.size(0)):
@@ -39,6 +40,9 @@ def get_unique(x):
     return x[[inds[0] for inds in unique_indices_list]], unique_indices_list
 
 
+# Can consider using botorch.models.model.FantasizeMixin and `fantasize` instead
+# (SingleTaskGP is a subclass of FantasizeMixin)
+# But then maybe need to worry about input transform which I don't understand
 class RandomGPFunction:
     def __init__(self, model: SingleTaskGP, observation_noise:bool=False):
         if not isinstance(model, SingleTaskGP):
@@ -89,7 +93,6 @@ class RandomGPFunction:
         if model_is_empty:
             new_unique_input_indices = list(range(n_unique_points))
             n_new_points = n_unique_points
-
             x_unique_new = x_unique
         else:
             current_X = model.train_inputs[0]

@@ -9,6 +9,7 @@ from utils import (get_uniform_randint_generator,
                    get_loguniform_randint_generator,
                    get_lengths_from_proportions)
 from torch.distributions import Distribution
+from botorch.models.transforms.outcome import OutcomeTransform
 
 
 def get_n_datapoints_random_gen_fixed_n_candidates(
@@ -67,6 +68,7 @@ DATASETS_DIR = os.path.join(script_dir, "datasets")
 def create_gp_acquisition_dataset(base_dataset_size,
         # gp_dataset_kwargs_non_datapoints
         dimension, randomize_params=False, xvalue_distribution="uniform",
+        outcome_transform: Optional[OutcomeTransform]=None,
         observation_noise=False, models=None, model_probabilities=None,
         
         # n_datapoints_kwargs
@@ -120,19 +122,19 @@ def create_gp_acquisition_dataset(base_dataset_size,
 
         gp_dataset_save_kwargs = dict(
             **n_datapoints_kwargs, **gp_dataset_kwargs_non_datapoints)
-        
         function_dataset_hash = dict_to_hash(gp_dataset_save_kwargs)
-
-        gp_aq_dataset_extra_info_str = dict_to_str(
-            dict(fix_acquisition_samples=fix_acquisition_samples,
-            expansion_factor=expansion_factor))
-        
         base_name = f"{name_}base_size={base_dataset_size}_{function_dataset_hash}"
 
-        aq_dataset_name = f"{base_name}_acquisition_{gp_aq_dataset_extra_info_str}"
+        aq_dataset_extra_info_str = dict_to_str(
+            dict(fix_acquisition_samples=fix_acquisition_samples,
+            expansion_factor=expansion_factor,
+            outcome_transform=outcome_transform))
+        aq_dataset_name = f"{base_name}_acquisition_{aq_dataset_extra_info_str}"
         aq_dataset_path = os.path.join(DATASETS_DIR, aq_dataset_name)
+
+        aq_dataset_already_saved = os.path.exists(aq_dataset_path)
         
-        if os.path.exists(aq_dataset_path):
+        if aq_dataset_already_saved:
             aq_dataset = AcquisitionDataset.load(aq_dataset_path)
             assert aq_dataset.data_is_fixed == fix_acquisition_samples
             # Won't just return it now because 
@@ -150,8 +152,9 @@ def create_gp_acquisition_dataset(base_dataset_size,
         function_dataset_name = f"{base_name}_gp_samples"
         function_dataset_path = os.path.join(DATASETS_DIR, function_dataset_name)
 
-    if not (cache and os.path.exists(aq_dataset_path)):
-        if cache and os.path.exists(function_dataset_path) and fix_gp_samples:
+    if not (cache and aq_dataset_already_saved):
+        function_dataset_already_exists = os.path.exists(function_dataset_path)
+        if cache and fix_gp_samples and function_dataset_already_exists:
             function_samples_dataset = ListMapFunctionSamplesDataset.load(
                 function_dataset_path)
         else:
@@ -166,10 +169,19 @@ def create_gp_acquisition_dataset(base_dataset_size,
             if fix_gp_samples:
                 function_samples_dataset = function_samples_dataset.fix_samples(
                     lazy=False if cache else lazy)
-                if cache:
-                    os.makedirs(DATASETS_DIR, exist_ok=True)
-                    function_samples_dataset.save(function_dataset_path, verbose=True)
+
+        if cache and fix_gp_samples and not function_dataset_already_exists:
+            os.makedirs(DATASETS_DIR, exist_ok=True)
+            function_samples_dataset.save(function_dataset_path, verbose=True)
         
+        # Make sure to transform AFTER the dataset is saved because we want to
+        # save the un-transformed values.
+        if outcome_transform is not None:
+            # print(f"Transforming outcomes of dataset of type {type(function_samples_dataset).__name__} of length {len(function_samples_dataset)}")
+            function_samples_dataset = function_samples_dataset.transform_outcomes(
+                outcome_transform)
+            # print(f"Dataset is now a {type(function_samples_dataset).__name__} of length {len(function_samples_dataset)}")
+
         if fix_n_candidates:
             extra_kwargs = dict(n_candidate_points=n_candidates)
         else:
@@ -198,6 +210,7 @@ def create_train_and_test_gp_acquisition_datasets(
         dimension:int,
         randomize_params:bool,
         xvalue_distribution: Union[Distribution,str],
+        outcome_transform: Optional[OutcomeTransform],
 
         train_acquisition_size:int,
         expansion_factor:int,
@@ -251,6 +264,7 @@ def create_train_and_test_gp_acquisition_datasets(
 
     common_kwargs = dict(dimension=dimension, randomize_params=randomize_params,
         observation_noise=False, xvalue_distribution=xvalue_distribution,
+        outcome_transform=outcome_transform,
         expansion_factor=expansion_factor, loguniform=loguniform,
         pre_offset=pre_offset if loguniform else None, batch_size=batch_size,
         device=gp_gen_device, cache=cache_datasets)
