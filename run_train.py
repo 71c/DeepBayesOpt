@@ -62,11 +62,11 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 ########################### Test dataset settings ##############################
 ## How many times bigger the big test dataset is than the train dataset, > 0
 # TEST_FACTOR = 3.0
-TEST_FACTOR = 0.3
+TEST_FACTOR = 1.0
 ## The proportion of the test dataset that is used for evaluating the model after
 ## each epoch, between 0 and 1
 # SMALL_TEST_PROPORTION_OF_TEST = 0.04
-SMALL_TEST_PROPORTION_OF_TEST = 0.2
+SMALL_TEST_PROPORTION_OF_TEST = 1.0
 # The following two should be kept as they are -- ALWAYS want to fix the test.
 # As long as the acqisition dataset is fixed, then whether the function samples
 # dataset is fixed doesn't matter.
@@ -78,17 +78,17 @@ FIX_TEST_ACQUISITION_DATASET = True
 # Dimension of the optimization problem
 DIMENSION = 1
 # whether to randomize the GP parameters for training data
-RANDOMIZE_PARAMS = False
+RANDOMIZE_PARAMS = True
 # choose either "uniform" or "normal" (or a custom distribution)
 XVALUE_DISTRIBUTION = "uniform"
 # Choose an outcome transform. Can be None if no outcome transform
-OUTCOME_TRANSFORM = None
+# OUTCOME_TRANSFORM = None
 # TODO (bug): str(Power(2)) = "Power()" but we'd like it to be "Power(2)" so it
 # can be saved uniquely. Maybe use the attributes of the class or something
 # instead. Or alternateively, just don't save the acquisition datasets, or
 # transform the acquisition datasets directly. I think it would be easiest to
 # just not save the acquisition datasets anymore.
-# OUTCOME_TRANSFORM = Power(2)
+OUTCOME_TRANSFORM = Power(2)
 
 if OUTCOME_TRANSFORM is not None:
     # If we transform the outcomes, then the model information will disappear
@@ -98,9 +98,9 @@ if OUTCOME_TRANSFORM is not None:
 
 ################## Settings for dataset size and generation ####################
 # The size of the training acquisition dataset
-TRAIN_ACQUISITION_SIZE = 12345
+TRAIN_ACQUISITION_SIZE = 50_000
 # The amount that the dataset is expanded to save compute of GP realizations
-EXPANSION_FACTOR = 4
+EXPANSION_FACTOR = 2
 # Whether and how to fix the training dataset
 FIX_TRAIN_SAMPLES_DATASET = True
 
@@ -131,7 +131,7 @@ MAX_POINTS = 30
 POLICY_GRADIENT = True # True for the softmax thing, False for MSE EI
 BATCH_SIZE = 128
 LEARNING_RATE = 3e-4
-EPOCHS = 20
+EPOCHS = 50
 FIX_TRAIN_ACQUISITION_DATASET = False
 
 # Only used if POLICY_GRADIENT is True
@@ -182,7 +182,7 @@ model = AcquisitionFunctionNetV1and2(DIMENSION,
                                  layer_norm_pointnet=False,
                                  layer_norm_before_end_mlp=False,
                                  layer_norm_at_end_mlp=False,
-                                 standardize_outcomes=True,
+                                 standardize_outcomes=False,
                                  include_best_y=False,
                                  activation_pointnet=nn.ReLU,
                                  activation_mlp=nn.ReLU).to(device)

@@ -670,10 +670,8 @@ class DatasetWithModels(Dataset, ABC):
 
         os.makedirs(dir_name, exist_ok=True)
         
-        has_models = self.has_models
-
         # Save the models if we have them
-        if has_models:
+        if self.has_models:
             models = self.model_sampler.initial_models
             torch.save(models, os.path.join(dir_name, "models.pt"))
         
