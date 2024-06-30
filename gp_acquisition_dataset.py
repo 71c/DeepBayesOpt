@@ -177,10 +177,12 @@ def create_gp_acquisition_dataset(base_dataset_size,
         # Make sure to transform AFTER the dataset is saved because we want to
         # save the un-transformed values.
         if outcome_transform is not None:
-            # print(f"Transforming outcomes of dataset of type {type(function_samples_dataset).__name__} of length {len(function_samples_dataset)}")
             function_samples_dataset = function_samples_dataset.transform_outcomes(
                 outcome_transform)
-            # print(f"Dataset is now a {type(function_samples_dataset).__name__} of length {len(function_samples_dataset)}")
+        
+        # (testing-- make y values zero mean and unit variance)
+        # Something like --
+        # function_samples_dataset = function_samples_dataset.standardize_outcomes()
 
         if fix_n_candidates:
             extra_kwargs = dict(n_candidate_points=n_candidates)

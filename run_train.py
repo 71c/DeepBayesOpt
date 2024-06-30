@@ -76,19 +76,19 @@ FIX_TEST_ACQUISITION_DATASET = True
 
 ###################### GP realization characteristics ##########################
 # Dimension of the optimization problem
-DIMENSION = 4
+DIMENSION = 1
 # whether to randomize the GP parameters for training data
-RANDOMIZE_PARAMS = True
+RANDOMIZE_PARAMS = False
 # choose either "uniform" or "normal" (or a custom distribution)
 XVALUE_DISTRIBUTION = "uniform"
 # Choose an outcome transform. Can be None if no outcome transform
-# OUTCOME_TRANSFORM = None
+OUTCOME_TRANSFORM = None
 # TODO (bug): str(Power(2)) = "Power()" but we'd like it to be "Power(2)" so it
 # can be saved uniquely. Maybe use the attributes of the class or something
 # instead. Or alternateively, just don't save the acquisition datasets, or
 # transform the acquisition datasets directly. I think it would be easiest to
 # just not save the acquisition datasets anymore.
-OUTCOME_TRANSFORM = Power(2)
+# OUTCOME_TRANSFORM = Power(2)
 
 if OUTCOME_TRANSFORM is not None:
     # If we transform the outcomes, then the model information will disappear
@@ -182,6 +182,7 @@ model = AcquisitionFunctionNetV1and2(DIMENSION,
                                  layer_norm_pointnet=False,
                                  layer_norm_before_end_mlp=False,
                                  layer_norm_at_end_mlp=False,
+                                 standardize_outcomes=True,
                                  include_best_y=False,
                                  activation_pointnet=nn.ReLU,
                                  activation_mlp=nn.ReLU).to(device)
@@ -226,6 +227,9 @@ train_aq_dataset, test_aq_dataset, small_test_aq_dataset = create_train_and_test
         batch_size=BATCH_SIZE,
         fix_train_acquisition_dataset=FIX_TRAIN_ACQUISITION_DATASET)
 
+# for item in train_aq_dataset.base_dataset:
+#     print(item.y_values.mean(), item.y_values.std(), item.y_values.shape)
+# exit()
 
 # print("Train acquisition dataset:")
 # print(train_aq_dataset)

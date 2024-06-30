@@ -209,6 +209,9 @@ class Dense(nn.Sequential):
             add_layer_norm = layer_norm_at_end if i == n_layers - 1 else layer_norm_before_end
             if add_layer_norm:
                 layers.append(nn.LayerNorm(out_dim))
+
+                # if i == 0:
+                #     layers.append(nn.LayerNorm(out_dim))
             
             if i != n_layers - 1 or activation_at_end:
                 # layers.append(nn.ReLU())
@@ -260,6 +263,7 @@ class PointNetLayer(nn.Module):
             or with shape (*, output_dim) if keepdim=False
         """
         # shape (*, n, output_dim)
+        logger.debug(f"x.shape: {x.shape}")
         local_features = self.network(x)
 
         # for name, param in self.network.named_parameters():
@@ -469,6 +473,8 @@ class AcquisitionFunctionNetWithSoftmaxAndExponentiate(AcquisitionFunctionNet):
         pass  # pragma: no cover
 
 
+MIN_STDV = 1e-8
+
 class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExponentiate):
     """Abstract class for an acquisition function network with a final MLP
     layer. Subclasses should implement the `_get_mlp_input` method."""
@@ -481,6 +487,7 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
                  initial_alpha=1.0,
                  layer_norm_before_end=False,
                  layer_norm_at_end=False,
+                 standardize_outcomes=False,
                  **dense_kwargs):
         """Initializes the MLP layer at the end of the acquisition function.
         Subclasses should call this method in their `__init__` method.
@@ -516,6 +523,7 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
                            layer_norm_at_end=False, **dense_kwargs)
         
         self.layer_norm_at_end = layer_norm_at_end
+        self.standardize_outcomes = standardize_outcomes
         
         self.transform = SoftmaxOrExponentiateLayer(softmax_dim=-2,
                                             include_alpha=include_alpha,
@@ -565,6 +573,44 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
         hist_mask = check_xy_dims_add_y_output_dim(x_hist, hist_mask, "x_hist", "hist_mask")
         cand_mask = check_xy_dims_add_y_output_dim(x_cand, cand_mask, "x_cand", "cand_mask")
 
+        if self.standardize_outcomes:
+            max_n_hist = y_hist.size(-2)
+
+            if hist_mask is None:
+                means = y_hist.mean(dim=-2, keepdim=True)
+            else:
+                n_hists = hist_mask.sum(dim=-2, keepdim=True).double()
+                if (n_hists == 0).any():
+                    raise ValueError(f"Can't standardize with no observations. {n_hists=}.")
+                # shape batch_size x 1 x 1
+                means = y_hist.sum(dim=-2, keepdim=True) / n_hists
+
+            if max_n_hist < 1:
+                raise ValueError(f"Can't standardize with no observations. {y_hist.shape=}.")
+            elif max_n_hist == 1:
+                stdvs = torch.ones(
+                    (*y_hist.shape[:-2], 1, y_hist.shape[-1]),
+                    dtype=y_hist.dtype, device=y_hist.device)
+            else:
+                if hist_mask is None:
+                    stdvs = y_hist.std(dim=-2, keepdim=True)
+                else:
+                    # shape batch_size x max_n_hist x 1
+                    # Need to mask it
+                    means_expanded = expand_dim(
+                        means, -2, max_n_hist) * hist_mask
+                    # Since both y_hist and means_expanded are mask with zeros,
+                    # (0 - 0)^2 = 0 so this is also mask with zeros, good.
+                    squared_differences = nn.functional.mse_loss(
+                        y_hist, means_expanded, reduction='none')
+                    denominators = (n_hists - 1.0).where(n_hists == 1.0, torch.full_like(n_hists, 1.0))
+                    variances = squared_differences.sum(dim=-2, keepdim=True) / denominators
+                    variances = variances.where(n_hists == 1.0, torch.full_like(variances, 1.0))
+                    stdvs = torch.sqrt(variances)
+            
+            stdvs = stdvs.where(stdvs >= MIN_STDV, torch.full_like(stdvs, 1.0))
+            y_hist = (y_hist - means) / stdvs
+
         # shape (*, n_cand, input_to_final_layer_dim)
         a = self._get_mlp_input(x_hist, y_hist, x_cand, hist_mask, cand_mask)
 
@@ -577,6 +623,10 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
 
         acquisition_values = self.transform(acquisition_values, mask=cand_mask,
                                             exponentiate=exponentiate, softmax=softmax)
+        
+        if self.standardize_outcomes and exponentiate:
+            # Assume that if exponentiate=True, then we are computing EI
+            acquisition_values = acquisition_values * stdvs
 
         if cand_mask is not None:
             # Mask out the padded values
@@ -641,6 +691,7 @@ class AcquisitionFunctionNetV1and2(AcquisitionFunctionNetWithFinalMLP):
                  layer_norm_pointnet=False,
                  layer_norm_before_end_mlp=False,
                  layer_norm_at_end_mlp=False,
+                 standardize_outcomes=False,
                  include_best_y=False,
                  activation_pointnet=nn.ReLU,
                  activation_mlp=nn.ReLU,
@@ -722,6 +773,7 @@ class AcquisitionFunctionNetV1and2(AcquisitionFunctionNetWithFinalMLP):
                          aq_func_hidden_dims, include_alpha,
                          learn_alpha, initial_alpha,
                          layer_norm_before_end_mlp, layer_norm_at_end_mlp,
+                         standardize_outcomes=standardize_outcomes,
                          activation=activation_mlp)
         self.dimension = dimension
         self.include_best_y = include_best_y
@@ -732,9 +784,11 @@ class AcquisitionFunctionNetV1and2(AcquisitionFunctionNetWithFinalMLP):
             y_hist = concat_y_hist_with_best_y(y_hist, hist_mask, subtract=False)
 
         if self.input_xcand_to_local_nn: # V2
+            # xy_hist_and_cand shape: (*, n_cand, n_hist, 2*dimension+1)
             xy_hist, xy_hist_and_cand, mask = _get_xy_hist_and_cand(x_hist, y_hist, x_cand, hist_mask)
             # shape (*, n_cand, encoded_history_dim)
             out = self.pointnet(xy_hist_and_cand, mask=mask, keepdim=False)
+            logger.debug(f"out.shape: {out.shape}")
         else: # V1
             xy_hist = torch.cat((x_hist, y_hist), dim=-1)
             # shape (*, 1, encoded_history_dim)
@@ -762,6 +816,7 @@ class AcquisitionFunctionNetV3(AcquisitionFunctionNetWithFinalMLP):
                  std_enc_hidden_dims=[256, 256], std_dim=1,
                  aq_func_hidden_dims=[256, 64], layer_norm=False,
                  layer_norm_at_end_mlp=False, include_y=False,
+                 standardize_outcomes=False,
                  include_alpha=False, learn_alpha=False, initial_alpha=1.0):
         """
         Args:
@@ -815,7 +870,8 @@ class AcquisitionFunctionNetV3(AcquisitionFunctionNetWithFinalMLP):
                          aq_func_hidden_dims, include_alpha,
                          learn_alpha, initial_alpha,
                          layer_norm_before_end=layer_norm,
-                         layer_norm_at_end=layer_norm_at_end_mlp)
+                         layer_norm_at_end=layer_norm_at_end_mlp,
+                         standardize_outcomes=standardize_outcomes)
         self.dimension = dimension
     
     def _get_mlp_input(self, x_hist, y_hist, x_cand,
@@ -871,7 +927,9 @@ class AcquisitionFunctionNetV4(AcquisitionFunctionNetWithFinalMLP):
                  mean_enc_hidden_dims=[256, 256], mean_dim=1,
                  std_enc_hidden_dims=[256, 256], std_dim=1,
                  aq_func_hidden_dims=[256, 64], layer_norm=False,
-                 layer_norm_at_end_mlp=False, include_mean=True,
+                 layer_norm_at_end_mlp=False,
+                 standardize_outcomes=False,
+                 include_mean=True,
                  include_local_features=False,
                  include_alpha=False, learn_alpha=False, initial_alpha=1.0):
         """
@@ -929,7 +987,8 @@ class AcquisitionFunctionNetV4(AcquisitionFunctionNetWithFinalMLP):
                          aq_func_hidden_dims, include_alpha,
                          learn_alpha, initial_alpha,
                          layer_norm_before_end=layer_norm,
-                         layer_norm_at_end=layer_norm_at_end_mlp)
+                         layer_norm_at_end=layer_norm_at_end_mlp,
+                         standardize_outcomes=standardize_outcomes)
         self.dimension = dimension
         self.include_mean = include_mean
         self.include_local_features = include_local_features

@@ -204,7 +204,7 @@ def _get_dataloader(self, batch_size=32, shuffle=None,
             max_hist = max(item.x_hist.size(0) for item in self)
             max_cand = max(item.x_cand.size(0) for item in self)
             print(f"max_hist={max_hist}")
-            tic("Padding.")
+            tic("Padding")
             for item in tqdm(self, desc="Padding."):
                 x_hist, y_hist, x_cand, vals_cand = item.tuple_no_model
                 x_hist_padded = pad_tensor(x_hist, max_hist, dim=0, add_mask=False)
