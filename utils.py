@@ -65,11 +65,13 @@ class Unstandardize(InverseOutcomeTransform):
         new_tf.eval()
         self.eval()
 
-        self._original_transform = standardizer
+        self._inverse_transform = new_tf
 
     def untransform_posterior(self, posterior: Posterior) -> Posterior:
         return self._inverse_transform.untransform_posterior(posterior)
 
+
+# def set_train_data
 
 
 def uniform_randint(min_val, max_val):

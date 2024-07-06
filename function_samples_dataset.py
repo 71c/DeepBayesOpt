@@ -575,7 +575,7 @@ class GaussianProcessRandomDataset(
             GaussianProcessRandomDataset: A new instance of the dataset with the
             specified dataset size.
         """
-        t, d = self._get_params_dict()
+        t, d = self._init_params()
         d['dataset_size'] = dataset_size
         return GaussianProcessRandomDataset(*t, **d)
     
@@ -650,11 +650,11 @@ class RepeatedFunctionSamplesIterableDataset(
         """
         if not (isinstance(base_dataset, FunctionSamplesDataset) and
                 isinstance(base_dataset, IterableDataset)):
-            raise TypeError("base_dataset should be an instance of " \
+            raise TypeError("base_dataset should be an instance of "
                             "both FunctionSamplesDataset and IterableDataset.")
         if not iterable_is_finite(base_dataset):
             raise ValueError(
-                "base_dataset for a RepeatedFunctionSamplesIterableDataset " \
+                "base_dataset for a RepeatedFunctionSamplesIterableDataset "
                 "should be a finite-sized IterableDataset")
         if not isinstance(size_factor, int) or size_factor <= 0:
             raise ValueError("size_factor should be a positive integer")
