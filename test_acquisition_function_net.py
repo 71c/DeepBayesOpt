@@ -145,7 +145,7 @@ def n_datapoints_random_gen(size=1):
 
 dataset = GaussianProcessRandomDataset(
     dimension=DIMENSION, n_datapoints_random_gen=n_datapoints_random_gen,
-    observation_noise=False, set_random_model_train_data=False,
+    observation_noise=False,
     xvalue_distribution="normal",
     device=device,
     dataset_size=BATCH_SIZE * N_BATCHES)

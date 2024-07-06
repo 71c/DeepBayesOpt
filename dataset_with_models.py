@@ -45,6 +45,30 @@ def _pyro_sample_from_prior(module, memo=None, prefix=""):
     return module
 
 
+_GP_MODEL_ATTRS_TO_SAVE = ["outcome_transform", "input_transform"]
+def _get_gp_model_params_copy(model: SingleTaskGP):
+    # need to copy the initial parameters with clone()
+    params_copy = {name: param.detach().clone()
+                   for name, param in model.named_parameters()}
+
+    attrs = {}
+    for name in _GP_MODEL_ATTRS_TO_SAVE:
+        assert name not in params_copy # shouldn't already be a parameter, check
+        if hasattr(model, name):
+            attrs[name] = getattr(model, name)
+    
+    return params_copy, attrs
+
+
+def _set_gp_model_params(model: SingleTaskGP, params: dict):
+    for name in _GP_MODEL_ATTRS_TO_SAVE:
+        if name in params:
+            setattr(model, name, params.pop(name))
+        elif hasattr(model, name):
+            delattr(model, name)
+    model.initialize(**params)
+
+
 class RandomModelSampler:
     """A class that samples a random model with random parameters from its prior
     from a list of models."""
@@ -58,18 +82,28 @@ class RandomModelSampler:
             model_probabilities (Tensor, optional): 1D Tensor of probabilities
                 OF choosing each model. If None, then set to be uniform.
         """
-        for i, model in enumerate(models):
+        models = models.copy()
+        initial_params_list = []
+        for i in range(len(models)):
+            model = models[i]
+
             if not isinstance(model, SingleTaskGP):
                 raise UnsupportedError(f"models[{i}] should be a SingleTaskGP instance.")
 
+            if hasattr(model, "index") or hasattr(model, "initial_params"):
+                model = copy.deepcopy(model)
+                models[i] = model
+            
             # Set the model indices as attributes so we can access them for purpose
             # of saving data
             model.index = i
 
+            init_params, init_attrs = _get_gp_model_params_copy(model)
+            model.initial_params = init_params
+            initial_params_list.append({**init_params, **init_attrs})
+
+        self._initial_params_list = initial_params_list
         self._models = models
-        # need to copy the initial parameters with clone()
-        for model in models:
-            model.initial_params = {name: param.detach().clone() for name, param in model.named_parameters()}
 
         if model_probabilities is None:
             model_probabilities = torch.full([len(models)], 1/len(models))
@@ -101,8 +135,6 @@ class RandomModelSampler:
     
     def get_model(self, index, model_params=None):
         model = self._models[index]
-        if model_params is None:
-            model_params = model.initial_params
 
         # Remove the data from the model. Basically equivalent to
         # model.set_train_data(inputs=None, targets=None, strict=False)
@@ -114,7 +146,10 @@ class RandomModelSampler:
         # Initialize the model with the initial parameters
         # because they could have been changed by maximizing mll.
         # in particular the parameters that don't have priors.
-        model.initialize(**model_params)
+        if model_params is None:
+            model_params = self._initial_params_list[index]
+        _set_gp_model_params(model, model_params)
+        
         return model
     
     @property
@@ -160,7 +195,7 @@ class ModelsWithParamsList:
             return ModelsWithParamsList(self._models_and_params[index])
         
         model, params = self._models_and_params[index]
-        model.initialize(**params)
+        _set_gp_model_params(model, params)
         return model
 
     def __len__(self):
@@ -252,8 +287,8 @@ class TupleWithModel:
             elif isinstance(model, SingleTaskGP):
                 if model_params is None:
                     # need to copy the data, otherwise everything will be the same
-                    model_params = {name: param.detach().clone()
-                                    for name, param in model.named_parameters()}
+                    params, attrs = _get_gp_model_params_copy(model)
+                    model_params = {**params, **attrs}
                 self.model_params = model_params
                 self.model_index = model.index if hasattr(model, "index") else None
             else:
@@ -275,7 +310,7 @@ class TupleWithModel:
         if isinstance(self._model, ModelsWithParamsList):
             return self._model
         # otherwise, it is a SingleTaskGP instance:
-        self._model.initialize(**self.model_params)
+        _set_gp_model_params(self._model, self.model_params)
         return self._model
 
     @property
@@ -318,7 +353,7 @@ class TupleWithModel:
         return self.__class__(*new_items,
                               model=self._model,
                               model_params=new_model_params,
-                              **self._kwargs)
+                              **copy.deepcopy(self._kwargs))
     
     def __getitem__(self, index):
         # return self._tuple[index] # basically equivalent to the below

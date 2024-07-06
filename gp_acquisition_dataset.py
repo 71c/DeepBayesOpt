@@ -153,7 +153,9 @@ def create_gp_acquisition_dataset(base_dataset_size,
         function_dataset_path = os.path.join(DATASETS_DIR, function_dataset_name)
 
     if not (cache and aq_dataset_already_saved):
-        function_dataset_already_exists = os.path.exists(function_dataset_path)
+        # Variable `function_dataset_path` doesn't exist if cache==False
+        # but that's ok because "and" is lazy
+        function_dataset_already_exists = cache and os.path.exists(function_dataset_path)
         if cache and fix_gp_samples and function_dataset_already_exists:
             function_samples_dataset = ListMapFunctionSamplesDataset.load(
                 function_dataset_path)
@@ -164,8 +166,7 @@ def create_gp_acquisition_dataset(base_dataset_size,
             function_samples_dataset = GaussianProcessRandomDataset(
                 dataset_size=base_dataset_size,
                 n_datapoints_random_gen=n_datapoints_random_gen,
-                device=device, set_random_model_train_data=False,
-                **gp_dataset_kwargs_non_datapoints)
+                device=device, **gp_dataset_kwargs_non_datapoints)
             if fix_gp_samples:
                 function_samples_dataset = function_samples_dataset.fix_samples(
                     lazy=False if cache else lazy)

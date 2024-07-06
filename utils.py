@@ -3,12 +3,73 @@ import math
 import os
 import numpy as np
 from scipy.optimize import root_scalar
-from typing import List, Optional, Sequence, Union, Iterable
+from typing import List, Optional, Sequence, Union, Iterable, Tuple
 import warnings
 import torch
+from torch import Tensor
 from functools import partial, lru_cache
 from botorch.exceptions import UnsupportedError
+from botorch.posteriors import Posterior
+from botorch.models.transforms.outcome import OutcomeTransform, Standardize
 import json
+
+
+class InverseOutcomeTransform(OutcomeTransform):
+    def __init__(self, transform: OutcomeTransform):
+        super().__init__()
+        if not isinstance(transform, OutcomeTransform):
+            raise ValueError("transform must be a OutcomeTransform instance")
+        self._original_transform = transform
+    
+    def forward(
+        self, Y: Tensor, Yvar: Optional[Tensor] = None
+    ) -> Tuple[Tensor, Optional[Tensor]]:
+        return self._original_transform.untransform(Y, Yvar)
+
+    def subset_output(self, idcs: List[int]) -> OutcomeTransform:
+        return self.__class__(self._original_transform.subset_output(idcs))
+
+    def untransform(
+        self, Y: Tensor, Yvar: Optional[Tensor] = None
+    ) -> Tuple[Tensor, Optional[Tensor]]:
+        return self._original_transform.forward(Y, Yvar)
+    
+    @property
+    def _is_linear(self) -> bool:
+        return self._original_transform._is_linear
+
+class Unstandardize(InverseOutcomeTransform):
+    def __init__(self, standardizer: Standardize):
+        super().__init__(standardizer)
+
+        if not isinstance(standardizer, Standardize):
+            raise ValueError("standardizer must be a Standardize instance")
+        if not standardizer._is_trained:
+            raise RuntimeError(
+            "Can only invert a Standardize if it has been called on some outcome data")
+        assert not standardizer.training
+
+        new_tf = standardizer.__class__(
+            m=standardizer._m,
+            outputs=standardizer._outputs,
+            batch_shape=standardizer._batch_shape,
+            min_stdv=standardizer._min_stdv)
+
+        new_stdvs = 1 / standardizer.stdvs
+        new_tf.stdvs = new_stdvs
+        new_tf._stdvs_sq = new_stdvs.pow(2)
+        
+        new_tf.means = -new_stdvs * standardizer.means
+        
+        new_tf._is_trained = standardizer._is_trained
+        new_tf.eval()
+        self.eval()
+
+        self._original_transform = standardizer
+
+    def untransform_posterior(self, posterior: Posterior) -> Posterior:
+        return self._inverse_transform.untransform_posterior(posterior)
+
 
 
 def uniform_randint(min_val, max_val):

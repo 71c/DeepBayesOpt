@@ -42,7 +42,7 @@ CPROFILE = False
 TIME = True
 VERBOSE = True
 
-CACHE_DATASETS = True
+CACHE_DATASETS = False
 
 # The following two are not important.
 LAZY_TRAIN = True
@@ -82,13 +82,13 @@ RANDOMIZE_PARAMS = True
 # choose either "uniform" or "normal" (or a custom distribution)
 XVALUE_DISTRIBUTION = "uniform"
 # Choose an outcome transform. Can be None if no outcome transform
-# OUTCOME_TRANSFORM = None
+OUTCOME_TRANSFORM = None
 # TODO (bug): str(Power(2)) = "Power()" but we'd like it to be "Power(2)" so it
 # can be saved uniquely. Maybe use the attributes of the class or something
 # instead. Or alternateively, just don't save the acquisition datasets, or
 # transform the acquisition datasets directly. I think it would be easiest to
 # just not save the acquisition datasets anymore.
-OUTCOME_TRANSFORM = Power(2)
+# OUTCOME_TRANSFORM = Power(2)
 
 if OUTCOME_TRANSFORM is not None:
     # If we transform the outcomes, then the model information will disappear
@@ -102,7 +102,7 @@ TRAIN_ACQUISITION_SIZE = 50_000
 # The amount that the dataset is expanded to save compute of GP realizations
 EXPANSION_FACTOR = 2
 # Whether and how to fix the training dataset
-FIX_TRAIN_SAMPLES_DATASET = True
+FIX_TRAIN_SAMPLES_DATASET = False
 
 ########## Set number of history and candidate points generation ###############
 # This means whether n history points or whether the total number of points

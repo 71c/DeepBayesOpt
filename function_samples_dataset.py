@@ -1,22 +1,42 @@
+import copy
+from functools import partial
 from typing import Optional, List, Union
 from collections.abc import Sequence
-from dataset_with_models import TupleWithModel, create_classes, RandomModelSampler
 import torch
 from torch.utils.data import IterableDataset, DataLoader
 from torch.distributions import Uniform, Normal, Independent, Distribution
 from botorch.models.gp_regression import SingleTaskGP
 from botorch.exceptions import UnsupportedError, BotorchTensorDimensionError
-from botorch.models.transforms.outcome import OutcomeTransform
+from botorch.models.transforms.outcome import OutcomeTransform, Standardize
 import gpytorch
 from gpytorch.likelihoods import GaussianLikelihood, FixedNoiseGaussianLikelihood
 from gpytorch.constraints.constraints import GreaterThan
-from utils import SizedInfiniteIterableMixin, SizedIterableMixin, get_lengths_from_proportions, iterable_is_finite
 import math
+
+from dataset_with_models import TupleWithModel, create_classes, RandomModelSampler
+from utils import (SizedInfiniteIterableMixin, SizedIterableMixin,
+                   get_lengths_from_proportions, iterable_is_finite)
+from utils import InverseOutcomeTransform, Unstandardize
 
 
 class FunctionSamplesItem(TupleWithModel):
     args_names = ['x_values', 'y_values']
     kwargs_names = []
+
+    def get_outcome_dim_and_whether_no_output_dim(self):
+        X, Y = self.tuple_no_model
+        y_has_no_output_dim = False
+        if X.dim() != Y.dim():
+            if (X.dim() - Y.dim() == 1) and (X.shape[:-1] == Y.shape):
+                y_has_no_output_dim = True
+            else:
+                message = (
+                    "Expected X and Y to have the same number of dimensions"
+                    f" (got X with dimension {X.dim()} and Y with dimension"
+                    f" {Y.dim()}).")
+                raise BotorchTensorDimensionError(message)
+        m = 1 if y_has_no_output_dim else Y.size(-1)
+        return m, y_has_no_output_dim
 
 
 (FunctionSamplesDataset,
@@ -75,48 +95,6 @@ class FunctionSamplesItem(TupleWithModel):
      map_subset_name='MapFunctionSamplesSubset',
      
      tuple_class=FunctionSamplesItem)
-
-
-
-
-###### Current implementation of outcome transform of datasets follows.
-###### TODO if needed: Generalize these to also optionally have input transform.
-###### Could alternatively just do away with the OutcomeTransform and
-###### InputTransform and just use a function (x,y) --> (x,y) or
-###### FunctionSamplesItem --> FunctionSamplesItem,
-###### or (less generally) two functions x --> x and y --> y.
-
-@staticmethod
-def _get_outcome_transform(transform: OutcomeTransform):
-    """Get a function that transforms the outcome of an item."""
-    def transform(item: FunctionSamplesItem):
-        X, Y = item.tuple_no_model
-
-        # Doing this silly check and stuff just to make sure that
-        # Y has one or more output dimensions, just in case the
-        # OutcomeTransform checks for this e.g. Standardize.
-        # Most don't, such as Power, though, but it's still good to do this.
-        y_has_no_output_dim = False
-        if X.dim() != Y.dim():
-            if (X.dim() - Y.dim() == 1) and (X.shape[:-1] == Y.shape):
-                y_has_no_output_dim = True
-                Y = Y.unsqueeze(-1)
-            else:
-                message = (
-                    "Expected X and Y to have the same number of dimensions"
-                    f" (got X with dimension {X.dim()} and Y with dimension"
-                    f" {Y.dim()}).")
-                raise BotorchTensorDimensionError(message)
-        
-        Y_tf, Yvar = transform(Y, None)
-        assert Y_tf.shape == Y.shape
-        if y_has_no_output_dim:
-            Y_tf = Y_tf.squeeze(-1)
-
-        return FunctionSamplesItem(X, Y_tf)
-    return transform
-
-FunctionSamplesDataset._get_outcome_transform = _get_outcome_transform
 
 
 # See here for OutcomeTransform documentation:
@@ -193,61 +171,6 @@ class TransformedFunctionSamplesIterableDataset(
         super().save_samples(dir_name, n_realizations, verbose)
 
 
-
-def _transform_default_iterable(self, transform):
-    """Transform the items of the dataset.
-
-    Args:
-        transform: A function mapping FunctionSamplesItem to FunctionSamplesItem
-        that transforms the items.
-    
-    Returns:
-        A new dataset where its items are transformed by the given transform.
-        If the dataset is iterable-style, then the new dataset is also
-        iterable-style. If the dataset is map-style, then the new dataset is
-        expected to be map-style.
-    """
-    if isinstance(self, IterableDataset):
-        return TransformedFunctionSamplesIterableDataset(self, transform)
-    raise NotImplementedError(
-        f"{self.__class__.__name__} has not implemented transform")
-
-FunctionSamplesDataset.transform = _transform_default_iterable
-
-
-# FunctionSamplesDataset.transform_outcomes = ...
-
-
-class TransformedListMapFunctionSamplesDataset(MapFunctionSamplesDataset):
-    def __init__(self, base_dataset: ListMapFunctionSamplesDataset,
-                 transform):
-        if not isinstance(base_dataset, ListMapFunctionSamplesDataset):
-            raise ValueError("base_dataset must be a ListMapFunctionSamplesDataset")
-        self.dataset = base_dataset
-        self.transform = transform
-        self._data = [transform(item) for item in base_dataset._data]
-
-## TODO: Finish revising all of these classes and functions!
-
-def _transform_listmap(self, transform):
-    """Transform the items of the dataset.
-
-    Args:
-        transform: A function mapping FunctionSamplesItem to FunctionSamplesItem
-        that transforms the items.
-    
-    Returns:
-        A new ListMapFunctionSamplesDataset where its items are transformed
-        by the given transform.
-"""
-    transformed_data = [transform(item) for item in self._data]
-    if all(item.has_model for item in transformed_data):
-
-    return ListMapFunctionSamplesDataset(transformed_data)
-
-ListMapFunctionSamplesDataset.transform_outcomes = _transform_outcomes_listmap
-
-
 class TransformedLazyMapFunctionSamplesDataset(MapFunctionSamplesDataset):
     def __init__(self, base_dataset: LazyMapFunctionSamplesDataset,
                  transform):
@@ -270,8 +193,7 @@ class TransformedLazyMapFunctionSamplesDataset(MapFunctionSamplesDataset):
         if isinstance(index, slice):
             return self._map_base_class.__getitem__(self, index)
         if self._data[index] is None:
-            self._data[index] = self._transform_outcome_of_item(
-                self.dataset[index], self.transform)
+            self._data[index] = self.transform(self.dataset[index])
         return self._data[index]
 
     def __len__(self) -> int:
@@ -284,21 +206,159 @@ class TransformedLazyMapFunctionSamplesDataset(MapFunctionSamplesDataset):
         # is cheap to compute, then the data is basically loaded.
         return self.dataset.data_is_loaded()
 
+    def transform(self):
+        raise NotImplementedError(
+            f"{self.__class__.__name__} has not implemented transform. "
+            "It is already transformed.")
 
-def _transform_outcomes_lazymap(self, transform: OutcomeTransform):
-    """Transform the outcomes of the dataset.
+
+def _transform_default_iterable(self, transform):
+    """Transform the items of the dataset.
 
     Args:
-        transform: An OutcomeTransform instance that transforms the outcomes.
+        transform: A function mapping FunctionSamplesItem to FunctionSamplesItem
+        that transforms the items.
     
     Returns:
-        A OutcomeTransformedLazyMapFunctionSamplesDataset instance (which
-        behaves exactly like a LazyMapFunctionSamplesDataset), where its
-        outcomes are transformed by the given transform.
+        A new dataset where its items are transformed by the given transform.
+        If the dataset is iterable-style, then the new dataset is also
+        iterable-style. If the dataset is map-style, then the new dataset is
+        expected to be map-style.
     """
-    return OutcomeTransformedLazyMapFunctionSamplesDataset(self, transform)
+    if isinstance(self, IterableDataset):
+        return TransformedFunctionSamplesIterableDataset(self, transform)
+    raise NotImplementedError(
+        f"{self.__class__.__name__} has not implemented transform")
 
-LazyMapFunctionSamplesDataset.transform_outcomes = _transform_outcomes_lazymap
+FunctionSamplesDataset.transform = _transform_default_iterable
+
+
+def _transform_listmap(self, transform):
+    """Transform the items of the dataset.
+
+    Args:
+        transform: A function mapping FunctionSamplesItem to FunctionSamplesItem
+        that transforms the items.
+    
+    Returns:
+        A new ListMapFunctionSamplesDataset where its items are transformed
+        by the given transform.
+    """
+    transformed_data = [transform(item) for item in self._data]
+    items_have_models = [item.has_model for item in transformed_data]
+    if all(items_have_models):
+        model_sampler = self.model_sampler
+    elif not any(items_have_models):
+        model_sampler = None
+    else:
+        raise RuntimeError(
+            "All transformed items should have models or all should not have models")
+
+    return ListMapFunctionSamplesDataset(transformed_data, model_sampler)
+
+ListMapFunctionSamplesDataset.transform = _transform_listmap
+
+
+def _transform_lazymap(self, transform):
+    """Transform the items of the dataset.
+
+    Args:
+        transform: A function mapping FunctionSamplesItem to FunctionSamplesItem
+        that transforms the items.
+    
+    Returns:
+        A TransformedLazyMapFunctionSamplesDataset instance (which
+        behaves exactly like a LazyMapFunctionSamplesDataset), where its
+        items are transformed by the given transform.
+    """
+    return TransformedLazyMapFunctionSamplesDataset(self, transform)
+
+LazyMapFunctionSamplesDataset.transform = _transform_lazymap
+
+
+@staticmethod
+def _apply_outcome_transform(item: FunctionSamplesItem,
+                             outcome_transform: OutcomeTransform,
+                             inverse_outcome_transform: Optional[OutcomeTransform]=None,
+                             retain_model=True):
+    """Transforms the outcome of an item to produce a new item where the
+    outcomes are transformed. Output does not have a model."""
+
+    ### Transform the y-values:
+    Y = item.y_values
+
+    # Doing this silly check and stuff just to make sure that
+    # Y has one or more output dimensions, just in case the
+    # OutcomeTransform checks for this e.g. Standardize.
+    # Most don't, such as Power, though, but it's still good to do this.
+    m, y_has_no_output_dim = item.get_outcome_dim_and_whether_no_output_dim()
+    if y_has_no_output_dim:
+        Y = Y.unsqueeze(-1) # add output dimension
+    
+    Y_tf, Yvar = outcome_transform(Y, None)
+    assert Y_tf.shape == Y.shape
+    
+    if y_has_no_output_dim:
+        Y_tf = Y_tf.squeeze(-1) # remove output dimension
+
+    ### Add transformed model
+    if retain_model and item.has_model:
+        new_model_params = getattr(item, "model_params", None)
+        new_model_params = {} if new_model_params is None else copy.deepcopy(new_model_params)
+        if "outcome_transform" in new_model_params:
+            raise UnsupportedError("Don't yet know how to apply an OutcomeTransform"
+                                " on top of an existing one in the right way")
+        if inverse_outcome_transform is None:
+            inverse_outcome_transform = InverseOutcomeTransform(outcome_transform)
+        new_model_params["outcome_transform"] = inverse_outcome_transform
+        model = item._model
+    else:
+        model = None
+        new_model_params = None
+
+    return FunctionSamplesItem(item.x_values.clone(), Y_tf,
+                               model=model, model_params=new_model_params)
+
+FunctionSamplesDataset._apply_outcome_transform = _apply_outcome_transform
+
+
+def _transform_outcomes(self, outcome_transform: OutcomeTransform,
+                        inverse_outcome_transform: Optional[OutcomeTransform]=None,
+                        retain_models=True):
+    """Transform the outcomes in the dataset."""
+    item_transform = partial(FunctionSamplesDataset._apply_outcome_transform,
+                   outcome_transform=outcome_transform,
+                   inverse_outcome_transform=inverse_outcome_transform,
+                   retain_model=retain_models)
+    return self.transform(item_transform)
+
+FunctionSamplesDataset.transform_outcomes = _transform_outcomes
+
+
+## Standardize:
+## we already have non-standardized data generated with GP models.
+## Want to, for each FunctionSamplesItem:
+## 1) s = Standardize()        # Make a Standardize transform
+## 2) Y_tf = s(y_values, None) # Standardize the y_values
+## 3) Add an outcome_transform to the model which is the *inverse* transform
+## of s. This is because the model is expected to be given standardized values
+## but the model lives in non-standardized space. This makes it so that
+## untransform_posterior actually standardizes (rather than un-standardizes as
+## is usual).
+## 4) Make sure that when model.set_train_data is done, then outcome_transform
+## applied to the Y.
+@staticmethod
+def _apply_standardize_outcome_transform(item: FunctionSamplesItem):
+    m, y_has_no_output_dim = item.get_outcome_dim_and_whether_no_output_dim()
+    standardize = Standardize(m=m)
+    return FunctionSamplesDataset._apply_outcome_transform(
+        item, standardize, Unstandardize(standardize), retain_model=True)
+FunctionSamplesDataset._apply_standardize_outcome_transform = _apply_standardize_outcome_transform
+
+def _standardize_outcomes(self):
+    return self.transform(self._apply_standardize_outcome_transform)
+FunctionSamplesDataset.standardize_outcomes = _standardize_outcomes
+
 #######################
 
 
@@ -323,7 +383,6 @@ class GaussianProcessRandomDataset(
                  models: Optional[List[SingleTaskGP]]=None,
                  model_probabilities=None,
                  dimension:Optional[int]=None, device=None,
-                 set_random_model_train_data=False,
                  dataset_size:Optional[int]=None,
                  randomize_params=True):
         r"""Create a dataset that generates random Gaussian Process data.
@@ -359,9 +418,6 @@ class GaussianProcessRandomDataset(
             device: torch.device, optional -- the desired device to use for
                 computations. Is only used if xvalue_distribution is None or
                 models is None; otherwise, it is ignored.
-            set_random_model_train_data (bool, default: False):
-                Whether to set the random model train data to the random data
-                with each returned values
             dataset_size: int, optional -- The size of the dataset to generate.
                 If None, the dataset is infinite. If specified, the dataset
                 generates that many samples with each iter() call.
@@ -383,10 +439,6 @@ class GaussianProcessRandomDataset(
 
         if dimension is not None and (not isinstance(dimension, int) or dimension <= 0):
             raise ValueError("dimension should be a positive integer.")
-
-        if not isinstance(set_random_model_train_data, bool):
-            raise TypeError("set_random_model_train_data must be a boolean value.")
-        self.set_random_model_train_data = set_random_model_train_data
 
         # Set xvalue_distribution
         if xvalue_distribution == "uniform" or xvalue_distribution == "normal":
@@ -506,7 +558,6 @@ class GaussianProcessRandomDataset(
             xvalue_distribution=self.xvalue_distribution,
             models=self.model_sampler.initial_models,
             model_probabilities=self.model_sampler.model_probabilities,
-            set_random_model_train_data=self.set_random_model_train_data,
             dataset_size=self._size,
             randomize_params=self.model_sampler.randomize_params
         )
@@ -579,12 +630,6 @@ class GaussianProcessRandomDataset(
         y_values = prior.sample(torch.Size([]))
         assert y_values.dim() == 2 and y_values.size(1) == 1
         y_values_1dim = y_values.squeeze(1)
-
-        if self.set_random_model_train_data:
-            # As a hack, need to remove last dimension of y_values because
-            # set_train_data isn't really supported in BoTorch
-            model.set_train_data(
-                x_values, y_values_1dim, strict=False)
 
         return FunctionSamplesItem(x_values, y_values_1dim, model)
 
