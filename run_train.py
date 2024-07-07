@@ -98,7 +98,7 @@ if OUTCOME_TRANSFORM is not None:
 
 ################## Settings for dataset size and generation ####################
 # The size of the training acquisition dataset
-TRAIN_ACQUISITION_SIZE = 50_000
+TRAIN_ACQUISITION_SIZE = 1000
 # The amount that the dataset is expanded to save compute of GP realizations
 EXPANSION_FACTOR = 2
 # Whether and how to fix the training dataset
@@ -129,9 +129,9 @@ MAX_POINTS = 30
 
 ############################# Settings for training ############################
 POLICY_GRADIENT = True # True for the softmax thing, False for MSE EI
-BATCH_SIZE = 128
+BATCH_SIZE = 32
 LEARNING_RATE = 3e-4
-EPOCHS = 50
+EPOCHS = 2
 FIX_TRAIN_ACQUISITION_DATASET = False
 
 # Only used if POLICY_GRADIENT is True

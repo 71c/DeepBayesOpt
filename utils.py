@@ -1,17 +1,30 @@
 from abc import ABC, abstractmethod
 import math
 import os
-import numpy as np
-from scipy.optimize import root_scalar
 from typing import List, Optional, Sequence, Union, Iterable, Tuple
 import warnings
+from functools import partial, lru_cache
+import json
+import numpy as np
+from scipy.optimize import root_scalar
 import torch
 from torch import Tensor
-from functools import partial, lru_cache
-from botorch.exceptions import UnsupportedError
+
+from botorch.exceptions.errors import (
+    BotorchTensorDimensionError,
+    InputDataError,
+    UnsupportedError,
+)
+from botorch.exceptions.warnings import (
+    _get_single_precision_warning,
+    BotorchTensorDimensionWarning,
+    InputDataWarning,
+)
 from botorch.posteriors import Posterior
 from botorch.models.transforms.outcome import OutcomeTransform, Standardize
-import json
+
+from botorch.models.model import Model
+from botorch.models.gpytorch import GPyTorchModel, BatchedMultiOutputGPyTorchModel
 
 
 class InverseOutcomeTransform(OutcomeTransform):
@@ -71,7 +84,168 @@ class Unstandardize(InverseOutcomeTransform):
         return self._inverse_transform.untransform_posterior(posterior)
 
 
-# def set_train_data
+
+def _transform_Y(self, Y: Optional[Tensor]=None):
+    if Y is not None and hasattr(self, "outcome_transform"):
+        outcome_transform = self.outcome_transform
+        is_training = outcome_transform.training
+        # Put it into eval mode because we don't want to re-learn e.g.
+        # mean and standard deviation for Standardize.
+        # We're assuming that Standardize has been called at least once
+        # (i.e. from being called on __init__ in SingleTaskGP) so that its
+        # _is_trained attribute is True, so even if in training mode,
+        # it has been trained at least once.
+        if is_training:
+            outcome_transform.eval()
+        Y, _ = outcome_transform(Y)
+        if is_training: # Set it back to train mode
+            outcome_transform.train()
+    return Y
+Model._transform_Y = _transform_Y
+
+
+def _set_train_data_with_X_transform(self,
+                                     X: Optional[Tensor]=None,
+                                     Y: Optional[Tensor]=None,
+                                     strict=True):
+    # If only one is given, then it does make sense to make sure it has the
+    # right shape...
+    strict = strict or ((X is None) ^ (Y is None))
+    self.set_train_data(inputs=X, targets=Y, strict=strict)
+
+    if X is not None and hasattr(self, "input_transform"):
+        assert self.training == (not self._has_transformed_inputs)
+        if not self.training:
+            # Then self._has_transformed_inputs == True,
+            # and self._original_train_inputs is wrong.
+            # So we can set _has_transformed_inputs = False
+            # to make it so that _set_transformed_inputs sets the
+            # _original_train_inputs, transforms the inputs, and sets
+            # self._has_transformed_inputs = True again.
+            self._has_transformed_inputs = False
+            self._set_transformed_inputs()
+        else:
+            # If in training mode, then train() doesn't do anything since
+            # _has_transformed_inputs == False, and eval() makes
+            # _original_train_inputs set correct. So don't need to do anything.
+            # However, it doesn't hurt to just set it anyway for consistency:
+            if self._original_train_inputs is not None:
+                self._original_train_inputs = self.train_inputs[0]
+Model._set_train_data_with_X_transform = _set_train_data_with_X_transform
+
+
+def _set_train_data_with_transforms_Model(self,
+                                          X: Optional[Tensor]=None,
+                                          Y: Optional[Tensor]=None,
+                                          strict=True):
+    Y = self._transform_Y(Y)
+    self._set_train_data_with_X_transform(X, Y, strict)
+Model.set_train_data_with_transforms = _set_train_data_with_transforms_Model
+
+
+def _set_train_data_with_transforms_GPyTorchModel(self,
+                                                  X: Optional[Tensor]=None,
+                                                  Y: Optional[Tensor]=None,
+                                                  strict=True):
+    Y = self._transform_Y(Y)
+    
+    if not (X is None and Y is None):
+        proposed_X = X if X is not None else self.train_inputs[0]
+
+        if Y is None:
+            proposed_Y = self.train_targets
+            if (proposed_X.dim() - proposed_Y.dim() == 1) and \
+                (proposed_X.shape[:-1] == proposed_Y.shape):
+                # Then the targets doesn't have an explicit output dimension
+                proposed_Y = proposed_Y.unsqueeze(-1)
+        else:
+            proposed_Y = Y
+        
+        self._validate_tensor_args(X=proposed_X, Y=proposed_Y)
+
+    self._set_train_data_with_X_transform(X, Y, strict)
+GPyTorchModel.set_train_data_with_transforms = _set_train_data_with_transforms_GPyTorchModel
+
+
+def _set_train_data_with_transforms_BatchedMultiOutputGPyTorchModel(self,
+                                                  X: Optional[Tensor]=None,
+                                                  Y: Optional[Tensor]=None,
+                                                  strict=True):
+    Y = self._transform_Y(Y)
+    
+    both_are_given = X is not None and Y is not None
+    neither_is_given = X is None and Y is None
+    
+    if both_are_given:
+        self._validate_tensor_args(X=X, Y=Y)
+        self._set_dimensions(train_X=X, train_Y=Y)
+        X, Y, _ = self._transform_tensor_args(X=X, Y=Y)
+    elif not neither_is_given:
+        if X is not None:
+            # X is given but not Y
+
+            # Try to do something akin to _validate_tensor_args
+            if X.dim() < 2:
+                raise BotorchTensorDimensionError(
+                    f"X has shape {X.shape} but needs to have at least 2 dimensions"
+                )
+            given_input_batch_shape = X.shape[:-2]
+            if given_input_batch_shape != self.batch_shape:
+                raise BotorchTensorDimensionError(
+                    f"Expected X to have batch shape {self.batch_shape} but has"
+                    f" batch shape {given_input_batch_shape}"
+                )
+            
+            # Akin to _transform_tensor_args
+            if self.num_outputs > 1:
+                X = X.unsqueeze(-3).expand(
+                    X.shape[:-2] + torch.Size([self.num_outputs]) + X.shape[-2:]
+                )
+        elif Y is not None:
+            # Y is given but not X
+
+            # Try to do something akin to _validate_tensor_args
+            if Y.dim() < 2:
+                raise BotorchTensorDimensionError(
+                    f"Y has shape {Y.shape} but needs to have at least 2 dimensions"
+                )
+            given_input_batch_shape = Y.shape[:-2]
+            given_num_outputs = Y.shape[-1]
+            if given_input_batch_shape != self.batch_shape:
+                raise BotorchTensorDimensionError(
+                    f"Expected Y to have batch shape {self.batch_shape} but has"
+                    f" batch shape {given_input_batch_shape}"
+                )
+            if given_num_outputs != self.num_outputs:
+                raise BotorchTensorDimensionError(
+                    f"Expected Y to have number of outputs {self.num_outputs} but has"
+                    f" number of outputs {given_num_outputs}"
+                )
+            
+            # Akin to _transform_tensor_args
+            if self.num_outputs > 1:
+                Y = Y.transpose(-1, -2)
+            else:
+                Y = Y.squeeze(-1)
+    
+    self._set_train_data_with_X_transform(X, Y, strict)
+
+    if not both_are_given and not neither_is_given:
+        # In the case that only one of X or Y was provided, check the dtypes
+        # akin to the last part of _validate_tensor_args
+        new_X, new_Y = self.train_inputs[0], self.train_targets
+        if new_X.dtype != new_Y.dtype:
+            raise InputDataError(
+                "Expected all inputs to share the same dtype. Got "
+                f"{new_X.dtype} for X, {new_Y.dtype} for Y."
+            )
+        if new_X.dtype != torch.float64:
+            warnings.warn(
+                _get_single_precision_warning(str(new_X.dtype)),
+                InputDataWarning,
+                stacklevel=3,  # Warn at model constructor call.
+            )
+BatchedMultiOutputGPyTorchModel.set_train_data_with_transforms = _set_train_data_with_transforms_BatchedMultiOutputGPyTorchModel
 
 
 def uniform_randint(min_val, max_val):
