@@ -15,8 +15,9 @@ import math
 
 from dataset_with_models import TupleWithModel, create_classes, RandomModelSampler
 from utils import (SizedInfiniteIterableMixin, SizedIterableMixin,
-                   get_lengths_from_proportions, iterable_is_finite)
-from utils import InverseOutcomeTransform, Unstandardize
+                   get_lengths_from_proportions, iterable_is_finite,
+                   invert_outcome_transform, Unstandardize,
+                   concatenate_outcome_transforms)
 
 
 class FunctionSamplesItem(TupleWithModel):
@@ -24,22 +25,12 @@ class FunctionSamplesItem(TupleWithModel):
     kwargs_names = []
 
     def validate_data(self):
+        # Ensures that they have the same ndim, and that
+        # y_values has an ouput dimension.
         SingleTaskGP._validate_tensor_args(self.x_values, self.y_values)
 
-    def get_outcome_dim_and_whether_no_output_dim(self):
-        X, Y = self.tuple_no_model
-        y_has_no_output_dim = False
-        if X.dim() != Y.dim():
-            if (X.dim() - Y.dim() == 1) and (X.shape[:-1] == Y.shape):
-                y_has_no_output_dim = True
-            else:
-                message = (
-                    "Expected X and Y to have the same number of dimensions"
-                    f" (got X with dimension {X.dim()} and Y with dimension"
-                    f" {Y.dim()}).")
-                raise BotorchTensorDimensionError(message)
-        m = 1 if y_has_no_output_dim else Y.size(-1)
-        return m, y_has_no_output_dim
+    def get_outcome_dim(self):
+        return self.y_values.size(-1)
 
 
 (FunctionSamplesDataset,
@@ -288,32 +279,25 @@ def _apply_outcome_transform(item: FunctionSamplesItem,
     outcomes are transformed. Output does not have a model."""
 
     ### Transform the y-values:
-    Y = item.y_values
-
-    # Doing this silly check and stuff just to make sure that
-    # Y has one or more output dimensions, just in case the
-    # OutcomeTransform checks for this e.g. Standardize.
-    # Most don't, such as Power, though, but it's still good to do this.
-    m, y_has_no_output_dim = item.get_outcome_dim_and_whether_no_output_dim()
-    if y_has_no_output_dim:
-        Y = Y.unsqueeze(-1) # add output dimension
-    
-    Y_tf, Yvar = outcome_transform(Y, None)
-    assert Y_tf.shape == Y.shape
-    
-    if y_has_no_output_dim:
-        Y_tf = Y_tf.squeeze(-1) # remove output dimension
+    Y_tf, _ = outcome_transform(item.y_values)
 
     ### Add transformed model
     if retain_model and item.has_model:
-        new_model_params = getattr(item, "model_params", None)
-        new_model_params = {} if new_model_params is None else copy.deepcopy(new_model_params)
-        if "outcome_transform" in new_model_params:
-            raise UnsupportedError("Don't yet know how to apply an OutcomeTransform"
-                                " on top of an existing one in the right way")
         if inverse_outcome_transform is None:
-            inverse_outcome_transform = InverseOutcomeTransform(outcome_transform)
-        new_model_params["outcome_transform"] = inverse_outcome_transform
+            inverse_outcome_transform = invert_outcome_transform(outcome_transform)
+
+        new_model_params = getattr(item, "model_params", None)
+        if new_model_params is not None:
+            new_model_params = copy.deepcopy(new_model_params)
+        else:
+            new_model_params = {}
+
+        if "outcome_transform" in new_model_params:
+            new_model_outcome_transform = concatenate_outcome_transforms(
+                inverse_outcome_transform, new_model_params["outcome_transform"])
+        else:
+            new_model_outcome_transform = inverse_outcome_transform
+        new_model_params["outcome_transform"] = new_model_outcome_transform 
         model = item._model
     else:
         model = None
@@ -352,10 +336,8 @@ FunctionSamplesDataset.transform_outcomes = _transform_outcomes
 ## applied to the Y.
 @staticmethod
 def _apply_standardize_outcome_transform(item: FunctionSamplesItem):
-    m, y_has_no_output_dim = item.get_outcome_dim_and_whether_no_output_dim()
-    standardize = Standardize(m=m)
     return FunctionSamplesDataset._apply_outcome_transform(
-        item, standardize, Unstandardize(standardize), retain_model=True)
+        item, Standardize(m=item.get_outcome_dim()), retain_model=True)
 FunctionSamplesDataset._apply_standardize_outcome_transform = _apply_standardize_outcome_transform
 
 def _standardize_outcomes(self):
@@ -518,7 +500,12 @@ class GaussianProcessRandomDataset(
                     # model.likelihood.noise_covar is a HomoskedasticNoise instance
                     # Could also do model.initialize(**{'likelihood.noise_covar.raw_noise': 0.0})
                     # Equivalent because GaussianLikelihood has @raw_noise.setter
-                    model.likelihood.raw_noise = 0.0
+                    model.likelihood = GaussianLikelihood(
+                        noise_prior=None, batch_shape=torch.Size(),
+                        noise_constraint=GreaterThan(
+                            0.0, transform=None, initial_value=0.0
+                        )
+                    )
             elif isinstance(model.likelihood, FixedNoiseGaussianLikelihood):
                 raise UnsupportedError(
                     f"models[{i}] has FixedNoiseGaussianLikelihood which is not supported in GaussianProcessRandomDataset. Use GaussianLikelihood instead.")
@@ -578,9 +565,18 @@ class GaussianProcessRandomDataset(
             GaussianProcessRandomDataset: A new instance of the dataset with the
             specified dataset size.
         """
-        t, d = self._init_params()
-        d['dataset_size'] = dataset_size
-        return GaussianProcessRandomDataset(*t, **d)
+        # t, d = self._init_params()
+        # d['dataset_size'] = dataset_size
+        # return GaussianProcessRandomDataset(*t, **d)
+
+        ret = self.__new__(self.__class__)
+        ret.n_datapoints = self.n_datapoints
+        ret.n_datapoints_random_gen = self.n_datapoints_random_gen
+        ret.observation_noise = self.observation_noise
+        ret.xvalue_distribution = self.xvalue_distribution
+        ret._model_sampler = self._model_sampler
+        ret._size = dataset_size
+        return ret
     
     def random_split(self, lengths: Sequence[Union[int, float]]):
         # Same check that pytorch does in torch.utils.data.random_split

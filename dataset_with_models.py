@@ -61,6 +61,7 @@ def _get_gp_model_params_copy(model: SingleTaskGP):
 
 
 def _set_gp_model_params(model: SingleTaskGP, params: dict):
+    params = {**params} # Need to copy, don't forget this, because we might pop
     for name in _GP_MODEL_ATTRS_TO_SAVE:
         if name in params:
             setattr(model, name, params.pop(name))
@@ -85,21 +86,18 @@ class RandomModelSampler:
         models = models.copy()
         initial_params_list = []
         for i in range(len(models)):
-            model = models[i]
-
-            if not isinstance(model, SingleTaskGP):
+            if not isinstance(models[i], SingleTaskGP):
                 raise UnsupportedError(f"models[{i}] should be a SingleTaskGP instance.")
 
-            if hasattr(model, "index") or hasattr(model, "initial_params"):
-                model = copy.deepcopy(model)
-                models[i] = model
+            if hasattr(models[i], "index") or hasattr(models[i], "initial_params"):
+                models[i] = copy.deepcopy(models[i])
             
-            # Set the model indices as attributes so we can access them for purpose
-            # of saving data
-            model.index = i
+            # Set the model indices as attributes so we can access them for
+            # purpose of saving data
+            models[i].index = i
 
-            init_params, init_attrs = _get_gp_model_params_copy(model)
-            model.initial_params = init_params
+            init_params, init_attrs = _get_gp_model_params_copy(models[i])
+            models[i].initial_params = init_params
             initial_params_list.append({**init_params, **init_attrs})
 
         self._initial_params_list = initial_params_list
@@ -873,7 +871,9 @@ class ListMapDatasetWithModels(MapDatasetWithModels):
                         # print("Model index:", item.model_index)
                         # print("Model indices:", [
                         #     model.index for model in model_sampler._models])
-                        assert model_sampler._models[item.model_index] is item._model
+                        if not (model_sampler._models[item.model_index] is item._model):
+                            raise ValueError(
+                                f"{model_sampler._models[item.model_index]=}, {item._model=}, but expected to match")
         elif all(isinstance(x, tuple) for x in data):
             return type(self).__init__(self, [self._tuple_class(*x) for x in data], model_sampler)
         else:

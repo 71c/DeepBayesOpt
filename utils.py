@@ -21,7 +21,8 @@ from botorch.exceptions.warnings import (
     InputDataWarning,
 )
 from botorch.posteriors import Posterior
-from botorch.models.transforms.outcome import OutcomeTransform, Standardize
+from botorch.models.transforms.outcome import OutcomeTransform, Standardize, Log, Power
+from torch.nn import ModuleList
 
 from botorch.models.model import Model
 from botorch.models.gpytorch import GPyTorchModel, BatchedMultiOutputGPyTorchModel
@@ -60,8 +61,9 @@ class Unstandardize(InverseOutcomeTransform):
         if not standardizer._is_trained:
             raise RuntimeError(
             "Can only invert a Standardize if it has been called on some outcome data")
-        assert not standardizer.training
 
+    def untransform_posterior(self, posterior: Posterior) -> Posterior:
+        standardizer = self._original_transform
         new_tf = standardizer.__class__(
             m=standardizer._m,
             outputs=standardizer._outputs,
@@ -73,16 +75,154 @@ class Unstandardize(InverseOutcomeTransform):
         new_tf._stdvs_sq = new_stdvs.pow(2)
         
         new_tf.means = -new_stdvs * standardizer.means
-        
+        assert not standardizer._is_trained
         new_tf._is_trained = standardizer._is_trained
-        new_tf.eval()
-        self.eval()
+        return new_tf.untransform_posterior(posterior)
 
-        self._inverse_transform = new_tf
+
+class Exp(InverseOutcomeTransform):
+    def __init__(self, outputs: Optional[List[int]] = None) -> None:
+        super().__init__(Log(outputs))
+    
+    @classmethod
+    def from_log(cls, log: Log):
+        if not isinstance(log, Log):
+            raise ValueError("log must be a Log instance")
+        x = cls.__new__(cls)
+        InverseOutcomeTransform.__init__(x, log)
+        return x
+    
+    # Could also implement untransform_posterior but it would be some work.
+
+
+# BoTorch has ChainedOutcomeTransform but that's a dict
+# but I don't care about having names for my transforms
+# so I implemented a list version (basically the same)
+class ChainedOutcomeTransformList(OutcomeTransform, ModuleList):
+    r"""An outcome transform representing the chaining of individual transforms"""
+
+    def __init__(self, transforms: Iterable[OutcomeTransform]) -> None:
+        r"""Chaining of outcome transforms.
+
+        Args:
+            transforms: The transforms to chain. Internally, the names of the
+                kwargs are used as the keys for accessing the individual
+                transforms on the module.
+        """
+        super().__init__(transforms)
+
+    def forward(
+        self, Y: Tensor, Yvar: Optional[Tensor] = None
+    ) -> Tuple[Tensor, Optional[Tensor]]:
+        r"""Transform the outcomes in a model's training targets
+
+        Args:
+            Y: A `batch_shape x n x m`-dim tensor of training targets.
+            Yvar: A `batch_shape x n x m`-dim tensor of observation noises
+                associated with the training targets (if applicable).
+
+        Returns:
+            A two-tuple with the transformed outcomes:
+
+            - The transformed outcome observations.
+            - The transformed observation noise (if applicable).
+        """
+        for tf in self:
+            Y, Yvar = tf.forward(Y, Yvar)
+        return Y, Yvar
+
+    def subset_output(self, idcs: List[int]) -> OutcomeTransform:
+        r"""Subset the transform along the output dimension.
+
+        Args:
+            idcs: The output indices to subset the transform to.
+
+        Returns:
+            The current outcome transform, subset to the specified output indices.
+        """
+        return self.__class__(
+            [tf.subset_output(idcs=idcs) for tf in self]
+        )
+
+    def untransform(
+        self, Y: Tensor, Yvar: Optional[Tensor] = None
+    ) -> Tuple[Tensor, Optional[Tensor]]:
+        r"""Un-transform previously transformed outcomes
+
+        Args:
+            Y: A `batch_shape x n x m`-dim tensor of transfomred training targets.
+            Yvar: A `batch_shape x n x m`-dim tensor of transformed observation
+                noises associated with the training targets (if applicable).
+
+        Returns:
+            A two-tuple with the un-transformed outcomes:
+
+            - The un-transformed outcome observations.
+            - The un-transformed observation noise (if applicable).
+        """
+        for tf in reversed(self):
+            Y, Yvar = tf.untransform(Y, Yvar)
+        return Y, Yvar
+
+    @property
+    def _is_linear(self) -> bool:
+        """
+        A `ChainedOutcomeTransform` is linear only if all of the component transforms
+        are linear.
+        """
+        return all((octf._is_linear for octf in self))
 
     def untransform_posterior(self, posterior: Posterior) -> Posterior:
-        return self._inverse_transform.untransform_posterior(posterior)
+        r"""Un-transform a posterior
 
+        Args:
+            posterior: A posterior in the transformed space.
+
+        Returns:
+            The un-transformed posterior.
+        """
+        for tf in reversed(self):
+            posterior = tf.untransform_posterior(posterior)
+        return posterior
+
+
+def _get_base_transforms(transform: OutcomeTransform):
+    if isinstance(transform, ChainedOutcomeTransformList):
+        ret = []
+        for tf in transform:
+            ret.extend(_get_base_transforms(tf))
+        return ret
+    return [transform]
+
+
+def concatenate_outcome_transforms(*transforms: OutcomeTransform) -> OutcomeTransform:
+    base_transforms = _get_base_transforms(ChainedOutcomeTransformList(transforms))
+    return ChainedOutcomeTransformList(base_transforms)
+
+
+def invert_outcome_transform(transform: OutcomeTransform):
+    if isinstance(transform, ChainedOutcomeTransformList):
+        return ChainedOutcomeTransformList([
+            invert_outcome_transform(tf) for tf in reversed(transform)
+        ])
+    
+    if isinstance(transform, InverseOutcomeTransform):
+        # This handles Unstandardize and Exp automatically
+        return transform._original_transform
+    
+    if isinstance(transform, Standardize):
+        return Unstandardize(transform)
+    
+    if isinstance(transform, Log):
+        return Exp.from_log(transform)
+    
+    if isinstance(transform, Power):
+        ret = Power(1.0 / transform.power, transform._outputs)
+        ret.train(transform.training) # just in case, probably doesn't matter
+        return ret
+    
+    # fallback
+    return InverseOutcomeTransform(transform)
 
 
 def _transform_Y(self, Y: Optional[Tensor]=None):
