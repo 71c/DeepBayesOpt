@@ -2,6 +2,7 @@ from botorch.models.gp_regression import SingleTaskGP
 from gpytorch.models import ExactGP
 from botorch.exceptions import UnsupportedError
 import torch
+import utils # just to make sure that the additions to the BoTorch Model classes are loaded
 
 
 def _gp_model_has_no_data(model: ExactGP):
@@ -145,9 +146,10 @@ class RandomGPFunction:
             # Add new data to the GP model
             if model_is_empty:
                 # Then x_unique == x_unique_new and y_unique == y_unique_new
-                model.set_train_data(x_unique_new, y_unique_new, strict=False)
+                model.set_train_data_with_transforms(
+                    x_unique_new, y_unique_new_with_output_dim, strict=False)
             else:
-                self.model = model.condition_on_observations(
+                self.model = model.condition_on_observations_with_transforms(
                     x_unique_new, y_unique_new_with_output_dim)
 
         if n_new_points == n_unique_points:

@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 import math
 import os
-from typing import List, Optional, Sequence, Union, Iterable, Tuple
+from typing import Any, List, Optional, Sequence, Union, Iterable, Tuple
 import warnings
 from functools import partial, lru_cache
 import json
@@ -246,6 +246,27 @@ def _set_train_data_with_transforms_BatchedMultiOutputGPyTorchModel(self,
                 stacklevel=3,  # Warn at model constructor call.
             )
 BatchedMultiOutputGPyTorchModel.set_train_data_with_transforms = _set_train_data_with_transforms_BatchedMultiOutputGPyTorchModel
+
+
+def _condition_on_observations_with_transforms(
+        self, X: Tensor, Y: Tensor, **kwargs: Any) -> Model:
+    assert not self.training, "Model should be in eval mode."
+    # Since the model is in eval mode, the inputs are already transformed.
+    
+    # condition_on_observations already takes care of the outcome transform
+    # but not the input transform. So we need to do that here.
+    fantasy_model = self.condition_on_observations(
+        X=self.transform_inputs(X), Y=Y, **kwargs)
+
+    if hasattr(fantasy_model, "input_transform"):
+        assert fantasy_model._has_transformed_inputs
+        
+        # Certainly not ideal but it should get the job done.
+        # It doesn't really matter though if you're not gonna go back to
+        # train mode...I'm not sure why BoTorch has this things.
+        fantasy_model._original_train_inputs = fantasy_model.input_transform.untransform(
+            fantasy_model.train_inputs[0])
+Model.condition_on_observations_with_transforms = _condition_on_observations_with_transforms
 
 
 def uniform_randint(min_val, max_val):

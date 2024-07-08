@@ -23,6 +23,9 @@ class FunctionSamplesItem(TupleWithModel):
     args_names = ['x_values', 'y_values']
     kwargs_names = []
 
+    def validate_data(self):
+        SingleTaskGP._validate_tensor_args(self.x_values, self.y_values)
+
     def get_outcome_dim_and_whether_no_output_dim(self):
         X, Y = self.tuple_no_model
         y_has_no_output_dim = False
@@ -629,9 +632,8 @@ class GaussianProcessRandomDataset(
         # shape (n_datapoints, 1)
         y_values = prior.sample(torch.Size([]))
         assert y_values.dim() == 2 and y_values.size(1) == 1
-        y_values_1dim = y_values.squeeze(1)
 
-        return FunctionSamplesItem(x_values, y_values_1dim, model)
+        return FunctionSamplesItem(x_values, y_values, model)
 
 
 class RepeatedFunctionSamplesIterableDataset(

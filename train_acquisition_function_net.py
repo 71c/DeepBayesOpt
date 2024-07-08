@@ -22,7 +22,25 @@ def count_parameters(model):
     return sum(p.numel() for p in model.parameters())
 
 
+def check_2d_or_3d_tensors(*tensors):
+    tensors = [t.squeeze(2) if t is not None and t.dim() == 3 else t
+               for t in tensors]
+    shape = None
+    for t in tensors:
+        if t is not None:
+            shape = t.shape
+            break
+    for t in tensors:
+        if t is not None:
+            if t.dim() != 2:
+                raise ValueError("All tensors must be 2D or 3D tensors")
+            if shape is not None and t.shape != shape:
+                raise ValueError("All tensors must have the same shape")
+    return tensors
+
+
 def max_one_hot(values, mask=None):
+    values, mask = check_2d_or_3d_tensors(values, mask)
     if mask is not None:
         neg_inf = torch.zeros_like(values)
         neg_inf[~mask] = float("-inf")
@@ -47,6 +65,7 @@ def get_average_normalized_entropy(probabilities, mask=None, reduction="mean"):
     Returns:
         torch.Tensor: The average normalized entropy.
     """
+    probabilities, mask = check_2d_or_3d_tensors(probabilities, mask)
     entropy = Categorical(probs=probabilities).entropy()
     if mask is None:
         counts = torch.tensor(probabilities.size(1), dtype=torch.double)
@@ -66,13 +85,14 @@ def myopic_policy_gradient_ei(probabilities, improvements, reduction="mean"):
 
     Args:
         probabilities (Tensor): The output tensor from the model, assumed to be
-            softmaxed. Shape (batch_size, n_cand)
+            softmaxed. Shape (batch_size, n_cand) or (batch_size, n_cand, 1)
        improvements (Tensor): The improvements tensor.
-            Shape (batch_size, n_cand)
+            Shape (batch_size, n_cand) or (batch_size, n_cand, 1)
         Both tensors are assumed to be padded with zeros.
         Note: A mask is not needed because the padded values are zero and the
         computation works out even if there is a mask.
     """
+    probabilities, improvements = check_2d_or_3d_tensors(probabilities, improvements)
     expected_improvements_per_batch = torch.sum(probabilities * improvements, dim=1)
     if reduction == "mean":
         return expected_improvements_per_batch.mean()
@@ -92,8 +112,11 @@ def mse_loss(pred_improvements, improvements, mask, reduction="mean"):
             assumed to be exponentiated. Shape (batch_size, n_cand)
         improvements (Tensor): The improvements tensor.
             Shape (batch_size, n_cand)
-        mask (Tensor): The mask tensor, shape (batch_size, n_cand)
+        mask (Tensor or None): The mask tensor, shape (batch_size, n_cand)
     """
+    pred_improvements, improvements, mask = check_2d_or_3d_tensors(
+        pred_improvements, improvements, mask)
+
     if reduction not in {"mean", "sum"}:
         raise ValueError("'reduction' must be either 'mean' or 'sum'")
 

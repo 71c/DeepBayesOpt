@@ -396,7 +396,7 @@ def plot_nn_vs_gp_acquisition_function_1d_grid(
             ei_nn = aq_fn(x_cand_nn.unsqueeze(1))
             ei_nn = ei_nn.cpu()
 
-            gp_model.set_train_data(x_hist, y_hist.squeeze(-1), strict=False)
+            gp_model.set_train_data_with_transforms(x_hist, y_hist, strict=False)
             posterior_true = gp_model.posterior(x_cand, observation_noise=False)
 
             ei_true = calculate_EI_GP(gp_model, x_hist, y_hist, x_cand, log=False)

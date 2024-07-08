@@ -274,10 +274,16 @@ class TupleWithModel:
                     f"should be {self.kwargs_names} but got {given_kwargs_keys}")
         
         self._kwargs = kwargs
-
         self._set_model(model, model_params)
-
         self._indices = list(range(len(self)))
+
+        self.validate_data()
+    
+    def validate_data(self):
+        """Validates that the data of the instance is as expected.
+        Is called at the end of __init__, and can optionally be implemented
+        by subclasses."""
+        pass
     
     def _set_model(self, model, model_params=None):
         if model is not None:

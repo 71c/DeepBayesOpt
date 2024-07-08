@@ -27,6 +27,11 @@ class AcquisitionDatasetModelItem(TupleWithModel):
     args_names = ['x_hist', 'y_hist', 'x_cand', 'vals_cand']
     kwargs_names = ['give_improvements']
 
+    def validate_data(self):
+        SingleTaskGP._validate_tensor_args(self.x_hist, self.y_hist)
+        SingleTaskGP._validate_tensor_args(self.x_cand, self.vals_cand)
+        assert type(self.give_improvements) is bool
+
 
 (AcquisitionDataset,
  MapAcquisitionDataset,
@@ -132,14 +137,16 @@ def _collate_train_acquisition_function_samples(samples_list, has_models, cached
         x_hists, y_hists, x_cands, vals_cands = unzipped_lists
 
         # x_hist shape: (n_hist, dimension)
-        # y_hist shape: (n_hist,)
+        # y_hist shape: (n_hist, 1)
         # x_cand shape: (n_cand, dimension)
-        # vals_cand shape: (n_cand,)
+        # vals_cand shape: (n_cand, 1)
 
         x_hist = max_pad_tensors_batch(x_hists, add_mask=False)
         y_hist, hist_mask = max_pad_tensors_batch(y_hists, add_mask=True)
         x_cand = max_pad_tensors_batch(x_cands, add_mask=False)
         vals_cand, cand_mask = max_pad_tensors_batch(vals_cands, add_mask=True)
+
+        # print(f"{x_hist.shape=}, {y_hist.shape=}, {x_cand.shape=}, {vals_cand.shape=}, hist_mask.shape={hist_mask.shape if hist_mask is not None else None}, cand_mask.shape={cand_mask.shape if cand_mask is not None else None}")
 
     return AcquisitionDatasetBatch(
         x_hist, y_hist, x_cand, vals_cand, hist_mask, cand_mask,
@@ -185,11 +192,6 @@ def _get_dataloader(self, batch_size=32, shuffle=None,
         shuffle = False # Can't do shuffle=True on a IterableDataset
     elif shuffle is None:
         shuffle = True  # Default to shuffle=True for map-style datasets
-    
-    # x_hist = max_pad_tensors_batch(x_hists, add_mask=False)
-    # y_hist, hist_mask = max_pad_tensors_batch(y_hists, add_mask=True)
-    # x_cand = max_pad_tensors_batch(x_cands, add_mask=False)
-    # vals_cand, cand_mask = max_pad_tensors_batch(vals_cands, add_mask=True)
 
     if 'collate_fn' in kwargs:
         raise ValueError("collate_fn should not be specified in get_dataloader; we do it for you")

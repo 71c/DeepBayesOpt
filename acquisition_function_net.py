@@ -1189,6 +1189,9 @@ class AcquisitionFunctionNetModel(Model):
         raise UnsupportedError("AcquisitionFunctionNetModel does not support output subsetting.")
 
     def condition_on_observations(self, X: Tensor, Y: Tensor) -> Model:
+        """This doesn't have the original utility from GPyTorch --
+        it is just as efficient as just making a new model.
+        But it is here for convenience just in"""
         if self.train_X is None:
             new_X, new_Y = X, Y
         else:

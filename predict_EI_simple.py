@@ -83,9 +83,7 @@ def calculate_EI_GP(model: SingleTaskGP, X_hist: Tensor, y_hist: Tensor,
     assert X_hist.size(2) == X.size(2) # d=d
 
     # reset the data in the model to be this data
-    # (As a hack, need to remove last dimension of y_values because
-    # set_train_data isn't really supported in BoTorch)
-    model.set_train_data(X_hist, y_hist.squeeze(-1), strict=False)
+    model.set_train_data_with_transforms(X_hist, y_hist, strict=False)
 
     if fit_params:
         # TODO: provide option to not use model's prior (remove it) (?)
