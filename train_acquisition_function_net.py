@@ -9,9 +9,8 @@ from predict_EI_simple import calculate_EI_GP_padded_batch
 from tqdm import tqdm
 from acquisition_dataset import AcquisitionDataset
 from botorch.exceptions import UnsupportedError
-from utils import to_device, unsupported_improvements
 from tictoc import tic, toc
-from utils import int_linspace
+from utils import int_linspace, calculate_batch_improvement
 
 
 def count_trainable_parameters(model):
@@ -283,6 +282,10 @@ def get_average_stats(stats_list, batch_reduction:str, total_n_samples=None):
             for key in stats_list[0]}
 
 
+def shape_or_none(x):
+    return x if x is None else list(x.shape)
+
+
 def train_or_test_loop(dataloader: DataLoader,
                        nn_model: Optional[AcquisitionFunctionNet]=None,
                        train:Optional[bool]=None,
@@ -425,8 +428,12 @@ def train_or_test_loop(dataloader: DataLoader,
         tic(desc)
     
     dataset_length = 0
-    for i, batch in enumerate(unsupported_improvements(it)):
-        x_hist, y_hist, x_cand, improvements, hist_mask, cand_mask = batch.tuple_no_model
+    for i, batch in enumerate(it):
+        x_hist, y_hist, x_cand, vals_cand, hist_mask, cand_mask = batch.tuple_no_model
+        improvements = vals_cand if batch.give_improvements else \
+            calculate_batch_improvement(y_hist, vals_cand, hist_mask, cand_mask)
+
+        # print("x_hist shape:", shape_or_none(x_hist), "y_hist shape:", shape_or_none(y_hist), "x_cand shape:", shape_or_none(x_cand), "improvements shape:", shape_or_none(improvements), "hist_mask shape:", shape_or_none(hist_mask), "cand_mask shape:", shape_or_none(cand_mask))
 
         this_batch_size = improvements.size(0)
         assert this_batch_size <= batch_size
@@ -437,8 +444,10 @@ def train_or_test_loop(dataloader: DataLoader,
         dataset_length += this_batch_size
 
         if nn_model is not None:
-            (x_hist_nn, y_hist_nn, x_cand_nn, improvements_nn,
+            (x_hist_nn, y_hist_nn, x_cand_nn, vals_cand_nn,
              hist_mask_nn, cand_mask_nn) = batch.to(nn_device).tuple_no_model
+            improvements_nn = vals_cand_nn if batch.give_improvements else \
+            calculate_batch_improvement(y_hist_nn, vals_cand_nn, hist_mask_nn, cand_mask_nn)
 
             with torch.set_grad_enabled(train and not is_degenerate_batch):
                 nn_output = nn_model(

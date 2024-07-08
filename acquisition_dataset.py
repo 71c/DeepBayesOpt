@@ -108,7 +108,6 @@ def _collate_train_acquisition_function_samples(samples_list, has_models, cached
                 "All items in samples_list should have the same value for has_models " \
                 "and should be consistent with the dataset's has_models attribute")
 
-
     if has_models:
         models_list = ModelsWithParamsList(
             [(x._model, x.model_params) for x in samples_list])
@@ -207,7 +206,7 @@ def _get_dataloader(self, batch_size=32, shuffle=None,
             max_cand = max(item.x_cand.size(0) for item in self)
             print(f"max_hist={max_hist}")
             tic("Padding")
-            for item in tqdm(self, desc="Padding."):
+            for item in tqdm(self, desc="Padding"):
                 x_hist, y_hist, x_cand, vals_cand = item.tuple_no_model
                 x_hist_padded = pad_tensor(x_hist, max_hist, dim=0, add_mask=False)
                 y_hist_padded, hist_mask = pad_tensor(y_hist, max_hist, dim=0, add_mask=True)

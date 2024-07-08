@@ -42,7 +42,7 @@ CPROFILE = False
 TIME = True
 VERBOSE = True
 
-CACHE_DATASETS = False
+CACHE_DATASETS = True
 
 # The following two are not important.
 LAZY_TRAIN = True
@@ -82,27 +82,30 @@ RANDOMIZE_PARAMS = True
 # choose either "uniform" or "normal" (or a custom distribution)
 XVALUE_DISTRIBUTION = "uniform"
 # Choose an outcome transform. Can be None if no outcome transform
-# OUTCOME_TRANSFORM = None
+OUTCOME_TRANSFORM = None
 # TODO (bug): str(Power(2)) = "Power()" but we'd like it to be "Power(2)" so it
 # can be saved uniquely. Maybe use the attributes of the class or something
 # instead. Or alternateively, just don't save the acquisition datasets, or
 # transform the acquisition datasets directly. I think it would be easiest to
 # just not save the acquisition datasets anymore.
-OUTCOME_TRANSFORM = Exp()
+# OUTCOME_TRANSFORM = Exp()
 
-if OUTCOME_TRANSFORM is not None:
-    # If we transform the outcomes, then the model information will disappear
-    # so can't meausre the true GP stats because it's not a GP anymore.
-    GET_TRAIN_TRUE_GP_STATS = False
-    GET_TEST_TRUE_GP_STATS = False
+STANDARDIZE_OUTCOMES = True
+
+# Exp technically works, but Power does not
+# Make sure to set these appropriately depending on whether the transform
+# supports mean transform
+# if OUTCOME_TRANSFORM is not None:
+#     GET_TRAIN_TRUE_GP_STATS = False
+#     GET_TEST_TRUE_GP_STATS = False
 
 ################## Settings for dataset size and generation ####################
 # The size of the training acquisition dataset
-TRAIN_ACQUISITION_SIZE = 1000
+TRAIN_ACQUISITION_SIZE = 6000
 # The amount that the dataset is expanded to save compute of GP realizations
 EXPANSION_FACTOR = 2
 # Whether and how to fix the training dataset
-FIX_TRAIN_SAMPLES_DATASET = False
+FIX_TRAIN_SAMPLES_DATASET = True
 
 ########## Set number of history and candidate points generation ###############
 # This means whether n history points or whether the total number of points
@@ -131,7 +134,7 @@ MAX_POINTS = 30
 POLICY_GRADIENT = True # True for the softmax thing, False for MSE EI
 BATCH_SIZE = 32
 LEARNING_RATE = 3e-4
-EPOCHS = 2
+EPOCHS = 1
 FIX_TRAIN_ACQUISITION_DATASET = False
 
 # Only used if POLICY_GRADIENT is True
@@ -202,10 +205,12 @@ train_aq_dataset, test_aq_dataset, small_test_aq_dataset = create_train_and_test
         randomize_params=RANDOMIZE_PARAMS,
         xvalue_distribution=XVALUE_DISTRIBUTION,
         outcome_transform=OUTCOME_TRANSFORM,
+        standardize_outcomes=STANDARDIZE_OUTCOMES,
 
         train_acquisition_size=TRAIN_ACQUISITION_SIZE,
         expansion_factor=EXPANSION_FACTOR,
         fix_train_samples_dataset=FIX_TRAIN_SAMPLES_DATASET,
+        give_improvements=False,
 
         loguniform=LOGUNIFORM, pre_offset=PRE_OFFSET, fix_n_candidates=FIX_N_CANDIDATES,
         train_n_candidates=TRAIN_N_CANDIDATES, test_n_candidates=TEST_N_CANDIDATES,
@@ -342,9 +347,10 @@ else:
 def plot_gp_posterior(ax, posterior, test_x, train_x, train_y, color, name=None):
     if not hasattr(posterior, "mvn"):
         # This in general won't correspond to the actual probability distribution AT ALL
-        # e.g. exponentiate then we get a lognortmal distribution
+        # e.g. exponentiate then we get a lognormal distribution
         # but this is not that, the lower can go negative!
-        lower, upper = posterior.mean - posterior.variance.sqrt(), posterior.mean + posterior.variance.sqrt()
+        # lower, upper = posterior.mean - posterior.variance.sqrt(), posterior.mean + posterior.variance.sqrt()
+        return # Actually, lognormal distribution too extreme values so not comparable to plot, so just not plot it
     else:
         lower, upper = posterior.mvn.confidence_region()
     mean = posterior.mean.detach().squeeze().cpu().numpy()
@@ -389,11 +395,12 @@ def plot_nn_vs_gp_acquisition_function_1d_grid(
 
             gp_model = item.model
 
-            x_hist, y_hist, x_cand, improvements = item.tuple_no_model
+            x_hist, y_hist, x_cand, vals_cand = item.tuple_no_model
+            x_cand_original = x_cand
             x_cand = torch.linspace(0, 1, n_candidates).unsqueeze(1)
             item.x_cand = x_cand
 
-            x_hist_nn, y_hist_nn, x_cand_nn, improvements_nn = item.to(nn_device).tuple_no_model
+            x_hist_nn, y_hist_nn, x_cand_nn, vals_cand_nn = item.to(nn_device).tuple_no_model
 
             aq_fn = LikelihoodFreeNetworkAcquisitionFunction.from_net(
                 model, x_hist_nn, y_hist_nn, exponentiate=not POLICY_GRADIENT, softmax=False)
@@ -446,6 +453,8 @@ def plot_nn_vs_gp_acquisition_function_1d_grid(
             
             # Plot training points as black stars
             ax.plot(x_hist, y_hist, 'b*', label=f'Observed Data')
+
+            ax.plot(x_cand_original, vals_cand, 'ro', markersize=1, label=f'Candidate points')
             
             if plot_gp:
                 plot_gp_posterior(ax, posterior_true, x_cand, x_hist, y_hist, 'b', name='True')

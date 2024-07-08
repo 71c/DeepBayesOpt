@@ -64,6 +64,7 @@ class Unstandardize(InverseOutcomeTransform):
 
     def untransform_posterior(self, posterior: Posterior) -> Posterior:
         standardizer = self._original_transform
+        assert standardizer._is_trained
         new_tf = standardizer.__class__(
             m=standardizer._m,
             outputs=standardizer._outputs,
@@ -75,7 +76,6 @@ class Unstandardize(InverseOutcomeTransform):
         new_tf._stdvs_sq = new_stdvs.pow(2)
         
         new_tf.means = -new_stdvs * standardizer.means
-        assert not standardizer._is_trained
         new_tf._is_trained = standardizer._is_trained
         return new_tf.untransform_posterior(posterior)
 
@@ -473,6 +473,40 @@ def int_linspace(start, stop, num):
     return ret
 
 
+def calculate_batch_improvement(y_hist_batch: torch.Tensor, y_cand_batch: Tensor, 
+                                hist_mask: Optional[Tensor] = None, 
+                                cand_mask: Optional[Tensor] = None):
+    """
+    Calculate the improvement values for a batch of y_hist and y_cand tensors with optional masking.
+    
+    Args:
+        y_hist_batch (Tensor): Tensor of shape (batch_size, max_n_hist, 1) containing historical y values.
+        y_cand_batch (Tensor): Tensor of shape (batch_size, max_n_cand, 1) containing candidate y values.
+        hist_mask (Optional[Tensor]): Boolean tensor of shape (batch_size, max_n_hist, 1) indicating valid y values.
+            If None, all values in y_hist_batch are considered valid.
+        cand_mask (Optional[Tensor]): Boolean tensor of shape (batch_size, max_n_cand, 1) indicating valid y values.
+            If None, all values in y_cand_batch are considered valid.
+    
+    Returns:
+        Tensor: Tensor of improvement values with the same shape as y_cand_batch.
+    """
+    if hist_mask is None:
+        # Special case: no hist_mask, all values are valid
+        best_f_batch = y_hist_batch.amax(dim=1, keepdim=True)
+    else:
+        # General case: use the hist_mask to find the valid values
+        y_hist_batch_masked = y_hist_batch.masked_fill(~hist_mask, float('-inf'))
+        best_f_batch = y_hist_batch_masked.amax(dim=1, keepdim=True)
+    
+    improvement_values_batch = torch.nn.functional.relu(y_cand_batch - best_f_batch, inplace=True)
+    
+    # Ensure padding with zeros where there were invalid (masked) values
+    if cand_mask is not None:
+        improvement_values_batch = improvement_values_batch * cand_mask
+    
+    return improvement_values_batch
+
+
 def pad_tensor(vec, length, dim, add_mask=False):
     """Pads a tensor 'vec' to a size 'length' in dimension 'dim' with zeros.
     args:
@@ -779,7 +813,7 @@ def len_or_inf(x):
             return math.inf
         except TypeError:
             raise TypeError(
-                f"Object of type {type(x)} is not iterable so it has no length")
+                f"Object of type {type(x).__name__} is not iterable so it has no length")
 
 
 def iterable_is_finite(x):
@@ -808,15 +842,6 @@ def to_device(tensor, device):
     if tensor is None or device is None:
         return tensor
     return tensor.to(device)
-
-
-def unsupported_improvements(dataloader):
-    for batch in dataloader:
-        if not batch.give_improvements:
-            raise UnsupportedError(
-                "The acquisition dataset must provide improvements; calculating " \
-                "them from a batch would be possible but is currently unsupported.")
-        yield batch
 
 
 def save_json(data, fname, **kwargs):

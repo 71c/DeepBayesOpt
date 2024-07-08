@@ -55,12 +55,42 @@ def get_n_datapoints_random_gen_variable_n_candidates(
         return get_uniform_randint_generator(min_points, max_points)
 
 
+import re
+
+def sanitize_file_name(file_name: str) -> str:
+    # Define a dictionary of characters to replace
+    replacements = {
+        '/': '_',
+        '\\': '_',
+        ':': '_',
+        '*': '_',
+        '?': '_',
+        '"': '_',
+        '<': '_',
+        '>': '_',
+        '|': '_',
+    }
+
+    # Replace the characters based on the replacements dictionary
+    sanitized_name = ''.join(replacements.get(c, c) for c in file_name)
+
+    # Remove characters that are non-printable or not allowed
+    sanitized_name = re.sub(r'[^\x20-\x7E]', '', sanitized_name)
+
+    # Remove all whitespace characters
+    sanitized_name = re.sub(r'\s+', '', sanitized_name)
+
+    return sanitized_name
+
+
 def dict_to_str(d):
-    return ','.join(f"{key}={value!r}" for key, value in sorted(d.items()))
+    x = ','.join(key + '=' + repr(value) for key, value in sorted(d.items()))
+    return sanitize_file_name(x)
 
 def dict_to_hash(d):
     dict_bytes = dict_to_str(d).encode('ascii')
     return hashlib.sha256(dict_bytes).hexdigest()
+
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 DATASETS_DIR = os.path.join(script_dir, "datasets")
@@ -68,8 +98,10 @@ DATASETS_DIR = os.path.join(script_dir, "datasets")
 def create_gp_acquisition_dataset(base_dataset_size,
         # gp_dataset_kwargs_non_datapoints
         dimension, randomize_params=False, xvalue_distribution="uniform",
-        outcome_transform: Optional[OutcomeTransform]=None,
         observation_noise=False, models=None, model_probabilities=None,
+
+        outcome_transform: Optional[OutcomeTransform]=None,
+        standardize_outcomes: bool=False,
         
         # n_datapoints_kwargs
         loguniform=True, pre_offset=None,
@@ -77,6 +109,7 @@ def create_gp_acquisition_dataset(base_dataset_size,
         min_n_candidates=None, max_points=None,
 
         expansion_factor=1,
+        give_improvements:bool=True,
         
         fix_gp_samples=False, fix_acquisition_samples=False,
         device="cpu", lazy=True, cache=True,
@@ -91,6 +124,10 @@ def create_gp_acquisition_dataset(base_dataset_size,
         raise ValueError("fix_gp_samples should be a boolean.")
     if type(fix_acquisition_samples) is not bool:
         raise ValueError("fix_acquisition_samples should be a boolean.")
+    if type(standardize_outcomes) is not bool:
+        raise ValueError("standardize_outcomes should be a boolean.")
+    if type(give_improvements) is not bool:
+        raise ValueError("give_improvements should be a boolean.")
     
     # Get the 
     if min_n_candidates is None and max_points is None:
@@ -128,7 +165,9 @@ def create_gp_acquisition_dataset(base_dataset_size,
         aq_dataset_extra_info_str = dict_to_str(
             dict(fix_acquisition_samples=fix_acquisition_samples,
             expansion_factor=expansion_factor,
-            outcome_transform=outcome_transform))
+            outcome_transform=outcome_transform,
+            standardize_outcomes=standardize_outcomes,
+            give_improvements=give_improvements))
         aq_dataset_name = f"{base_name}_acquisition_{aq_dataset_extra_info_str}"
         aq_dataset_path = os.path.join(DATASETS_DIR, aq_dataset_name)
 
@@ -173,6 +212,7 @@ def create_gp_acquisition_dataset(base_dataset_size,
 
         if cache and fix_gp_samples and not function_dataset_already_exists:
             os.makedirs(DATASETS_DIR, exist_ok=True)
+            print(f"Saving {function_dataset_name}")
             function_samples_dataset.save(function_dataset_path, verbose=True)
         
         # Make sure to transform AFTER the dataset is saved because we want to
@@ -180,10 +220,8 @@ def create_gp_acquisition_dataset(base_dataset_size,
         if outcome_transform is not None:
             function_samples_dataset = function_samples_dataset.transform_outcomes(
                 outcome_transform)
-        
-        # (testing-- make y values zero mean and unit variance)
-        # Something like --
-        # function_samples_dataset = function_samples_dataset.standardize_outcomes()
+        if standardize_outcomes:
+            function_samples_dataset = function_samples_dataset.standardize_outcomes()
 
         if fix_n_candidates:
             extra_kwargs = dict(n_candidate_points=n_candidates)
@@ -191,7 +229,8 @@ def create_gp_acquisition_dataset(base_dataset_size,
             extra_kwargs = dict(n_candidate_points="uniform",
                                 min_n_candidates=min_n_candidates)
         aq_dataset = FunctionSamplesAcquisitionDataset(
-            function_samples_dataset, n_samples="all", give_improvements=True,
+            function_samples_dataset, n_samples="all",
+            give_improvements=give_improvements,
             dataset_size_factor=expansion_factor, **extra_kwargs)
     
     if fix_acquisition_samples:
@@ -204,6 +243,7 @@ def create_gp_acquisition_dataset(base_dataset_size,
             train_or_test_loop(dataloader, verbose=True, desc=desc,
                                get_true_gp_stats=get_true_gp_stats)
             os.makedirs(DATASETS_DIR, exist_ok=True)
+            print(f"Saving {aq_dataset_name}")
             aq_dataset.save(aq_dataset_path, verbose=True)
     
     return aq_dataset
@@ -214,10 +254,12 @@ def create_train_and_test_gp_acquisition_datasets(
         randomize_params:bool,
         xvalue_distribution: Union[Distribution,str],
         outcome_transform: Optional[OutcomeTransform],
+        standardize_outcomes:bool,
 
         train_acquisition_size:int,
         expansion_factor:int,
         fix_train_samples_dataset:bool,
+        give_improvements:bool,
 
         loguniform:bool, pre_offset:Optional[float], fix_n_candidates:bool,
         train_n_candidates:Optional[int], test_n_candidates:Optional[int],
@@ -268,9 +310,11 @@ def create_train_and_test_gp_acquisition_datasets(
     common_kwargs = dict(dimension=dimension, randomize_params=randomize_params,
         observation_noise=False, xvalue_distribution=xvalue_distribution,
         outcome_transform=outcome_transform,
+        standardize_outcomes=standardize_outcomes,
         expansion_factor=expansion_factor, loguniform=loguniform,
         pre_offset=pre_offset if loguniform else None, batch_size=batch_size,
-        device=gp_gen_device, cache=cache_datasets)
+        device=gp_gen_device, cache=cache_datasets,
+        give_improvements=give_improvements)
 
     train_aq_dataset = create_gp_acquisition_dataset(
         train_samples_size, lazy=lazy_train,
