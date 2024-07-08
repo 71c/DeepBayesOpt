@@ -309,7 +309,7 @@ class TupleWithModel:
     @property
     def model(self):
         if not self.has_model:
-            raise AttributeError(
+            raise ValueError(
                 "This TupleWithModel instance does not have a model.")
         if isinstance(self._model, ModelsWithParamsList):
             return self._model
@@ -589,11 +589,16 @@ class DatasetWithModels(Dataset, ABC):
 
     @property
     def has_models(self):
-        if not (hasattr(self, "_model_sampler") and
-                isinstance(self._model_sampler, (type(None), RandomModelSampler))):
-            raise AttributeError(
+        if not hasattr(self, "_model_sampler"):
+            raise RuntimeError(
                 f"{self.__class__.__name__}, a subclass of {self._base_class.__name__}, "\
-                    "must have '_model_sampler' attribute that is a RandomModelSampler instance or None.")
+                    "must have '_model_sampler' attribute "
+                    )
+        if not isinstance(self._model_sampler, (type(None), RandomModelSampler)):
+            raise RuntimeError(
+                f"{self.__class__.__name__}, a subclass of {self._base_class.__name__}, "\
+                    "'_model_sampler' attribute must be a RandomModelSampler instance or None. "
+                    )
         return self._model_sampler is not None
 
     @property
@@ -1089,6 +1094,9 @@ class LazyMapDatasetWithModels(MapDatasetWithModels):
     
     @property
     def _model_sampler(self):
+        if not hasattr(self.dataset, "_model_sampler"):
+            raise RuntimeError(f"The base dataset of this {self.__class__.__name__} is a {self.dataset.__class__.__name__} "
+                               " which does not have the _model_sampler attribute")
         return self.dataset._model_sampler
 
     def _init_params(self):

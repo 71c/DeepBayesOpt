@@ -141,7 +141,7 @@ def calculate_EI_GP_padded_batch(x_hist, y_hist, x_cand, hist_mask, cand_mask, m
     ei_values = []
     for i in range(batch_size):
         x_hist_i_padded = x_hist[i] # shape (n_hist, dimension)
-        y_hist_i_padded = y_hist[i] # shape (n_hist,)
+        y_hist_i_padded = y_hist[i] # shape (n_hist, 1)
         x_cand_i_padded = x_cand[i] # shape (n_cand, dimension)
         n_hist_i = n_hist if hist_mask is None else hist_lengths[i].item()
         n_cand_i = n_cand if cand_mask is None else cand_lengths[i].item()
@@ -150,9 +150,9 @@ def calculate_EI_GP_padded_batch(x_hist, y_hist, x_cand, hist_mask, cand_mask, m
         y_hist_i = y_hist_i_padded[:n_hist_i]
         x_cand_i = x_cand_i_padded[:n_cand_i]
 
-        # shape (n_cand_i,)
+        # shape (n_cand_i, 1)
         ei_value = calculate_EI_GP(models[i], x_hist_i, y_hist_i, x_cand_i, fit_params=fit_params)
-        # shape (n_cand,)
+        # shape (n_cand, 1)
         ei_value_padded = pad_tensor(ei_value, n_cand, 0, add_mask=False)
         ei_values.append(ei_value_padded)
     return torch.stack(ei_values) # shape (batch_size, n_cand)

@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 
-from utils import get_lengths_from_proportions
+from utils import Exp
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 if torch.cuda.is_available():
     print(torch.cuda.current_device())
@@ -82,13 +82,13 @@ RANDOMIZE_PARAMS = True
 # choose either "uniform" or "normal" (or a custom distribution)
 XVALUE_DISTRIBUTION = "uniform"
 # Choose an outcome transform. Can be None if no outcome transform
-OUTCOME_TRANSFORM = None
+# OUTCOME_TRANSFORM = None
 # TODO (bug): str(Power(2)) = "Power()" but we'd like it to be "Power(2)" so it
 # can be saved uniquely. Maybe use the attributes of the class or something
 # instead. Or alternateively, just don't save the acquisition datasets, or
 # transform the acquisition datasets directly. I think it would be easiest to
 # just not save the acquisition datasets anymore.
-# OUTCOME_TRANSFORM = Power(2)
+OUTCOME_TRANSFORM = Exp()
 
 if OUTCOME_TRANSFORM is not None:
     # If we transform the outcomes, then the model information will disappear
@@ -339,8 +339,14 @@ else:
 
 ######################## Plot performance of model #############################
 
-def plot_gp_posterior(ax, posterior, test_x, train_x, train_y, color, name=None):#
-    lower, upper = posterior.mvn.confidence_region()
+def plot_gp_posterior(ax, posterior, test_x, train_x, train_y, color, name=None):
+    if not hasattr(posterior, "mvn"):
+        # This in general won't correspond to the actual probability distribution AT ALL
+        # e.g. exponentiate then we get a lognortmal distribution
+        # but this is not that, the lower can go negative!
+        lower, upper = posterior.mean - posterior.variance.sqrt(), posterior.mean + posterior.variance.sqrt()
+    else:
+        lower, upper = posterior.mvn.confidence_region()
     mean = posterior.mean.detach().squeeze().cpu().numpy()
     lower = lower.detach().squeeze().cpu().numpy()
     upper = upper.detach().squeeze().cpu().numpy()
@@ -357,8 +363,6 @@ def plot_gp_posterior(ax, posterior, test_x, train_x, train_y, color, name=None)
 
     extension = '' if name is None else f' {name}'
 
-    # Plot training points as black stars
-    ax.plot(train_x, train_y, f'{color}*', label=f'Observed Data{extension}')
     # Plot posterior means as blue line
     ax.plot(test_x, mean, color, label=f'Mean{extension}')
     # Shade between the lower and upper confidence bounds
@@ -396,20 +400,34 @@ def plot_nn_vs_gp_acquisition_function_1d_grid(
             ei_nn = aq_fn(x_cand_nn.unsqueeze(1))
             ei_nn = ei_nn.cpu()
 
-            gp_model.set_train_data_with_transforms(x_hist, y_hist, strict=False)
-            posterior_true = gp_model.posterior(x_cand, observation_noise=False)
+            sorted_indices = np.argsort(x_cand.detach().numpy().flatten())
+            sorted_x_cand = x_cand.detach().numpy().flatten()[sorted_indices]
 
-            ei_true = calculate_EI_GP(gp_model, x_hist, y_hist, x_cand, log=False)
+            plot_gp = True
+            try:
+                gp_model.set_train_data_with_transforms(x_hist, y_hist, strict=False)
+                posterior_true = gp_model.posterior(x_cand, observation_noise=False)
 
-            if plot_map:
-                ei_map = calculate_EI_GP(gp_model, x_hist, y_hist, x_cand, fit_params=True, log=False)
+                ei_true = calculate_EI_GP(gp_model, x_hist, y_hist, x_cand, log=False)
 
-            # Normalize so they have the same scale
+                if plot_map:
+                    ei_map = calculate_EI_GP(gp_model, x_hist, y_hist, x_cand, fit_params=True, log=False)
+
+                # Normalize so they have the same scale
+                if POLICY_GRADIENT:
+                    ei_true = (ei_true - ei_true.mean()) / ei_true.std()
+                    if plot_map:
+                        ei_map = (ei_map - ei_map.mean()) / ei_map.std()
+            
+                sorted_ei_true = ei_true.detach().numpy().flatten()[sorted_indices]
+                if plot_map:
+                    sorted_ei_map = ei_map.detach().numpy().flatten()[sorted_indices]
+            except NotImplementedError: # NotImplementedError: No mean transform provided.
+                plot_gp = False
+
+            
             if POLICY_GRADIENT:
                 ei_nn = (ei_nn - ei_nn.mean()) / ei_nn.std()
-                ei_true = (ei_true - ei_true.mean()) / ei_true.std()
-                if plot_map:
-                    ei_map = (ei_map - ei_map.mean()) / ei_map.std()
 
                 # ei_nn = normalize_by_quantile(ei_nn)
                 # ei_true = normalize_by_quantile(ei_true)
@@ -418,19 +436,19 @@ def plot_nn_vs_gp_acquisition_function_1d_grid(
 
             ax = axs[row, col]
 
-            sorted_indices = np.argsort(x_cand.detach().numpy().flatten())
-            sorted_x_cand = x_cand.detach().numpy().flatten()[sorted_indices]
-            sorted_ei_true = ei_true.detach().numpy().flatten()[sorted_indices]
             sorted_ei_nn = ei_nn.detach().numpy().flatten()[sorted_indices]
-            if plot_map:
-                sorted_ei_map = ei_map.detach().numpy().flatten()[sorted_indices]
 
-            ax.plot(sorted_x_cand, sorted_ei_true, label="True GP")
+            if plot_gp:
+                ax.plot(sorted_x_cand, sorted_ei_true, label="True GP")
             ax.plot(sorted_x_cand, sorted_ei_nn, label="NN")
-            if plot_map:
+            if plot_gp and plot_map:
                 ax.plot(sorted_x_cand, sorted_ei_map, label="MAP")
-
-            plot_gp_posterior(ax, posterior_true, x_cand, x_hist, y_hist, 'b', name='True')
+            
+            # Plot training points as black stars
+            ax.plot(x_hist, y_hist, 'b*', label=f'Observed Data')
+            
+            if plot_gp:
+                plot_gp_posterior(ax, posterior_true, x_cand, x_hist, y_hist, 'b', name='True')
 
             # ax.set_title(f"History: {x_hist.size(0)}")
             ax.set_xlim(min_x, max_x)

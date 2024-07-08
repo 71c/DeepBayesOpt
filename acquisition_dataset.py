@@ -69,9 +69,9 @@ class AcquisitionDatasetModelItem(TupleWithModel):
             # Use x_hist, y_hist, x_cand, and improvements for training
             # and model for evaluation of the approximated acquisition function
             # x_hist shape: (n_hist, dimension)
-            # y_hist shape: (n_hist,)
+            # y_hist shape: (n_hist, 1)
             # x_cand shape: (n_cand, dimension)
-            # improvements shape: (n_cand,)
+            # improvements shape: (n_cand, 1)
     """,
 
      map_dataset_base_name='MapAcquisitionDataset',
@@ -429,6 +429,9 @@ class FunctionSamplesAcquisitionDataset(
 
     @property
     def _model_sampler(self):
+        if not hasattr(self.base_dataset, "_model_sampler"):
+            raise RuntimeError(f"The base dataset of this {self.__class__.__name__} is a {self.base_dataset.__class__.__name__} "
+                               " which does not have the _model_sampler attribute")
         return self.base_dataset._model_sampler
 
     # __len__ is implemented by SizedIterableMixin
@@ -520,15 +523,13 @@ class FunctionSamplesAcquisitionDataset(
         return n_samples, n_candidates
 
     def __iter__(self):
-        has_models = self.base_dataset.has_models
-        
         # x_values has shape (n_datapoints, dimension)
-        # y_values has shape (n_datapoints,)
+        # y_values has shape (n_datapoints, 1)
         for item in self._data_iterable:
             if not isinstance(item, FunctionSamplesItem):
                 raise TypeError(f"item should be an instance of FunctionSamplesItem, but got {item=}")
             x_values, y_values = item.x_values, item.y_values
-            if has_models:
+            if item.has_model:
                 model, model_params = item._model, item.model_params
             else:
                 model, model_params = None, None
@@ -546,7 +547,7 @@ class FunctionSamplesAcquisitionDataset(
             y_cand = y_values[candidate_idx]
 
             if self.give_improvements:
-                best_f = y_hist.amax(0, keepdim=False) # both T and F work
+                best_f = y_hist.amax(0, keepdim=True)
                 improvement_values = torch.nn.functional.relu(
                     y_cand - best_f, inplace=True)
                 vals_cand = improvement_values

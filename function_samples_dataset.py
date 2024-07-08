@@ -44,7 +44,7 @@ class FunctionSamplesItem(TupleWithModel):
     It is expected that the yielded values are either
     (x_values, y_values, model) or (x_values, y_values), where
     - x_values: A tensor of shape (n_datapoints, dimension)
-    - y_values: A tensor of shape (n_datapoints,)
+    - y_values: A tensor of shape (n_datapoints, 1)
     - model: A SingleTaskGP instance that was used to generate the data
 
     Subclasses include:
@@ -59,7 +59,7 @@ class FunctionSamplesItem(TupleWithModel):
     dataset = some FunctionSamplesDataset instance
     for x_values, y_values, model in dataset:
         # x_values has shape (n_datapoints, dimension)
-        # y_values has shape (n_datapoints,)
+        # y_values has shape (n_datapoints, 1)
         # do something with x_values, y_values, and model
     ```
     """,
@@ -102,13 +102,20 @@ class TransformedFunctionSamplesIterableDataset(
         if not isinstance(base_dataset, IterableDataset):
             raise ValueError("base_dataset must be a IterableDataset")
         self.base_dataset = base_dataset
-        self.transform = transform
+        self._transform_func = transform
         # Currently unknown whether this dataset has models
         self._has_models = None
     
+    @property
+    def _model_sampler(self):
+        if not hasattr(self.base_dataset, "_model_sampler"):
+            raise RuntimeError(f"The base dataset of this {self.__class__.__name__} is a {self.base_dataset.__class__.__name__} "
+                               " which does not have the _model_sampler attribute")
+        return self.base_dataset._model_sampler
+    
     def __iter__(self):
         for item in self.base_dataset:
-            transformed_item = self.transform(item)
+            transformed_item = self._transform_func(item)
             if self._has_models is None:
                 self._has_models = transformed_item.has_model
             else:
@@ -135,7 +142,7 @@ class TransformedFunctionSamplesIterableDataset(
         return self.base_dataset.__len__()
     
     def random_split(self, lengths):
-        return [self.__class__(split_dataset, self.transform)
+        return [self.__class__(split_dataset, self._transform_func)
                 for split_dataset in self.base_dataset.random_split(lengths)]
     
     def data_is_loaded(self):
@@ -146,7 +153,7 @@ class TransformedFunctionSamplesIterableDataset(
         return self.base_dataset.data_is_fixed
     
     def _init_params(self):
-        return (self.base_dataset, self.transform), {}
+        return (self.base_dataset, self._transform_func), {}
     
     def save(self, dir_name: str, verbose:bool=True):
         raise NotImplementedError(
@@ -166,28 +173,31 @@ class TransformedFunctionSamplesIterableDataset(
 
 
 class TransformedLazyMapFunctionSamplesDataset(MapFunctionSamplesDataset):
-    def __init__(self, base_dataset: LazyMapFunctionSamplesDataset,
+    def __init__(self, base_dataset: Union[LazyMapFunctionSamplesDataset, "TransformedLazyMapFunctionSamplesDataset"],
                  transform):
-        if not isinstance(base_dataset, LazyMapFunctionSamplesDataset):
-            raise ValueError("base_dataset must be a LazyMapFunctionSamplesDataset")
+        if not isinstance(base_dataset, (LazyMapFunctionSamplesDataset, self.__class__)):
+            raise ValueError("base_dataset must be a LazyMapFunctionSamplesDataset or TransformedLazyMapFunctionSamplesDataset")
         self.dataset = base_dataset
-        self.transform = transform
+        self._transform_func = transform
         self._data = [
             transform(item) if item is not None
             else item for item in base_dataset._data]
     
     @property
     def _model_sampler(self):
+        if not hasattr(self.dataset, "_model_sampler"):
+            raise RuntimeError(f"The base dataset of this {self.__class__.__name__} is a {self.dataset.__class__.__name__} "
+                               " which does not have the _model_sampler attribute")
         return self.dataset._model_sampler
 
     def _init_params(self):
-        return (self.dataset, self.transform), {}
+        return (self.dataset, self._transform_func), {}
     
     def __getitem__(self, index):
         if isinstance(index, slice):
             return self._map_base_class.__getitem__(self, index)
         if self._data[index] is None:
-            self._data[index] = self.transform(self.dataset[index])
+            self._data[index] = self._transform_func(self.dataset[index])
         return self._data[index]
 
     def __len__(self) -> int:
@@ -200,10 +210,8 @@ class TransformedLazyMapFunctionSamplesDataset(MapFunctionSamplesDataset):
         # is cheap to compute, then the data is basically loaded.
         return self.dataset.data_is_loaded()
 
-    def transform(self):
-        raise NotImplementedError(
-            f"{self.__class__.__name__} has not implemented transform. "
-            "It is already transformed.")
+    def transform(self, transform):
+        return self.__class__(self, transform)
 
 
 def _transform_default_iterable(self, transform):
@@ -322,18 +330,6 @@ def _transform_outcomes(self, outcome_transform: OutcomeTransform,
 FunctionSamplesDataset.transform_outcomes = _transform_outcomes
 
 
-## Standardize:
-## we already have non-standardized data generated with GP models.
-## Want to, for each FunctionSamplesItem:
-## 1) s = Standardize()        # Make a Standardize transform
-## 2) Y_tf = s(y_values, None) # Standardize the y_values
-## 3) Add an outcome_transform to the model which is the *inverse* transform
-## of s. This is because the model is expected to be given standardized values
-## but the model lives in non-standardized space. This makes it so that
-## untransform_posterior actually standardizes (rather than un-standardizes as
-## is usual).
-## 4) Make sure that when model.set_train_data is done, then outcome_transform
-## applied to the Y.
 @staticmethod
 def _apply_standardize_outcome_transform(item: FunctionSamplesItem):
     return FunctionSamplesDataset._apply_outcome_transform(
@@ -357,7 +353,7 @@ class GaussianProcessRandomDataset(
     dataset = GaussianProcessRandomDataset(n_datapoints=15, dimension=5, dataset_size=100)
     for x_values, y_values, model in dataset:
         # x_values has shape (n_datapoints, dimension)
-        # y_values has shape (n_datapoints,)
+        # y_values has shape (n_datapoints, 1)
         # do something with x_values, y_values, and model
     ```
     """
@@ -604,7 +600,7 @@ class GaussianProcessRandomDataset(
             Tuple `(x_values, y_values, model)` where `model` is a
             `SingleTaskGP` instance that was used to generate the data.
             `x_values` has shape `(n_datapoints, dimension)`, and
-            `y_values` has shape `(n_datapoints,)`.
+            `y_values` has shape `(n_datapoints, 1)`.
         """
         # Get a random model
         model = self.model_sampler.sample()
@@ -691,6 +687,9 @@ class RepeatedFunctionSamplesIterableDataset(
     
     @property
     def _model_sampler(self):
+        if not hasattr(self.base_dataset, "_model_sampler"):
+            raise RuntimeError(f"The base dataset of this {self.__class__.__name__} is a {self.base_dataset.__class__.__name__} "
+                               " which does not have the _model_sampler attribute")
         return self.base_dataset._model_sampler
     
     def random_split(self, lengths: Sequence[Union[int, float]]):
