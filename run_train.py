@@ -57,6 +57,7 @@ LAZY_TEST = True
 GP_GEN_DEVICE = "cpu"
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
+MODELS_DIR = os.path.join(script_dir, "saved_models")
 
 
 ########################### Test dataset settings ##############################
@@ -265,7 +266,7 @@ else:
 # file_name = "acquisition_function_net_AcquisitionFunctionNetV4_1d_policy_gradient_myopic_fixed_kernel_uniform_x_history1-8_loguniform_50cand_200epochs.pth"
 
 print(f"Model file: {file_name}")
-model_path = os.path.join(script_dir, file_name)
+model_path = os.path.join(MODELS_DIR, file_name)
 
 
 ######################## Train the model #######################################

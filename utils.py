@@ -10,6 +10,7 @@ from scipy.optimize import root_scalar
 import torch
 from torch import Tensor
 
+import gpytorch
 from botorch.exceptions.errors import (
     BotorchTensorDimensionError,
     InputDataError,
@@ -407,6 +408,16 @@ def _condition_on_observations_with_transforms(
         fantasy_model._original_train_inputs = fantasy_model.input_transform.untransform(
             fantasy_model.train_inputs[0])
 Model.condition_on_observations_with_transforms = _condition_on_observations_with_transforms
+
+
+def remove_priors(module: gpytorch.module.Module):
+    if not isinstance(module, gpytorch.module.Module):
+        raise ValueError(
+            "module should be an instance of "
+            f"gpytorch.module.Module but is a {module.__class__.__name__}")
+    for name, parent_module, prior, closure, inv_closure in module.named_priors():
+        prior_variable_name = name.rsplit('.', 1)[-1]
+        delattr(parent_module, prior_variable_name)
 
 
 def uniform_randint(min_val, max_val):
