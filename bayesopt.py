@@ -19,7 +19,8 @@ class BayesianOptimizer(ABC):
                  dim: int,
                  maximize: bool,
                  initial_points: Tensor,
-                 objective: Callable):
+                 objective: Callable,
+                 bounds: Optional[Tensor]=None):
         if not isinstance(dim, int) or dim < 1:
             raise ValueError("dim must be a positive integer.")
         if not isinstance(maximize, bool):
@@ -31,14 +32,25 @@ class BayesianOptimizer(ABC):
             
         self.dim = dim
         self.maximize = maximize
-        self.bounds = torch.stack([torch.zeros(dim), torch.ones(dim)])
+        if bounds is None:
+            bounds = torch.stack([torch.zeros(dim), torch.ones(dim)])
+        self.bounds = bounds
         self.objective = objective
         
         self.x = initial_points
         self.y = self.objective(self.x)
-
-        self.best_history = []
+        
+        self._best_y_history = []
+        self._best_x_history = []
         self.update_best()
+    
+    @property
+    def best_y_history(self):
+        return torch.stack(self._best_y_history)
+    
+    @property
+    def best_x_history(self):
+        return torch.stack(self._best_x_history)
     
     @abstractmethod
     def get_new_point(self) -> Tensor:
@@ -63,13 +75,17 @@ class BayesianOptimizer(ABC):
             self.update_best()
     
     def update_best(self):
-        self.best_f = self.y.max().item() if self.maximize else self.y.min().item()
-        self.best_history.append(self.best_f)
+        y = self.y
+        best_index = torch.argmax(y).item() if self.maximize else torch.argmin(y).item()
+        self.best_f = y[best_index]
+        self._best_y_history.append(self.best_f)
+        self._best_x_history.append(self.x[best_index])
 
 
 class RandomSearch(BayesianOptimizer):
     def get_new_point(self) -> Tensor:
-        return torch.rand(1, self.dim)
+        lb, ub = self.bounds[0], self.bounds[1]
+        return torch.rand(self.dim) * (ub - lb) + lb
 
 
 class SimpleAcquisitionOptimizer(BayesianOptimizer):
@@ -77,9 +93,14 @@ class SimpleAcquisitionOptimizer(BayesianOptimizer):
                  dim: int,
                  maximize: bool,
                  initial_points: Tensor,
-                 objective: Callable):
-        super().__init__(dim, maximize, initial_points, objective)
-        self.acq_history = []
+                 objective: Callable,
+                 bounds: Optional[Tensor]=None):
+        super().__init__(dim, maximize, initial_points, objective, bounds)
+        self._acq_history = []
+    
+    @property
+    def acq_history(self):
+        return torch.tensor(self._acq_history)
 
     @abstractmethod
     def get_acquisition_function(self) -> AcquisitionFunction:
@@ -95,13 +116,13 @@ class SimpleAcquisitionOptimizer(BayesianOptimizer):
             q=1,
             num_restarts=10 * self.dim,
             raw_samples=200 * self.dim,
-            options={
-                "batch_limit": 5,
-                "maxiter": 200,
-                "method": "L-BFGS-B",
-            }
+            # options={
+            #     "batch_limit": 5,
+            #     "maxiter": 200,
+            #     "method": "L-BFGS-B",
+            # }
         )
-        self.acq_history.append(new_point_acquisition_val.item())
+        self._acq_history.append(new_point_acquisition_val.item())
         return new_point
 
 
@@ -122,8 +143,9 @@ class ModelAcquisitionOptimizer(SimpleAcquisitionOptimizer):
                  initial_points: Tensor,
                  objective: Callable,
                  acquisition_function_class: Type[AcquisitionFunction],
+                 bounds: Optional[Tensor]=None,
                  **acqf_kwargs):
-        super().__init__(dim, maximize, initial_points, objective)
+        super().__init__(dim, maximize, initial_points, objective, bounds)
         self.acqf_kwargs = acqf_kwargs
         self.acquisition_function_class = acquisition_function_class
         self._acquisition_args = get_all_args(acquisition_function_class)
@@ -149,8 +171,10 @@ class NNAcquisitionOptimizer(ModelAcquisitionOptimizer):
                  maximize: bool,
                  initial_points: Tensor,
                  objective: Callable,
-                 model: AcquisitionFunctionNet):
-        super().__init__(dim, maximize, initial_points, objective, LikelihoodFreeNetworkAcquisitionFunction)
+                 model: AcquisitionFunctionNet,
+                 bounds: Optional[Tensor]=None):
+        super().__init__(dim, maximize, initial_points, objective, 
+                         LikelihoodFreeNetworkAcquisitionFunction, bounds)
         self.model = model
     
     def get_model(self):
@@ -169,9 +193,10 @@ class GPAcquisitionOptimizer(ModelAcquisitionOptimizer):
                  acquisition_function_class: Type[AcquisitionFunction],
                  fit_params: bool,
                  mle: bool=False,
+                 bounds: Optional[Tensor]=None,
                  **acqf_kwargs):
         super().__init__(dim, maximize, initial_points, objective,
-                         acquisition_function_class, **acqf_kwargs)
+                         acquisition_function_class, bounds, **acqf_kwargs)
         
         self.fit_params = fit_params
         if fit_params:

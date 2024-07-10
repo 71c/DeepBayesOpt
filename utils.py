@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
+import hashlib
+import re
 import math
-import os
 from typing import Any, List, Optional, Sequence, Union, Iterable, Tuple
 import warnings
 from functools import partial, lru_cache
@@ -11,6 +12,8 @@ import torch
 from torch import Tensor
 
 import gpytorch
+from gpytorch.likelihoods import GaussianLikelihood
+from gpytorch.constraints.constraints import GreaterThan
 from botorch.exceptions.errors import (
     BotorchTensorDimensionError,
     InputDataError,
@@ -26,6 +29,7 @@ from botorch.models.transforms.outcome import OutcomeTransform, Standardize, Log
 from torch.nn import ModuleList
 
 from botorch.models.model import Model
+from botorch.models.gp_regression import SingleTaskGP
 from botorch.models.gpytorch import GPyTorchModel, BatchedMultiOutputGPyTorchModel
 
 
@@ -226,6 +230,60 @@ def invert_outcome_transform(transform: OutcomeTransform):
     return InverseOutcomeTransform(transform)
 
 
+def get_gp(train_X:Optional[Tensor]=None,
+           train_Y:Optional[Tensor]=None,
+           dimension:Optional[int]=None,
+           observation_noise=False,
+           likelihood=None,
+           covar_module=None,
+           mean_module=None,
+           outcome_transform=None,
+           input_transform=None,
+           device=None):
+    # Default: Matern 5/2 kernel with gamma priors on
+    # lengthscale and outputscale, and noise level also if
+    # observation_noise.
+    
+    if train_X is None and train_Y is None:
+        has_data = False
+        if dimension is None:
+            raise ValueError("dimension should be specified if train_X, train_Y are not specified")
+        # SingleTaskGP doesn't support initializing with no data.
+        # This will give a warning...ignore it.
+        train_X = torch.zeros(0, dimension, device=device)
+        train_Y = torch.zeros(0, 1, device=device)
+    elif train_X is not None and train_Y is not None:
+        has_data = True
+        if dimension is not None:
+            raise ValueError("dimension should not be specified if train_X, train_Y are specified")
+    else:
+        raise ValueError("Either train_X and train_Y, or neither, should be specified")
+
+    if type(observation_noise) is not bool:
+        raise ValueError("observation_noise should be a bool")
+    if not observation_noise:
+        if likelihood is not None:
+            raise ValueError(
+                "likelihood should not be specified if observation_noise=False")
+        likelihood = GaussianLikelihood(
+            noise_prior=None, batch_shape=torch.Size(),
+            noise_constraint=GreaterThan(
+                0.0, transform=None, initial_value=0.0
+            )
+        )
+        # Make it so likelihood can't change by gradient-based optimization.
+        likelihood.noise_covar.raw_noise.requires_grad_(False)
+    model = SingleTaskGP(
+        train_X, train_Y, likelihood=likelihood, covar_module=covar_module,
+        mean_module=mean_module, outcome_transform=outcome_transform,
+        input_transform=input_transform).to(device)
+    if not has_data: # Not strictly necessary but doesn't hurt
+        model.train_inputs = None
+        model.train_targets = None
+    return model
+
+
+########### Code for Model.set_train_data_with_transforms function #############
 def _transform_Y(self, Y: Optional[Tensor]=None, train:Optional[bool]=None):
     if Y is not None and hasattr(self, "outcome_transform"):
         outcome_transform = self.outcome_transform
@@ -407,8 +465,7 @@ def _set_train_data_with_transforms_BatchedMultiOutputGPyTorchModel(self,
                 stacklevel=3,  # Warn at model constructor call.
             )
 BatchedMultiOutputGPyTorchModel.set_train_data_with_transforms = _set_train_data_with_transforms_BatchedMultiOutputGPyTorchModel
-
-
+################################################################################
 def _condition_on_observations_with_transforms(
         self, X: Tensor, Y: Tensor, **kwargs: Any) -> Model:
     assert not self.training, "Model should be in eval mode."
@@ -427,7 +484,9 @@ def _condition_on_observations_with_transforms(
         # train mode...I'm not sure why BoTorch has this things.
         fantasy_model._original_train_inputs = fantasy_model.input_transform.untransform(
             fantasy_model.train_inputs[0])
+    return fantasy_model
 Model.condition_on_observations_with_transforms = _condition_on_observations_with_transforms
+
 
 
 def remove_priors(module: gpytorch.module.Module) -> list:
@@ -458,6 +517,40 @@ def add_priors(named_priors_tuple_list: List[Tuple]):
     for name, parent_module, prior, closure, inv_closure in named_priors_tuple_list:
         prior_variable_name = name.rsplit('.', 1)[-1]
         parent_module.register_prior(prior_variable_name, prior, closure, inv_closure)
+
+
+def calculate_batch_improvement(y_hist_batch: torch.Tensor, y_cand_batch: Tensor, 
+                                hist_mask: Optional[Tensor] = None, 
+                                cand_mask: Optional[Tensor] = None):
+    """
+    Calculate the improvement values for a batch of y_hist and y_cand tensors with optional masking.
+    
+    Args:
+        y_hist_batch (Tensor): Tensor of shape (batch_size, max_n_hist, 1) containing historical y values.
+        y_cand_batch (Tensor): Tensor of shape (batch_size, max_n_cand, 1) containing candidate y values.
+        hist_mask (Optional[Tensor]): Boolean tensor of shape (batch_size, max_n_hist, 1) indicating valid y values.
+            If None, all values in y_hist_batch are considered valid.
+        cand_mask (Optional[Tensor]): Boolean tensor of shape (batch_size, max_n_cand, 1) indicating valid y values.
+            If None, all values in y_cand_batch are considered valid.
+    
+    Returns:
+        Tensor: Tensor of improvement values with the same shape as y_cand_batch.
+    """
+    if hist_mask is None:
+        # Special case: no hist_mask, all values are valid
+        best_f_batch = y_hist_batch.amax(dim=1, keepdim=True)
+    else:
+        # General case: use the hist_mask to find the valid values
+        y_hist_batch_masked = y_hist_batch.masked_fill(~hist_mask, float('-inf'))
+        best_f_batch = y_hist_batch_masked.amax(dim=1, keepdim=True)
+    
+    improvement_values_batch = torch.nn.functional.relu(y_cand_batch - best_f_batch, inplace=True)
+    
+    # Ensure padding with zeros where there were invalid (masked) values
+    if cand_mask is not None:
+        improvement_values_batch = improvement_values_batch * cand_mask
+    
+    return improvement_values_batch
 
 
 def uniform_randint(min_val, max_val):
@@ -524,38 +617,56 @@ def int_linspace(start, stop, num):
     return ret
 
 
-def calculate_batch_improvement(y_hist_batch: torch.Tensor, y_cand_batch: Tensor, 
-                                hist_mask: Optional[Tensor] = None, 
-                                cand_mask: Optional[Tensor] = None):
-    """
-    Calculate the improvement values for a batch of y_hist and y_cand tensors with optional masking.
-    
-    Args:
-        y_hist_batch (Tensor): Tensor of shape (batch_size, max_n_hist, 1) containing historical y values.
-        y_cand_batch (Tensor): Tensor of shape (batch_size, max_n_cand, 1) containing candidate y values.
-        hist_mask (Optional[Tensor]): Boolean tensor of shape (batch_size, max_n_hist, 1) indicating valid y values.
-            If None, all values in y_hist_batch are considered valid.
-        cand_mask (Optional[Tensor]): Boolean tensor of shape (batch_size, max_n_cand, 1) indicating valid y values.
-            If None, all values in y_cand_batch are considered valid.
-    
-    Returns:
-        Tensor: Tensor of improvement values with the same shape as y_cand_batch.
-    """
-    if hist_mask is None:
-        # Special case: no hist_mask, all values are valid
-        best_f_batch = y_hist_batch.amax(dim=1, keepdim=True)
-    else:
-        # General case: use the hist_mask to find the valid values
-        y_hist_batch_masked = y_hist_batch.masked_fill(~hist_mask, float('-inf'))
-        best_f_batch = y_hist_batch_masked.amax(dim=1, keepdim=True)
-    
-    improvement_values_batch = torch.nn.functional.relu(y_cand_batch - best_f_batch, inplace=True)
-    
-    # Ensure padding with zeros where there were invalid (masked) values
-    if cand_mask is not None:
-        improvement_values_batch = improvement_values_batch * cand_mask
-    
-    return improvement_values_batch
+def to_device(tensor, device):
+    if tensor is None or device is None:
+        return tensor
+    return tensor.to(device)
+
+
+def save_json(data, fname, **kwargs):
+    with open(fname, 'w') as json_file:
+        json.dump(data, json_file, **kwargs)
+
+
+def load_json(fname, **kwargs):
+    with open(fname, 'r') as json_file:
+        return json.load(json_file)
+
+
+def sanitize_file_name(file_name: str) -> str:
+    # Define a dictionary of characters to replace
+    replacements = {
+        '/': '_',
+        '\\': '_',
+        ':': '_',
+        '*': '_',
+        '?': '_',
+        '"': '_',
+        '<': '_',
+        '>': '_',
+        '|': '_',
+    }
+
+    # Replace the characters based on the replacements dictionary
+    sanitized_name = ''.join(replacements.get(c, c) for c in file_name)
+
+    # Remove characters that are non-printable or not allowed
+    sanitized_name = re.sub(r'[^\x20-\x7E]', '', sanitized_name)
+
+    # Remove all whitespace characters
+    sanitized_name = re.sub(r'\s+', '', sanitized_name)
+
+    return sanitized_name
+
+
+def dict_to_fname_str(d):
+    x = ','.join(key + '=' + repr(value) for key, value in sorted(d.items()))
+    return sanitize_file_name(x)
+
+def dict_to_hash(d):
+    dict_bytes = dict_to_fname_str(d).encode('ascii')
+    return hashlib.sha256(dict_bytes).hexdigest()
+
 
 
 def pad_tensor(vec, length, dim, add_mask=False):
@@ -889,20 +1000,7 @@ def resize_iterable(it, new_length: Optional[int] = None):
     return it
 
 
-def to_device(tensor, device):
-    if tensor is None or device is None:
-        return tensor
-    return tensor.to(device)
 
-
-def save_json(data, fname, **kwargs):
-    with open(fname, 'w') as json_file:
-        json.dump(data, json_file, **kwargs)
-
-
-def load_json(fname, **kwargs):
-    with open(fname, 'r') as json_file:
-        return json.load(json_file)
 
 
 # Based on

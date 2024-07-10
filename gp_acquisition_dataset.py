@@ -1,11 +1,10 @@
-import hashlib
 import math
 import os
 from typing import Optional, Union
 from function_samples_dataset import GaussianProcessRandomDataset, ListMapFunctionSamplesDataset
 from acquisition_dataset import AcquisitionDataset, FunctionSamplesAcquisitionDataset
 from train_acquisition_function_net import train_or_test_loop
-from utils import (get_uniform_randint_generator,
+from utils import (dict_to_fname_str, dict_to_hash, get_uniform_randint_generator,
                    get_loguniform_randint_generator,
                    get_lengths_from_proportions)
 from torch.distributions import Distribution
@@ -55,41 +54,7 @@ def get_n_datapoints_random_gen_variable_n_candidates(
         return get_uniform_randint_generator(min_points, max_points)
 
 
-import re
 
-def sanitize_file_name(file_name: str) -> str:
-    # Define a dictionary of characters to replace
-    replacements = {
-        '/': '_',
-        '\\': '_',
-        ':': '_',
-        '*': '_',
-        '?': '_',
-        '"': '_',
-        '<': '_',
-        '>': '_',
-        '|': '_',
-    }
-
-    # Replace the characters based on the replacements dictionary
-    sanitized_name = ''.join(replacements.get(c, c) for c in file_name)
-
-    # Remove characters that are non-printable or not allowed
-    sanitized_name = re.sub(r'[^\x20-\x7E]', '', sanitized_name)
-
-    # Remove all whitespace characters
-    sanitized_name = re.sub(r'\s+', '', sanitized_name)
-
-    return sanitized_name
-
-
-def dict_to_str(d):
-    x = ','.join(key + '=' + repr(value) for key, value in sorted(d.items()))
-    return sanitize_file_name(x)
-
-def dict_to_hash(d):
-    dict_bytes = dict_to_str(d).encode('ascii')
-    return hashlib.sha256(dict_bytes).hexdigest()
 
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -162,7 +127,7 @@ def create_gp_acquisition_dataset(base_dataset_size,
         function_dataset_hash = dict_to_hash(gp_dataset_save_kwargs)
         base_name = f"{name_}base_size={base_dataset_size}_{function_dataset_hash}"
 
-        aq_dataset_extra_info_str = dict_to_str(
+        aq_dataset_extra_info_str = dict_to_fname_str(
             dict(fix_acquisition_samples=fix_acquisition_samples,
             expansion_factor=expansion_factor,
             outcome_transform=outcome_transform,

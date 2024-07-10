@@ -16,8 +16,8 @@ import math
 from dataset_with_models import TupleWithModel, create_classes, RandomModelSampler
 from utils import (SizedInfiniteIterableMixin, SizedIterableMixin,
                    get_lengths_from_proportions, iterable_is_finite,
-                   invert_outcome_transform, Unstandardize,
-                   concatenate_outcome_transforms)
+                   invert_outcome_transform, concatenate_outcome_transforms,
+                   get_gp)
 
 
 class FunctionSamplesItem(TupleWithModel):
@@ -433,91 +433,77 @@ class GaussianProcessRandomDataset(
             raise ValueError(f"xvalue_distribution should be a Distribution object or 'uniform' or 'normal' string, but got {xvalue_distribution}")
         self.xvalue_distribution = xvalue_distribution
 
+        # If no observation noise is generated, then make the likelihood
+        # be fixed noise at zero to correspond to what is generated.
+        
         if models is None: # models is None implies model_probabilities is None
             if model_probabilities is not None:
                 raise ValueError("model_probabilities should be None if models is None")
             if dimension is None:
                 raise ValueError("dimension should be specified if models is None")
+            models = [get_gp(dimension=dimension,
+                           observation_noise=observation_noise,
+                           device=device)]
+        else:
+            for i, model in enumerate(models):
+                if not isinstance(model, SingleTaskGP):
+                    raise UnsupportedError(f"models[{i}] should be a SingleTaskGP instance.")
 
-            # SingleTaskGP doesn't support initializing with no data.
-            train_X = torch.zeros(0, dimension, device=device)
-            train_Y = torch.zeros(0, 1, device=device)
+                # Verify that the model is single-batch
+                if len(model.batch_shape) != 0:
+                    raise UnsupportedError(f"All models must be single-batch, but models[{i}] has batch shape {model.batch_shape}")
+                # Verify that the model is single-output
+                if model.num_outputs != 1:
+                    raise UnsupportedError(f"All models must be single-output, but models[{i}] is {model.num_outputs}-output")
+                
+                if device is not None:
+                    model.to(device)
 
-            # Default: Matern 5/2 kernel with gamma priors on
-            # lengthscale and outputscale, and noise level also if
-            # observation_noise.
-            # If no observation noise is generated, then make the likelihood
-            # be fixed noise at zero to correspond to what is generated.
-            likelihood = None if observation_noise else GaussianLikelihood(
-                    noise_prior=None, batch_shape=torch.Size(),
-                    noise_constraint=GreaterThan(
-                        0.0, transform=None, initial_value=0.0
-                    )
-                )
-
-            model = SingleTaskGP(train_X, train_Y, likelihood=likelihood)
-            # hack to make it as if we initialized without any data
-            model.train_inputs = None
-            model.train_targets = None
-
-            models = [model]
-
-        if device is not None:
-            for model in models:
-                model.to(device)
-        
-        for i, model in enumerate(models):
-            if not isinstance(model, SingleTaskGP):
-                raise UnsupportedError(f"models[{i}] should be a SingleTaskGP instance.")
-
-            # Verify that the model is single-batch
-            if len(model.batch_shape) != 0:
-                raise UnsupportedError(f"All models must be single-batch, but models[{i}] has batch shape {model.batch_shape}")
-            # Verify that the model is single-output
-            if model.num_outputs != 1:
-                raise UnsupportedError(f"All models must be single-output, but models[{i}] is {model.num_outputs}-output")
-
-            if not observation_noise:
-                # If no observation noise, then keep the noise
-                # level fixed so it can't be changed by optimization.
-                # Make it so nothing in likelihood can change by gradient-based optimization.
-                # Since only GaussianLikelihood is supported, we could just do
-                # model.likelihood.noise_covar.raw_noise.requires_grad_(False),
-                # but this code is more general in case we want to support other likelihoods.
-                for param in model.likelihood.parameters():
-                    param.requires_grad_(False)
-            
-            if isinstance(model.likelihood, GaussianLikelihood):
                 if not observation_noise:
-                    # This is only important for estimating parameters with MLL
-                    # and not for sampling. Set noise level to zero so that
-                    # parameter estimates correspond to the generated data.
+                    # If no observation noise, then keep the noise
+                    # level fixed so it can't be changed by optimization.
+                    # Make it so nothing in likelihood can change by gradient-based optimization.
+                    # Since only GaussianLikelihood is supported, we could just do
+                    # model.likelihood.noise_covar.raw_noise.requires_grad_(False),
+                    # but this code is more general in case we want to support other likelihoods.
+                    for param in model.likelihood.parameters():
+                        param.requires_grad_(False)
+                
+                if isinstance(model.likelihood, GaussianLikelihood):
+                    if not observation_noise:
+                        # This is only important for estimating parameters with MLL
+                        # and not for sampling. Set noise level to zero so that
+                        # parameter estimates correspond to the generated data.
 
-                    # model.likelihood.noise_covar is a HomoskedasticNoise instance
-                    # Could also do model.initialize(**{'likelihood.noise_covar.raw_noise': 0.0})
-                    # Equivalent because GaussianLikelihood has @raw_noise.setter
-                    model.likelihood = GaussianLikelihood(
-                        noise_prior=None, batch_shape=torch.Size(),
-                        noise_constraint=GreaterThan(
-                            0.0, transform=None, initial_value=0.0
+                        # This actually won't work because it could be outside of the
+                        # allowable range. But keeping this note here ...
+                        # model.likelihood.noise_covar is a HomoskedasticNoise instance
+                        # Could also do model.initialize(**{'likelihood.noise_covar.raw_noise': 0.0})
+                        # Equivalent because GaussianLikelihood has @raw_noise.setter
+                        # model.likelihood.raw_noise = 0.0
+                        
+                        model.likelihood = GaussianLikelihood(
+                            noise_prior=None, batch_shape=torch.Size(),
+                            noise_constraint=GreaterThan(
+                                0.0, transform=None, initial_value=0.0
+                            )
                         )
-                    )
-            elif isinstance(model.likelihood, FixedNoiseGaussianLikelihood):
-                raise UnsupportedError(
-                    f"models[{i}] has FixedNoiseGaussianLikelihood which is not supported in GaussianProcessRandomDataset. Use GaussianLikelihood instead.")
+                elif isinstance(model.likelihood, FixedNoiseGaussianLikelihood):
+                    raise UnsupportedError(
+                        f"models[{i}] has FixedNoiseGaussianLikelihood which is not supported in GaussianProcessRandomDataset. Use GaussianLikelihood instead.")
 
-                # ## Could alternatively do it like this but that's too
-                # ## messy/buggy/not necessary:
-                # # model.likelihood.noise_covar is a FixedGaussianNoise instance
-                # # Also has a @noise.setter but not a raw_noise attribute
-                # # Fills the tensor with zeros (I think)
-                # model.noise = 0.0
-                # if model.likelihood.second_noise_covar is not None:
-                #     # there is also a @second_noise.setter
-                #     model.likelihood.second_noise = 0.0
-            else:
-                raise UnsupportedError(
-                    f"models[{i}] has likelihood {model.likelihood.__class__.__name__} which is not supported in GaussianProcessRandomDataset. Use GaussianLikelihood instead.")
+                    # ## Could alternatively do it like this but that's too
+                    # ## messy/buggy/not necessary:
+                    # # model.likelihood.noise_covar is a FixedGaussianNoise instance
+                    # # Also has a @noise.setter but not a raw_noise attribute
+                    # # Fills the tensor with zeros (I think)
+                    # model.noise = 0.0
+                    # if model.likelihood.second_noise_covar is not None:
+                    #     # there is also a @second_noise.setter
+                    #     model.likelihood.second_noise = 0.0
+                else:
+                    raise UnsupportedError(
+                        f"models[{i}] has likelihood {model.likelihood.__class__.__name__} which is not supported in GaussianProcessRandomDataset. Use GaussianLikelihood instead.")
         
         self._model_sampler = RandomModelSampler(
             models, model_probabilities, randomize_params=randomize_params)

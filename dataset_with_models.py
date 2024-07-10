@@ -113,7 +113,7 @@ class RandomModelSampler:
         self.model_probabilities = model_probabilities
         self.randomize_params = randomize_params
     
-    def sample(self):
+    def sample(self, deepcopy=False):
         # pick the model
         # https://discuss.pytorch.org/t/torch-equivalent-of-numpy-random-choice/16146
         model_index = self.model_probabilities.multinomial(num_samples=1, 
@@ -129,6 +129,8 @@ class RandomModelSampler:
         if self.randomize_params:
             _pyro_sample_from_prior(model, memo=None, prefix="")
 
+        if deepcopy:
+            model = copy.deepcopy(model)
         return model
     
     def get_model(self, index, model_params=None):
@@ -154,9 +156,10 @@ class RandomModelSampler:
     def initial_models(self):
         return [self.get_model(i) for i in range(len(self._models))]
     
-    def get_random_functions(self, n: int):
+    def get_random_functions(self, n: int, observation_noise:bool=False):
         return [
-            RandomGPFunction(copy.deepcopy(self.sample())) for _ in range(n)]
+            RandomGPFunction(copy.deepcopy(self.sample()), observation_noise)
+            for _ in range(n)]
 
 
 class ModelsWithParamsList:
