@@ -122,9 +122,9 @@ class ModelAcquisitionOptimizer(SimpleAcquisitionOptimizer):
                  initial_points: Tensor,
                  objective: Callable,
                  acquisition_function_class: Type[AcquisitionFunction],
-                 **kwargs):
+                 **acqf_kwargs):
         super().__init__(dim, maximize, initial_points, objective)
-        self.kwargs = kwargs
+        self.acqf_kwargs = acqf_kwargs
         self.acquisition_function_class = acquisition_function_class
         self._acquisition_args = get_all_args(acquisition_function_class)
     
@@ -135,12 +135,12 @@ class ModelAcquisitionOptimizer(SimpleAcquisitionOptimizer):
     
     def get_acquisition_function(self) -> AcquisitionFunction:
         model = self.get_model()
-        kwargs = {**self.kwargs}
+        acqf_kwargs = {**self.acqf_kwargs}
         if 'best_f' in self._acquisition_args:
-            kwargs['best_f'] = self.best_f
+            acqf_kwargs['best_f'] = self.best_f
         if 'maximize' in self._acquisition_args:
-            kwargs['maximize'] = self.maximize
-        return self.acquisition_function_class(model, **kwargs)
+            acqf_kwargs['maximize'] = self.maximize
+        return self.acquisition_function_class(model, **acqf_kwargs)
 
 
 class NNAcquisitionOptimizer(ModelAcquisitionOptimizer):
@@ -169,9 +169,9 @@ class GPAcquisitionOptimizer(ModelAcquisitionOptimizer):
                  acquisition_function_class: Type[AcquisitionFunction],
                  fit_params: bool,
                  mle: bool=False,
-                 **kwargs):
+                 **acqf_kwargs):
         super().__init__(dim, maximize, initial_points, objective,
-                         acquisition_function_class, **kwargs)
+                         acquisition_function_class, **acqf_kwargs)
         
         self.fit_params = fit_params
         if fit_params:
@@ -190,8 +190,7 @@ class GPAcquisitionOptimizer(ModelAcquisitionOptimizer):
         if self.fit_params:
             self.model.train()
         
-        self.model.set_train_data_with_transforms(
-            self.x, self.y.unsqueeze(-1), strict=False)
+        self.model.set_train_data_with_transforms(self.x, self.y.unsqueeze(-1), strict=False, train=self.fit_params)
         
         if self.fit_params:
             mll = ExactMarginalLogLikelihood(self.model.likelihood, self.model)

@@ -226,21 +226,17 @@ def invert_outcome_transform(transform: OutcomeTransform):
     return InverseOutcomeTransform(transform)
 
 
-def _transform_Y(self, Y: Optional[Tensor]=None):
+def _transform_Y(self, Y: Optional[Tensor]=None, train:Optional[bool]=None):
     if Y is not None and hasattr(self, "outcome_transform"):
         outcome_transform = self.outcome_transform
-        is_training = outcome_transform.training
-        # Put it into eval mode because we don't want to re-learn e.g.
-        # mean and standard deviation for Standardize.
-        # We're assuming that Standardize has been called at least once
-        # (i.e. from being called on __init__ in SingleTaskGP) so that its
-        # _is_trained attribute is True, so even if in training mode,
-        # it has been trained at least once.
-        if is_training:
-            outcome_transform.eval()
+        if train is None:
+            train = outcome_transform.training
+        switch_training = train != outcome_transform.training
+        if switch_training:
+            outcome_transform.train(not outcome_transform.training)
         Y, _ = outcome_transform(Y)
-        if is_training: # Set it back to train mode
-            outcome_transform.train()
+        if switch_training:
+            outcome_transform.train(not outcome_transform.training)
     return Y
 Model._transform_Y = _transform_Y
 
@@ -248,7 +244,8 @@ Model._transform_Y = _transform_Y
 def _set_train_data_with_X_transform(self,
                                      X: Optional[Tensor]=None,
                                      Y: Optional[Tensor]=None,
-                                     strict=True):
+                                     strict=True,
+                                     train:Optional[bool]=None):
     # If only one is given, then it does make sense to make sure it has the
     # right shape...
     strict = strict or ((X is None) ^ (Y is None))
@@ -256,16 +253,36 @@ def _set_train_data_with_X_transform(self,
 
     if X is not None and hasattr(self, "input_transform"):
         assert self.training == (not self._has_transformed_inputs)
-        if not self.training:
+        if not self.training: # eval mode
             # Then self._has_transformed_inputs == True,
             # and self._original_train_inputs is wrong.
-            # So we can set _has_transformed_inputs = False
-            # to make it so that _set_transformed_inputs sets the
-            # _original_train_inputs, transforms the inputs, and sets
-            # self._has_transformed_inputs = True again.
-            self._has_transformed_inputs = False
-            self._set_transformed_inputs()
-        else:
+            if train is None or train == self.training: # train = None or False
+                # We can set _has_transformed_inputs = False
+                # to make it so that _set_transformed_inputs sets the
+                # _original_train_inputs, transforms the inputs, and sets
+                # self._has_transformed_inputs = True again.
+                self._has_transformed_inputs = False
+                self._set_transformed_inputs()
+            else: # train = True
+                # Same as above code _set_transformed_inputs except do learn
+                # the bounds or coefficients
+                self._original_train_inputs = self.train_inputs[0]
+                # Learn any input transform parameters
+                was_eval = not self.input_transform.training
+                if was_eval:
+                    self.input_transform.train()
+                with torch.no_grad():
+                    X_tf = self.input_transform(self.train_inputs[0])
+                if was_eval:
+                    self.input_transform.eval()
+                self.set_train_data(X_tf, strict=False)
+        else: # train mode
+            if train is None or train == self.training: # train = None or True
+                # Learn any input transform parameters
+                # (Nothing will be done with this, just need to call it)
+                with torch.no_grad():
+                    X_tf = self.input_transform(self.train_inputs[0])
+
             # If in training mode, then train() doesn't do anything since
             # _has_transformed_inputs == False, and eval() makes
             # _original_train_inputs set correct. So don't need to do anything.
@@ -278,17 +295,19 @@ Model._set_train_data_with_X_transform = _set_train_data_with_X_transform
 def _set_train_data_with_transforms_Model(self,
                                           X: Optional[Tensor]=None,
                                           Y: Optional[Tensor]=None,
-                                          strict=True):
-    Y = self._transform_Y(Y)
-    self._set_train_data_with_X_transform(X, Y, strict)
+                                          strict=True,
+                                          train:Optional[bool]=None):
+    Y = self._transform_Y(Y, train)
+    self._set_train_data_with_X_transform(X, Y, strict, train)
 Model.set_train_data_with_transforms = _set_train_data_with_transforms_Model
 
 
 def _set_train_data_with_transforms_GPyTorchModel(self,
                                                   X: Optional[Tensor]=None,
                                                   Y: Optional[Tensor]=None,
-                                                  strict=True):
-    Y = self._transform_Y(Y)
+                                                  strict=True,
+                                                  train:Optional[bool]=None):
+    Y = self._transform_Y(Y, train)
     
     if not (X is None and Y is None):
         proposed_X = X if X is not None else self.train_inputs[0]
@@ -304,15 +323,16 @@ def _set_train_data_with_transforms_GPyTorchModel(self,
         
         self._validate_tensor_args(X=proposed_X, Y=proposed_Y)
 
-    self._set_train_data_with_X_transform(X, Y, strict)
+    self._set_train_data_with_X_transform(X, Y, strict, train)
 GPyTorchModel.set_train_data_with_transforms = _set_train_data_with_transforms_GPyTorchModel
 
 
 def _set_train_data_with_transforms_BatchedMultiOutputGPyTorchModel(self,
                                                   X: Optional[Tensor]=None,
                                                   Y: Optional[Tensor]=None,
-                                                  strict=True):
-    Y = self._transform_Y(Y)
+                                                  strict=True,
+                                                  train:Optional[bool]=None):
+    Y = self._transform_Y(Y, train)
     
     both_are_given = X is not None and Y is not None
     neither_is_given = X is None and Y is None
@@ -369,7 +389,7 @@ def _set_train_data_with_transforms_BatchedMultiOutputGPyTorchModel(self,
             else:
                 Y = Y.squeeze(-1)
     
-    self._set_train_data_with_X_transform(X, Y, strict)
+    self._set_train_data_with_X_transform(X, Y, strict, train)
 
     if not both_are_given and not neither_is_given:
         # In the case that only one of X or Y was provided, check the dtypes
@@ -410,14 +430,34 @@ def _condition_on_observations_with_transforms(
 Model.condition_on_observations_with_transforms = _condition_on_observations_with_transforms
 
 
-def remove_priors(module: gpytorch.module.Module):
-    if not isinstance(module, gpytorch.module.Module):
-        raise ValueError(
-            "module should be an instance of "
-            f"gpytorch.module.Module but is a {module.__class__.__name__}")
+def remove_priors(module: gpytorch.module.Module) -> list:
+    """Removes all priors from a GPyTorch Module, and also returns the
+    equivalent of list(module.named_priors()) for convenience to be used with
+    add_priors."""
+    named_priors_tuple_list = []
     for name, parent_module, prior, closure, inv_closure in module.named_priors():
+        named_priors_tuple_list.append((name, parent_module, prior, closure, inv_closure))
         prior_variable_name = name.rsplit('.', 1)[-1]
         delattr(parent_module, prior_variable_name)
+        del parent_module._priors[prior_variable_name]
+    return named_priors_tuple_list
+
+
+def add_priors(named_priors_tuple_list: List[Tuple]):
+    """Add priors to a GPyTorch Module. Note that the module itself doesn't need
+    to be specified because the parent modules of the priors (the children of
+    the module) are already given.
+    
+    Example:
+    ```
+    # remove the priors
+    named_priors_tuple_list = remove_priors(module)
+    # add the priors back
+    add_priors(named_priors_tuple_list)
+    """
+    for name, parent_module, prior, closure, inv_closure in named_priors_tuple_list:
+        prior_variable_name = name.rsplit('.', 1)[-1]
+        parent_module.register_prior(prior_variable_name, prior, closure, inv_closure)
 
 
 def uniform_randint(min_val, max_val):

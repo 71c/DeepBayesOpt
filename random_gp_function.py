@@ -146,8 +146,7 @@ class RandomGPFunction:
             # Add new data to the GP model
             if model_is_empty:
                 # Then x_unique == x_unique_new and y_unique == y_unique_new
-                model.set_train_data_with_transforms(
-                    x_unique_new, y_unique_new_with_output_dim, strict=False)
+                model.set_train_data_with_transforms(x_unique_new, y_unique_new_with_output_dim, strict=False, train=False)
             else:
                 self.model = model.condition_on_observations_with_transforms(
                     x_unique_new, y_unique_new_with_output_dim)
