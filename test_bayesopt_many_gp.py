@@ -1,105 +1,103 @@
 import copy
+from typing import Callable, List, Type, Optional
+import matplotlib.pyplot as plt
+import numpy as np
+import itertools
 import torch
+from torch import Tensor
+from tqdm import tqdm, trange
 torch.set_default_dtype(torch.float64)
 from botorch.utils.sampling import draw_sobol_samples
 from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprovement
 
-from bayesopt import GPAcquisitionOptimizer
+from bayesopt import GPAcquisitionOptimizer, get_optimization_results, plot_optimization_trajectory
 from random_gp_function import RandomGPFunction
-from utils import get_gp, dict_to_fname_str
+from utils import (get_gp, dict_to_fname_str, combine_nested_dicts,
+                   convert_to_json_serializable, json_serializable_to_numpy)
 from dataset_with_models import RandomModelSampler
 
-import matplotlib.pyplot as plt
-import numpy as np
-from tqdm import tqdm, trange
 
 dim = 6
 config = {
     'dim': dim,
     'observation_noise': False,
     'n_initial_samples': 2*(dim+1),
-    'n_functions': 4,
+    'n_functions': 3,
     'n_opt_trials_per_function': 3,
-    'n_iter': 30,
+    'n_iter': 15,
     'fit_params': False,
     'mle': False
 }
 
 observation_noise = config['observation_noise']
-n_initial_samples = config['n_initial_samples']
 n_functions = config['n_functions']
-n_opt_trials_per_function = config['n_opt_trials_per_function']
-n_iter = config['n_iter']
-fit_params = config['fit_params']
-mle = config['mle']
 
 config_ = config.copy()
-if not fit_params:
+if not config['fit_params']:
     config_.pop('mle')
 config_str = dict_to_fname_str(config_)
 
 
-max_n_functions_to_plot = 5
-bounds = torch.stack([torch.zeros(dim), torch.ones(dim)])
-
-models = [get_gp(
-    dimension=dim, observation_noise=observation_noise,
-    )]
+# Construct random GP sampler
+models = [get_gp(dimension=dim, observation_noise=observation_noise)]
 gp_sampler = RandomModelSampler(models, randomize_params=False)
-
-
+# sample n_functions random GPs and construct random realizations from them
 random_gps = [gp_sampler.sample(deepcopy=True) for _ in range(n_functions)]
 gp_realizations = [
     RandomGPFunction(copy.deepcopy(gp), observation_noise)
     for gp in random_gps]
+function_names = [f'gp{i}' for i in range(1, n_functions+1)]
 
+bounds = torch.stack([torch.zeros(dim), torch.ones(dim)])
 init_x = draw_sobol_samples(bounds=bounds, 
-                            n=n_opt_trials_per_function,
-                            q=n_initial_samples).squeeze(0)
+                            n=config['n_opt_trials_per_function'],
+                            q=config['n_initial_samples'])
 
-optimization_best_y_data = [] # list of n_opt_trials_per_function x n_iter arrays
-optimization_best_x_data = [] # list of n_opt_trials_per_function x n_iter x dim arrays
-for func_index in trange(n_functions, desc="Optimizing functions"):
-    objective = gp_realizations[func_index]
-    gp = random_gps[func_index]
-    function_best_y_data = []
-    function_best_x_data = []
+experiment_name = 'EI_GP_realizations'
+optimizer_class = GPAcquisitionOptimizer
+acquisition_functions = {
+    'Log EI': LogExpectedImprovement,
+    'EI': ExpectedImprovement
+}
+optimization_options = {
+    'True GP': {'fit_params': False},
+    'MAP': {'fit_params': True, 'mle': False},
+    'MLE': {'fit_params': True, 'mle': True}
+}
 
-    for trial_index in trange(n_opt_trials_per_function, desc=f"Optimizing function {func_index+1}"):
-        optimizer = GPAcquisitionOptimizer(
-            dim, maximize=True,
-            initial_points=init_x[trial_index],
-            objective=objective,
-            model=gp,
-            acquisition_function_class=LogExpectedImprovement,
-            fit_params=False,
-            mle=mle,
-            bounds=bounds
-        )
-        optimizer.optimize(n_iter)
-        function_best_y_data.append(optimizer.best_y_history.numpy())
-        function_best_x_data.append(optimizer.best_x_history.numpy())
-    optimization_best_y_data.append(np.array(function_best_y_data))
-    optimization_best_x_data.append(np.array(function_best_x_data))
+acquisition_function_options = {
+    name: {'acquisition_function_class': acq_func_class}
+    for name, acq_func_class in acquisition_functions.items()}
+options_list = combine_nested_dicts(acquisition_function_options, optimization_options)
 
+results = {func_name: {} for func_name in function_names}
+desc = (f"Running optimization of {n_functions} functions "
+        f"{config['n_opt_trials_per_function']} times each "
+        f"with {len(options_list)} combinations")
+for options_name, options in tqdm(options_list.items(), desc=desc):
+    optimization_results = get_optimization_results(
+        objectives=gp_realizations,
+        initial_points=init_x,
+        n_iter=config['n_iter'],
+        optimizer_class=optimizer_class,
+        optimizer_kwargs_per_function=[{'model': gp} for gp in random_gps],
+        objective_names=function_names,
+        dim=dim,
+        maximize=True,
+        bounds=bounds,
+        **options
+    )
+    it = tqdm(optimization_results, desc=f"Optimizing functions with {options_name}")
+    for func_name, func_result in it:
+        results[func_name][options_name] = func_result
+        print(f"Function {func_name} optimized with {options_name}.")
+        print(f"Best y: {func_result['best_y'][:, -1]}")
 
-def calculate_mean_and_ci(data):
-    mean = np.mean(data, axis=0)
-    std = np.std(data, axis=0)
-    ci = 1.96 * std  # 95% confidence interval
-    return mean, mean - ci, mean + ci
-
-def plot_optimization_trajectory(ax, data, label):
-    mean, lower, upper = calculate_mean_and_ci(data)
-    x = range(len(mean))
-    ax.plot(x, mean, label=label)
-    ax.fill_between(x, lower, upper, alpha=0.3)
-    ax.set_xlabel('Iteration')
-    ax.set_ylabel('Best function value')
-    ax.legend()
-
+# Broken code
+optimization_best_y_data = None # TODO: get best y data from results
 
 # Plot individual functions (up to max_n_functions_to_plot)
+max_n_functions_to_plot = 5
 n_functions_to_plot = min(n_functions, max_n_functions_to_plot)
 
 scale = 0.5

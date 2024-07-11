@@ -1,8 +1,10 @@
 from abc import ABC, abstractmethod
+import array
 import hashlib
+import itertools
 import re
 import math
-from typing import Any, List, Optional, Sequence, Union, Iterable, Tuple
+from typing import Any, TypeVar, Iterable, Sequence, List, Tuple, Dict, Optional, Union
 import warnings
 from functools import partial, lru_cache
 import json
@@ -660,13 +662,104 @@ def sanitize_file_name(file_name: str) -> str:
 
 
 def dict_to_fname_str(d):
-    x = ','.join(key + '=' + repr(value) for key, value in sorted(d.items()))
+    x = ','.join(key + '=' + repr(value) for key, value in sorted(d.items()))   
     return sanitize_file_name(x)
 
 def dict_to_hash(d):
     dict_bytes = dict_to_fname_str(d).encode('ascii')
     return hashlib.sha256(dict_bytes).hexdigest()
 
+
+K = TypeVar('K')
+V = TypeVar('V')
+
+def combine_dicts(dict_list: List[Dict[K, V]]) -> Dict[K, V]:
+    return {k: v for d in dict_list for k, v in d.items()}
+
+def dict_product(*lists_of_dicts: List[Dict[K, V]]) -> List[Dict[K, V]]:
+    """
+    Generate all possible combinations of dictionaries from the input lists.
+
+    This function takes multiple lists of dictionaries and returns a list of all
+    possible combinations, where each combination is a union of one dictionary
+    from each input list.
+    If there are duplicate keys, the value from the later dictionary in the
+    combination takes precedence.
+
+    Args:
+        *lists_of_dicts:
+            Variable number of lists, where each list contains dictionaries.
+
+    Returns:
+        A list of dictionaries, each representing a unique combination of the
+        input dictionaries.
+    """
+    options_product = itertools.product(*lists_of_dicts)
+    return [combine_dicts(dicts) for dicts in options_product]
+
+def combine_nested_dicts(*dicts : Dict[str, Dict[K, V]]) -> Dict[str, Dict[K, V]]:
+    """Combine nested dictionaries to create all possible combinations of their
+    contents.
+
+    This function takes multiple dictionaries, where each dictionary contains
+    string keys mapped to sub-dictionaries. It generates all possible
+    combinations of these sub-dictionaries across the input dictionaries,
+    creating new combined dictionaries.
+
+    The keys of the resulting dictionary are created by joining the
+    corresponding keys from the input dictionaries with ', '.
+
+    Args:
+        *dicts: Variable number of dictionaries. Each dictionary should have
+                string keys and dictionary values.
+
+    Returns:
+        A dictionary where:
+        - Keys are strings created by joining the keys of the input dictionaries.
+        - Values are dictionaries created by combining the corresponding
+          sub-dictionaries from the input dictionaries.
+
+    Example:
+        >>> d1 = {'A': {'x': 1}, 'B': {'x': 2}}
+        >>> d2 = {'C': {'y': 3}, 'D': {'y': 4}}
+        >>> combine_nested_dicts(d1, d2)
+        {'A, C': {'x': 1, 'y': 3}, 'A, D': {'x': 1, 'y': 4},
+         'B, C': {'x': 2, 'y': 3}, 'B, D': {'x': 2, 'y': 4}}
+    """
+    return {
+        ', '.join(names): combine_dicts([d[n] for d, n in zip(dicts, names)])
+        for names in itertools.product(*dicts)
+    }
+
+
+def convert_to_json_serializable(data):
+    if isinstance(data, dict):
+        return {k: convert_to_json_serializable(v) for k, v in data.items()}
+    if isinstance(data, np.ndarray):
+        return data.tolist()
+    if isinstance(data, list):
+        return [convert_to_json_serializable(x) for x in data]
+    return data
+
+def _json_serializable_to_numpy(data: Any, array_keys: Optional[set]=None):
+    if isinstance(data, dict):
+        return {
+            k: np.array(v) if isinstance(v, list) and
+            (array_keys is None or k in array_keys)
+            else _json_serializable_to_numpy(v, array_keys)
+            for k, v in data.items()
+        }
+    if isinstance(data, np.ndarray):
+        return data
+    if isinstance(data, list):
+        return [_json_serializable_to_numpy(x, array_keys) for x in data]
+    return data
+
+def json_serializable_to_numpy(data: Any,
+                               array_keys: Optional[Union[list,tuple,set]]=None):
+    if array_keys is not None:
+        array_keys = set(array_keys)
+    return _json_serializable_to_numpy(data, array_keys)
 
 
 def pad_tensor(vec, length, dim, add_mask=False):

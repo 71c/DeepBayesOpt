@@ -1,8 +1,10 @@
 from abc import ABC, abstractmethod
 import copy
+from tqdm import tqdm, trange
+from typing import Callable, Type, Optional, List
+import numpy as np
 import torch
 from torch import Tensor
-from typing import Callable, Type, Optional
 from botorch.optim import optimize_acqf
 from botorch.acquisition.acquisition import AcquisitionFunction
 from botorch.models.model import Model
@@ -10,7 +12,6 @@ from botorch.models.gp_regression import SingleTaskGP
 from botorch.fit import fit_gpytorch_model
 from gpytorch.mlls import ExactMarginalLogLikelihood
 from utils import remove_priors
-
 from acquisition_function_net import AcquisitionFunctionNet, AcquisitionFunctionNetModel, LikelihoodFreeNetworkAcquisitionFunction
 
 
@@ -222,3 +223,85 @@ class GPAcquisitionOptimizer(ModelAcquisitionOptimizer):
             fit_gpytorch_model(mll)
 
         return self.model
+
+
+class LazyOptimizationResults:
+    def __init__(self, objectives, initial_points, n_iter, optimizer_class,
+                 optimizer_kwargs_per_function=None,
+                 objective_names=None, **optimizer_kwargs):
+        self.objectives = objectives
+        self.initial_points = initial_points
+        self.n_iter = n_iter
+        self.optimizer_class = optimizer_class
+        self.optimizer_kwargs_per_function = optimizer_kwargs_per_function or [{} for _ in range(len(objectives))]
+        self.objective_names = objective_names
+        self.optimizer_kwargs = optimizer_kwargs
+        self.n_functions = len(objectives)
+        self.n_opt_trials_per_function = initial_points.size(0)
+
+    def __len__(self):
+        return self.n_functions
+
+    def __iter__(self):
+        for func_index in range(self.n_functions):
+            objective = self.objectives[func_index]
+            optimizer_kwargs_for_this_function = self.optimizer_kwargs_per_function[func_index]
+            function_best_y_data = []
+            function_best_x_data = []
+
+            for trial_index in trange(self.n_opt_trials_per_function,
+                                      desc=f"Optimizing function {func_index+1}"):
+                optimizer = self.optimizer_class(
+                    initial_points=self.initial_points[trial_index],
+                    objective=objective,
+                    **self.optimizer_kwargs,
+                    **optimizer_kwargs_for_this_function
+                )
+                optimizer.optimize(self.n_iter)
+                function_best_y_data.append(optimizer.best_y_history.numpy())
+                function_best_x_data.append(optimizer.best_x_history.numpy())
+
+            result = {
+                # n_opt_trials_per_function x 1+n_iter
+                'best_y': np.array(function_best_y_data),
+                # n_opt_trials_per_function x 1+n_iter x dim
+                'best_x': np.array(function_best_x_data)
+            }
+            func_name = self.objective_names[func_index] if \
+                self.objective_names else f"Function_{func_index}"
+            yield func_name, result
+
+def get_optimization_results(objectives: List[Callable],
+                             initial_points: Tensor,
+                             n_iter: int,
+                             optimizer_class: Type[BayesianOptimizer],
+                             optimizer_kwargs_per_function: Optional[List[dict]]=None,
+                             objective_names: Optional[list[str]]=None,
+                             **optimizer_kwargs) -> LazyOptimizationResults:
+    if initial_points.dim() != 3:
+        raise ValueError("initial_points must be a 3D tensor of shape "
+                         "(n_opt_trials_per_function, n_initial_samples, dim)")
+    if objective_names is not None:
+        if not (isinstance(objective_names, list) and len(objective_names) == len(objectives)):
+            raise ValueError("objective_names must be a list of the same length as objectives.")
+    return LazyOptimizationResults(
+        objectives, initial_points, n_iter, optimizer_class,
+        optimizer_kwargs_per_function, objective_names, **optimizer_kwargs)
+
+
+def calculate_mean_and_ci(data):
+    mean = np.mean(data, axis=0)
+    std = np.std(data, axis=0)
+    ci = 1.96 * std  # 95% confidence interval
+    return mean, mean - ci, mean + ci
+
+
+def plot_optimization_trajectory(ax, data, label):
+    mean, lower, upper = calculate_mean_and_ci(data)
+    x = range(len(mean))
+    ax.plot(x, mean, label=label)
+    ax.fill_between(x, lower, upper, alpha=0.3)
+    ax.set_xlabel('Iteration')
+    ax.set_ylabel('Best function value')
+    ax.legend()
+

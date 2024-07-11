@@ -18,7 +18,6 @@ from botorch.exceptions import UnsupportedError
 import pyro
 
 from utils import resize_iterable, iterable_is_finite, save_json, load_json
-from random_gp_function import RandomGPFunction
 
 
 # https://docs.gpytorch.ai/en/stable/_modules/gpytorch/module.html#Module.pyro_sample_from_prior
@@ -155,11 +154,6 @@ class RandomModelSampler:
     @property
     def initial_models(self):
         return [self.get_model(i) for i in range(len(self._models))]
-    
-    def get_random_functions(self, n: int, observation_noise:bool=False):
-        return [
-            RandomGPFunction(copy.deepcopy(self.sample()), observation_noise)
-            for _ in range(n)]
 
 
 class ModelsWithParamsList:
