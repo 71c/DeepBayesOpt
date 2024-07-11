@@ -11,6 +11,7 @@ import json
 import numpy as np
 from scipy.optimize import root_scalar
 import torch
+torch.set_default_dtype(torch.float64)
 from torch import Tensor
 
 import gpytorch
@@ -251,9 +252,15 @@ def get_gp(train_X:Optional[Tensor]=None,
         if dimension is None:
             raise ValueError("dimension should be specified if train_X, train_Y are not specified")
         # SingleTaskGP doesn't support initializing with no data.
-        # This will give a warning...ignore it.
-        train_X = torch.zeros(0, dimension, device=device)
-        train_Y = torch.zeros(0, 1, device=device)
+        # So initialize it like this.
+        train_X = torch.zeros(2, dimension, device=device)
+        # train_Y = torch.zeros(2, 1, device=device)
+        # Make train_Y have unit variance
+        # (unbiased 1/(n-1) calculation as torch.std uses)
+        # so that SingleTaskGP constructor doesn't give warning.
+        train_Y = torch.tensor([
+            [-torch.sqrt(torch.tensor(0.5, device=device))],
+            [torch.sqrt(torch.tensor(0.5, device=device))]])
     elif train_X is not None and train_Y is not None:
         has_data = True
         if dimension is not None:
@@ -279,9 +286,8 @@ def get_gp(train_X:Optional[Tensor]=None,
         train_X, train_Y, likelihood=likelihood, covar_module=covar_module,
         mean_module=mean_module, outcome_transform=outcome_transform,
         input_transform=input_transform).to(device)
-    if not has_data: # Not strictly necessary but doesn't hurt
-        model.train_inputs = None
-        model.train_targets = None
+    if not has_data:
+        model.remove_data()
     return model
 
 
@@ -488,6 +494,42 @@ def _condition_on_observations_with_transforms(
             fantasy_model.train_inputs[0])
     return fantasy_model
 Model.condition_on_observations_with_transforms = _condition_on_observations_with_transforms
+
+
+from botorch.sampling.pathwise.utils import get_train_inputs
+
+def _remove_data(self):
+    train_inputs = get_train_inputs(self, transformed=False)
+    if len(train_inputs) > 1:
+        raise NotImplementedError("Model has multiple inputs")
+    train_input = train_inputs[0]
+    
+    # (shape is batch_shape x n x d), so remove the n dimension
+    new_train_inputs_shape = list(train_input.shape)
+    new_train_inputs_shape[-2] = 0
+    # Make zeros
+    new_train_inputs = torch.zeros(
+        new_train_inputs_shape,
+        dtype=train_input.dtype,
+        device=train_input.device)
+    self.train_inputs = (new_train_inputs,)
+
+    if self._original_train_inputs is not None:
+        self._original_train_inputs = new_train_inputs.clone()
+    
+    train_targets = self.train_targets
+    train_targets_shape = list(train_targets.shape)
+    assert train_targets_shape[-1] == train_input.size(-2)
+    train_targets_shape[-1] = 0
+    new_train_targets = torch.zeros(
+        train_targets_shape,
+        dtype=train_targets.dtype,
+        device=train_targets.device)
+    self.train_targets = new_train_targets
+
+    if hasattr(self, "prediction_strategy"):
+        self.prediction_strategy = None
+Model.remove_data = _remove_data
 
 
 

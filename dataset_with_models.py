@@ -135,12 +135,8 @@ class RandomModelSampler:
     def get_model(self, index, model_params=None):
         model = self._models[index]
 
-        # Remove the data from the model. Basically equivalent to
-        # model.set_train_data(inputs=None, targets=None, strict=False)
-        # except that would just do nothing
-        model.train_inputs = None
-        model.train_targets = None
-        model.prediction_strategy = None
+        # Remove the data from the model (function defined in utils.py)
+        model.remove_data()
 
         # Initialize the model with the initial parameters
         # because they could have been changed by maximizing mll.
