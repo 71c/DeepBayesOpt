@@ -296,12 +296,16 @@ def calculate_mean_and_ci(data):
     return mean, mean - ci, mean + ci
 
 
-def plot_optimization_trajectory(ax, data, label):
+def plot_optimization_trajectories_error_bars(ax, data, label):
     mean, lower, upper = calculate_mean_and_ci(data)
     x = range(len(mean))
     ax.plot(x, mean, label=label)
     ax.fill_between(x, lower, upper, alpha=0.3)
-    ax.set_xlabel('Iteration')
-    ax.set_ylabel('Best function value')
-    ax.legend()
 
+def plot_optimization_trajectories(ax, data, label):
+    for i in range(data.shape[0]):
+        x = np.arange(data.shape[1])
+        label_i = f'trial {i+1}'
+        if label != "":
+            label_i = f'{label}, {label_i}'
+        ax.plot(x, data[i], label=label_i)

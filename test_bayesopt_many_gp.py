@@ -7,7 +7,9 @@ torch.set_default_dtype(torch.float64)
 from botorch.utils.sampling import draw_sobol_samples
 from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprovement
 
-from bayesopt import GPAcquisitionOptimizer, get_optimization_results, plot_optimization_trajectory
+from bayesopt import (GPAcquisitionOptimizer, get_optimization_results,
+                      plot_optimization_trajectories_error_bars,
+                      plot_optimization_trajectories)
 from random_gp_function import RandomGPFunction
 from botorch.sampling.pathwise import draw_kernel_feature_paths
 from utils import (get_gp, dict_to_fname_str, combine_nested_dicts,
@@ -22,17 +24,13 @@ config = {
     'n_initial_samples': 2*(dim+1),
     'n_functions': 3,
     'n_opt_trials_per_function': 3,
-    'n_iter': 15,
-    'fit_params': False,
+    'n_iter': 50
 }
 
 observation_noise = config['observation_noise']
 n_functions = config['n_functions']
 
-# config_ = config.copy()
-# if not config['fit_params']:
-#     config_.pop('mle')
-# config_str = dict_to_fname_str(config_)
+config_str = dict_to_fname_str(config)
 
 def get_rff_function(gp):
     f = draw_kernel_feature_paths(
@@ -49,6 +47,7 @@ random_gps = [gp_sampler.sample(deepcopy=True) for _ in range(n_functions)]
 # too many times.
 # However, draw_kernel_feature_paths doesn't work with observation noise
 # as far as I can tell.
+# (But we're not even testing observation noise currently anyway)
 if observation_noise:
     gp_realizations = [
         RandomGPFunction(copy.deepcopy(gp), observation_noise)
@@ -66,12 +65,12 @@ experiment_name = 'EI_GP_realizations'
 optimizer_class = GPAcquisitionOptimizer
 acquisition_functions = {
     'Log EI': LogExpectedImprovement,
-    'EI': ExpectedImprovement
+    # 'EI': ExpectedImprovement
 }
 gp_options = {
     'True GP': {'fit_params': False},
     'MAP': {'fit_params': True, 'mle': False},
-    'MLE': {'fit_params': True, 'mle': True}
+    # 'MLE': {'fit_params': True, 'mle': True}
 }
 
 acquisition_function_options = {
@@ -99,39 +98,73 @@ for options_name, options in tqdm(options_dict.items(), desc=desc):
     it = tqdm(optimization_results, desc=f"Optimizing functions with {options_name}")
     for func_name, func_result in it:
         results[func_name][options_name] = func_result
-        print(f"Function {func_name} optimized with {options_name}.")
-        print(f"Best y: {func_result['best_y'][:, -1]}")
+        # print(f"Function {func_name} optimized with {options_name}.")
+        # print(f"Best y: {func_result['best_y'][:, -1]}")
 
-# Broken code
-optimization_best_y_data = None # TODO: get best y data from results
 
 # Plot individual functions (up to max_n_functions_to_plot)
 max_n_functions_to_plot = 5
 n_functions_to_plot = min(n_functions, max_n_functions_to_plot)
 
 scale = 0.5
+
 fig, axes = plt.subplots(1, n_functions_to_plot,
-                         figsize=(scale * 10 * n_functions_to_plot, scale * 5), sharex=True)
+                        figsize=(scale * 10 * n_functions_to_plot, scale * 5),
+                        sharex=True, sharey=True)
 if n_functions_to_plot == 1:
     axes = [axes]
 
 for func_index in range(n_functions_to_plot):
+    func_name = function_names[func_index]
     ax = axes[func_index]
-    plot_optimization_trajectory(ax, optimization_best_y_data[func_index], f'Function {func_index + 1}')
 
+    for options_name in options_dict:
+        data = results[func_name][options_name]
+        best_y = data['best_y']
+        plot_optimization_trajectories_error_bars(ax, best_y, options_name)
+    ax.set_xlabel('Iteration')
+    ax.set_ylabel('Best function value')
+    ax.set_title(f'Function {func_name}')
+    ax.legend()
+plt.title(config_str)
 plt.tight_layout()
 filename = f"individual_functions_optimization_{config_str}.pdf"
+
 plt.savefig(filename, dpi=300, format='pdf', bbox_inches='tight')
+
+for options_name in options_dict:
+    fig, axes = plt.subplots(1, n_functions_to_plot,
+                        figsize=(scale * 10 * n_functions_to_plot, scale * 5),
+                        sharex=True, sharey=True)
+    if n_functions_to_plot == 1:
+        axes = [axes]
+    
+    for func_index in range(n_functions_to_plot):
+        func_name = function_names[func_index]
+        ax = axes[func_index]
+        data = results[func_name][options_name]
+        best_y = data['best_y']
+        plot_optimization_trajectories(ax, best_y, "")
+        ax.set_xlabel('Iteration')
+        ax.set_ylabel('Best function value')
+        ax.set_title(f'Function {func_name}')
+        ax.legend()
+    plt.title(f'{config_str}, {options_name}')
+    plt.tight_layout()
+    filename = f"individual_functions_optimization_{config_str}_{options_name}.pdf"
+    plt.savefig(filename, dpi=300, format='pdf', bbox_inches='tight')
+
 plt.show()
 
-# Plot aggregate data
-fig, ax = plt.subplots(figsize=(10, 6))
+# # Plot aggregate data (TODO) (might not be necessary)
+# fig, ax = plt.subplots(figsize=(10, 6))
 
-all_data = np.concatenate(optimization_best_y_data)
-plot_optimization_trajectory(ax, all_data, 'Aggregate')
+# all_data = np.concatenate(optimization_best_y_data)
+# plot_optimization_trajectory(ax, all_data, 'Aggregate')
 
-plt.title('Aggregate Optimization Trajectory')
-filename = f"aggregate_optimization_{config_str}.pdf"
-plt.savefig(filename, dpi=300, format='pdf', bbox_inches='tight')
-plt.show()
+# plt.title('Aggregate Optimization Trajectory')
+# filename = f"aggregate_optimization_{config_str}.pdf"
+# plt.savefig(filename, dpi=300, format='pdf', bbox_inches='tight')
+# plt.show()
+
 
