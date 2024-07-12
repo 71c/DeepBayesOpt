@@ -1,3 +1,15 @@
+"""You may use this for evaluating a few points, but by all means,
+DO NOT use this for testing Bayesian optimization,
+because it can get numerically unstable if you sample too many times.
+Instead, use:
+from botorch.sampling.pathwise import draw_kernel_feature_paths
+def get_rff_function(gp):
+    f = draw_kernel_feature_paths(
+        copy.deepcopy(gp), sample_shape=torch.Size(),
+        num_features=somehighnumber e.g. 1024)
+    return lambda x: f(x).detach()
+"""
+
 from botorch.models.gp_regression import SingleTaskGP
 from gpytorch.models import ExactGP
 from botorch.exceptions import UnsupportedError

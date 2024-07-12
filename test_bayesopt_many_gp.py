@@ -1,13 +1,14 @@
 import copy
+import os
 import matplotlib.pyplot as plt
-import numpy as np
 import torch
 from tqdm import tqdm, trange
 torch.set_default_dtype(torch.float64)
 from botorch.utils.sampling import draw_sobol_samples
 from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprovement
 
-from bayesopt import (GPAcquisitionOptimizer, get_optimization_results,
+from bayesopt import (GPAcquisitionOptimizer, RandomSearch,
+                      get_optimization_results,
                       plot_optimization_trajectories_error_bars,
                       plot_optimization_trajectories)
 from random_gp_function import RandomGPFunction
@@ -16,13 +17,16 @@ from utils import (get_gp, dict_to_fname_str, combine_nested_dicts,
                    convert_to_json_serializable, json_serializable_to_numpy)
 from dataset_with_models import RandomModelSampler
 
+script_dir = os.path.dirname(os.path.abspath(__file__))
+PLOTS_DIR = os.path.join(script_dir, 'plots')
+os.makedirs(PLOTS_DIR, exist_ok=True)
 
 dim = 6
 config = {
     'dim': dim,
     'observation_noise': False,
     'n_initial_samples': 2*(dim+1),
-    'n_functions': 3,
+    'n_functions': 4,
     'n_opt_trials_per_function': 3,
     'n_iter': 50
 }
@@ -62,33 +66,43 @@ init_x = draw_sobol_samples(bounds=bounds,
                             q=config['n_initial_samples'])
 
 experiment_name = 'EI_GP_realizations'
-optimizer_class = GPAcquisitionOptimizer
 acquisition_functions = {
     'Log EI': LogExpectedImprovement,
-    # 'EI': ExpectedImprovement
+    'EI': ExpectedImprovement
 }
 gp_options = {
     'True GP': {'fit_params': False},
     'MAP': {'fit_params': True, 'mle': False},
-    # 'MLE': {'fit_params': True, 'mle': True}
+    'MLE': {'fit_params': True, 'mle': True}
 }
 
 acquisition_function_options = {
     name: {'acquisition_function_class': acq_func_class}
     for name, acq_func_class in acquisition_functions.items()}
-options_dict = combine_nested_dicts(acquisition_function_options, gp_options)
+options_dict_gp = {
+    key: {
+        'optimizer_class': GPAcquisitionOptimizer,
+        'optimizer_kwargs_per_function': [{'model': gp} for gp in random_gps],
+        **value
+    } for key,value in combine_nested_dicts(
+        acquisition_function_options, gp_options).items()
+}
+
+options_dict_random = {
+    'Random Search': {'optimizer_class': RandomSearch}
+}
+
+options_dict = {**options_dict_gp, **options_dict_random}
 
 results = {func_name: {} for func_name in function_names}
 desc = (f"Running optimization of {n_functions} functions "
         f"{config['n_opt_trials_per_function']} times each "
-        f"with {len(options_dict)} combinations")
+        f"with {len(options_dict)} bayesian optimization methods.")
 for options_name, options in tqdm(options_dict.items(), desc=desc):
     optimization_results = get_optimization_results(
         objectives=gp_realizations,
         initial_points=init_x,
         n_iter=config['n_iter'],
-        optimizer_class=optimizer_class,
-        optimizer_kwargs_per_function=[{'model': gp} for gp in random_gps],
         objective_names=function_names,
         dim=dim,
         maximize=True,
@@ -130,7 +144,8 @@ plt.title(config_str)
 plt.tight_layout()
 filename = f"individual_functions_optimization_{config_str}.pdf"
 
-plt.savefig(filename, dpi=300, format='pdf', bbox_inches='tight')
+plt.savefig(os.path.join(PLOTS_DIR, filename),
+            dpi=300, format='pdf', bbox_inches='tight')
 
 for options_name in options_dict:
     fig, axes = plt.subplots(1, n_functions_to_plot,
@@ -152,7 +167,8 @@ for options_name in options_dict:
     plt.title(f'{config_str}, {options_name}')
     plt.tight_layout()
     filename = f"individual_functions_optimization_{config_str}_{options_name}.pdf"
-    plt.savefig(filename, dpi=300, format='pdf', bbox_inches='tight')
+    plt.savefig(os.path.join(PLOTS_DIR, filename),
+                dpi=300, format='pdf', bbox_inches='tight')
 
 plt.show()
 
