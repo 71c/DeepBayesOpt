@@ -1,7 +1,12 @@
 import torch
-from torch import nn
-
-from utils import Exp
+import numpy as np
+import matplotlib.pyplot as plt
+import os
+import cProfile, pstats, io
+from pstats import SortKey
+from dataset_with_models import RandomModelSampler
+from tictoc import tic, tocl
+from datetime import datetime
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 if torch.cuda.is_available():
     print(torch.cuda.current_device())
@@ -11,27 +16,30 @@ from botorch.models.transforms.outcome import Power
 
 from gp_acquisition_dataset import create_train_and_test_gp_acquisition_datasets
 from acquisition_function_net import (
-    AcquisitionFunctionNetV1and2, AcquisitionFunctionNetV3, AcquisitionFunctionNetV4,
+    AcquisitionFunctionNet, AcquisitionFunctionNetV1and2, AcquisitionFunctionNetV3, AcquisitionFunctionNetV4,
     AcquisitionFunctionNetDense, LikelihoodFreeNetworkAcquisitionFunction)
 from predict_EI_simple import calculate_EI_GP
-import numpy as np
-import matplotlib.pyplot as plt
-import os
-
 from train_acquisition_function_net import (
     train_acquisition_function_net,
     count_trainable_parameters, count_parameters)
-
-import torch.distributions as dist
-
-import cProfile
+from utils import Exp, save_json, load_json, convert_to_json_serializable
+from plot_utils import plot_nn_vs_gp_acquisition_function_1d_grid
 
 
 ##################### Settings for this script #################################
+script_dir = os.path.dirname(os.path.abspath(__file__))
+MODELS_DIR = os.path.join(script_dir, "saved_models")
+
 # Whether to train the model. If False, will load a saved model.
 TRAIN = True
 # Whether to load a saved model to train
 LOAD_SAVED_MODEL_TO_TRAIN = False
+# Whether to load a saved dataset config (only applicable if TRAIN is False)
+TEST_ON_SAVED_DATASET_CONFIG = True
+
+MODEL_AND_INFO_NAME = "model_20240713_004045"
+MODEL_AND_INFO_PATH = os.path.join(MODELS_DIR, MODEL_AND_INFO_NAME)
+
 # Whether to fit maximum a posteriori GP for testing
 FIT_MAP_GP = False
 
@@ -56,86 +64,98 @@ LAZY_TEST = True
 # stacking) on CPU rather than on GPU is much faster.
 GP_GEN_DEVICE = "cpu"
 
-script_dir = os.path.dirname(os.path.abspath(__file__))
-MODELS_DIR = os.path.join(script_dir, "saved_models")
-
 
 ########################### Test dataset settings ##############################
-## How many times bigger the big test dataset is than the train dataset, > 0
-# TEST_FACTOR = 3.0
-TEST_FACTOR = 1.0
-## The proportion of the test dataset that is used for evaluating the model after
-## each epoch, between 0 and 1
-# SMALL_TEST_PROPORTION_OF_TEST = 0.04
-SMALL_TEST_PROPORTION_OF_TEST = 1.0
-# The following two should be kept as they are -- ALWAYS want to fix the test.
-# As long as the acqisition dataset is fixed, then whether the function samples
-# dataset is fixed doesn't matter.
-FIX_TEST_SAMPLES_DATASET = False
-FIX_TEST_ACQUISITION_DATASET = True
+test_dataset_config = dict(
+    ## How many times bigger the big test dataset is than the train dataset, > 0
+    test_factor=1.0, # 3.0
+    ## The proportion of the test dataset that is used for evaluating the model
+    ## after each epoch, between 0 and 1
+    small_test_proportion_of_test=1.0,
+    # The following two should be kept as they are -- ALWAYS want to fix the
+    # test. As long as the acqisition dataset is fixed, then whether the
+    # function samples dataset is fixed doesn't matter.
+    fix_test_samples_dataset=False,
+    fix_test_acquisition_dataset=True,
+)
 
+DIMENSION = 1
 
 ###################### GP realization characteristics ##########################
-# Dimension of the optimization problem
-DIMENSION = 1
-# whether to randomize the GP parameters for training data
-RANDOMIZE_PARAMS = True
-# choose either "uniform" or "normal" (or a custom distribution)
-XVALUE_DISTRIBUTION = "uniform"
-# Choose an outcome transform. Can be None if no outcome transform
-OUTCOME_TRANSFORM = None
-# TODO (bug): str(Power(2)) = "Power()" but we'd like it to be "Power(2)" so it
-# can be saved uniquely. Maybe use the attributes of the class or something
-# instead. Or alternateively, just don't save the acquisition datasets, or
-# transform the acquisition datasets directly. I think it would be easiest to
-# just not save the acquisition datasets anymore.
-# OUTCOME_TRANSFORM = Exp()
+gp_realization_config = dict(
+    # Dimension of the optimization problem
+    dimension=DIMENSION,
+    # whether to randomize the GP parameters for training data
+    randomize_params=True,
+    # choose either "uniform" or "normal" (or a custom distribution)
+    xvalue_distribution="uniform",
+    observation_noise=False,
+    models=None,
+    model_probabilities=None
+)
 
-STANDARDIZE_OUTCOMES = True
+################## Settings for dataset size and generation ####################
+dataset_size_config = dict(
+    # The size of the training acquisition dataset
+    train_acquisition_size=1234,
+    # The amount that the dataset is expanded to save compute of GP realizations
+    expansion_factor=2,
+    # Whether to fix the training dataset function samples
+    fix_train_samples_dataset=True
+)
 
+########## Set number of history and candidate points generation ###############
+n_points_config = dict(
+    # This means whether n history points (or whether the total number of
+    # points) is log-uniform
+    loguniform=True,
+    # Whether to fix the number of candidate points (as opposed to randomized)
+    fix_n_candidates=True
+)
+if n_points_config['loguniform']:
+    n_points_config['pre_offset'] = 3.0
+if n_points_config['fix_n_candidates']:
+    # If fix_n_candidates is True, then the following are used:
+    n_points_config = dict(
+        # Number of candidate points for training. For MSE EI, could just set to 1.
+        train_n_candidates=50,
+        # Number of candidate points for testing.
+        test_n_candidates=50,
+        min_history=1,
+        max_history=8,
+        **n_points_config
+    )
+else:
+    # If fix_n_candidates is False, then the following are used:
+    n_points_config = dict(
+        min_n_candidates=2,
+        max_points=30,
+        **n_points_config
+    )
+
+dataset_transform_config = dict(
+    # Choose an outcome transform. Can be None if no outcome transform
+    # TODO (bug): str(Power(2)) = "Power()" but we'd like it to be "Power(2)" so it
+    # can be saved uniquely. Maybe use the attributes of the class or something
+    # instead. Or alternateively, just don't save the acquisition datasets, or
+    # transform the acquisition datasets directly. I think it would be easiest to
+    # just not save the acquisition datasets anymore.
+    outcome_transform=Exp(),
+    standardize_outcomes=True
+)
 # Exp technically works, but Power does not
 # Make sure to set these appropriately depending on whether the transform
 # supports mean transform
-# if OUTCOME_TRANSFORM is not None:
+# if dataset_transform_config['outcome_transform'] is not None:
 #     GET_TRAIN_TRUE_GP_STATS = False
 #     GET_TEST_TRUE_GP_STATS = False
-
-################## Settings for dataset size and generation ####################
-# The size of the training acquisition dataset
-TRAIN_ACQUISITION_SIZE = 6000
-# The amount that the dataset is expanded to save compute of GP realizations
-EXPANSION_FACTOR = 2
-# Whether and how to fix the training dataset
-FIX_TRAIN_SAMPLES_DATASET = True
-
-########## Set number of history and candidate points generation ###############
-# This means whether n history points or whether the total number of points
-# is log-uniform
-LOGUNIFORM = True
-PRE_OFFSET = 3.0
-
-# Whether to fix the number of candidate points (as opposed to randomized)
-FIX_N_CANDIDATES = True
-
-# If FIX_N_CANDIDATES is True, then the following are used:
-# Number of candidate points for training. For MSE EI, could just set to 1.
-# Only used if FIX_N_CANDIDATES is True.
-TRAIN_N_CANDIDATES = 50
-# Number of candidate points for testing.
-TEST_N_CANDIDATES = 50
-MIN_HISTORY = 1
-MAX_HISTORY = 8
-
-# If FIX_N_CANDIDATES is False, then the following are used:
-MIN_N_CANDIDATES = 2
-MAX_POINTS = 30
 
 
 ############################# Settings for training ############################
 POLICY_GRADIENT = True # True for the softmax thing, False for MSE EI
 BATCH_SIZE = 32
 LEARNING_RATE = 3e-4
-EPOCHS = 1
+EPOCHS = 4
 FIX_TRAIN_ACQUISITION_DATASET = False
 
 # Only used if POLICY_GRADIENT is True
@@ -144,11 +164,46 @@ INCLUDE_ALPHA = True
 LEARN_ALPHA = True
 INITIAL_ALPHA = 1.0
 ALPHA_INCREMENT = None # equivalent to 0.0
+
+training_config = dict(
+    policy_gradient=POLICY_GRADIENT,
+    batch_size=BATCH_SIZE,
+    learning_rate=LEARNING_RATE,
+    epochs=EPOCHS,
+    fix_train_acquisition_dataset=FIX_TRAIN_ACQUISITION_DATASET,
+    alpha_increment=ALPHA_INCREMENT
+)
 ################################################################################
 
 
-######################### Neural network architecture ##########################
 
+################################### Get NN model ###############################
+
+if not TRAIN or LOAD_SAVED_MODEL_TO_TRAIN:
+    model_path = os.path.join(MODEL_AND_INFO_PATH, "model")
+    print(f"Loading model from {model_path}")
+    model = AcquisitionFunctionNet.load(model_path)
+else:
+    model_kwargs = dict()
+    model = AcquisitionFunctionNetV1and2(
+                DIMENSION,
+                pooling="max",
+                history_enc_hidden_dims=[32, 32],
+                encoded_history_dim=32,
+                aq_func_hidden_dims=[32, 32],
+                input_xcand_to_local_nn=True,
+                input_xcand_to_final_mlp=False,
+                include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
+                learn_alpha=LEARN_ALPHA,
+                initial_alpha=INITIAL_ALPHA,
+                activation_at_end_pointnet=True,
+                layer_norm_pointnet=False,
+                layer_norm_before_end_mlp=False,
+                layer_norm_at_end_mlp=False,
+                standardize_outcomes=False,
+                include_best_y=False,
+                activation_pointnet="relu",
+                activation_mlp="relu").to(device)
 # model = AcquisitionFunctionNetV4(DIMENSION,
 #                                  history_enc_hidden_dims=[32, 32], pooling="max",
 #                  include_local_features=True,
@@ -172,56 +227,49 @@ ALPHA_INCREMENT = None # equivalent to 0.0
 #                                  learn_alpha=LEARN_ALPHA,
 #                                  initial_alpha=INITIAL_ALPHA).to(device)
 
-model = AcquisitionFunctionNetV1and2(DIMENSION,
-                                 pooling="max",
-                                 history_enc_hidden_dims=[32, 32],
-                                 encoded_history_dim=32,
-                                 aq_func_hidden_dims=[32, 32],
-                                 input_xcand_to_local_nn=True,
-                                 input_xcand_to_final_mlp=False,
-                                 include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
-                                 learn_alpha=LEARN_ALPHA,
-                                 initial_alpha=INITIAL_ALPHA,
-                                 activation_at_end_pointnet=True,
-                                 layer_norm_pointnet=False,
-                                 layer_norm_before_end_mlp=False,
-                                 layer_norm_at_end_mlp=False,
-                                 standardize_outcomes=False,
-                                 include_best_y=False,
-                                 activation_pointnet=nn.ReLU,
-                                 activation_mlp=nn.ReLU).to(device)
-
-
 # model = AcquisitionFunctionNetDense(DIMENSION, MAX_HISTORY,
 #                                     hidden_dims=[128, 128, 64, 32],
 #                                     include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
 #                                     learn_alpha=LEARN_ALPHA,
 #                                     initial_alpha=INITIAL_ALPHA).to(device)
+
+
 ################################################################################
+
+print(model)
+print("Number of trainable parameters:", count_trainable_parameters(model))
+print("Number of parameters:", count_parameters(model))
 
 
 ####################### Make the train and test datasets #######################
-train_aq_dataset, test_aq_dataset, small_test_aq_dataset = create_train_and_test_gp_acquisition_datasets(
-        dimension=DIMENSION,
-        randomize_params=RANDOMIZE_PARAMS,
-        xvalue_distribution=XVALUE_DISTRIBUTION,
-        outcome_transform=OUTCOME_TRANSFORM,
-        standardize_outcomes=STANDARDIZE_OUTCOMES,
+if not TRAIN and TEST_ON_SAVED_DATASET_CONFIG:
+    gp_realization_config = load_json(
+        os.path.join(MODEL_AND_INFO_PATH, "gp_realization_config.json"))
+    if gp_realization_config['models'] is not None:
+        model_sampler = RandomModelSampler.load(
+            os.path.join(MODEL_AND_INFO_PATH, "model_sampler"))
+        gp_realization_config['models'] = model_sampler.initial_models
+        gp_realization_config['model_probabilities'] = model_sampler.model_probabilities
+        assert model_sampler.randomize_params == gp_realization_config['randomize_params']
+    dataset_size_config = load_json(
+        os.path.join(MODEL_AND_INFO_PATH, "dataset_size_config.json"))
+    n_points_config = load_json(
+        os.path.join(MODEL_AND_INFO_PATH, "n_points_config.json"))
+    
+    dataset_transform_config = load_json(
+        os.path.join(MODEL_AND_INFO_PATH, "dataset_transform_config.json"))
+    if dataset_transform_config['outcome_transform'] is not None:
+        dataset_transform_config['outcome_transform'] = torch.load(
+            os.path.join(MODEL_AND_INFO_PATH, "outcome_transform.pt"))
 
-        train_acquisition_size=TRAIN_ACQUISITION_SIZE,
-        expansion_factor=EXPANSION_FACTOR,
-        fix_train_samples_dataset=FIX_TRAIN_SAMPLES_DATASET,
-        give_improvements=False,
+dataset_kwargs = {
+    **gp_realization_config,
+    **dataset_size_config,
+    **n_points_config,
+    **dataset_transform_config}
 
-        loguniform=LOGUNIFORM, pre_offset=PRE_OFFSET, fix_n_candidates=FIX_N_CANDIDATES,
-        train_n_candidates=TRAIN_N_CANDIDATES, test_n_candidates=TEST_N_CANDIDATES,
-        min_history=MIN_HISTORY, max_history=MAX_HISTORY,
-        min_n_candidates=MIN_N_CANDIDATES, max_points=MAX_POINTS,
-
-        test_factor=TEST_FACTOR,
-        small_test_proportion_of_test=SMALL_TEST_PROPORTION_OF_TEST,
-        fix_test_samples_dataset=FIX_TEST_SAMPLES_DATASET,
-        fix_test_acquisition_dataset=FIX_TEST_ACQUISITION_DATASET,
+other_kwargs = dict(
+        **test_dataset_config,
         
         get_train_true_gp_stats=GET_TRAIN_TRUE_GP_STATS,
         get_test_true_gp_stats=GET_TEST_TRUE_GP_STATS,
@@ -232,6 +280,21 @@ train_aq_dataset, test_aq_dataset, small_test_aq_dataset = create_train_and_test
         
         batch_size=BATCH_SIZE,
         fix_train_acquisition_dataset=FIX_TRAIN_ACQUISITION_DATASET)
+
+train_aq_dataset, test_aq_dataset, small_test_aq_dataset = create_train_and_test_gp_acquisition_datasets(
+    **dataset_kwargs, **other_kwargs)
+
+# print("Training function samples dataset size:", len(train_dataset))
+print("Original training acquisition dataset size parameter:", dataset_size_config['train_acquisition_size'])
+print("Training acquisition dataset size:", len(train_aq_dataset),
+    "number of batches:", len(train_aq_dataset) // BATCH_SIZE, len(train_aq_dataset) % BATCH_SIZE)
+
+# print("Test function samples dataset size:", len(test_dataset))
+print("Test acquisition dataset size:", len(test_aq_dataset),
+    "number of batches:", len(test_aq_dataset) // BATCH_SIZE, len(test_aq_dataset) % BATCH_SIZE)
+if small_test_aq_dataset != test_aq_dataset:
+    print("Small test acquisition dataset size:", len(small_test_aq_dataset),
+            "number of batches:", len(small_test_aq_dataset) // BATCH_SIZE, len(small_test_aq_dataset) % BATCH_SIZE)
 
 # for item in train_aq_dataset.base_dataset:
 #     print(item.y_values.mean(), item.y_values.std(), item.y_values.shape)
@@ -247,59 +310,8 @@ train_aq_dataset, test_aq_dataset, small_test_aq_dataset = create_train_and_test
 # print("\n")
 
 
-print(model)
-print("Number of trainable parameters:", count_trainable_parameters(model))
-print("Number of parameters:", count_parameters(model))
-
-
-########################## Get model path ######################################
-
-model_class_name = model.__class__.__name__
-loss_str = 'policy_gradient_myopic' if POLICY_GRADIENT else 'ei'
-file_name = f"acquisition_function_net_{model_class_name}_{DIMENSION}d_{loss_str}_{'random' if RANDOMIZE_PARAMS else 'fixed'}_kernel_{XVALUE_DISTRIBUTION}_x"
-if FIX_N_CANDIDATES:
-    file_name += f"_history{MIN_HISTORY}-{MAX_HISTORY}_{'loguniform' if LOGUNIFORM else 'uniform'}_{TRAIN_N_CANDIDATES}cand.pth"
-else:
-    min_points = MIN_N_CANDIDATES + 1
-    file_name += f"_points{min_points}-{MAX_POINTS}_{'loguniform' if LOGUNIFORM else 'uniform'}.pth"
-
-# file_name = "acquisition_function_net_AcquisitionFunctionNetV4_1d_policy_gradient_myopic_fixed_kernel_uniform_x_history1-8_loguniform_50cand_200epochs.pth"
-
-print(f"Model file: {file_name}")
-model_path = os.path.join(MODELS_DIR, file_name)
-
-
 ######################## Train the model #######################################
-
-# print("Training function samples dataset size:", len(train_dataset))
-print("Original training acquisition dataset size parameter:", TRAIN_ACQUISITION_SIZE)
-print("Training acquisition dataset size:", len(train_aq_dataset),
-      "number of batches:", len(train_aq_dataset) // BATCH_SIZE, len(train_aq_dataset) % BATCH_SIZE)
-
-# print("Test function samples dataset size:", len(test_dataset))
-print("Test acquisition dataset size:", len(test_aq_dataset),
-      "number of batches:", len(test_aq_dataset) // BATCH_SIZE, len(test_aq_dataset) % BATCH_SIZE)
-if small_test_aq_dataset != test_aq_dataset:
-    print("Small test acquisition dataset size:", len(small_test_aq_dataset),
-            "number of batches:", len(small_test_aq_dataset) // BATCH_SIZE, len(small_test_aq_dataset) % BATCH_SIZE)
-
-
-import json
-
-import cProfile, pstats, io
-from pstats import SortKey
-from tictoc import tic, tocl
-
-
-if TRAIN:    
-    if LOAD_SAVED_MODEL_TO_TRAIN:
-        # Load the model
-        print(f"Loading model from {model_path}")
-        model.load_state_dict(torch.load(model_path))
-    
-    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
-    # optimizer = torch.optim.RMSprop(model.parameters(), lr=learning_rate)
-
+if TRAIN:
     if CPROFILE:
         pr = cProfile.Profile()
         pr.enable()
@@ -307,7 +319,9 @@ if TRAIN:
     if TIME:
         tic("Training!")
 
-    data = train_acquisition_function_net(
+    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    # optimizer = torch.optim.RMSprop(model.parameters(), lr=learning_rate)
+    training_history_data = train_acquisition_function_net(
         model, train_aq_dataset, optimizer, POLICY_GRADIENT, EPOCHS, BATCH_SIZE,
         device, ALPHA_INCREMENT, verbose=VERBOSE, n_train_printouts_per_epoch=10,
         test_dataset=test_aq_dataset, small_test_dataset=small_test_aq_dataset,
@@ -330,154 +344,47 @@ if TRAIN:
         ps.print_stats()
         print(s.getvalue())
 
-
-    # print(json.dumps(data, indent=4))
-
     print("Done training!")
 
-    # Save the model
-    # torch.save(model.state_dict(), model_path)
-else:
-    # Load the model
-    print(f"Loading model from {model_path}")
-    model.load_state_dict(torch.load(model_path))
+    # Save the model & training, dataset config and history
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    model_and_info_path = os.path.join(MODELS_DIR, f"model_{timestamp}")
+    os.makedirs(model_and_info_path, exist_ok=True)
+    print(f"Saving model to {model_and_info_path}")
+
+    # Save model. TODO: Could potentially save the model with best validation
+    # loss or save periodically
+    model.save(os.path.join(model_and_info_path, "model"))
+
+    # Save training config
+    save_json(training_config,
+              os.path.join(model_and_info_path, "training_config.json"))
+    
+    # Save training history data. TODO: Write a function to plot this
+    save_json(training_history_data,
+              os.path.join(model_and_info_path, "training_history_data.json"),
+              indent=4)
+
+    # Save GP dataset config
+    save_json(convert_to_json_serializable(gp_realization_config),
+              os.path.join(model_and_info_path, "gp_realization_config.json"))
+    train_aq_dataset.model_sampler.save(
+        os.path.join(model_and_info_path, "model_sampler"))
+    save_json(dataset_size_config,
+              os.path.join(model_and_info_path, "dataset_size_config.json"))
+    save_json(n_points_config,
+              os.path.join(model_and_info_path, "n_points_config.json"))
+
+    # Save dataset transform config
+    dataset_transform_config_path = os.path.join(model_and_info_path, "dataset_transform_config.json")
+    save_json(convert_to_json_serializable(dataset_transform_config),
+                dataset_transform_config_path)
+    outcome_transform = dataset_transform_config['outcome_transform']
+    if outcome_transform is not None:
+        torch.save(outcome_transform, os.path.join(model_and_info_path, "outcome_transform.pt"))
 
 
 ######################## Plot performance of model #############################
-
-def plot_gp_posterior(ax, posterior, test_x, train_x, train_y, color, name=None):
-    if not hasattr(posterior, "mvn"):
-        # This in general won't correspond to the actual probability distribution AT ALL
-        # e.g. exponentiate then we get a lognormal distribution
-        # but this is not that, the lower can go negative!
-        # lower, upper = posterior.mean - posterior.variance.sqrt(), posterior.mean + posterior.variance.sqrt()
-        return # Actually, lognormal distribution too extreme values so not comparable to plot, so just not plot it
-    else:
-        lower, upper = posterior.mvn.confidence_region()
-    mean = posterior.mean.detach().squeeze().cpu().numpy()
-    lower = lower.detach().squeeze().cpu().numpy()
-    upper = upper.detach().squeeze().cpu().numpy()
-
-    train_x = train_x.detach().squeeze().cpu().numpy()
-    train_y = train_y.detach().squeeze().cpu().numpy()
-    test_x = test_x.detach().squeeze().cpu().numpy()
-    
-    sorted_indices = np.argsort(test_x)
-    test_x = test_x[sorted_indices]
-    mean = mean[sorted_indices]
-    lower = lower[sorted_indices]
-    upper = upper[sorted_indices]
-
-    extension = '' if name is None else f' {name}'
-
-    # Plot posterior means as blue line
-    ax.plot(test_x, mean, color, label=f'Mean{extension}')
-    # Shade between the lower and upper confidence bounds
-    ax.fill_between(test_x, lower, upper, color=color, alpha=0.5, label=f'Confidence{extension}')
-
-# decided actually don't want to use this
-normal = dist.Normal(0, 1)
-def normalize_by_quantile(x, dim=-1):
-    indices = torch.argsort(torch.argsort(x, dim=dim), dim=dim)
-    max_index = x.size(dim) - 1
-    quantiles = indices / max_index
-    return normal.icdf(quantiles)
-
-def plot_nn_vs_gp_acquisition_function_1d_grid(
-        aq_dataset, n_candidates, nrows, ncols, min_x=0., max_x=1.,
-        plot_map=True, nn_device=None):
-    fig, axs = plt.subplots(nrows=nrows, ncols=ncols, figsize=(2.5*ncols, 2.5*nrows),
-                            sharex=True, sharey=False)
-
-    it = iter(aq_dataset)
-    for row in range(nrows):
-        for col in range(ncols):
-            item = next(it)
-
-            gp_model = item.model
-
-            x_hist, y_hist, x_cand, vals_cand = item.tuple_no_model
-            x_cand_original = x_cand
-            x_cand = torch.linspace(0, 1, n_candidates).unsqueeze(1)
-            item.x_cand = x_cand
-
-            x_hist_nn, y_hist_nn, x_cand_nn, vals_cand_nn = item.to(nn_device).tuple_no_model
-
-            aq_fn = LikelihoodFreeNetworkAcquisitionFunction.from_net(
-                model, x_hist_nn, y_hist_nn, exponentiate=not POLICY_GRADIENT, softmax=False)
-            ei_nn = aq_fn(x_cand_nn.unsqueeze(1))
-            ei_nn = ei_nn.cpu()
-
-            sorted_indices = np.argsort(x_cand.detach().numpy().flatten())
-            sorted_x_cand = x_cand.detach().numpy().flatten()[sorted_indices]
-
-            plot_gp = True
-            try:
-                gp_model.set_train_data_with_transforms(x_hist, y_hist, strict=False, train=False)
-                posterior_true = gp_model.posterior(x_cand, observation_noise=False)
-
-                ei_true = calculate_EI_GP(gp_model, x_hist, y_hist, x_cand, log=False)
-
-                if plot_map:
-                    ei_map = calculate_EI_GP(gp_model, x_hist, y_hist, x_cand, fit_params=True, log=False)
-
-                # Normalize so they have the same scale
-                if POLICY_GRADIENT:
-                    ei_true = (ei_true - ei_true.mean()) / ei_true.std()
-                    if plot_map:
-                        ei_map = (ei_map - ei_map.mean()) / ei_map.std()
-            
-                sorted_ei_true = ei_true.detach().numpy().flatten()[sorted_indices]
-                if plot_map:
-                    sorted_ei_map = ei_map.detach().numpy().flatten()[sorted_indices]
-            except NotImplementedError: # NotImplementedError: No mean transform provided.
-                plot_gp = False
-
-            
-            if POLICY_GRADIENT:
-                ei_nn = (ei_nn - ei_nn.mean()) / ei_nn.std()
-
-                # ei_nn = normalize_by_quantile(ei_nn)
-                # ei_true = normalize_by_quantile(ei_true)
-                # if plot_map:
-                #     ei_map = normalize_by_quantile(ei_map)
-
-            ax = axs[row, col]
-
-            sorted_ei_nn = ei_nn.detach().numpy().flatten()[sorted_indices]
-
-            if plot_gp:
-                ax.plot(sorted_x_cand, sorted_ei_true, label="True GP")
-            ax.plot(sorted_x_cand, sorted_ei_nn, label="NN")
-            if plot_gp and plot_map:
-                ax.plot(sorted_x_cand, sorted_ei_map, label="MAP")
-            
-            # Plot training points as black stars
-            ax.plot(x_hist, y_hist, 'b*', label=f'Observed Data')
-
-            ax.plot(x_cand_original, vals_cand, 'ro', markersize=1, label=f'Candidate points')
-            
-            if plot_gp:
-                plot_gp_posterior(ax, posterior_true, x_cand, x_hist, y_hist, 'b', name='True')
-
-            # ax.set_title(f"History: {x_hist.size(0)}")
-            ax.set_xlim(min_x, max_x)
-    
-    # Add a single legend for all plots
-    handles, labels = axs[0, 0].get_legend_handles_labels()
-    
-    # axs[0, ncols - 1].legend(handles, labels, loc='upper left', bbox_to_anchor=(1, 1))
-    axs[0, ncols - 1].legend(handles, labels, loc='lower left', bbox_to_anchor=(0, 1))
-    fig.tight_layout(rect=[0.02, 0.02, 1, 1])
-    # fig.suptitle(f'{name} vs x', fontsize=16)
-    fig.supxlabel("x", fontsize=10)
-    fig.supylabel(f'{name}', fontsize=10)
-
-    fig.subplots_adjust(wspace=0.2, hspace=0.2)
-    
-    return fig, axs
-
-
 n_candidates = 2_000
 name = "acquisition" if POLICY_GRADIENT else "EI"
 PLOT_MAP = False
@@ -485,7 +392,8 @@ PLOT_MAP = False
 if DIMENSION == 1:
     nrows, ncols = 5, 5
     fig, axs = plot_nn_vs_gp_acquisition_function_1d_grid(
-        test_aq_dataset, n_candidates, nrows=nrows, ncols=ncols,
+        test_aq_dataset, model, POLICY_GRADIENT, name,
+        n_candidates, nrows, ncols,
         plot_map=PLOT_MAP, nn_device=device)
     fname = f'acqusion_function_net_vs_gp_acquisition_function_1d_grid_{nrows}x{ncols}.pdf'
     fig.savefig(fname, bbox_inches='tight')

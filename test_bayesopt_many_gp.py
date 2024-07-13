@@ -7,7 +7,7 @@ torch.set_default_dtype(torch.float64)
 from botorch.utils.sampling import draw_sobol_samples
 from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprovement
 
-from bayesopt import (GPAcquisitionOptimizer, RandomSearch,
+from bayesopt import (GPAcquisitionOptimizer, NNAcquisitionOptimizer, RandomSearch,
                       get_optimization_results,
                       plot_optimization_trajectories_error_bars,
                       plot_optimization_trajectories)
@@ -16,6 +16,7 @@ from botorch.sampling.pathwise import draw_kernel_feature_paths
 from utils import (get_gp, dict_to_fname_str, combine_nested_dicts,
                    convert_to_json_serializable, json_serializable_to_numpy)
 from dataset_with_models import RandomModelSampler
+from acquisition_function_net import AcquisitionFunctionNet
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 PLOTS_DIR = os.path.join(script_dir, 'plots')
@@ -92,7 +93,15 @@ options_dict_random = {
     'Random Search': {'optimizer_class': RandomSearch}
 }
 
-options_dict = {**options_dict_gp, **options_dict_random}
+nn_model: AcquisitionFunctionNet = None # TODO
+options_dict_nn = {
+    'NN': {
+        'optimizer_class': NNAcquisitionOptimizer,
+        'model': nn_model
+    }
+}
+
+options_dict = {**options_dict_gp, **options_dict_random, **options_dict_nn}
 
 results = {func_name: {} for func_name in function_names}
 desc = (f"Running optimization of {n_functions} functions "

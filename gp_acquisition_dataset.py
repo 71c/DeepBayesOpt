@@ -1,6 +1,6 @@
 import math
 import os
-from typing import Optional, Union
+from typing import Any, List, Optional, Union
 from function_samples_dataset import GaussianProcessRandomDataset, ListMapFunctionSamplesDataset
 from acquisition_dataset import AcquisitionDataset, FunctionSamplesAcquisitionDataset
 from train_acquisition_function_net import train_or_test_loop
@@ -9,6 +9,7 @@ from utils import (dict_to_fname_str, dict_to_hash, get_uniform_randint_generato
                    get_lengths_from_proportions)
 from torch.distributions import Distribution
 from botorch.models.transforms.outcome import OutcomeTransform
+from botorch.models.gp_regression import SingleTaskGP
 
 
 def get_n_datapoints_random_gen_fixed_n_candidates(
@@ -52,9 +53,6 @@ def get_n_datapoints_random_gen_variable_n_candidates(
             raise ValueError(
                 "pre_offset should not be specified for uniform randint.")
         return get_uniform_randint_generator(min_points, max_points)
-
-
-
 
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -215,21 +213,8 @@ def create_gp_acquisition_dataset(base_dataset_size,
 
 
 def create_train_and_test_gp_acquisition_datasets(
-        dimension:int,
-        randomize_params:bool,
-        xvalue_distribution: Union[Distribution,str],
-        outcome_transform: Optional[OutcomeTransform],
-        standardize_outcomes:bool,
-
         train_acquisition_size:int,
-        expansion_factor:int,
         fix_train_samples_dataset:bool,
-        give_improvements:bool,
-
-        loguniform:bool, pre_offset:Optional[float], fix_n_candidates:bool,
-        train_n_candidates:Optional[int], test_n_candidates:Optional[int],
-        min_history:Optional[int], max_history:Optional[int],
-        min_n_candidates:Optional[int], max_points:Optional[int],
 
         test_factor:float,
         small_test_proportion_of_test:float,
@@ -244,7 +229,23 @@ def create_train_and_test_gp_acquisition_datasets(
         gp_gen_device,
         
         batch_size:int,
-        fix_train_acquisition_dataset:bool):
+        fix_train_acquisition_dataset:bool,
+
+        dimension:int,
+        randomize_params:bool=False,
+        xvalue_distribution: Union[Distribution,str]="uniform",
+        observation_noise:bool=False,
+        models:Optional[List[SingleTaskGP]]=None,
+        model_probabilities:Optional[Any]=None,
+        outcome_transform: Optional[OutcomeTransform]=None,
+        standardize_outcomes:bool=False,
+
+        expansion_factor:int=1,
+        
+        loguniform:bool=True, pre_offset:Optional[float]=None, fix_n_candidates:bool=True,
+        train_n_candidates:Optional[int]=None, test_n_candidates:Optional[int]=None,
+        min_history:Optional[int]=None, max_history:Optional[int]=None,
+        min_n_candidates:Optional[int]=None, max_points:Optional[int]=None):
     train_samples_size = math.ceil(train_acquisition_size / expansion_factor)
 
     total_samples_dataset_size = math.ceil(train_samples_size * (1 + test_factor))
@@ -272,14 +273,19 @@ def create_train_and_test_gp_acquisition_datasets(
         train_n_points_kwargs = dict(min_n_candidates=min_n_candidates, max_points=max_points)
         test_n_points_kwargs = train_n_points_kwargs
 
-    common_kwargs = dict(dimension=dimension, randomize_params=randomize_params,
-        observation_noise=False, xvalue_distribution=xvalue_distribution,
+    common_kwargs = dict(
+        dimension=dimension,
+        randomize_params=randomize_params,
+        xvalue_distribution=xvalue_distribution,
+        observation_noise=observation_noise,
+        models=models,
+        model_probabilities=model_probabilities,
         outcome_transform=outcome_transform,
         standardize_outcomes=standardize_outcomes,
         expansion_factor=expansion_factor, loguniform=loguniform,
         pre_offset=pre_offset if loguniform else None, batch_size=batch_size,
         device=gp_gen_device, cache=cache_datasets,
-        give_improvements=give_improvements)
+        give_improvements=False)
 
     train_aq_dataset = create_gp_acquisition_dataset(
         train_samples_size, lazy=lazy_train,

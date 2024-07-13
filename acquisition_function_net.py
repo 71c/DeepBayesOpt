@@ -1,6 +1,9 @@
 from collections import OrderedDict
+import json
+import os
 from typing import List, Optional, Sequence, Union
 import warnings
+from numpy import isin
 import torch
 from torch import nn
 from torch import Tensor
@@ -12,7 +15,7 @@ from abc import ABC, abstractmethod
 
 import logging
 
-from utils import pad_tensor
+from utils import load_json, pad_tensor, save_json
 logging.basicConfig(level=logging.WARNING)
 
 # Set to True to enable debug logging
@@ -179,12 +182,18 @@ class SoftmaxOrExponentiateLayer(nn.Module):
         return x
 
 
+ACTIVATIONS = {
+    "relu": nn.ReLU,
+    "softplus": nn.Softplus,
+    "selu": nn.SELU
+}
+
 class Dense(nn.Sequential):
     """Dense neural network with ReLU activations."""
     def __init__(self, input_dim: int, hidden_dims: Sequence[int]=[256, 64],
                  output_dim: int=1, activation_at_end=False,
                  layer_norm_before_end=False, layer_norm_at_end=False,
-                 activation=nn.ReLU):
+                 activation:str="relu"):
         """
         Args:
             input_dim (int):
@@ -197,6 +206,12 @@ class Dense(nn.Sequential):
             activation_at_end (bool, default: False):
                 Whether to apply the activation function at the end.
         """
+        if not isinstance(activation, str):
+            raise ValueError("activation must be a string.")
+        if activation not in ACTIVATIONS:
+            raise ValueError(f"activation must be one of {ACTIVATIONS.keys()}")
+        activation = ACTIVATIONS[activation]
+
         layer_widths = [input_dim] + list(hidden_dims) + [output_dim]
         n_layers = len(layer_widths) - 1
         
@@ -403,9 +418,55 @@ class MultiLayerPointNet(nn.Module):
         return global_feat
 
 
+CLASSES = {}
 class AcquisitionFunctionNet(nn.Module, ABC):
     """Neural network model for the acquisition function in NN-based
     likelihood-free Bayesian optimization."""
+
+    def __init_subclass__(cls, **kwargs):
+        # Preserve the original __init__ method
+        original_init = cls.__init__
+
+        def new_init(self, *args, **kwargs):
+            original_init(self, *args, **kwargs)
+            if self.__class__ is cls:
+                self._init_args = args
+                self._init_kwargs = kwargs
+        
+        # Replace the __init__ method with the new one
+        cls.__init__ = new_init
+
+        CLASSES[cls.__name__] = cls
+        
+        # Call the original __init_subclass__ method
+        super().__init_subclass__(**kwargs)
+    
+    def save(self, folder: str):
+        model_info = {
+            "class_name": self.__class__.__name__,
+            "args": self._init_args,
+            "kwargs": self._init_kwargs
+        }
+        os.makedirs(folder, exist_ok=True)
+        save_json(model_info, os.path.join(folder, "model_info.json"))
+        torch.save(self.state_dict(), os.path.join(folder, "model.pth"))
+    
+    @classmethod
+    def load(cls, folder: str):
+        if cls is not AcquisitionFunctionNet:
+            raise UnsupportedError("This method is only supported for the base class.")
+        try:
+            model_info = load_json(os.path.join(folder, "model_info.json"))
+            class_name = model_info["class_name"]
+        except (FileNotFoundError, json.decoder.JSONDecodeError, KeyError) as e:
+            raise RuntimeError(f"Could not load model") from e
+        try:
+            model_class = CLASSES[class_name]
+        except KeyError:
+            raise RuntimeError(f"Subclass {class_name} of {cls.__name__} does not exist")
+        model = model_class(*model_info["args"], **model_info["kwargs"])
+        model.load_state_dict(torch.load(os.path.join(folder, "model.pth")))
+        return model
 
     @abstractmethod
     def forward(self, x_hist, y_hist, x_cand, hist_mask=None, cand_mask=None,
@@ -693,8 +754,8 @@ class AcquisitionFunctionNetV1and2(AcquisitionFunctionNetWithFinalMLP):
                  layer_norm_at_end_mlp=False,
                  standardize_outcomes=False,
                  include_best_y=False,
-                 activation_pointnet=nn.ReLU,
-                 activation_mlp=nn.ReLU,
+                 activation_pointnet:str="relu",
+                 activation_mlp:str="relu",
                  n_pointnets=1):
         """
         Args:
@@ -736,6 +797,7 @@ class AcquisitionFunctionNetV1and2(AcquisitionFunctionNetWithFinalMLP):
             n_pointnets (int, default: 1):
                 The number of PointNets to use. Default is 1.
         """
+        print("DIMENSION", dimension)
         assert isinstance(n_pointnets, int) and n_pointnets >= 1
 
         if not (input_xcand_to_local_nn or input_xcand_to_final_mlp):

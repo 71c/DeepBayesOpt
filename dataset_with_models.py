@@ -150,6 +150,27 @@ class RandomModelSampler:
     @property
     def initial_models(self):
         return [self.get_model(i) for i in range(len(self._models))]
+    
+    def save(self, dir_name: str):
+        os.makedirs(dir_name, exist_ok=True)
+        models_path = os.path.join(dir_name, "models.pt")
+        torch.save(self.initial_models, models_path)
+        info = {
+            'randomize_params': self.randomize_params,
+            'model_probabilities': self.model_probabilities.cpu().numpy().tolist()
+        }
+        info_path = os.path.join(dir_name, "info.json")
+        save_json(info, info_path)
+    
+    @classmethod
+    def load(cls, dir_name: str):
+        models_path = os.path.join(dir_name, "models.pt")
+        models = torch.load(models_path)
+        info_path = os.path.join(dir_name, "info.json")
+        info = load_json(info_path)
+
+        return cls(models, model_probabilities=info['model_probabilities'],
+                   randomize_params=info['randomize_params'])
 
 
 class ModelsWithParamsList:
@@ -709,8 +730,7 @@ class DatasetWithModels(Dataset, ABC):
         
         # Save the models if we have them
         if self.has_models:
-            models = self.model_sampler.initial_models
-            torch.save(models, os.path.join(dir_name, "models.pt"))
+            self.model_sampler.save(os.path.join(dir_name, "model_sampler"))
         
         list_of_dicts = []
         for item in items_generator:
@@ -931,10 +951,10 @@ class ListMapDatasetWithModels(MapDatasetWithModels):
 
         list_of_dicts = torch.load(os.path.join(dir_name, "data.pt"))
 
-        models_path = os.path.join(dir_name, "models.pt")
+        models_path = os.path.join(dir_name, "model_sampler")
         has_models = os.path.exists(models_path)
         if has_models:
-            model_sampler = RandomModelSampler(torch.load(models_path))
+            model_sampler = RandomModelSampler.load(models_path)
         else:
             model_sampler = None
         

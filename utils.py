@@ -1,5 +1,4 @@
 from abc import ABC, abstractmethod
-import array
 import hashlib
 import itertools
 import re
@@ -8,9 +7,11 @@ from typing import Any, TypeVar, Iterable, Sequence, List, Tuple, Dict, Optional
 import warnings
 from functools import partial, lru_cache
 import json
+
 import numpy as np
 from scipy.optimize import root_scalar
 import torch
+
 torch.set_default_dtype(torch.float64)
 from torch import Tensor
 
@@ -779,8 +780,12 @@ def convert_to_json_serializable(data):
         return {k: convert_to_json_serializable(v) for k, v in data.items()}
     if isinstance(data, np.ndarray):
         return data.tolist()
-    if isinstance(data, list):
+    if torch.is_tensor(data):
+        return data.cpu().numpy().tolist()
+    if isinstance(data, (list, tuple)):
         return [convert_to_json_serializable(x) for x in data]
+    if not isinstance(data, (int, float, str, bool, type(None))):
+        return str(data)
     return data
 
 def _json_serializable_to_numpy(data: Any, array_keys: Optional[set]=None):
@@ -793,7 +798,7 @@ def _json_serializable_to_numpy(data: Any, array_keys: Optional[set]=None):
         }
     if isinstance(data, np.ndarray):
         return data
-    if isinstance(data, list):
+    if isinstance(data, (list, tuple)):
         return [_json_serializable_to_numpy(x, array_keys) for x in data]
     return data
 
@@ -1135,6 +1140,48 @@ def resize_iterable(it, new_length: Optional[int] = None):
     return it
 
 
+
+# CLASSES = {}
+
+# # Define the new __init_subclass__ method
+# def _init_subclass(cls, **kwargs):
+#     # Preserve the original __init__ method
+#     original_init = cls.__init__
+    
+#     # Define the new __init__ method
+#     def new_init(self, *args, **kwargs):
+#         original_init(self, *args, **kwargs)
+#         if cls is self.__class__:
+#             self._init_args = args
+#             self._init_kwargs = kwargs
+    
+#     # Replace the __init__ method with the new one
+#     cls.__init__ = new_init
+
+#     CLASSES[cls.__name__] = cls
+    
+#     # Call the original __init_subclass__ method
+#     super(torch.nn.Module, cls).__init_subclass__(**kwargs)
+
+# # Override the __init_subclass__ method of torch.nn.Module
+# torch.nn.Module.__init_subclass__ = _init_subclass
+
+# def save_model(model: torch.nn.Module, folder: str):
+#     model_info = {
+#         "class_name": model.__class__.__name__,
+#         "args": model._init_args,
+#         "kwargs": model._init_kwargs
+#     }
+#     os.makedirs(folder, exist_ok=True)
+#     save_json(model_info, os.path.join(folder, "model_info.json"))
+#     torch.save(model.state_dict(), os.path.join(folder, "model.pth"))
+
+# def load_model(folder: str):
+#     model_info = load_json(os.path.join(folder, "model_info.json"))
+#     model_class = CLASSES[model_info["class_name"]]
+#     model = model_class(*model_info["args"], **model_info["kwargs"])
+#     model.load_state_dict(torch.load(os.path.join(folder, "model.pth")))
+#     return model
 
 
 
