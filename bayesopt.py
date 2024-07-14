@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 import copy
 import os
 from tqdm import tqdm, trange
-from typing import Callable, Type, Optional, List
+from typing import Any, Callable, Type, Optional, List
 import numpy as np
 import torch
 from torch import Tensor
@@ -241,6 +241,7 @@ class LazyOptimizationResults:
                  objective_names: Optional[list[str]]=None,
                  nn_model_name: Optional[str]=None,
                  save_dir: Optional[str]=None,
+                 results_name: Optional[str]=None,
                  **optimizer_kwargs):
         self.objectives = objectives
         self.n_functions = len(objectives)
@@ -285,6 +286,8 @@ class LazyOptimizationResults:
         elif nn_model_name is not None:
             raise ValueError(
                 "nn_model_name must not be provided if not using NNAcquisitionOptimizer.")
+
+        self.results_name = results_name
     
         self.save_dir = save_dir
         if save_dir is not None:
@@ -315,6 +318,24 @@ class LazyOptimizationResults:
             ]
             self.trial_configs_str = list(map(dict_to_hash, trial_configs_list))
             self.trial_configs = dict(zip(self.trial_configs_str, trial_configs_list))
+        
+        self._trial_indices_not_cached = [[] for _ in range(self.n_functions)]
+        self._results = [[None for _ in range(self.n_trials_per_function)]
+                   for _ in range(self.n_functions)]
+        for func_index in range(self.n_functions):
+            for trial_index in range(self.n_trials_per_function):
+                cached_trial_result = self._get_cached_trial_result(
+                    func_index, trial_index)
+                if cached_trial_result is None:
+                    self._trial_indices_not_cached[func_index].append(trial_index)
+                else:
+                    self._results[func_index][trial_index] = cached_trial_result
+        
+        self.n_trials_to_run_per_func = [
+            len(trial_indices_not_cached_func)
+            for trial_indices_not_cached_func in self._trial_indices_not_cached]
+        
+        self.n_funcs_to_optimize = sum(x > 0 for x in self.n_trials_to_run_per_func)
 
     def __len__(self):
         return self.n_functions
@@ -366,6 +387,8 @@ class LazyOptimizationResults:
         return self._cached_results[func_name]
 
     def _get_cached_trial_result(self, func_index: int, trial_index: int):
+        if self.save_dir is None:
+            return None
         func_name = self.objective_names[func_index]
         func_results = self._get_func_results(func_name, reload_result=False)
         results_dict = func_results['results']
@@ -434,25 +457,56 @@ class LazyOptimizationResults:
         self._func_results_to_save[func_index] = {}
 
         save_json(func_results, self._results_fname(func_name), indent=4)
+    
+    def add_pbar(self, pbar):
+        self.pbar = pbar
 
     def __iter__(self):
-        for func_index in range(self.n_functions):
-            function_best_y_data = []
-            function_best_x_data = []
+        n_funcs_to_optimize = self.n_funcs_to_optimize
+        trial_indices_not_cached = self._trial_indices_not_cached
+        results = self._results
 
-            for trial_index in trange(self.n_trials_per_function,
-                                      desc=f"Optimizing function {func_index+1}"):
-                trial_result = self._get_trial_result(func_index, trial_index)
-                function_best_y_data.append(trial_result['best_y'])
-                function_best_x_data.append(trial_result['best_x'])
+        prefix = f"{self.results_name}: " if self.results_name is not None else ""
+        
+        if n_funcs_to_optimize > 0:
+            desc = f"{prefix}Optimizing {n_funcs_to_optimize} functions"
+            pbar = tqdm(total=n_funcs_to_optimize, desc=desc)
+        
+        for func_index in range(self.n_functions):
+            trial_indices_not_cached_func = trial_indices_not_cached[func_index]
+            results_func = results[func_index]
             
-            self._save_func_results(func_index)
+            if trial_indices_not_cached_func:
+                n_cached = self.n_trials_per_function - len(trial_indices_not_cached_func)
+                if n_cached > 0:
+                    desc = (f"{prefix}  Function {func_index+1}: {n_cached} trials cached, "
+                            f"{len(trial_indices_not_cached_func)} trials to optimize.")
+                else:
+                    desc = f"{prefix}  Optimizing function {func_index+1}"
+                
+                it = trial_indices_not_cached_func
+                if len(it) > 1:
+                    it = tqdm(it, desc=desc)
+                else:
+                    print(desc)
+                for trial_index in it:
+                    results_func[trial_index] = self._get_trial_result(
+                        func_index, trial_index)
+                    if hasattr(self, 'pbar'):
+                        self.pbar.update(1)
+                    
+                self._save_func_results(func_index)
+
+                pbar.update(1)
+
+            # n_trials_per_function x 1+n_iter
+            function_best_y_data = np.array([r['best_y'] for r in results_func])
+            # n_trials_per_function x 1+n_iter x dim
+            function_best_x_data = np.array([r['best_x'] for r in results_func])
 
             result = {
-                # n_trials_per_function x 1+n_iter
-                'best_y': np.array(function_best_y_data),
-                # n_trials_per_function x 1+n_iter x dim
-                'best_x': np.array(function_best_x_data)
+                'best_y': function_best_y_data,
+                'best_x': function_best_x_data
             }
 
             if self.objective_names is not None:
@@ -461,22 +515,96 @@ class LazyOptimizationResults:
                 func_name = f"Function_{func_index}"
             
             yield func_name, result
+        
+        if n_funcs_to_optimize > 0:
+            pbar.close()
 
 
-def get_optimization_results(objectives: List[Callable],
-                             initial_points: Tensor,
-                             n_iter: int,
-                             seeds: List[int],
-                             optimizer_class: Type[BayesianOptimizer],
-                             optimizer_kwargs_per_function: Optional[List[dict]]=None,
-                             objective_names: Optional[list[str]]=None,
-                             nn_model_name: Optional[str]=None,
-                             save_dir: Optional[str]=None,
-                             **optimizer_kwargs) -> LazyOptimizationResults:
-    return LazyOptimizationResults(
-        objectives, initial_points, n_iter, seeds, optimizer_class,
-        optimizer_kwargs_per_function, objective_names, nn_model_name,
-        save_dir, **optimizer_kwargs)
+def get_optimization_results_multiple_methods(
+        options_dict: dict[str, dict[str, Any]],
+        objectives: List[Callable],
+        initial_points: Tensor,
+        n_iter: int,
+        seed: int,
+        objective_names: Optional[list[str]]=None,
+        save_dir: Optional[str]=None,
+        **universal_optimizer_kwargs):
+    n_trials = initial_points.size(0)
+
+    # Set seed again for reproducibility
+    torch.manual_seed(seed)
+    # Set a seed for each trial
+    seeds = torch.randint(0, 2**63-1, (n_trials,), dtype=torch.int64)
+
+    todo = []
+    n_funcs_to_optimize_per_method = []
+    n_trials_list = []
+    for options_name, options in options_dict.items():
+        optimization_results = LazyOptimizationResults(
+            objectives=objectives,
+            initial_points=initial_points,
+            n_iter=n_iter,
+            seeds=seeds,
+            objective_names=objective_names,
+            save_dir=save_dir,
+            results_name=options_name,
+            **universal_optimizer_kwargs,
+            **options
+        )
+        todo.append((options_name, optimization_results))
+        n_funcs_to_optimize = optimization_results.n_funcs_to_optimize
+        if n_funcs_to_optimize > 0:
+            n_trials_per_func = optimization_results.n_trials_to_run_per_func
+            n_trials_list.extend([n for n in n_trials_per_func if n > 0])
+            n_funcs_to_optimize_per_method.append(n_funcs_to_optimize)
+    
+    n_methods_to_optimize = len(n_funcs_to_optimize_per_method)
+    total_n_funcs_to_optimize = sum(n_funcs_to_optimize_per_method)
+    
+    if total_n_funcs_to_optimize > 0:
+        n_functions = len(objectives)
+        n_methods = len(options_dict)
+        total_n_trials_to_get = n_methods * n_functions * n_trials
+        total_n_trials_to_optimize = sum(n_trials_list)
+
+        if total_n_trials_to_get != total_n_trials_to_optimize:
+            total_n_cached_trials = total_n_trials_to_get - total_n_trials_to_optimize
+            print(f"Getting optimization results for {n_methods} "
+                  f"bayesian optimization methods, on {n_functions} "
+                  f"functions, {n_trials} trials each function, "
+                  f"with {total_n_trials_to_get} total trials. "
+                  f"{total_n_cached_trials} trials already ran.")
+
+        descs = [f"Running {n_methods_to_optimize} bayesian optimization methods"]
+        
+        min_funcs = min(n_funcs_to_optimize_per_method)
+        max_funcs = max(n_funcs_to_optimize_per_method)
+        if min_funcs == max_funcs:
+            descs.append(f"on {min_funcs} functions per method")
+        else:
+            descs.append(f"on {min_funcs}-{max_funcs} functions per method")
+        
+        min_n, max_n = min(n_trials_list), max(n_trials_list)
+        if min_n == max_n:
+            descs.append(f"{min_n} times per method+function")
+        else:
+            descs.append(f"{min_n}-{max_n} times per method+function")
+        
+        descs.append(f"with {total_n_trials_to_optimize} total trials")
+
+        desc = ", ".join(descs)
+
+        print(desc)
+        pbar = tqdm(total=total_n_trials_to_optimize, desc=desc)
+
+    for options_name, optimization_results in todo:
+        if total_n_funcs_to_optimize > 0:
+            optimization_results.add_pbar(pbar)
+        for func_name, func_result in optimization_results:
+            yield func_name, options_name, func_result
+
+    if total_n_funcs_to_optimize > 0:
+        pbar.close()
 
 
 def calculate_mean_and_ci(data):

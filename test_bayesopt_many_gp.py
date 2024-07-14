@@ -7,8 +7,9 @@ torch.set_default_dtype(torch.float64)
 from botorch.utils.sampling import draw_sobol_samples
 from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprovement
 
-from bayesopt import (GPAcquisitionOptimizer, NNAcquisitionOptimizer, RandomSearch,
-                      get_optimization_results, get_random_gp_functions,
+from bayesopt import (GPAcquisitionOptimizer, get_optimization_results_multiple_methods,
+                      LazyOptimizationResults, NNAcquisitionOptimizer, RandomSearch,
+                      get_random_gp_functions,
                       plot_optimization_trajectories_error_bars,
                       plot_optimization_trajectories)
 from random_gp_function import RandomGPFunction
@@ -28,12 +29,12 @@ RESULTS_DIR = os.path.join(script_dir, 'bayesopt_results')
 os.makedirs(PLOTS_DIR, exist_ok=True)
 
 dim = 3
-n_functions = 3
+n_functions = 5
 opt_config = {
     'n_initial_samples': 2*(dim+1),
-    'n_trials_per_function': 3,
+    'n_trials_per_function': 5,
     'n_iter': 50,
-    'seed': 1234
+    'seed': 12
 }
 config = {
     'dim': dim,
@@ -70,7 +71,7 @@ models = [get_gp(
 gp_sampler = RandomModelSampler(models, randomize_params=True)
 
 
-random_gps, gp_realizations, function_names, function_plot_names = get_random_gp_functions(
+random_gps, gp_realizations, objective_names, function_plot_names = get_random_gp_functions(
     gp_sampler, SEED, n_functions, observation_noise)
 
 
@@ -115,34 +116,12 @@ options_dict = {**options_dict_gp,
 
 
 # Run optimization
-# Set seed again for reproducibility
-torch.manual_seed(SEED)
-# Set a seed for each trial
-seeds = torch.randint(0, 2**63-1, (n_trials,), dtype=torch.int64)
-
-results = {func_name: {} for func_name in function_names}
-desc = (f"Running optimization of {n_functions} functions "
-        f"{n_trials} times each "
-        f"with {len(options_dict)} bayesian optimization methods.")
-for options_name, options in tqdm(options_dict.items(), desc=desc):
-    optimization_results = get_optimization_results(
-        objectives=gp_realizations,
-        initial_points=init_x,
-        n_iter=config['n_iter'],
-        seeds=seeds,
-        objective_names=function_names,
-        save_dir=RESULTS_DIR,
-        dim=dim,
-        maximize=True,
-        bounds=bounds,
-        **options
-    )
-    it = tqdm(optimization_results, desc=f"Optimizing functions with {options_name}")
-    for func_name, func_result in it:
-        results[func_name][options_name] = func_result
-        # print(f"Function {func_name} optimized with {options_name}.")
-        # print(f"Best y: {func_result['best_y'][:, -1]}")
-
+results_generator = get_optimization_results_multiple_methods(
+    options_dict, gp_realizations, init_x, config['n_iter'],
+    SEED, objective_names, RESULTS_DIR, dim=dim, bounds=bounds, maximize=True)
+results = {func_name: {} for func_name in objective_names}
+for func_name, options_name, func_result in results_generator:
+    results[func_name][options_name] = func_result
 
 # Plot individual functions (up to max_n_functions_to_plot)
 max_n_functions_to_plot = 5
@@ -157,7 +136,7 @@ if n_functions_to_plot == 1:
     axes = [axes]
 
 for func_index in range(n_functions_to_plot):
-    func_name = function_names[func_index]
+    func_name = objective_names[func_index]
     func_plot_name = function_plot_names[func_index]
     ax = axes[func_index]
 
@@ -184,7 +163,7 @@ for options_name in options_dict:
         axes = [axes]
     
     for func_index in range(n_functions_to_plot):
-        func_name = function_names[func_index]
+        func_name = objective_names[func_index]
         func_plot_name = function_plot_names[func_index]
         ax = axes[func_index]
         data = results[func_name][options_name]
