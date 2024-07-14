@@ -1,5 +1,6 @@
 from abc import ABC, abstractmethod
 import copy
+import os
 from tqdm import tqdm, trange
 from typing import Callable, Type, Optional, List
 import numpy as np
@@ -11,7 +12,8 @@ from botorch.models.model import Model
 from botorch.models.gp_regression import SingleTaskGP
 from botorch.fit import fit_gpytorch_model
 from gpytorch.mlls import ExactMarginalLogLikelihood
-from utils import remove_priors
+from utils import convert_to_json_serializable, dict_to_hash, json_serializable_to_numpy, load_json, remove_priors, save_json
+from json.decoder import JSONDecodeError
 from acquisition_function_net import AcquisitionFunctionNet, AcquisitionFunctionNetModel, LikelihoodFreeNetworkAcquisitionFunction
 
 
@@ -230,19 +232,21 @@ class LazyOptimizationResults:
                  objectives: List[Callable],
                  initial_points: Tensor,
                  n_iter: int,
+                 seeds: List[int],
                  optimizer_class: Type[BayesianOptimizer],
                  optimizer_kwargs_per_function: Optional[List[dict]]=None,
                  objective_names: Optional[list[str]]=None,
-                 seeds: Optional[List[int]]=None,
+                 nn_model_name: Optional[str]=None,
+                 save_dir: Optional[str]=None,
                  **optimizer_kwargs):
         self.objectives = objectives
         self.n_functions = len(objectives)
         
         if initial_points.dim() != 3:
             raise ValueError("initial_points must be a 3D tensor of shape "
-                            "(n_opt_trials_per_function, n_initial_samples, dim)")
+                            "(n_trials_per_function, n_initial_samples, dim)")
         self.initial_points = initial_points
-        self.n_opt_trials_per_function = initial_points.size(0)
+        self.n_trials_per_function = initial_points.size(0)
 
         self.n_iter = n_iter
         self.optimizer_class = optimizer_class
@@ -257,58 +261,176 @@ class LazyOptimizationResults:
             raise ValueError("objective_names must have the same length as objectives.")
         self.objective_names = objective_names
         
-        if seeds is not None and len(seeds) != self.n_opt_trials_per_function:
-            raise ValueError("seeds must be None or a list of length n_opt_trials_per_function.")
+        if len(seeds) != self.n_trials_per_function:
+            raise ValueError("seeds must be a list of length n_trials_per_function.")
         self.seeds = seeds
 
         self.optimizer_kwargs = optimizer_kwargs
 
+        opt_config = {
+            'n_initial_samples': initial_points.size(1),
+            'n_iter': self.n_iter,
+            **optimizer_kwargs
+        }
+        if optimizer_class is NNAcquisitionOptimizer:
+            if save_dir is not None and nn_model_name is None:
+                raise ValueError(
+                    "nn_model_name must be provided when saving "
+                    "NNAcquisitionOptimizer results (save_dir is not None).")
+            opt_config.pop('model')
+            opt_config['nn_model_name'] = nn_model_name
+        elif nn_model_name is not None:
+            raise ValueError(
+                "nn_model_name must not be provided if not using NNAcquisitionOptimizer.")
+        
+        info_kwargs = dict(include_priors=False, hash_gpytorch_modules=False)
+        opt_config_json = convert_to_json_serializable(opt_config, **info_kwargs)
+        extra_fn_configs = [
+            convert_to_json_serializable(fn_kwargs, **info_kwargs)
+            for fn_kwargs in self.optimizer_kwargs_per_function]
+        self.func_opt_configs = [
+            {**opt_config_json, **fn_config} for fn_config in extra_fn_configs
+        ]
+        self.func_opt_configs_str = list(map(dict_to_hash, self.func_opt_configs))
+
+        self.trial_configs = [
+            convert_to_json_serializable(
+                {'seed': seeds[i], 'initial_points': initial_points[i]}
+            ) for i in range(self.n_trials_per_function)
+        ]
+        self.trial_configs_str = list(map(dict_to_hash, self.trial_configs))
+
+        self.save_dir = save_dir
+        if save_dir is not None:
+            self._cached_results = {}
+            os.makedirs(save_dir, exist_ok=True)
+
     def __len__(self):
         return self.n_functions
 
+    def _results_fname(self, func_name: str):
+        return os.path.join(self.save_dir, f'{func_name}.json')
+
+    def _get_func_results(self, func_name: str, reload_result: bool) -> dict:
+        if reload_result or func_name not in self._cached_results:
+            try:
+                func_results = load_json(self._results_fname(func_name))
+            except FileNotFoundError:
+                func_results = {}
+            except JSONDecodeError as e:
+                raise RuntimeError("Error decoding json!") from e
+            self._cached_results[func_name] = func_results
+        return self._cached_results[func_name]
+
+    def _get_opt_trial_result(self, func_name: str,
+                            func_opt_config_str: str,
+                            trial_config_str: str):
+        if self.save_dir is None:
+            return None
+        func_results = self._get_func_results(func_name, reload_result=False)
+        if func_opt_config_str not in func_results:
+            return None
+        trials_dict = func_results[func_opt_config_str]['trials']
+        if trial_config_str not in trials_dict:
+            return None
+        return json_serializable_to_numpy(
+            trials_dict[trial_config_str]['result'])
+
+    def _save_func_opt_trial_results(self,
+            func_name: str, func_opt_config: dict, func_opt_config_str: str,
+            function_trial_results_to_save: dict):
+        if self.save_dir is None:
+            return
+        func_results = self._get_func_results(func_name, reload_result=True)
+        function_trial_results_to_save = convert_to_json_serializable(
+            function_trial_results_to_save)
+        if func_opt_config_str not in func_results:
+            func_results[func_opt_config_str] = {
+                'opt_config': func_opt_config,
+                'trials': function_trial_results_to_save
+            }
+        else:
+            func_opt_res = func_results[func_opt_config_str]
+            assert func_opt_res['opt_config'] == func_opt_config
+            func_opt_res['trials'].update(function_trial_results_to_save)
+        save_json(func_results, self._results_fname(func_name), indent=4)
+
     def __iter__(self):
         for func_index in range(self.n_functions):
+            if self.objective_names is not None:
+                func_name = self.objective_names[func_index]
+            else:
+                func_name = f"Function_{func_index}"
+
             objective = self.objectives[func_index]
+            
             optimizer_kwargs_for_this_function = self.optimizer_kwargs_per_function[func_index]
+            
+            func_opt_config = self.func_opt_configs[func_index]
+            func_opt_config_str = self.func_opt_configs_str[func_index]
+            
             function_best_y_data = []
             function_best_x_data = []
+            function_trial_results_to_save = {}
 
-            for trial_index in trange(self.n_opt_trials_per_function,
+            for trial_index in trange(self.n_trials_per_function,
                                       desc=f"Optimizing function {func_index+1}"):
-                if self.seeds is not None:
+                trial_config = self.trial_configs[trial_index]
+                trial_config_str = self.trial_configs_str[trial_index]
+                trial_result = self._get_opt_trial_result(
+                    func_name, func_opt_config_str,
+                    trial_config_str)
+                
+                if trial_result is None:
                     torch.manual_seed(self.seeds[trial_index])
-                optimizer = self.optimizer_class(
-                    initial_points=self.initial_points[trial_index],
-                    objective=objective,
-                    **self.optimizer_kwargs,
-                    **optimizer_kwargs_for_this_function
-                )
-                optimizer.optimize(self.n_iter)
-                function_best_y_data.append(optimizer.best_y_history.numpy())
-                function_best_x_data.append(optimizer.best_x_history.numpy())
+                    optimizer = self.optimizer_class(
+                        initial_points=self.initial_points[trial_index],
+                        objective=objective,
+                        **self.optimizer_kwargs,
+                        **optimizer_kwargs_for_this_function
+                    )
+                    optimizer.optimize(self.n_iter)
+                    trial_result_save = {
+                        **trial_config,
+                        'result': {
+                            'best_y': optimizer.best_y_history.numpy(),
+                            'best_x': optimizer.best_x_history.numpy()
+                        }
+                    }
+                    function_trial_results_to_save[trial_config_str] = trial_result_save
+                    trial_result = trial_result_save['result']
+
+                function_best_y_data.append(trial_result['best_y'])
+                function_best_x_data.append(trial_result['best_x'])
+            
+            self._save_func_opt_trial_results(
+                func_name, func_opt_config, func_opt_config_str,
+                function_trial_results_to_save)
 
             result = {
-                # n_opt_trials_per_function x 1+n_iter
+                # n_trials_per_function x 1+n_iter
                 'best_y': np.array(function_best_y_data),
-                # n_opt_trials_per_function x 1+n_iter x dim
+                # n_trials_per_function x 1+n_iter x dim
                 'best_x': np.array(function_best_x_data)
             }
-            func_name = self.objective_names[func_index] if \
-                self.objective_names else f"Function_{func_index}"
+            
             yield func_name, result
+
 
 def get_optimization_results(objectives: List[Callable],
                              initial_points: Tensor,
                              n_iter: int,
+                             seeds: List[int],
                              optimizer_class: Type[BayesianOptimizer],
                              optimizer_kwargs_per_function: Optional[List[dict]]=None,
                              objective_names: Optional[list[str]]=None,
-                             seeds: Optional[List[int]]=None,
+                             nn_model_name: Optional[str]=None,
+                             save_dir: Optional[str]=None,
                              **optimizer_kwargs) -> LazyOptimizationResults:
     return LazyOptimizationResults(
-        objectives, initial_points, n_iter, optimizer_class,
-        optimizer_kwargs_per_function, objective_names, seeds,
-        **optimizer_kwargs)
+        objectives, initial_points, n_iter, seeds, optimizer_class,
+        optimizer_kwargs_per_function, objective_names, nn_model_name,
+        save_dir, **optimizer_kwargs)
 
 
 def calculate_mean_and_ci(data):

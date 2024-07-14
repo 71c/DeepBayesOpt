@@ -662,22 +662,6 @@ def int_linspace(start, stop, num):
     return ret
 
 
-def to_device(tensor, device):
-    if tensor is None or device is None:
-        return tensor
-    return tensor.to(device)
-
-
-def save_json(data, fname, **kwargs):
-    with open(fname, 'w') as json_file:
-        json.dump(data, json_file, **kwargs)
-
-
-def load_json(fname, **kwargs):
-    with open(fname, 'r') as json_file:
-        return json.load(json_file)
-
-
 def sanitize_file_name(file_name: str) -> str:
     # Define a dictionary of characters to replace
     replacements = {
@@ -703,8 +687,22 @@ def sanitize_file_name(file_name: str) -> str:
 
     return sanitized_name
 
+def _to_str(x) -> str:
+    if type(x) is dict:
+        return '(' + ','.join(
+            key + '=' + _to_str(value)
+            for key, value in sorted(x.items())
+        ) + ')'
+    if type(x) is list:
+        return '[' + ','.join(map(_to_str, x)) + ']'
+    if type(x) is str:
+        return x
+    return repr(x)
+
 def dict_to_str(d: Dict[str, Any]) -> str:
-    return ','.join(key + '=' + repr(value) for key, value in sorted(d.items()))
+    if type(d) is not dict:
+        raise ValueError("d must be a dictionary")
+    return _to_str(d)[1:-1]
 
 def dict_to_fname_str(d: Dict[str, Any]) -> str:
     return sanitize_file_name(dict_to_str(d))
@@ -712,6 +710,111 @@ def dict_to_fname_str(d: Dict[str, Any]) -> str:
 def dict_to_hash(d: Dict[str, Any]) -> str:
     dict_bytes = dict_to_str(d).encode('ascii')
     return hashlib.sha256(dict_bytes).hexdigest()
+
+
+def hash_gpytorch_module(module,
+                         include_priors=True,
+                         include_str=True,
+                         hash_str=False):
+    if not include_priors:
+        named_priors_tuple_list = remove_priors(module)
+    
+    serialized_state_dict = convert_to_json_serializable(
+        module.state_dict(), hash_gpytorch_modules=True,
+        include_priors=include_priors, hash_include_str=False,
+        hash_str=True)
+    
+    if hash_str:
+        hashed_result = dict_to_hash({
+            'module': module,
+            'state_dict': serialized_state_dict
+        })
+    else:
+        hashed_result = dict_to_hash(serialized_state_dict)
+    
+    if include_str:
+        ret = f'{module!r}_{hashed_result}'
+    else:
+        ret = hashed_result
+
+    if not include_priors:
+        add_priors(named_priors_tuple_list)
+    
+    return ret
+
+
+def convert_to_json_serializable(data,
+                                 include_priors=True,
+                                 hash_gpytorch_modules=True,
+                                 hash_include_str=True,
+                                 hash_str=False):
+    
+    if isinstance(data, dict):
+        return {k: convert_to_json_serializable(
+            v, include_priors, hash_gpytorch_modules, hash_include_str, hash_str)
+            for k, v in data.items()}
+    if isinstance(data, np.ndarray):
+        return data.tolist()
+    if torch.is_tensor(data):
+        return data.cpu().numpy().tolist()
+    if isinstance(data, (list, tuple)):
+        return [convert_to_json_serializable(
+            x, include_priors, hash_gpytorch_modules, hash_include_str, hash_str)
+            for x in data]
+    if isinstance(data, (int, float, str, bool, type(None))):
+        return data
+    if isinstance(data, gpytorch.Module):
+        if hash_gpytorch_modules:
+            return hash_gpytorch_module(data, include_priors, hash_include_str, hash_str)
+        else:
+            if not include_priors:
+                named_priors_tuple_list = remove_priors(data)
+            ret = {
+                'module': str(data),
+                'state_dict': convert_to_json_serializable(
+                    data.state_dict(), include_priors=True,
+                    hash_gpytorch_modules=False)
+            }
+            if not include_priors:
+                add_priors(named_priors_tuple_list)
+            return ret
+    return str(data)
+
+def _json_serializable_to_numpy(data: Any, array_keys: Optional[set]=None):
+    if isinstance(data, dict):
+        return {
+            k: np.array(v) if isinstance(v, list) and
+            (array_keys is None or k in array_keys)
+            else _json_serializable_to_numpy(v, array_keys)
+            for k, v in data.items()
+        }
+    if isinstance(data, np.ndarray):
+        return data
+    if isinstance(data, (list, tuple)):
+        return [_json_serializable_to_numpy(x, array_keys) for x in data]
+    return data
+
+def json_serializable_to_numpy(data: Any,
+                               array_keys: Optional[Union[list,tuple,set]]=None):
+    if array_keys is not None:
+        array_keys = set(array_keys)
+    return _json_serializable_to_numpy(data, array_keys)
+
+
+def to_device(tensor, device):
+    if tensor is None or device is None:
+        return tensor
+    return tensor.to(device)
+
+
+def save_json(data, fname, **kwargs):
+    with open(fname, 'w') as json_file:
+        json.dump(data, json_file, **kwargs)
+
+
+def load_json(fname, **kwargs):
+    with open(fname, 'r') as json_file:
+        return json.load(json_file)
 
 
 K = TypeVar('K')
@@ -776,38 +879,6 @@ def combine_nested_dicts(*dicts : Dict[str, Dict[K, V]]) -> Dict[str, Dict[K, V]
     }
 
 
-def convert_to_json_serializable(data):
-    if isinstance(data, dict):
-        return {k: convert_to_json_serializable(v) for k, v in data.items()}
-    if isinstance(data, np.ndarray):
-        return data.tolist()
-    if torch.is_tensor(data):
-        return data.cpu().numpy().tolist()
-    if isinstance(data, (list, tuple)):
-        return [convert_to_json_serializable(x) for x in data]
-    if not isinstance(data, (int, float, str, bool, type(None))):
-        return str(data)
-    return data
-
-def _json_serializable_to_numpy(data: Any, array_keys: Optional[set]=None):
-    if isinstance(data, dict):
-        return {
-            k: np.array(v) if isinstance(v, list) and
-            (array_keys is None or k in array_keys)
-            else _json_serializable_to_numpy(v, array_keys)
-            for k, v in data.items()
-        }
-    if isinstance(data, np.ndarray):
-        return data
-    if isinstance(data, (list, tuple)):
-        return [_json_serializable_to_numpy(x, array_keys) for x in data]
-    return data
-
-def json_serializable_to_numpy(data: Any,
-                               array_keys: Optional[Union[list,tuple,set]]=None):
-    if array_keys is not None:
-        array_keys = set(array_keys)
-    return _json_serializable_to_numpy(data, array_keys)
 
 
 def pad_tensor(vec, length, dim, add_mask=False):

@@ -24,24 +24,27 @@ from gpytorch.priors.torch_priors import GammaPrior
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 PLOTS_DIR = os.path.join(script_dir, 'plots')
+RESULTS_DIR = os.path.join(script_dir, 'bayesopt_results')
 os.makedirs(PLOTS_DIR, exist_ok=True)
 
 dim = 3
+n_functions = 5
+opt_config = {
+    'n_initial_samples': 2*(dim+1),
+    'n_trials_per_function': 3,
+    'n_iter': 50,
+    'seed': 1234
+}
 config = {
     'dim': dim,
     'observation_noise': False,
-    'n_initial_samples': 2*(dim+1),
-    'n_functions': 10,
-    'n_opt_trials_per_function': 3,
-    'n_iter': 50,
-    'seed': 1234
+    **opt_config
 }
 SEED = config['seed']
 torch.manual_seed(SEED)
 
 observation_noise = config['observation_noise']
-n_functions = config['n_functions']
-n_trials = config['n_opt_trials_per_function']
+n_trials = config['n_trials_per_function']
 
 config_str = dict_to_fname_str(config)
 
@@ -109,12 +112,12 @@ else:
 experiment_name = 'EI_GP_realizations'
 acquisition_functions = {
     'Log EI': LogExpectedImprovement,
-    'EI': ExpectedImprovement
+    # 'EI': ExpectedImprovement
 }
 gp_options = {
     'True GP': {'fit_params': False},
     'MAP': {'fit_params': True, 'mle': False},
-    'MLE': {'fit_params': True, 'mle': True}
+    # 'MLE': {'fit_params': True, 'mle': True}
 }
 
 acquisition_function_options = {
@@ -133,15 +136,18 @@ options_dict_random = {
     'Random Search': {'optimizer_class': RandomSearch}
 }
 
-nn_model: AcquisitionFunctionNet = None # TODO
-options_dict_nn = {
-    'NN': {
-        'optimizer_class': NNAcquisitionOptimizer,
-        'model': nn_model
-    }
-}
+# nn_model: AcquisitionFunctionNet = None # TODO
+# options_dict_nn = {
+#     'NN': {
+#         'optimizer_class': NNAcquisitionOptimizer,
+#         'model': nn_model
+#     }
+# }
 
-options_dict = {**options_dict_gp, **options_dict_random, **options_dict_nn}
+options_dict = {**options_dict_gp,
+                **options_dict_random,
+                # **options_dict_nn
+}
 
 
 # Run optimization
@@ -159,8 +165,9 @@ for options_name, options in tqdm(options_dict.items(), desc=desc):
         objectives=gp_realizations,
         initial_points=init_x,
         n_iter=config['n_iter'],
-        objective_names=function_names,
         seeds=seeds,
+        objective_names=function_names,
+        save_dir=RESULTS_DIR,
         dim=dim,
         maximize=True,
         bounds=bounds,
