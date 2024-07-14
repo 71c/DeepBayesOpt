@@ -703,13 +703,14 @@ def sanitize_file_name(file_name: str) -> str:
 
     return sanitized_name
 
+def dict_to_str(d: Dict[str, Any]) -> str:
+    return ','.join(key + '=' + repr(value) for key, value in sorted(d.items()))
 
-def dict_to_fname_str(d):
-    x = ','.join(key + '=' + repr(value) for key, value in sorted(d.items()))   
-    return sanitize_file_name(x)
+def dict_to_fname_str(d: Dict[str, Any]) -> str:
+    return sanitize_file_name(dict_to_str(d))
 
-def dict_to_hash(d):
-    dict_bytes = dict_to_fname_str(d).encode('ascii')
+def dict_to_hash(d: Dict[str, Any]) -> str:
+    dict_bytes = dict_to_str(d).encode('ascii')
     return hashlib.sha256(dict_bytes).hexdigest()
 
 

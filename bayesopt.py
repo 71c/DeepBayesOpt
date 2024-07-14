@@ -226,18 +226,42 @@ class GPAcquisitionOptimizer(ModelAcquisitionOptimizer):
 
 
 class LazyOptimizationResults:
-    def __init__(self, objectives, initial_points, n_iter, optimizer_class,
-                 optimizer_kwargs_per_function=None,
-                 objective_names=None, **optimizer_kwargs):
+    def __init__(self,
+                 objectives: List[Callable],
+                 initial_points: Tensor,
+                 n_iter: int,
+                 optimizer_class: Type[BayesianOptimizer],
+                 optimizer_kwargs_per_function: Optional[List[dict]]=None,
+                 objective_names: Optional[list[str]]=None,
+                 seeds: Optional[List[int]]=None,
+                 **optimizer_kwargs):
         self.objectives = objectives
+        self.n_functions = len(objectives)
+        
+        if initial_points.dim() != 3:
+            raise ValueError("initial_points must be a 3D tensor of shape "
+                            "(n_opt_trials_per_function, n_initial_samples, dim)")
         self.initial_points = initial_points
+        self.n_opt_trials_per_function = initial_points.size(0)
+
         self.n_iter = n_iter
         self.optimizer_class = optimizer_class
-        self.optimizer_kwargs_per_function = optimizer_kwargs_per_function or [{} for _ in range(len(objectives))]
+
+        if optimizer_kwargs_per_function is None:
+            optimizer_kwargs_per_function = [{} for _ in range(self.n_functions)]
+        elif len(optimizer_kwargs_per_function) != self.n_functions:
+            raise ValueError("optimizer_kwargs_per_function must have the same length as objectives.")
+        self.optimizer_kwargs_per_function = optimizer_kwargs_per_function
+
+        if objective_names is not None and len(objective_names) != self.n_functions:
+            raise ValueError("objective_names must have the same length as objectives.")
         self.objective_names = objective_names
+        
+        if seeds is not None and len(seeds) != self.n_opt_trials_per_function:
+            raise ValueError("seeds must be None or a list of length n_opt_trials_per_function.")
+        self.seeds = seeds
+
         self.optimizer_kwargs = optimizer_kwargs
-        self.n_functions = len(objectives)
-        self.n_opt_trials_per_function = initial_points.size(0)
 
     def __len__(self):
         return self.n_functions
@@ -251,6 +275,8 @@ class LazyOptimizationResults:
 
             for trial_index in trange(self.n_opt_trials_per_function,
                                       desc=f"Optimizing function {func_index+1}"):
+                if self.seeds is not None:
+                    torch.manual_seed(self.seeds[trial_index])
                 optimizer = self.optimizer_class(
                     initial_points=self.initial_points[trial_index],
                     objective=objective,
@@ -277,16 +303,12 @@ def get_optimization_results(objectives: List[Callable],
                              optimizer_class: Type[BayesianOptimizer],
                              optimizer_kwargs_per_function: Optional[List[dict]]=None,
                              objective_names: Optional[list[str]]=None,
+                             seeds: Optional[List[int]]=None,
                              **optimizer_kwargs) -> LazyOptimizationResults:
-    if initial_points.dim() != 3:
-        raise ValueError("initial_points must be a 3D tensor of shape "
-                         "(n_opt_trials_per_function, n_initial_samples, dim)")
-    if objective_names is not None:
-        if not (isinstance(objective_names, list) and len(objective_names) == len(objectives)):
-            raise ValueError("objective_names must be a list of the same length as objectives.")
     return LazyOptimizationResults(
         objectives, initial_points, n_iter, optimizer_class,
-        optimizer_kwargs_per_function, objective_names, **optimizer_kwargs)
+        optimizer_kwargs_per_function, objective_names, seeds,
+        **optimizer_kwargs)
 
 
 def calculate_mean_and_ci(data):

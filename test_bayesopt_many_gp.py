@@ -13,58 +13,98 @@ from bayesopt import (GPAcquisitionOptimizer, NNAcquisitionOptimizer, RandomSear
                       plot_optimization_trajectories)
 from random_gp_function import RandomGPFunction
 from botorch.sampling.pathwise import draw_kernel_feature_paths
-from utils import (get_gp, dict_to_fname_str, combine_nested_dicts,
-                   convert_to_json_serializable, json_serializable_to_numpy)
+from utils import (get_gp, dict_to_fname_str, dict_to_hash,
+                   combine_nested_dicts, convert_to_json_serializable,
+                   json_serializable_to_numpy, remove_priors)
 from dataset_with_models import RandomModelSampler
 from acquisition_function_net import AcquisitionFunctionNet
+
+from gpytorch.kernels import MaternKernel, ScaleKernel, RBFKernel
+from gpytorch.priors.torch_priors import GammaPrior
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 PLOTS_DIR = os.path.join(script_dir, 'plots')
 os.makedirs(PLOTS_DIR, exist_ok=True)
 
-dim = 6
+dim = 3
 config = {
     'dim': dim,
     'observation_noise': False,
     'n_initial_samples': 2*(dim+1),
-    'n_functions': 4,
+    'n_functions': 10,
     'n_opt_trials_per_function': 3,
-    'n_iter': 50
+    'n_iter': 50,
+    'seed': 1234
 }
+SEED = config['seed']
+torch.manual_seed(SEED)
 
 observation_noise = config['observation_noise']
 n_functions = config['n_functions']
+n_trials = config['n_opt_trials_per_function']
 
 config_str = dict_to_fname_str(config)
 
-def get_rff_function(gp):
-    f = draw_kernel_feature_paths(
-        copy.deepcopy(gp), sample_shape=torch.Size(), num_features=4096)
-    return lambda x: f(x).detach()
+bounds = torch.stack([torch.zeros(dim), torch.ones(dim)])
+init_x = draw_sobol_samples(bounds=bounds, 
+                            n=n_trials,
+                            q=config['n_initial_samples'])
 
+def get_rff_function_and_name(gp):
+    gp_copy = copy.deepcopy(gp)
+    # Remove priors so that the name of the model doesn't depend on the priors.
+    # The priors are not used in the function anyway.
+    remove_priors(gp_copy)
+    f = draw_kernel_feature_paths(
+        gp_copy, sample_shape=torch.Size(), num_features=4096)
+    function_hash = dict_to_hash(convert_to_json_serializable(f.state_dict()))
+    return (lambda x: f(x).detach()), function_hash
 
 # Construct random GP sampler
-models = [get_gp(dimension=dim, observation_noise=observation_noise)]
-gp_sampler = RandomModelSampler(models, randomize_params=False)
-# sample n_functions random GPs and construct random realizations from them
-random_gps = [gp_sampler.sample(deepcopy=True) for _ in range(n_functions)]
+kernel = ScaleKernel(
+        base_kernel=RBFKernel(
+            ard_num_dims=dim,
+            batch_shape=torch.Size(),
+            lengthscale_prior=GammaPrior(3.0, 6.0),
+        ),
+        batch_shape=torch.Size(),
+        outputscale_prior=GammaPrior(2.0, 0.15),
+    )
+models = [get_gp(
+    dimension=dim,
+    observation_noise=observation_noise,
+    covar_module=kernel)]
+gp_sampler = RandomModelSampler(models, randomize_params=True)
+
+
+# Sample n_functions random GPs and construct random realizations from them
 # Don't use RandomGPFunction because it gives numerical problems if you sample
 # too many times.
 # However, draw_kernel_feature_paths doesn't work with observation noise
 # as far as I can tell.
 # (But we're not even testing observation noise currently anyway)
+
+# Set seed again for reproducibility
+torch.manual_seed(SEED)
 if observation_noise:
+    random_gps = [gp_sampler.sample(deepcopy=True) for _ in range(n_functions)]
     gp_realizations = [
         RandomGPFunction(copy.deepcopy(gp), observation_noise)
         for gp in random_gps]
+    function_names = [f'gp{i}' for i in range(1, n_functions+1)]
 else:
-    gp_realizations = [get_rff_function(gp) for gp in random_gps]
-function_names = [f'gp{i}' for i in range(1, n_functions+1)]
-
-bounds = torch.stack([torch.zeros(dim), torch.ones(dim)])
-init_x = draw_sobol_samples(bounds=bounds, 
-                            n=config['n_opt_trials_per_function'],
-                            q=config['n_initial_samples'])
+    # To get reproducible results even if the number of functions changes,
+    # we can sample in this way. (As opposed to sampling the possibly random
+    # GPs all at once and then constructing all the random functions from them.)
+    random_gps = []
+    gp_realizations = []
+    function_names = []
+    for _ in range(n_functions):
+        gp = gp_sampler.sample(deepcopy=True)
+        random_gps.append(gp)
+        gp_realization, realization_hash = get_rff_function_and_name(gp)
+        gp_realizations.append(gp_realization)
+        function_names.append(f'gp_{realization_hash}')
 
 experiment_name = 'EI_GP_realizations'
 acquisition_functions = {
@@ -103,9 +143,16 @@ options_dict_nn = {
 
 options_dict = {**options_dict_gp, **options_dict_random, **options_dict_nn}
 
+
+# Run optimization
+# Set seed again for reproducibility
+torch.manual_seed(SEED)
+# Set a seed for each trial
+seeds = torch.randint(0, 2**63-1, (n_trials,), dtype=torch.int64)
+
 results = {func_name: {} for func_name in function_names}
 desc = (f"Running optimization of {n_functions} functions "
-        f"{config['n_opt_trials_per_function']} times each "
+        f"{n_trials} times each "
         f"with {len(options_dict)} bayesian optimization methods.")
 for options_name, options in tqdm(options_dict.items(), desc=desc):
     optimization_results = get_optimization_results(
@@ -113,6 +160,7 @@ for options_name, options in tqdm(options_dict.items(), desc=desc):
         initial_points=init_x,
         n_iter=config['n_iter'],
         objective_names=function_names,
+        seeds=seeds,
         dim=dim,
         maximize=True,
         bounds=bounds,

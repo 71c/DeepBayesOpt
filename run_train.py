@@ -184,7 +184,6 @@ if not TRAIN or LOAD_SAVED_MODEL_TO_TRAIN:
     print(f"Loading model from {model_path}")
     model = AcquisitionFunctionNet.load(model_path)
 else:
-    model_kwargs = dict()
     model = AcquisitionFunctionNetV1and2(
                 DIMENSION,
                 pooling="max",
