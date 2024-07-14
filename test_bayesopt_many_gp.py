@@ -8,14 +8,14 @@ from botorch.utils.sampling import draw_sobol_samples
 from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprovement
 
 from bayesopt import (GPAcquisitionOptimizer, NNAcquisitionOptimizer, RandomSearch,
-                      get_optimization_results,
+                      get_optimization_results, get_random_gp_functions,
                       plot_optimization_trajectories_error_bars,
                       plot_optimization_trajectories)
 from random_gp_function import RandomGPFunction
-from botorch.sampling.pathwise import draw_kernel_feature_paths
+
 from utils import (get_gp, dict_to_fname_str, dict_to_hash,
                    combine_nested_dicts, convert_to_json_serializable,
-                   json_serializable_to_numpy, remove_priors)
+                   json_serializable_to_numpy, remove_priors, sanitize_file_name)
 from dataset_with_models import RandomModelSampler
 from acquisition_function_net import AcquisitionFunctionNet
 
@@ -28,7 +28,7 @@ RESULTS_DIR = os.path.join(script_dir, 'bayesopt_results')
 os.makedirs(PLOTS_DIR, exist_ok=True)
 
 dim = 3
-n_functions = 5
+n_functions = 3
 opt_config = {
     'n_initial_samples': 2*(dim+1),
     'n_trials_per_function': 3,
@@ -53,16 +53,6 @@ init_x = draw_sobol_samples(bounds=bounds,
                             n=n_trials,
                             q=config['n_initial_samples'])
 
-def get_rff_function_and_name(gp):
-    gp_copy = copy.deepcopy(gp)
-    # Remove priors so that the name of the model doesn't depend on the priors.
-    # The priors are not used in the function anyway.
-    remove_priors(gp_copy)
-    f = draw_kernel_feature_paths(
-        gp_copy, sample_shape=torch.Size(), num_features=4096)
-    function_hash = dict_to_hash(convert_to_json_serializable(f.state_dict()))
-    return (lambda x: f(x).detach()), function_hash
-
 # Construct random GP sampler
 kernel = ScaleKernel(
         base_kernel=RBFKernel(
@@ -80,36 +70,10 @@ models = [get_gp(
 gp_sampler = RandomModelSampler(models, randomize_params=True)
 
 
-# Sample n_functions random GPs and construct random realizations from them
-# Don't use RandomGPFunction because it gives numerical problems if you sample
-# too many times.
-# However, draw_kernel_feature_paths doesn't work with observation noise
-# as far as I can tell.
-# (But we're not even testing observation noise currently anyway)
+random_gps, gp_realizations, function_names, function_plot_names = get_random_gp_functions(
+    gp_sampler, SEED, n_functions, observation_noise)
 
-# Set seed again for reproducibility
-torch.manual_seed(SEED)
-if observation_noise:
-    random_gps = [gp_sampler.sample(deepcopy=True) for _ in range(n_functions)]
-    gp_realizations = [
-        RandomGPFunction(copy.deepcopy(gp), observation_noise)
-        for gp in random_gps]
-    function_names = [f'gp{i}' for i in range(1, n_functions+1)]
-else:
-    # To get reproducible results even if the number of functions changes,
-    # we can sample in this way. (As opposed to sampling the possibly random
-    # GPs all at once and then constructing all the random functions from them.)
-    random_gps = []
-    gp_realizations = []
-    function_names = []
-    for _ in range(n_functions):
-        gp = gp_sampler.sample(deepcopy=True)
-        random_gps.append(gp)
-        gp_realization, realization_hash = get_rff_function_and_name(gp)
-        gp_realizations.append(gp_realization)
-        function_names.append(f'gp_{realization_hash}')
 
-experiment_name = 'EI_GP_realizations'
 acquisition_functions = {
     'Log EI': LogExpectedImprovement,
     # 'EI': ExpectedImprovement
@@ -194,6 +158,7 @@ if n_functions_to_plot == 1:
 
 for func_index in range(n_functions_to_plot):
     func_name = function_names[func_index]
+    func_plot_name = function_plot_names[func_index]
     ax = axes[func_index]
 
     for options_name in options_dict:
@@ -202,11 +167,11 @@ for func_index in range(n_functions_to_plot):
         plot_optimization_trajectories_error_bars(ax, best_y, options_name)
     ax.set_xlabel('Iteration')
     ax.set_ylabel('Best function value')
-    ax.set_title(f'Function {func_name}')
+    ax.set_title(f'Function {func_plot_name}')
     ax.legend()
-plt.title(config_str)
-plt.tight_layout()
-filename = f"individual_functions_optimization_{config_str}.pdf"
+fig.suptitle(config_str)
+fig.tight_layout()
+filename = f"functions_optimization_{config_str}.pdf"
 
 plt.savefig(os.path.join(PLOTS_DIR, filename),
             dpi=300, format='pdf', bbox_inches='tight')
@@ -220,17 +185,18 @@ for options_name in options_dict:
     
     for func_index in range(n_functions_to_plot):
         func_name = function_names[func_index]
+        func_plot_name = function_plot_names[func_index]
         ax = axes[func_index]
         data = results[func_name][options_name]
         best_y = data['best_y']
         plot_optimization_trajectories(ax, best_y, "")
         ax.set_xlabel('Iteration')
         ax.set_ylabel('Best function value')
-        ax.set_title(f'Function {func_name}')
+        ax.set_title(f'Function {func_plot_name}')
         ax.legend()
-    plt.title(f'{config_str}, {options_name}')
-    plt.tight_layout()
-    filename = f"individual_functions_optimization_{config_str}_{options_name}.pdf"
+    fig.suptitle(f'{options_name}\n{config_str}')
+    fig.tight_layout()
+    filename = sanitize_file_name(f"functions_optimization_{config_str}_{options_name}.pdf")
     plt.savefig(os.path.join(PLOTS_DIR, filename),
                 dpi=300, format='pdf', bbox_inches='tight')
 

@@ -11,7 +11,10 @@ from botorch.acquisition.acquisition import AcquisitionFunction
 from botorch.models.model import Model
 from botorch.models.gp_regression import SingleTaskGP
 from botorch.fit import fit_gpytorch_model
+from botorch.sampling.pathwise import draw_kernel_feature_paths
 from gpytorch.mlls import ExactMarginalLogLikelihood
+from dataset_with_models import RandomModelSampler
+from random_gp_function import RandomGPFunction
 from utils import convert_to_json_serializable, dict_to_hash, json_serializable_to_numpy, load_json, remove_priors, save_json
 from json.decoder import JSONDecodeError
 from acquisition_function_net import AcquisitionFunctionNet, AcquisitionFunctionNetModel, LikelihoodFreeNetworkAcquisitionFunction
@@ -282,28 +285,36 @@ class LazyOptimizationResults:
         elif nn_model_name is not None:
             raise ValueError(
                 "nn_model_name must not be provided if not using NNAcquisitionOptimizer.")
-        
-        info_kwargs = dict(include_priors=False, hash_gpytorch_modules=False)
-        opt_config_json = convert_to_json_serializable(opt_config, **info_kwargs)
-        extra_fn_configs = [
-            convert_to_json_serializable(fn_kwargs, **info_kwargs)
-            for fn_kwargs in self.optimizer_kwargs_per_function]
-        self.func_opt_configs = [
-            {**opt_config_json, **fn_config} for fn_config in extra_fn_configs
-        ]
-        self.func_opt_configs_str = list(map(dict_to_hash, self.func_opt_configs))
-
-        self.trial_configs = [
-            convert_to_json_serializable(
-                {'seed': seeds[i], 'initial_points': initial_points[i]}
-            ) for i in range(self.n_trials_per_function)
-        ]
-        self.trial_configs_str = list(map(dict_to_hash, self.trial_configs))
-
+    
         self.save_dir = save_dir
         if save_dir is not None:
+            if objective_names is None:
+                raise ValueError(
+                    "objective_names must be provided when saving results.")
             self._cached_results = {}
+            self._func_results_to_save = [{} for _ in range(self.n_functions)]
             os.makedirs(save_dir, exist_ok=True)
+        
+            info_kwargs = dict(include_priors=False, hash_gpytorch_modules=False)
+            opt_config_json = convert_to_json_serializable(opt_config, **info_kwargs)
+            extra_fn_configs = [
+                convert_to_json_serializable(fn_kwargs, **info_kwargs)
+                for fn_kwargs in self.optimizer_kwargs_per_function]
+            func_opt_configs_list = [
+                {**opt_config_json, **fn_config,
+                 'optimizer_class': str(optimizer_class)}
+                for fn_config in extra_fn_configs
+            ]
+            self.func_opt_configs_str = list(map(dict_to_hash, func_opt_configs_list))
+            self.func_opt_configs = dict(zip(self.func_opt_configs_str, func_opt_configs_list))
+
+            trial_configs_list = [
+                convert_to_json_serializable(
+                    {'seed': seeds[i], 'initial_points': initial_points[i]}
+                ) for i in range(self.n_trials_per_function)
+            ]
+            self.trial_configs_str = list(map(dict_to_hash, trial_configs_list))
+            self.trial_configs = dict(zip(self.trial_configs_str, trial_configs_list))
 
     def __len__(self):
         return self.n_functions
@@ -311,101 +322,131 @@ class LazyOptimizationResults:
     def _results_fname(self, func_name: str):
         return os.path.join(self.save_dir, f'{func_name}.json')
 
+    def _validate_loaded_data(self, func_results: dict):
+        """Make sure the loaded results are consistent with the current
+        configuration"""
+        try:
+            # Check that the trial configs are consistent
+            trial_configs_dict = func_results['trial_configs']
+            for trial_config_str, trial_config in trial_configs_dict.items():
+                if trial_config_str in self.trial_configs:
+                    assert trial_config == self.trial_configs[trial_config_str]
+                else:
+                    assert trial_config_str == dict_to_hash(trial_config)
+
+            # Check that the optimization configurations are consistent
+            results_dict = func_results['results']
+            for func_opt_config_str, opt_results in results_dict.items():
+                opt_config = opt_results['opt_config']
+                if func_opt_config_str in self.func_opt_configs:
+                    assert opt_config == self.func_opt_configs[func_opt_config_str]
+                else:
+                    assert func_opt_config_str == dict_to_hash(opt_config)
+                
+                for trial_config_str in opt_results['trials']:
+                    assert trial_config_str in trial_configs_dict
+        except AssertionError:
+            raise RuntimeError("Loaded results are inconsistent with current configuration.")
+        except KeyError as e:
+            raise RuntimeError("Loaded results are missing keys!") from e
+
     def _get_func_results(self, func_name: str, reload_result: bool) -> dict:
         if reload_result or func_name not in self._cached_results:
             try:
                 func_results = load_json(self._results_fname(func_name))
+                self._validate_loaded_data(func_results)
+                self._cached_results[func_name] = func_results
             except FileNotFoundError:
-                func_results = {}
+                if func_name not in self._cached_results:
+                    self._cached_results[func_name] = {
+                        'trial_configs': {}, 'results': {}}
             except JSONDecodeError as e:
                 raise RuntimeError("Error decoding json!") from e
-            self._cached_results[func_name] = func_results
+
         return self._cached_results[func_name]
 
-    def _get_opt_trial_result(self, func_name: str,
-                            func_opt_config_str: str,
-                            trial_config_str: str):
-        if self.save_dir is None:
-            return None
+    def _get_cached_trial_result(self, func_index: int, trial_index: int):
+        func_name = self.objective_names[func_index]
         func_results = self._get_func_results(func_name, reload_result=False)
-        if func_opt_config_str not in func_results:
+        results_dict = func_results['results']
+        
+        func_opt_config_str = self.func_opt_configs_str[func_index]
+        if func_opt_config_str not in results_dict:
             return None
-        trials_dict = func_results[func_opt_config_str]['trials']
+        trials_dict = results_dict[func_opt_config_str]['trials']
+        
+        trial_config_str = self.trial_configs_str[trial_index]
         if trial_config_str not in trials_dict:
             return None
-        return json_serializable_to_numpy(
-            trials_dict[trial_config_str]['result'])
+        return json_serializable_to_numpy(trials_dict[trial_config_str])
+    
+    def _get_trial_result(self, func_index: int, trial_index: int):
+        trial_result = None
+        if self.save_dir is not None:
+            trial_result = self._get_cached_trial_result(func_index, trial_index)
+        
+        if trial_result is None:
+            torch.manual_seed(self.seeds[trial_index])
+            optimizer = self.optimizer_class(
+                initial_points=self.initial_points[trial_index],
+                objective=self.objectives[func_index],
+                **self.optimizer_kwargs,
+                **self.optimizer_kwargs_per_function[func_index]
+            )
+            optimizer.optimize(self.n_iter)
+            trial_result = {
+                'best_y': optimizer.best_y_history.numpy(),
+                'best_x': optimizer.best_x_history.numpy()
+            }
+            if self.save_dir is not None:
+                h = self.trial_configs_str[trial_index]
+                self._func_results_to_save[func_index][h] = convert_to_json_serializable(trial_result)
+        
+        return trial_result
 
-    def _save_func_opt_trial_results(self,
-            func_name: str, func_opt_config: dict, func_opt_config_str: str,
-            function_trial_results_to_save: dict):
+    def _save_func_results(self, func_index: int):
         if self.save_dir is None:
             return
+        
+        new_trial_results_dict = self._func_results_to_save[func_index]
+        if not new_trial_results_dict:
+            return
+        
+        func_name = self.objective_names[func_index]
         func_results = self._get_func_results(func_name, reload_result=True)
-        function_trial_results_to_save = convert_to_json_serializable(
-            function_trial_results_to_save)
-        if func_opt_config_str not in func_results:
-            func_results[func_opt_config_str] = {
-                'opt_config': func_opt_config,
-                'trials': function_trial_results_to_save
+        
+        results_dict = func_results['results']
+        func_opt_config_str = self.func_opt_configs_str[func_index]
+        if func_opt_config_str not in results_dict:
+            results_dict[func_opt_config_str] = {
+                'opt_config': self.func_opt_configs[func_opt_config_str],
+                'trials': new_trial_results_dict
             }
         else:
-            func_opt_res = func_results[func_opt_config_str]
-            assert func_opt_res['opt_config'] == func_opt_config
-            func_opt_res['trials'].update(function_trial_results_to_save)
+            func_opt_res = results_dict[func_opt_config_str]
+            func_opt_res['trials'].update(new_trial_results_dict)
+        
+        for trial_config_str in new_trial_results_dict:
+            if trial_config_str not in func_results['trial_configs']:
+                func_results['trial_configs'][trial_config_str] = self.trial_configs[trial_config_str]
+        
+        # Probably doesn't matter but it doesn't hurt
+        self._func_results_to_save[func_index] = {}
+
         save_json(func_results, self._results_fname(func_name), indent=4)
 
     def __iter__(self):
         for func_index in range(self.n_functions):
-            if self.objective_names is not None:
-                func_name = self.objective_names[func_index]
-            else:
-                func_name = f"Function_{func_index}"
-
-            objective = self.objectives[func_index]
-            
-            optimizer_kwargs_for_this_function = self.optimizer_kwargs_per_function[func_index]
-            
-            func_opt_config = self.func_opt_configs[func_index]
-            func_opt_config_str = self.func_opt_configs_str[func_index]
-            
             function_best_y_data = []
             function_best_x_data = []
-            function_trial_results_to_save = {}
 
             for trial_index in trange(self.n_trials_per_function,
                                       desc=f"Optimizing function {func_index+1}"):
-                trial_config = self.trial_configs[trial_index]
-                trial_config_str = self.trial_configs_str[trial_index]
-                trial_result = self._get_opt_trial_result(
-                    func_name, func_opt_config_str,
-                    trial_config_str)
-                
-                if trial_result is None:
-                    torch.manual_seed(self.seeds[trial_index])
-                    optimizer = self.optimizer_class(
-                        initial_points=self.initial_points[trial_index],
-                        objective=objective,
-                        **self.optimizer_kwargs,
-                        **optimizer_kwargs_for_this_function
-                    )
-                    optimizer.optimize(self.n_iter)
-                    trial_result_save = {
-                        **trial_config,
-                        'result': {
-                            'best_y': optimizer.best_y_history.numpy(),
-                            'best_x': optimizer.best_x_history.numpy()
-                        }
-                    }
-                    function_trial_results_to_save[trial_config_str] = trial_result_save
-                    trial_result = trial_result_save['result']
-
+                trial_result = self._get_trial_result(func_index, trial_index)
                 function_best_y_data.append(trial_result['best_y'])
                 function_best_x_data.append(trial_result['best_x'])
             
-            self._save_func_opt_trial_results(
-                func_name, func_opt_config, func_opt_config_str,
-                function_trial_results_to_save)
+            self._save_func_results(func_index)
 
             result = {
                 # n_trials_per_function x 1+n_iter
@@ -413,6 +454,11 @@ class LazyOptimizationResults:
                 # n_trials_per_function x 1+n_iter x dim
                 'best_x': np.array(function_best_x_data)
             }
+
+            if self.objective_names is not None:
+                func_name = self.objective_names[func_index]
+            else:
+                func_name = f"Function_{func_index}"
             
             yield func_name, result
 
@@ -453,3 +499,51 @@ def plot_optimization_trajectories(ax, data, label):
         if label != "":
             label_i = f'{label}, {label_i}'
         ax.plot(x, data[i], label=label_i)
+
+
+def get_rff_function_and_name(gp):
+    gp_copy = copy.deepcopy(gp)
+    # Remove priors so that the name of the model doesn't depend on the priors.
+    # The priors are not used in the function anyway.
+    remove_priors(gp_copy)
+    f = draw_kernel_feature_paths(
+        gp_copy, sample_shape=torch.Size(), num_features=4096)
+    function_hash = dict_to_hash(convert_to_json_serializable(f.state_dict()))
+    return (lambda x: f(x).detach()), function_hash
+
+
+def get_random_gp_functions(gp_sampler:RandomModelSampler,
+                            seed:int,
+                            n_functions:int,
+                            observation_noise:bool):
+    """Sample n_functions random GPs and construct random realizations from them
+    Don't use RandomGPFunction because it gives numerical problems if you
+    sample too many times.
+    However, draw_kernel_feature_paths doesn't work with observation noise
+    as far as I can tell.
+    (But we're not even testing observation noise currently anyway)"""
+
+    # Set seed again for reproducibility
+    torch.manual_seed(seed)
+    function_plot_names = [f'gp{i}' for i in range(1, n_functions+1)]
+    if observation_noise:
+        random_gps = [gp_sampler.sample(deepcopy=True) for _ in range(n_functions)]
+        gp_realizations = [
+            RandomGPFunction(copy.deepcopy(gp), observation_noise)
+            for gp in random_gps]
+        function_names = function_plot_names
+    else:
+        # To get reproducible results even if the number of functions changes,
+        # we can sample in this way. (As opposed to sampling the possibly random
+        # GPs all at once and then constructing all the random functions from them.)
+        random_gps = []
+        gp_realizations = []
+        function_names = []
+        for _ in range(n_functions):
+            gp = gp_sampler.sample(deepcopy=True)
+            random_gps.append(gp)
+            gp_realization, realization_hash = get_rff_function_and_name(gp)
+            gp_realizations.append(gp_realization)
+            function_names.append(f'gp_{realization_hash}')
+    return random_gps, gp_realizations, function_names, function_plot_names
+

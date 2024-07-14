@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 import hashlib
 import itertools
+import os
 import re
 import math
 from typing import Any, TypeVar, Iterable, Sequence, List, Tuple, Dict, Optional, Union
@@ -808,8 +809,24 @@ def to_device(tensor, device):
 
 
 def save_json(data, fname, **kwargs):
-    with open(fname, 'w') as json_file:
-        json.dump(data, json_file, **kwargs)
+    already_exists = os.path.exists(fname)
+    save_fname = fname + '.tmp' if already_exists else fname
+    try:
+        # Ensure the directory exists
+        os.makedirs(os.path.dirname(fname), exist_ok=True)
+        
+        # Write data to the (possibly temporary) file
+        with open(save_fname, 'w') as json_file:
+            json.dump(data, json_file, **kwargs)
+
+        if already_exists:
+            # Replace the original file with the temporary file
+            os.replace(save_fname, fname)
+    except Exception as e:
+        if os.path.exists(save_fname):
+            # Remove the written file if an error occurs
+            os.remove(save_fname)
+        raise RuntimeError("Error saving json!") from e
 
 
 def load_json(fname, **kwargs):
