@@ -36,7 +36,7 @@ config = {
     **opt_config
 }
 SEED = config['seed']
-torch.manual_seed(SEED)
+
 
 observation_noise = config['observation_noise']
 n_trials = config['n_trials_per_function']
@@ -44,6 +44,8 @@ n_trials = config['n_trials_per_function']
 config_str = dict_to_fname_str(config)
 
 bounds = torch.stack([torch.zeros(dim), torch.ones(dim)])
+
+torch.manual_seed(SEED)
 init_x = draw_sobol_samples(bounds=bounds, 
                             n=n_trials,
                             q=config['n_initial_samples'])
@@ -96,17 +98,8 @@ options_dict_random = {
     'Random Search': {'optimizer_class': RandomSearch}
 }
 
-# nn_model: AcquisitionFunctionNet = None # TODO
-# options_dict_nn = {
-#     'NN': {
-#         'optimizer_class': NNAcquisitionOptimizer,
-#         'model': nn_model
-#     }
-# }
-
 options_dict = {**options_dict_gp,
-                **options_dict_random,
-                # **options_dict_nn
+                **options_dict_random
 }
 
 results_generator = LazyOptimizationResultsMultipleMethods(

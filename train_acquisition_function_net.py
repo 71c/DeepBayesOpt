@@ -1,16 +1,18 @@
 import math
-from typing import Optional
+import os
+from typing import Any, Optional
 import torch
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from torch.distributions import Categorical
 from acquisition_function_net import AcquisitionFunctionNet
+from dataset_with_models import RandomModelSampler
 from predict_EI_simple import calculate_EI_GP_padded_batch
 from tqdm import tqdm
 from acquisition_dataset import AcquisitionDataset
 from botorch.exceptions import UnsupportedError
 from tictoc import tic, toc
-from utils import int_linspace, calculate_batch_improvement
+from utils import convert_to_json_serializable, int_linspace, calculate_batch_improvement, load_json, save_json
 
 
 def count_trainable_parameters(model):
@@ -761,3 +763,78 @@ def train_acquisition_function_net(
             print_stats(final_test_stats, "Final test stats")
     
     return ret
+
+
+def save_model_and_train_history_and_configs(
+        model_and_info_path: str,
+        model: AcquisitionFunctionNet,
+        training_history_data: dict[str, Any],
+        training_config: dict[str, Any],
+        gp_realization_config: dict[str, Any],
+        dataset_size_config: dict[str, Any],
+        n_points_config: dict[str, Any],
+        dataset_transform_config: dict[str, Any],
+        model_sampler: RandomModelSampler):
+    os.makedirs(model_and_info_path, exist_ok=True)
+    print(f"Saving model and configs to {model_and_info_path}")
+
+    # Save model. TODO: Could potentially save the model with best validation
+    # loss or save periodically
+    model.save(os.path.join(model_and_info_path, "model"))
+
+    # Save training config
+    save_json(training_config,
+              os.path.join(model_and_info_path, "training_config.json"))
+    
+    # Save training history data. TODO: Write a function to plot this
+    save_json(training_history_data,
+              os.path.join(model_and_info_path, "training_history_data.json"),
+              indent=4)
+
+    # Save GP dataset config
+    save_json(convert_to_json_serializable(gp_realization_config),
+              os.path.join(model_and_info_path, "gp_realization_config.json"))
+    model_sampler.save(
+        os.path.join(model_and_info_path, "model_sampler"))
+    save_json(dataset_size_config,
+              os.path.join(model_and_info_path, "dataset_size_config.json"))
+    save_json(n_points_config,
+              os.path.join(model_and_info_path, "n_points_config.json"))
+
+    # Save dataset transform config
+    dataset_transform_config_path = os.path.join(model_and_info_path, "dataset_transform_config.json")
+    save_json(convert_to_json_serializable(dataset_transform_config),
+                dataset_transform_config_path)
+    outcome_transform = dataset_transform_config['outcome_transform']
+    if outcome_transform is not None:
+        torch.save(outcome_transform, os.path.join(model_and_info_path, "outcome_transform.pt"))
+
+
+def load_model(model_and_info_path: str):
+    model_path = os.path.join(model_and_info_path, "model")
+    print(f"Loading model from {model_path}")
+    return AcquisitionFunctionNet.load(model_path)
+
+
+def load_configs(model_and_info_path: str):
+    gp_realization_config = load_json(
+        os.path.join(model_and_info_path, "gp_realization_config.json"))
+    model_sampler = RandomModelSampler.load(
+        os.path.join(model_and_info_path, "model_sampler"))
+    if gp_realization_config['models'] is not None:
+        gp_realization_config['models'] = model_sampler.initial_models
+        gp_realization_config['model_probabilities'] = model_sampler.model_probabilities
+        assert model_sampler.randomize_params == gp_realization_config['randomize_params']
+    dataset_size_config = load_json(
+        os.path.join(model_and_info_path, "dataset_size_config.json"))
+    n_points_config = load_json(
+        os.path.join(model_and_info_path, "n_points_config.json"))
+    
+    dataset_transform_config = load_json(
+        os.path.join(model_and_info_path, "dataset_transform_config.json"))
+    if dataset_transform_config['outcome_transform'] is not None:
+        dataset_transform_config['outcome_transform'] = torch.load(
+            os.path.join(model_and_info_path, "outcome_transform.pt"))
+    
+    return gp_realization_config, dataset_size_config, n_points_config, \
+        dataset_transform_config, model_sampler

@@ -38,6 +38,13 @@ from botorch.models.gp_regression import SingleTaskGP
 from botorch.models.gpytorch import GPyTorchModel, BatchedMultiOutputGPyTorchModel
 
 
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if torch.cuda.is_available():
+    current_device = torch.cuda.current_device()
+    print("Current device:", current_device)
+    print("Current device name:", torch.cuda.get_device_name(current_device))
+
+
 class InverseOutcomeTransform(OutcomeTransform):
     def __init__(self, transform: OutcomeTransform):
         super().__init__()
@@ -533,6 +540,10 @@ def _remove_data(self):
         self.prediction_strategy = None
 Model.remove_data = _remove_data
 
+
+def get_dimension(model: Model):
+    (train_X,) = get_train_inputs(model, transformed=False)
+    return train_X.shape[-1]
 
 
 def remove_priors(module: gpytorch.module.Module) -> list:

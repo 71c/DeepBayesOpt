@@ -651,9 +651,10 @@ def plot_optimization_results_multiple_methods(
     else:
         if plots_title is None:
             plots_title = plots_fname_desc
+            _plots_fname_desc = '_' + sanitize_file_name(plots_fname_desc)
         elif plots_fname_desc is None:
             plots_fname_desc = plots_title
-        _plots_fname_desc = '_' + sanitize_file_name(plots_fname_desc)
+            _plots_fname_desc = ''
     
     if plots_dir is not None:
         os.makedirs(plots_dir, exist_ok=True)
@@ -789,7 +790,8 @@ def get_random_gp_functions(gp_sampler:RandomModelSampler,
     torch.manual_seed(seed)
     function_plot_names = [f'gp{i}' for i in range(1, n_functions+1)]
     if observation_noise:
-        random_gps = [gp_sampler.sample(deepcopy=True) for _ in range(n_functions)]
+        random_gps = [
+            gp_sampler.sample(deepcopy=True).eval() for _ in range(n_functions)]
         gp_realizations = [
             RandomGPFunction(copy.deepcopy(gp), observation_noise)
             for gp in random_gps]
@@ -802,7 +804,7 @@ def get_random_gp_functions(gp_sampler:RandomModelSampler,
         gp_realizations = []
         function_names = []
         for _ in range(n_functions):
-            gp = gp_sampler.sample(deepcopy=True)
+            gp = gp_sampler.sample(deepcopy=True).eval()
             random_gps.append(gp)
             gp_realization, realization_hash = get_rff_function_and_name(gp)
             gp_realizations.append(gp_realization)

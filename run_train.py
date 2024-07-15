@@ -7,10 +7,6 @@ from pstats import SortKey
 from dataset_with_models import RandomModelSampler
 from tictoc import tic, tocl
 from datetime import datetime
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-if torch.cuda.is_available():
-    print(torch.cuda.current_device())
-    print(torch.cuda.get_device_name(torch.cuda.current_device()))
 
 from botorch.models.transforms.outcome import Power
 
@@ -20,9 +16,12 @@ from acquisition_function_net import (
     AcquisitionFunctionNetDense, LikelihoodFreeNetworkAcquisitionFunction)
 from predict_EI_simple import calculate_EI_GP
 from train_acquisition_function_net import (
+    load_configs,
+    load_model,
+    save_model_and_train_history_and_configs,
     train_acquisition_function_net,
     count_trainable_parameters, count_parameters)
-from utils import Exp, save_json, load_json, convert_to_json_serializable
+from utils import DEVICE, Exp, save_json, load_json, convert_to_json_serializable
 from plot_utils import plot_nn_vs_gp_acquisition_function_1d_grid
 
 
@@ -34,10 +33,10 @@ MODELS_DIR = os.path.join(script_dir, "saved_models")
 TRAIN = True
 # Whether to load a saved model to train
 LOAD_SAVED_MODEL_TO_TRAIN = False
-# Whether to load a saved dataset config (only applicable if TRAIN is False)
-TEST_ON_SAVED_DATASET_CONFIG = True
+# Whether to load the saved dataset config specified in the model info directory
+LOAD_SAVED_DATASET_CONFIG = True
 
-MODEL_AND_INFO_NAME = "model_20240713_004045"
+MODEL_AND_INFO_NAME = "model_20240713_012112"
 MODEL_AND_INFO_PATH = os.path.join(MODELS_DIR, MODEL_AND_INFO_NAME)
 
 # Whether to fit maximum a posteriori GP for testing
@@ -179,10 +178,8 @@ training_config = dict(
 
 ################################### Get NN model ###############################
 
-if not TRAIN or LOAD_SAVED_MODEL_TO_TRAIN:
-    model_path = os.path.join(MODEL_AND_INFO_PATH, "model")
-    print(f"Loading model from {model_path}")
-    model = AcquisitionFunctionNet.load(model_path)
+if not TRAIN or LOAD_SAVED_MODEL_TO_TRAIN:    
+    model = load_model(MODEL_AND_INFO_PATH).to(DEVICE)
 else:
     model = AcquisitionFunctionNetV1and2(
                 DIMENSION,
@@ -202,7 +199,7 @@ else:
                 standardize_outcomes=False,
                 include_best_y=False,
                 activation_pointnet="relu",
-                activation_mlp="relu").to(device)
+                activation_mlp="relu").to(DEVICE)
 # model = AcquisitionFunctionNetV4(DIMENSION,
 #                                  history_enc_hidden_dims=[32, 32], pooling="max",
 #                  include_local_features=True,
@@ -213,7 +210,7 @@ else:
 #                  layer_norm_at_end_mlp=False,
 #                  include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
 #                                  learn_alpha=LEARN_ALPHA,
-#                                  initial_alpha=INITIAL_ALPHA).to(device)
+#                                  initial_alpha=INITIAL_ALPHA).to(DEVICE)
 
 # model = AcquisitionFunctionNetV3(DIMENSION,
 #                                  history_enc_hidden_dims=[32, 32], pooling="max",
@@ -224,13 +221,13 @@ else:
 #                  layer_norm_at_end_mlp=False, include_y=True,
 #                  include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
 #                                  learn_alpha=LEARN_ALPHA,
-#                                  initial_alpha=INITIAL_ALPHA).to(device)
+#                                  initial_alpha=INITIAL_ALPHA).to(DEVICE)
 
 # model = AcquisitionFunctionNetDense(DIMENSION, MAX_HISTORY,
 #                                     hidden_dims=[128, 128, 64, 32],
 #                                     include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
 #                                     learn_alpha=LEARN_ALPHA,
-#                                     initial_alpha=INITIAL_ALPHA).to(device)
+#                                     initial_alpha=INITIAL_ALPHA).to(DEVICE)
 
 
 ################################################################################
@@ -241,25 +238,9 @@ print("Number of parameters:", count_parameters(model))
 
 
 ####################### Make the train and test datasets #######################
-if not TRAIN and TEST_ON_SAVED_DATASET_CONFIG:
-    gp_realization_config = load_json(
-        os.path.join(MODEL_AND_INFO_PATH, "gp_realization_config.json"))
-    if gp_realization_config['models'] is not None:
-        model_sampler = RandomModelSampler.load(
-            os.path.join(MODEL_AND_INFO_PATH, "model_sampler"))
-        gp_realization_config['models'] = model_sampler.initial_models
-        gp_realization_config['model_probabilities'] = model_sampler.model_probabilities
-        assert model_sampler.randomize_params == gp_realization_config['randomize_params']
-    dataset_size_config = load_json(
-        os.path.join(MODEL_AND_INFO_PATH, "dataset_size_config.json"))
-    n_points_config = load_json(
-        os.path.join(MODEL_AND_INFO_PATH, "n_points_config.json"))
-    
-    dataset_transform_config = load_json(
-        os.path.join(MODEL_AND_INFO_PATH, "dataset_transform_config.json"))
-    if dataset_transform_config['outcome_transform'] is not None:
-        dataset_transform_config['outcome_transform'] = torch.load(
-            os.path.join(MODEL_AND_INFO_PATH, "outcome_transform.pt"))
+if LOAD_SAVED_DATASET_CONFIG:
+    gp_realization_config, dataset_size_config, n_points_config, \
+        dataset_transform_config, model_sampler = load_configs(MODEL_AND_INFO_PATH)
 
 dataset_kwargs = {
     **gp_realization_config,
@@ -322,7 +303,7 @@ if TRAIN:
     # optimizer = torch.optim.RMSprop(model.parameters(), lr=learning_rate)
     training_history_data = train_acquisition_function_net(
         model, train_aq_dataset, optimizer, POLICY_GRADIENT, EPOCHS, BATCH_SIZE,
-        device, ALPHA_INCREMENT, verbose=VERBOSE, n_train_printouts_per_epoch=10,
+        DEVICE, ALPHA_INCREMENT, verbose=VERBOSE, n_train_printouts_per_epoch=10,
         test_dataset=test_aq_dataset, small_test_dataset=small_test_aq_dataset,
         get_train_stats_while_training=True,
         get_train_stats_after_training=True,
@@ -348,39 +329,11 @@ if TRAIN:
     # Save the model & training, dataset config and history
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     model_and_info_path = os.path.join(MODELS_DIR, f"model_{timestamp}")
-    os.makedirs(model_and_info_path, exist_ok=True)
-    print(f"Saving model to {model_and_info_path}")
-
-    # Save model. TODO: Could potentially save the model with best validation
-    # loss or save periodically
-    model.save(os.path.join(model_and_info_path, "model"))
-
-    # Save training config
-    save_json(training_config,
-              os.path.join(model_and_info_path, "training_config.json"))
     
-    # Save training history data. TODO: Write a function to plot this
-    save_json(training_history_data,
-              os.path.join(model_and_info_path, "training_history_data.json"),
-              indent=4)
-
-    # Save GP dataset config
-    save_json(convert_to_json_serializable(gp_realization_config),
-              os.path.join(model_and_info_path, "gp_realization_config.json"))
-    train_aq_dataset.model_sampler.save(
-        os.path.join(model_and_info_path, "model_sampler"))
-    save_json(dataset_size_config,
-              os.path.join(model_and_info_path, "dataset_size_config.json"))
-    save_json(n_points_config,
-              os.path.join(model_and_info_path, "n_points_config.json"))
-
-    # Save dataset transform config
-    dataset_transform_config_path = os.path.join(model_and_info_path, "dataset_transform_config.json")
-    save_json(convert_to_json_serializable(dataset_transform_config),
-                dataset_transform_config_path)
-    outcome_transform = dataset_transform_config['outcome_transform']
-    if outcome_transform is not None:
-        torch.save(outcome_transform, os.path.join(model_and_info_path, "outcome_transform.pt"))
+    save_model_and_train_history_and_configs(
+        model_and_info_path, model, training_history_data, training_config,
+        gp_realization_config, dataset_size_config, n_points_config,
+        dataset_transform_config, train_aq_dataset.model_sampler)
 
 
 ######################## Plot performance of model #############################
@@ -393,7 +346,7 @@ if DIMENSION == 1:
     fig, axs = plot_nn_vs_gp_acquisition_function_1d_grid(
         test_aq_dataset, model, POLICY_GRADIENT, name,
         n_candidates, nrows, ncols,
-        plot_map=PLOT_MAP, nn_device=device)
+        plot_map=PLOT_MAP, nn_device=DEVICE)
     fname = f'acqusion_function_net_vs_gp_acquisition_function_1d_grid_{nrows}x{ncols}.pdf'
     fig.savefig(fname, bbox_inches='tight')
 else:
@@ -432,4 +385,3 @@ else:
 
 
 plt.show()
-

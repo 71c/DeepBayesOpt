@@ -452,7 +452,7 @@ class AcquisitionFunctionNet(nn.Module, ABC):
         torch.save(self.state_dict(), os.path.join(folder, "model.pth"))
     
     @classmethod
-    def load(cls, folder: str):
+    def load(cls, folder: str) -> 'AcquisitionFunctionNet':
         if cls is not AcquisitionFunctionNet:
             raise UnsupportedError("This method is only supported for the base class.")
         try:
@@ -797,7 +797,6 @@ class AcquisitionFunctionNetV1and2(AcquisitionFunctionNetWithFinalMLP):
             n_pointnets (int, default: 1):
                 The number of PointNets to use. Default is 1.
         """
-        print("DIMENSION", dimension)
         assert isinstance(n_pointnets, int) and n_pointnets >= 1
 
         if not (input_xcand_to_local_nn or input_xcand_to_final_mlp):
