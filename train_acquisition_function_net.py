@@ -1,4 +1,5 @@
 import math
+from multiprocessing import Value
 import os
 from typing import Any, Optional
 import torch
@@ -560,8 +561,51 @@ def train_or_test_loop(dataloader: DataLoader,
     return ret
 
 
-BASIC_STATS = {"ei_random_search", "ei_ideal", "mse_always_predict_0"}
+import logging
 
+# Set to True to enable debug logging
+DEBUG = False
+
+# Based on EarlyStopping class from PyTorch Ignite
+# https://pytorch.org/ignite/_modules/ignite/handlers/early_stopping.html#EarlyStopping
+class EarlyStopper:
+    def __init__(
+        self,
+        patience: int,
+        min_delta: float = 0.0,
+        cumulative_delta: bool = False,
+    ):
+        if patience < 1:
+            raise ValueError("Argument patience should be positive integer.")
+        if min_delta < 0.0:
+            raise ValueError("Argument min_delta should not be a negative number.")
+        
+        self.patience = patience
+        self.min_delta = min_delta
+        self.cumulative_delta = cumulative_delta
+        self.counter = 0
+        self.best_score: Optional[float] = None
+        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger.setLevel(logging.DEBUG if DEBUG else logging.WARNING)
+    
+    def __call__(self, score: float) -> bool:
+        if self.best_score is None:
+            self.best_score = score
+        elif score <= self.best_score + self.min_delta:
+            if not self.cumulative_delta and score > self.best_score:
+                self.best_score = score
+            self.counter += 1
+            self.logger.debug("EarlyStopper: %i / %i" % (self.counter, self.patience))
+            if self.counter >= self.patience:
+                self.logger.info("EarlyStopper: Stop training")
+                return True
+        else:
+            self.best_score = score
+            self.counter = 0
+        return False
+
+
+BASIC_STATS = {"ei_random_search", "ei_ideal", "mse_always_predict_0"}
 def split_nn_stats(stats):
     nn_stats = stats.copy()
     non_nn_stats = {}
@@ -594,7 +638,15 @@ def train_acquisition_function_net(
         get_train_map_gp_stats:bool=False,
         get_test_true_gp_stats:Optional[bool]=None,
         get_test_map_gp_stats:Optional[bool]=None,
-        ):
+
+        save_dir:Optional[str]=None,
+        save_incremental_best_models:bool=True,
+        
+        early_stopping:bool=True,
+        patience:int=10,
+        min_delta:float=0.0,
+        cumulative_delta:bool=False
+    ):
     if not (isinstance(n_epochs, int) and n_epochs >= 1):
         raise ValueError("n_epochs must be a positive integer")
     if not (isinstance(batch_size, int) and batch_size >= 1):
@@ -613,46 +665,18 @@ def train_acquisition_function_net(
                          "either get_train_stats_while_training=True or "
                          "get_train_stats_after_training=True or both.")
 
-    if test_dataset is not None:
-        test_dataloader = test_dataset.get_dataloader(batch_size=batch_size, drop_last=False)
+    test_during_training, test_after_training = get_test_during_after_training(
+        test_dataset, small_test_dataset, test_during_training)
 
-        if small_test_dataset is not None: # Both test and small-test specified
-            # Test during & after training
-            if test_during_training == False:
-                raise ValueError("Small and big test datasets specified but test_during_training == False")
-            test_during_training = True # it can be either None or True
-            test_after_training = True
-            small_test_dataloader = small_test_dataset.get_dataloader(batch_size=batch_size, drop_last=False)
-        else: # Only test but not small-test specified
-            # Whether to test during & after training is ambiguous
-            if test_during_training is None:
-                raise ValueError("test but not small-test dataset is specified but test_during_training is not specified")
-            if test_during_training:
-                # Then the during-train & after-train dataset are the same, and
-                # we can test after training too (which is kind of redundant)
-                small_test_dataset = test_dataset
-                small_test_dataloader = test_dataloader
-            test_after_training = True # want to test after training both cases
-    else: # Test dataset not specified
-        if small_test_dataset is not None: # Small-test but not test specified
-            # Test during but not after training
-            if test_during_training == False:
-                raise ValueError("Small-test but not test specified, but test_during_training == False")
-            test_during_training = True # it can be either None or True
-            test_after_training = False
-            small_test_dataloader = small_test_dataset.get_dataloader(batch_size=batch_size, drop_last=False)
-        else: # Neither are specified
-            # Test neither during nor after training
-            if test_during_training:
-                raise ValueError("No test datasets were specified but got test_during_training == True")
-            test_during_training = False
-            test_after_training = False
+    if test_during_training:
+        if small_test_dataset is None:
+            small_test_dataset = test_dataset
+        small_test_dataloader = small_test_dataset.get_dataloader(
+            batch_size=batch_size, drop_last=False)
 
     if test_during_training or test_after_training:
         if get_test_map_gp_stats is None:
             get_test_map_gp_stats = False # default
-
-        
     elif get_test_true_gp_stats or get_test_map_gp_stats:
         raise ValueError("Can't get GP stats of test dataset because there is none specified")
     
@@ -670,10 +694,22 @@ def train_acquisition_function_net(
 
     if not fix_train_dataset_each_epoch:
         train_dataloader = train_dataset.get_dataloader(batch_size=batch_size, drop_last=False)
+    
+    if save_incremental_best_models and save_dir is None:
+        raise ValueError("Need to specify save_dir if save_incremental_best_models=True")
+    
+    if save_dir is not None:
+        best_score = None
+        best_epoch = None
+        os.makedirs(save_dir, exist_ok=True)
+        training_history_path = os.path.join(save_dir, 'training_history_data.json')
+    
+    if early_stopping:
+        early_stopper = EarlyStopper(patience, min_delta, cumulative_delta)
 
-    train_stats_list = []
-    if test_during_training:
-        test_stats_list = []
+    training_history_data = {
+        'stats_epochs': []
+    }
 
     for t in range(n_epochs):
         if verbose:
@@ -722,7 +758,7 @@ def train_acquisition_function_net(
                 print_stats({**train_stats['after_training'], **non_nn_train_stats},
                             "Train stats after training")
         
-        train_stats_list.append(train_stats)
+        epoch_stats = {'train': train_stats}
 
         if test_during_training:
             test_stats = train_or_test_loop(
@@ -732,37 +768,124 @@ def train_acquisition_function_net(
                 get_true_gp_stats=get_test_true_gp_stats,
                 get_map_gp_stats=get_test_map_gp_stats,
                 get_basic_stats=True)
-            test_stats_list.append(test_stats)
+            epoch_stats['test'] = test_stats
             if verbose:
                 print_stats(test_stats, "Test stats")
-    
-    ret = {
-        'train_stats_epochs': train_stats_list
-    }
-    if test_during_training:
-        ret['test_stats_epochs'] = test_stats_list
-    
-    if test_after_training:
-        # Consider if the test datasets are not fixed.
-        # Then the test-after-training default is not good.
-        if get_test_true_gp_stats is None and not test_dataset.data_is_fixed and test_dataset.has_models:
-            get_test_true_gp_stats_after_training = True
-        else:
-            get_test_true_gp_stats_after_training = get_test_true_gp_stats
         
-        test_dataloader = test_dataset.get_dataloader(batch_size=batch_size, drop_last=False)
-        final_test_stats = train_or_test_loop(
-            test_dataloader, nn_model, train=False,
-            nn_device=nn_device, policy_gradient=policy_gradient,
-            verbose=verbose, desc=f"Compute final test stats",
-            get_true_gp_stats=get_test_true_gp_stats_after_training,
-            get_map_gp_stats=get_test_map_gp_stats,
-            get_basic_stats=True)
-        ret['final_test_stats'] = final_test_stats
+        training_history_data['stats_epochs'].append(epoch_stats)
+        
+        if early_stopping or save_dir is not None:
+            # Determine the ei_max statistic. Decreasing order of preference.
+            # We would usually only do these if test_during_training=True,
+            # but why not cover all cases.
+            if test_during_training:
+                cur_score = test_stats["ei_max"]
+            elif get_train_stats_after_training:
+                cur_score = train_stats["after_training"]["ei_max"]
+            else:
+                cur_score = train_nn_stats_while_training["ei_max"]
+            
+            if save_dir is not None:
+                # If the best score increased, then update that and maybe save
+                if best_score is None or cur_score > best_score:
+                    prev_best_score = best_score
+                    best_score = cur_score
+                    best_epoch = t
+                    if save_incremental_best_models:
+                        if verbose and prev_best_score is not None:
+                            print(f"Best score increased from {prev_best_score}"
+                                f" to {best_score}. Saving weights.")
+                        path = os.path.join(save_dir, f"model_{best_epoch}.pth")
+                        torch.save(nn_model.state_dict(), path)
+                    else:
+                        # If we don't save the best models during training, then
+                        # we still want to save the best state_dict so need to
+                        # keep a deepcopy of the best state_dict.
+                        best_state_dict = copy.deepcopy(nn_model.state_dict())
+                
+                # Saving every epoch because why not
+                save_json(training_history_data, training_history_path)
+
+            if early_stopping and early_stopper(cur_score):
+                if verbose:
+                    print(
+                        "Early stopping at epoch %i; counter is %i / %i" %
+                        (t+1, early_stopper.counter, early_stopper.patience)
+                    )
+                break
+
+    if test_after_training:
+        if test_during_training and (test_dataset is small_test_dataset):
+            # If we already computed it then don't need to compute again
+            final_test_stats = training_history_data['stats_epochs'][-1]['test']
+        else:
+            # Consider if the test datasets are not fixed.
+            # Then the test-after-training default is not good.
+            if get_test_true_gp_stats is None and not test_dataset.data_is_fixed \
+                and test_dataset.has_models:
+                get_test_true_gp_stats_after_training = True
+            else:
+                get_test_true_gp_stats_after_training = get_test_true_gp_stats
+            
+            test_dataloader = test_dataset.get_dataloader(
+                batch_size=batch_size, drop_last=False)
+            final_test_stats = train_or_test_loop(
+                test_dataloader, nn_model, train=False,
+                nn_device=nn_device, policy_gradient=policy_gradient,
+                verbose=verbose, desc=f"Compute final test stats",
+                get_true_gp_stats=get_test_true_gp_stats_after_training,
+                get_map_gp_stats=get_test_map_gp_stats,
+                get_basic_stats=True)
+        training_history_data['final_test_stats'] = final_test_stats
         if verbose:
             print_stats(final_test_stats, "Final test stats")
     
-    return ret
+    if save_dir is not None:
+        save_json(training_history_data, training_history_path)
+
+        best_path = f"model_{best_epoch}.pth"
+        save_json({"best_path": best_path},
+                  os.path.join(save_dir, "best_path.json"))
+        if not save_incremental_best_models:
+            # Save the best model weights if not already saved
+            path = os.path.join(save_dir, best_path)
+            torch.save(best_state_dict, path)
+    
+    return training_history_data
+
+
+def get_test_during_after_training(
+        test_dataset, small_test_dataset, test_during_training):
+    if test_dataset is not None:
+        if small_test_dataset is not None: # Both test and small-test specified
+            # Test during & after training
+            if test_during_training == False:
+                raise ValueError("Small and big test datasets specified but test_during_training == False")
+            test_during_training = True # it can be either None or True
+            test_after_training = True
+        else: # Only test but not small-test specified
+            # Whether to test during & after training is ambiguous
+            if test_during_training is None:
+                raise ValueError("test but not small-test dataset is specified but test_during_training is not specified")
+            if test_during_training:
+                # Then the during-train & after-train dataset are the same, and
+                # we can test after training too (which is kind of redundant)
+                pass # will set small_test_dataset = test_dataset
+            test_after_training = True # want to test after training both cases
+    else: # Test dataset not specified
+        if small_test_dataset is not None: # Small-test but not test specified
+            # Test during but not after training
+            if test_during_training == False:
+                raise ValueError("Small-test but not test specified, but test_during_training == False")
+            test_during_training = True # it can be either None or True
+            test_after_training = False
+        else: # Neither are specified
+            # Test neither during nor after training
+            if test_during_training:
+                raise ValueError("No test datasets were specified but got test_during_training == True")
+            test_during_training = False
+            test_after_training = False
+    return test_during_training, test_after_training
 
 
 def save_model_and_train_history_and_configs(

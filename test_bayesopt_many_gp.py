@@ -21,7 +21,7 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 PLOTS_DIR = os.path.join(script_dir, 'plots')
 RESULTS_DIR = os.path.join(script_dir, 'bayesopt_results')
 
-dim = 3
+dim = 6
 n_functions = 6
 opt_config = {
     'n_iter': 50,
@@ -52,7 +52,8 @@ init_x = draw_sobol_samples(bounds=bounds,
 
 # Construct random GP sampler
 kernel = ScaleKernel(
-        base_kernel=RBFKernel(
+        base_kernel=MaternKernel(
+            nu=2.5,
             ard_num_dims=dim,
             batch_shape=torch.Size(),
             lengthscale_prior=GammaPrior(3.0, 6.0),

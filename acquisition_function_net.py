@@ -12,11 +12,9 @@ from botorch.acquisition.acquisition import AcquisitionFunction
 from botorch.exceptions import UnsupportedError
 from botorch.utils.transforms import t_batch_mode_transform, match_batch_shape
 from abc import ABC, abstractmethod
+from utils import load_json, pad_tensor, save_json
 
 import logging
-
-from utils import load_json, pad_tensor, save_json
-logging.basicConfig(level=logging.WARNING)
 
 # Set to True to enable debug logging
 DEBUG = False

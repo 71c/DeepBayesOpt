@@ -24,6 +24,8 @@ from train_acquisition_function_net import (
 from utils import DEVICE, Exp, save_json, load_json, convert_to_json_serializable
 from plot_utils import plot_nn_vs_gp_acquisition_function_1d_grid
 
+import logging
+logging.basicConfig(level=logging.WARNING)
 
 ##################### Settings for this script #################################
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -34,7 +36,7 @@ TRAIN = True
 # Whether to load a saved model to train
 LOAD_SAVED_MODEL_TO_TRAIN = False
 # Whether to load the saved dataset config specified in the model info directory
-LOAD_SAVED_DATASET_CONFIG = True
+LOAD_SAVED_DATASET_CONFIG = False
 
 MODEL_AND_INFO_NAME = "model_20240713_012112"
 MODEL_AND_INFO_PATH = os.path.join(MODELS_DIR, MODEL_AND_INFO_NAME)
@@ -67,6 +69,7 @@ GP_GEN_DEVICE = "cpu"
 ########################### Test dataset settings ##############################
 test_dataset_config = dict(
     ## How many times bigger the big test dataset is than the train dataset, > 0
+    ## test_factor=1 means same size, test_factor=0.5 means half the size, etc
     test_factor=1.0, # 3.0
     ## The proportion of the test dataset that is used for evaluating the model
     ## after each epoch, between 0 and 1
@@ -96,10 +99,11 @@ gp_realization_config = dict(
 ################## Settings for dataset size and generation ####################
 dataset_size_config = dict(
     # The size of the training acquisition dataset
-    train_acquisition_size=1234,
+    train_acquisition_size=30_000,
     # The amount that the dataset is expanded to save compute of GP realizations
     expansion_factor=2,
     # Whether to fix the training dataset function samples
+    # (as opposed to generating them randomly with each epoch)
     fix_train_samples_dataset=True
 )
 
@@ -139,7 +143,7 @@ dataset_transform_config = dict(
     # instead. Or alternateively, just don't save the acquisition datasets, or
     # transform the acquisition datasets directly. I think it would be easiest to
     # just not save the acquisition datasets anymore.
-    outcome_transform=Exp(),
+    outcome_transform=None,#Exp(),
     standardize_outcomes=True
 )
 # Exp technically works, but Power does not
@@ -154,7 +158,7 @@ dataset_transform_config = dict(
 POLICY_GRADIENT = True # True for the softmax thing, False for MSE EI
 BATCH_SIZE = 32
 LEARNING_RATE = 3e-4
-EPOCHS = 4
+EPOCHS = 100
 FIX_TRAIN_ACQUISITION_DATASET = False
 
 # Only used if POLICY_GRADIENT is True
@@ -310,7 +314,8 @@ if TRAIN:
         ## These both default to reasonable values depending on whether the
         ## acquisition datasets are fixed
         get_train_true_gp_stats=GET_TRAIN_TRUE_GP_STATS,
-        get_test_true_gp_stats=GET_TEST_TRUE_GP_STATS
+        get_test_true_gp_stats=GET_TEST_TRUE_GP_STATS,
+        
     )
 
     if TIME:

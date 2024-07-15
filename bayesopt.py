@@ -11,7 +11,7 @@ from botorch.optim import optimize_acqf
 from botorch.acquisition.acquisition import AcquisitionFunction
 from botorch.models.model import Model
 from botorch.models.gp_regression import SingleTaskGP
-from botorch.fit import fit_gpytorch_model
+from botorch.fit import fit_gpytorch_mll
 from botorch.sampling.pathwise import draw_kernel_feature_paths
 from gpytorch.mlls import ExactMarginalLogLikelihood
 from dataset_with_models import RandomModelSampler
@@ -226,7 +226,7 @@ class GPAcquisitionOptimizer(ModelAcquisitionOptimizer):
         
         if self.fit_params:
             mll = ExactMarginalLogLikelihood(self.model.likelihood, self.model)
-            fit_gpytorch_model(mll)
+            fit_gpytorch_mll(mll)
 
         return self.model
 

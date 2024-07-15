@@ -25,8 +25,8 @@ PLOTS_DIR = os.path.join(script_dir, 'plots')
 RESULTS_DIR = os.path.join(script_dir, 'bayesopt_results')
 MODELS_DIR = os.path.join(script_dir, "saved_models")
 
-# model_and_info_name = "model_20240713_012112" # untransformed
-model_and_info_name = "model_20240713_014550" # transformed
+model_and_info_name = "model_20240715_141051" # untransformed
+# model_and_info_name = "model_20240713_014550" # transformed
 MODEL_AND_INFO_PATH = os.path.join(MODELS_DIR, model_and_info_name)
 
 nn_model = load_model(MODEL_AND_INFO_PATH).to(DEVICE)
@@ -50,10 +50,10 @@ DIFFERENT_GP = False
 RANDOMIZE_PARAMS = True
 OUTCOME_TRANSFORM = Exp()
 
-n_functions = 1
+n_functions = 3
 
 opt_config = {
-    'n_iter': 10,
+    'n_iter': 7,
     'seed': 12,
     'n_trials_per_function': 5,
     'n_initial_samples': 2*(dim+1)
