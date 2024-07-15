@@ -644,17 +644,10 @@ def plot_optimization_results_multiple_methods(
     objective_names_plot = objective_names if objective_names_plot is None else objective_names_plot
     n_objectives_to_plot = min(len(objective_names), max_n_functions_to_plot)
     options_dict = optimization_results.options_dict
-
-    if plots_title is None and plots_fname_desc is None:
-        plots_title = "Optimization results"
-        _plots_fname_desc = ''
-    else:
-        if plots_title is None:
-            plots_title = plots_fname_desc
-            _plots_fname_desc = '_' + sanitize_file_name(plots_fname_desc)
-        elif plots_fname_desc is None:
-            plots_fname_desc = plots_title
-            _plots_fname_desc = ''
+    
+    if plots_title is None:
+        plots_title = 'Optimization results' if plots_fname_desc is None else plots_fname_desc
+    _plots_fname_desc = '' if plots_fname_desc is None else '_' + sanitize_file_name(plots_fname_desc)
     
     if plots_dir is not None:
         os.makedirs(plots_dir, exist_ok=True)
@@ -662,7 +655,36 @@ def plot_optimization_results_multiple_methods(
     area = 50 * scale**2
     height = np.sqrt(area / aspect)
     width = aspect * height
+    
+    # Plot all runs of each optimization method in its own plot
+    for options_name in options_dict:
+        fig, axes = plt.subplots(1, n_objectives_to_plot,
+                            figsize=(width * n_objectives_to_plot, height),
+                            sharex=True, sharey=sharey)
+        if n_objectives_to_plot == 1:
+            axes = [axes]
+        
+        for func_index in range(n_objectives_to_plot):
+            func_name = objective_names[func_index]
+            func_plot_name = objective_names_plot[func_index]
+            ax = axes[func_index]
+            data = results[func_name][options_name]
+            best_y = data['best_y']
+            plot_optimization_trajectories(ax, best_y, "")
+            ax.set_xlabel('Iteration')
+            ax.set_ylabel('Best function value')
+            ax.set_title(f'Function {func_plot_name}')
+            ax.legend()
+        fig.suptitle(f'{plots_title}\n{options_name}')
+        fig.tight_layout()
 
+        if plots_dir is not None:
+            filename = sanitize_file_name(
+                f"functions_optimization{_plots_fname_desc}_{options_name}.pdf")
+            plt.savefig(os.path.join(plots_dir, filename),
+                        dpi=300, format='pdf', bbox_inches='tight')
+    
+    # Plot all optimizatoins means with error bars in one plot
     fig, axes = plt.subplots(1, n_objectives_to_plot,
                         figsize=(width * n_objectives_to_plot, height),
                         sharex=True, sharey=sharey)
@@ -690,33 +712,6 @@ def plot_optimization_results_multiple_methods(
         filename = f"functions_optimization{_plots_fname_desc}.pdf"
         plt.savefig(os.path.join(plots_dir, filename),
                     dpi=300, format='pdf', bbox_inches='tight')
-    
-    for options_name in options_dict:
-        fig, axes = plt.subplots(1, n_objectives_to_plot,
-                            figsize=(width * n_objectives_to_plot, height),
-                            sharex=True, sharey=sharey)
-        if n_objectives_to_plot == 1:
-            axes = [axes]
-        
-        for func_index in range(n_objectives_to_plot):
-            func_name = objective_names[func_index]
-            func_plot_name = objective_names_plot[func_index]
-            ax = axes[func_index]
-            data = results[func_name][options_name]
-            best_y = data['best_y']
-            plot_optimization_trajectories(ax, best_y, "")
-            ax.set_xlabel('Iteration')
-            ax.set_ylabel('Best function value')
-            ax.set_title(f'Function {func_plot_name}')
-            ax.legend()
-        fig.suptitle(f'{plots_title}\n{options_name}')
-        fig.tight_layout()
-
-        if plots_dir is not None:
-            filename = sanitize_file_name(
-                f"functions_optimization{_plots_fname_desc}_{options_name}.pdf")
-            plt.savefig(os.path.join(plots_dir, filename),
-                        dpi=300, format='pdf', bbox_inches='tight')
     
     ## Plot aggregate data (TODO) (might not be necessary)
     ## Old code:

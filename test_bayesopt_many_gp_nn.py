@@ -12,10 +12,10 @@ from bayesopt import (GPAcquisitionOptimizer, LazyOptimizationResultsMultipleMet
                       NNAcquisitionOptimizer, RandomSearch,
                       get_random_gp_functions, plot_optimization_results_multiple_methods)
 
-from utils import (concatenate_outcome_transforms, convert_to_json_serializable, get_dimension, get_gp,
-                   dict_to_fname_str, combine_nested_dicts, DEVICE, Exp, invert_outcome_transform)
+from utils import (concatenate_outcome_transforms, convert_to_json_serializable,
+                   dict_to_hash, dict_to_str, dict_to_fname_str, get_dimension,
+                   get_gp, combine_nested_dicts, DEVICE, Exp, invert_outcome_transform, save_json)
 from dataset_with_models import RandomModelSampler
-from acquisition_function_net import AcquisitionFunctionNet
 
 from gpytorch.kernels import MaternKernel, ScaleKernel, RBFKernel
 from gpytorch.priors.torch_priors import GammaPrior
@@ -44,13 +44,13 @@ if len(dimensions) > 1:
     raise ValueError("Multiple dimensions found in configs")
 dim = dimensions.pop()
 
-n_functions = 1
-
 
 DIFFERENT_GP = False
 # These are the settings to use if DIFFERENT_GP is True:
 RANDOMIZE_PARAMS = True
 OUTCOME_TRANSFORM = Exp()
+
+n_functions = 1
 
 opt_config = {
     'n_iter': 10,
@@ -93,8 +93,6 @@ if DIFFERENT_GP:
 SEED = config['seed']
 observation_noise = config['observation_noise']
 n_trials = config['n_trials_per_function']
-config_json = convert_to_json_serializable(config)
-config_str = dict_to_fname_str(config_json)
 
 bounds = torch.stack([torch.zeros(dim), torch.ones(dim)])
 
@@ -207,6 +205,16 @@ results_generator = LazyOptimizationResultsMultipleMethods(
     options_dict, gp_realizations, init_x, config['n_iter'],
     SEED, objective_names, RESULTS_DIR, dim=dim, bounds=bounds, maximize=True)
 
+
+config_json = {k: v.__class__.__name__ if k == 'outcome_transform' else v
+               for k, v in config.items()}
+config_str = dict_to_str(config_json)
+
+config_with_n_functions_json = {**config_json, 'n_functions': n_functions}
+config_with_n_functions_hash = dict_to_hash(config_with_n_functions_json)
+plots_dir = os.path.join(PLOTS_DIR, config_with_n_functions_hash)
+save_json(config_with_n_functions_json, os.path.join(plots_dir, 'config.json'))
+
 plot_optimization_results_multiple_methods(
     optimization_results=results_generator,
     max_n_functions_to_plot=5,
@@ -217,6 +225,6 @@ plot_optimization_results_multiple_methods(
     objective_names_plot=function_plot_names,
     plots_fname_desc=None,
     plots_title=config_str,
-    plots_dir=PLOTS_DIR
+    plots_dir=plots_dir
 )
 plt.show()

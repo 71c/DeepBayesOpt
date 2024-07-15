@@ -719,9 +719,11 @@ def dict_to_str(d: Dict[str, Any]) -> str:
 def dict_to_fname_str(d: Dict[str, Any]) -> str:
     return sanitize_file_name(dict_to_str(d))
 
+def str_to_hash(s: str) -> str:
+    return hashlib.sha256(s.encode('ascii')).hexdigest()
+
 def dict_to_hash(d: Dict[str, Any]) -> str:
-    dict_bytes = dict_to_str(d).encode('ascii')
-    return hashlib.sha256(dict_bytes).hexdigest()
+    return str_to_hash(dict_to_str(d))
 
 
 def hash_gpytorch_module(module,
