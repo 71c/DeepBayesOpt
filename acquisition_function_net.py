@@ -1,7 +1,8 @@
 from collections import OrderedDict
 import json
+import inspect
 import os
-from typing import List, Optional, Sequence, Union
+from typing import Any, List, Optional, Sequence, Union
 import warnings
 from numpy import isin
 import torch
@@ -416,7 +417,9 @@ class MultiLayerPointNet(nn.Module):
         return global_feat
 
 
+# Dictionary to keep track of subclasses
 CLASSES = {}
+
 class AcquisitionFunctionNet(nn.Module, ABC):
     """Neural network model for the acquisition function in NN-based
     likelihood-free Bayesian optimization."""
@@ -426,45 +429,59 @@ class AcquisitionFunctionNet(nn.Module, ABC):
         original_init = cls.__init__
 
         def new_init(self, *args, **kwargs):
+            # Call the original __init__ method with all keyword arguments
             original_init(self, *args, **kwargs)
+
             if self.__class__ is cls:
-                self._init_args = args
-                self._init_kwargs = kwargs
-        
+                # Convert args to kwargs
+                sig = inspect.signature(original_init)
+                
+                # Can use either bind or bind_partial;
+                # we already ensured that all required arguments are passed
+                # because we already called the original __init__ method.
+                # Need to remember to put 'self' in the arguments.
+                bound_args = sig.bind(self, *args, **kwargs)
+                bound_args.apply_defaults()
+                all_kwargs = bound_args.arguments
+
+                # Remove 'self' from the kwargs
+                all_kwargs.pop('self', None)
+
+                self._init_kwargs = all_kwargs
+
         # Replace the __init__ method with the new one
         cls.__init__ = new_init
 
+        # Register the class in the CLASSES dictionary
         CLASSES[cls.__name__] = cls
-        
+
         # Call the original __init_subclass__ method
         super().__init_subclass__(**kwargs)
     
-    def save(self, folder: str):
-        model_info = {
+    def get_info_dict(self) -> dict[str, Union[str, dict[str, Any]]]:
+        return {
             "class_name": self.__class__.__name__,
-            "args": self._init_args,
             "kwargs": self._init_kwargs
         }
+
+    def save_init(self, folder: str):
         os.makedirs(folder, exist_ok=True)
-        save_json(model_info, os.path.join(folder, "model_info.json"))
-        torch.save(self.state_dict(), os.path.join(folder, "model.pth"))
-    
+        save_json(self.get_info_dict(), os.path.join(folder, "model_init.json"))
+
     @classmethod
-    def load(cls, folder: str) -> 'AcquisitionFunctionNet':
+    def load_init(cls, folder: str) -> 'AcquisitionFunctionNet':
         if cls is not AcquisitionFunctionNet:
             raise UnsupportedError("This method is only supported for the base class.")
         try:
-            model_info = load_json(os.path.join(folder, "model_info.json"))
+            model_info = load_json(os.path.join(folder, "model_init.json"))
             class_name = model_info["class_name"]
         except (FileNotFoundError, json.decoder.JSONDecodeError, KeyError) as e:
-            raise RuntimeError(f"Could not load model") from e
+            raise RuntimeError("Could not load model") from e
         try:
             model_class = CLASSES[class_name]
         except KeyError:
             raise RuntimeError(f"Subclass {class_name} of {cls.__name__} does not exist")
-        model = model_class(*model_info["args"], **model_info["kwargs"])
-        model.load_state_dict(torch.load(os.path.join(folder, "model.pth")))
-        return model
+        return model_class(**model_info["kwargs"])
 
     @abstractmethod
     def forward(self, x_hist, y_hist, x_cand, hist_mask=None, cand_mask=None,

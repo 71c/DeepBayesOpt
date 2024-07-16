@@ -25,8 +25,7 @@ PLOTS_DIR = os.path.join(script_dir, 'plots')
 RESULTS_DIR = os.path.join(script_dir, 'bayesopt_results')
 MODELS_DIR = os.path.join(script_dir, "saved_models")
 
-model_and_info_name = "model_20240715_141051" # untransformed
-# model_and_info_name = "model_20240713_014550" # transformed
+model_and_info_name = "model_20240715_204121_e6101c167831be592f2608748e4175bd77837853ed05e81c56ec7f9f3ee61695" # untransformed
 MODEL_AND_INFO_PATH = os.path.join(MODELS_DIR, model_and_info_name)
 
 nn_model = load_model(MODEL_AND_INFO_PATH).to(DEVICE)

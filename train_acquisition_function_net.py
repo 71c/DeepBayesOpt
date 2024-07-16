@@ -1,3 +1,4 @@
+import copy
 import math
 from multiprocessing import Value
 import os
@@ -13,7 +14,8 @@ from tqdm import tqdm
 from acquisition_dataset import AcquisitionDataset
 from botorch.exceptions import UnsupportedError
 from tictoc import tic, toc
-from utils import convert_to_json_serializable, int_linspace, calculate_batch_improvement, load_json, save_json
+from utils import convert_to_json_serializable, dict_to_hash, int_linspace, calculate_batch_improvement, load_json, save_json
+from datetime import datetime
 
 
 def count_trainable_parameters(model):
@@ -698,9 +700,10 @@ def train_acquisition_function_net(
     if save_incremental_best_models and save_dir is None:
         raise ValueError("Need to specify save_dir if save_incremental_best_models=True")
     
+    best_score = None
+    best_epoch = None
+    
     if save_dir is not None:
-        best_score = None
-        best_epoch = None
         os.makedirs(save_dir, exist_ok=True)
         training_history_path = os.path.join(save_dir, 'training_history_data.json')
     
@@ -773,51 +776,63 @@ def train_acquisition_function_net(
                 print_stats(test_stats, "Test stats")
         
         training_history_data['stats_epochs'].append(epoch_stats)
-        
-        if early_stopping or save_dir is not None:
-            # Determine the ei_max statistic. Decreasing order of preference.
-            # We would usually only do these if test_during_training=True,
-            # but why not cover all cases.
-            if test_during_training:
-                cur_score = test_stats["ei_max"]
-            elif get_train_stats_after_training:
-                cur_score = train_stats["after_training"]["ei_max"]
-            else:
-                cur_score = train_nn_stats_while_training["ei_max"]
-            
-            if save_dir is not None:
-                # If the best score increased, then update that and maybe save
-                if best_score is None or cur_score > best_score:
-                    prev_best_score = best_score
-                    best_score = cur_score
-                    best_epoch = t
-                    if save_incremental_best_models:
-                        if verbose and prev_best_score is not None:
-                            print(f"Best score increased from {prev_best_score}"
-                                f" to {best_score}. Saving weights.")
-                        path = os.path.join(save_dir, f"model_{best_epoch}.pth")
-                        torch.save(nn_model.state_dict(), path)
-                    else:
-                        # If we don't save the best models during training, then
-                        # we still want to save the best state_dict so need to
-                        # keep a deepcopy of the best state_dict.
-                        best_state_dict = copy.deepcopy(nn_model.state_dict())
-                
-                # Saving every epoch because why not
-                save_json(training_history_data, training_history_path)
 
-            if early_stopping and early_stopper(cur_score):
-                if verbose:
-                    print(
-                        "Early stopping at epoch %i; counter is %i / %i" %
-                        (t+1, early_stopper.counter, early_stopper.patience)
-                    )
-                break
+        # Determine the ei_max statistic. Decreasing order of preference.
+        # We would usually only do these if test_during_training=True,
+        # but why not cover all cases.
+        if test_during_training:
+            cur_score = test_stats["ei_max"]
+        elif get_train_stats_after_training:
+            cur_score = train_stats["after_training"]["ei_max"]
+        else:
+            cur_score = train_nn_stats_while_training["ei_max"]
+        
+        # If the best score increased, then update that and maybe save
+        if best_score is None or cur_score > best_score:
+            prev_best_score = best_score
+            best_score = cur_score
+            best_epoch = t
+
+            if verbose and prev_best_score is not None:
+                msg = (f"Best score increased from {prev_best_score:>8f}"
+                        f" to {best_score:>8f}.")
+
+            if save_incremental_best_models:
+                fname = f"model_{best_epoch}.pth"
+                if verbose and prev_best_score is not None:
+                    print(msg + f" Saving weights to {fname}.")
+                torch.save(nn_model.state_dict(), os.path.join(save_dir, fname))
+            else:
+                if verbose and prev_best_score is not None:
+                    print(msg)
+                # If we don't save the best models during training, then
+                # we still want to save the best state_dict so need to
+                # keep a deepcopy of the best state_dict.
+                best_state_dict = copy.deepcopy(nn_model.state_dict())
+        
+        if save_dir is not None:
+            # Saving every epoch because why not
+            save_json(training_history_data, training_history_path, indent=4)
+        
+        if early_stopping and early_stopper(cur_score):
+            if verbose:
+                print(
+                    "Early stopping at epoch %i; counter is %i / %i" %
+                    (t+1, early_stopper.counter, early_stopper.patience)
+                )
+            break
+    
+    best_model_fname = f"model_{best_epoch}.pth"
+    
+    # Load the best model weights to return
+    if save_incremental_best_models:
+        best_state_dict = torch.load(os.path.join(save_dir, best_model_fname))
+    nn_model.load_state_dict(best_state_dict)
 
     if test_after_training:
         if test_during_training and (test_dataset is small_test_dataset):
             # If we already computed it then don't need to compute again
-            final_test_stats = training_history_data['stats_epochs'][-1]['test']
+            final_test_stats = training_history_data['stats_epochs'][best_epoch]['test']
         else:
             # Consider if the test datasets are not fixed.
             # Then the test-after-training default is not good.
@@ -841,14 +856,13 @@ def train_acquisition_function_net(
             print_stats(final_test_stats, "Final test stats")
     
     if save_dir is not None:
-        save_json(training_history_data, training_history_path)
+        save_json(training_history_data, training_history_path, indent=4)
 
-        best_path = f"model_{best_epoch}.pth"
-        save_json({"best_path": best_path},
-                  os.path.join(save_dir, "best_path.json"))
+        save_json({"best_model_fname": best_model_fname},
+                  os.path.join(save_dir, "best_model_fname.json"))
         if not save_incremental_best_models:
             # Save the best model weights if not already saved
-            path = os.path.join(save_dir, best_path)
+            path = os.path.join(save_dir, best_model_fname)
             torch.save(best_state_dict, path)
     
     return training_history_data
@@ -888,55 +902,90 @@ def get_test_during_after_training(
     return test_during_training, test_after_training
 
 
-def save_model_and_train_history_and_configs(
-        model_and_info_path: str,
+def save_acquisition_function_net_configs(
+        models_directory: str,
         model: AcquisitionFunctionNet,
-        training_history_data: dict[str, Any],
         training_config: dict[str, Any],
         gp_realization_config: dict[str, Any],
         dataset_size_config: dict[str, Any],
         n_points_config: dict[str, Any],
         dataset_transform_config: dict[str, Any],
         model_sampler: RandomModelSampler):
+    gp_realization_config_json = convert_to_json_serializable(gp_realization_config)
+    dataset_transform_config_json = convert_to_json_serializable(dataset_transform_config)
+    model_sampler_json = convert_to_json_serializable({
+            '_models': model_sampler._models,
+            '_initial_params_list': model_sampler._initial_params_list,
+            'model_probabilities': model_sampler.model_probabilities,
+            'randomize_params': model_sampler.randomize_params
+        },
+        include_priors=True, hash_gpytorch_modules=True,
+        hash_include_str=False, hash_str=True)
+    
+    all_info_json = {
+        'model': model.get_info_dict(),
+        'training_config': training_config,
+        'gp_realization_config': gp_realization_config_json,
+        'dataset_size_config': dataset_size_config,
+        'n_points_config': n_points_config,
+        'dataset_transform_config': dataset_transform_config_json,
+        'model_sampler': model_sampler_json
+    }
+    all_info_hash = dict_to_hash(all_info_json)
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    model_and_info_folder_name = f"model_{timestamp}_{all_info_hash}"
+    model_and_info_path = os.path.join(models_directory, model_and_info_folder_name)
     os.makedirs(model_and_info_path, exist_ok=True)
-    print(f"Saving model and configs to {model_and_info_path}")
 
-    # Save model. TODO: Could potentially save the model with best validation
-    # loss or save periodically
-    model.save(os.path.join(model_and_info_path, "model"))
+    print(f"Saving model and configs to {model_and_info_folder_name}")
+
+    # Save model config
+    model_path = os.path.join(model_and_info_path, "model")
+    model.save_init(model_path)
 
     # Save training config
     save_json(training_config,
               os.path.join(model_and_info_path, "training_config.json"))
-    
-    # Save training history data. TODO: Write a function to plot this
-    save_json(training_history_data,
-              os.path.join(model_and_info_path, "training_history_data.json"),
-              indent=4)
 
     # Save GP dataset config
-    save_json(convert_to_json_serializable(gp_realization_config),
+    save_json(gp_realization_config_json,
               os.path.join(model_and_info_path, "gp_realization_config.json"))
-    model_sampler.save(
-        os.path.join(model_and_info_path, "model_sampler"))
     save_json(dataset_size_config,
               os.path.join(model_and_info_path, "dataset_size_config.json"))
     save_json(n_points_config,
               os.path.join(model_and_info_path, "n_points_config.json"))
+    model_sampler.save(
+        os.path.join(model_and_info_path, "model_sampler"))
 
     # Save dataset transform config
-    dataset_transform_config_path = os.path.join(model_and_info_path, "dataset_transform_config.json")
-    save_json(convert_to_json_serializable(dataset_transform_config),
-                dataset_transform_config_path)
+    save_json(dataset_transform_config_json,
+             os.path.join(model_and_info_path, "dataset_transform_config.json"))
     outcome_transform = dataset_transform_config['outcome_transform']
     if outcome_transform is not None:
-        torch.save(outcome_transform, os.path.join(model_and_info_path, "outcome_transform.pt"))
+        torch.save(outcome_transform,
+                   os.path.join(model_and_info_path, "outcome_transform.pt"))
+    
+    return model_and_info_folder_name, model_and_info_path, model_path
 
 
 def load_model(model_and_info_path: str):
     model_path = os.path.join(model_and_info_path, "model")
     print(f"Loading model from {model_path}")
-    return AcquisitionFunctionNet.load(model_path)
+    
+    # Load model (without weights)
+    model = AcquisitionFunctionNet.load_init(model_path)
+    
+    # Load best weights
+    best_model_fname_json_path = os.path.join(model_path, "best_model_fname.json")
+    if os.path.exists(best_model_fname_json_path):
+        best_model_fname = load_json(best_model_fname_json_path)['best_model_fname']
+        best_model_path = os.path.join(model_path, best_model_fname)
+        print(f"Loading best model from {best_model_path}")
+        model.load_state_dict(torch.load(best_model_path))
+    else:
+        raise ValueError("No best model found")
+    
+    return model
 
 
 def load_configs(model_and_info_path: str):

@@ -6,7 +6,7 @@ import cProfile, pstats, io
 from pstats import SortKey
 from dataset_with_models import RandomModelSampler
 from tictoc import tic, tocl
-from datetime import datetime
+
 
 from botorch.models.transforms.outcome import Power
 
@@ -18,7 +18,7 @@ from predict_EI_simple import calculate_EI_GP
 from train_acquisition_function_net import (
     load_configs,
     load_model,
-    save_model_and_train_history_and_configs,
+    save_acquisition_function_net_configs,
     train_acquisition_function_net,
     count_trainable_parameters, count_parameters)
 from utils import DEVICE, Exp, save_json, load_json, convert_to_json_serializable
@@ -38,7 +38,7 @@ LOAD_SAVED_MODEL_TO_TRAIN = False
 # Whether to load the saved dataset config specified in the model info directory
 LOAD_SAVED_DATASET_CONFIG = False
 
-MODEL_AND_INFO_NAME = "model_20240713_012112"
+MODEL_AND_INFO_NAME = "model_20240715_204121_e6101c167831be592f2608748e4175bd77837853ed05e81c56ec7f9f3ee61695"
 MODEL_AND_INFO_PATH = os.path.join(MODELS_DIR, MODEL_AND_INFO_NAME)
 
 # Whether to fit maximum a posteriori GP for testing
@@ -88,7 +88,7 @@ gp_realization_config = dict(
     # Dimension of the optimization problem
     dimension=DIMENSION,
     # whether to randomize the GP parameters for training data
-    randomize_params=True,
+    randomize_params=False,
     # choose either "uniform" or "normal" (or a custom distribution)
     xvalue_distribution="uniform",
     observation_noise=False,
@@ -99,7 +99,7 @@ gp_realization_config = dict(
 ################## Settings for dataset size and generation ####################
 dataset_size_config = dict(
     # The size of the training acquisition dataset
-    train_acquisition_size=30_000,
+    train_acquisition_size=2000,
     # The amount that the dataset is expanded to save compute of GP realizations
     expansion_factor=2,
     # Whether to fix the training dataset function samples
@@ -168,14 +168,26 @@ LEARN_ALPHA = True
 INITIAL_ALPHA = 1.0
 ALPHA_INCREMENT = None # equivalent to 0.0
 
+EARLY_STOPPING = True
+PATIENCE = 20
+MIN_DELTA = 0.0
+CUMULATIVE_DELTA = False
+
 training_config = dict(
     policy_gradient=POLICY_GRADIENT,
     batch_size=BATCH_SIZE,
     learning_rate=LEARNING_RATE,
     epochs=EPOCHS,
     fix_train_acquisition_dataset=FIX_TRAIN_ACQUISITION_DATASET,
-    alpha_increment=ALPHA_INCREMENT
+    alpha_increment=ALPHA_INCREMENT,
+    early_stopping=EARLY_STOPPING
 )
+if EARLY_STOPPING:
+    training_config = dict(
+        **training_config,
+        patience=PATIENCE,
+        min_delta=MIN_DELTA,
+        cumulative_delta=CUMULATIVE_DELTA)
 ################################################################################
 
 
@@ -200,7 +212,7 @@ else:
                 layer_norm_pointnet=False,
                 layer_norm_before_end_mlp=False,
                 layer_norm_at_end_mlp=False,
-                standardize_outcomes=False,
+                standardize_outcomes=True,
                 include_best_y=False,
                 activation_pointnet="relu",
                 activation_mlp="relu").to(DEVICE)
@@ -302,6 +314,13 @@ if TRAIN:
     
     if TIME:
         tic("Training!")
+    
+    # Save the configs for the model and training and datasets
+    (model_and_info_folder_name,
+     model_and_info_path, model_path) = save_acquisition_function_net_configs(
+        MODELS_DIR, model, training_config,
+        gp_realization_config, dataset_size_config, n_points_config,
+        dataset_transform_config, train_aq_dataset.model_sampler)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
     # optimizer = torch.optim.RMSprop(model.parameters(), lr=learning_rate)
@@ -315,7 +334,12 @@ if TRAIN:
         ## acquisition datasets are fixed
         get_train_true_gp_stats=GET_TRAIN_TRUE_GP_STATS,
         get_test_true_gp_stats=GET_TEST_TRUE_GP_STATS,
-        
+        save_dir=model_path,
+        save_incremental_best_models=False,
+        early_stopping=EARLY_STOPPING,
+        patience=PATIENCE,
+        min_delta=MIN_DELTA,
+        cumulative_delta=CUMULATIVE_DELTA,
     )
 
     if TIME:
@@ -330,15 +354,6 @@ if TRAIN:
         print(s.getvalue())
 
     print("Done training!")
-
-    # Save the model & training, dataset config and history
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    model_and_info_path = os.path.join(MODELS_DIR, f"model_{timestamp}")
-    
-    save_model_and_train_history_and_configs(
-        model_and_info_path, model, training_history_data, training_config,
-        gp_realization_config, dataset_size_config, n_points_config,
-        dataset_transform_config, train_aq_dataset.model_sampler)
 
 
 ######################## Plot performance of model #############################
