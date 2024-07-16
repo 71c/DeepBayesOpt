@@ -23,7 +23,7 @@ from train_acquisition_function_net import (
     train_acquisition_function_net,
     count_trainable_parameters, count_parameters,
     train_or_test_loop)
-from utils import DEVICE, Exp, save_json, load_json, convert_to_json_serializable
+from utils import DEVICE, Exp, get_dimension, save_json, load_json, convert_to_json_serializable
 from plot_utils import plot_nn_vs_gp_acquisition_function_1d_grid
 
 import logging
@@ -33,15 +33,16 @@ logging.basicConfig(level=logging.WARNING)
 script_dir = os.path.dirname(os.path.abspath(__file__))
 MODELS_DIR = os.path.join(script_dir, "saved_models")
 
-# Whether to train the model. If False, will load a saved model.
+# Whether to train the model.
 TRAIN = False
-# Whether to load a saved model to train
-LOAD_SAVED_MODEL_TO_TRAIN = False
+# Whether to load a saved model.
+LOAD_SAVED_MODEL = True
 # Whether to load the saved dataset config specified in the model info directory
-LOAD_SAVED_DATASET_CONFIG = False
+LOAD_SAVED_DATASET_CONFIG = True
 
-MODEL_AND_INFO_NAME = "model_20240716_010917_a3cf2269d9ef18d89800d5059878d662df8e9bbab2624e6adfd0a6653fcea168"
+# MODEL_AND_INFO_NAME = "model_20240716_010917_a3cf2269d9ef18d89800d5059878d662df8e9bbab2624e6adfd0a6653fcea168"
 # MODEL_AND_INFO_NAME = "model_20240716_012546_cea676c3cb0ad3ae82f9463cd125e83ca6569663016c684e4f2113f01f716272"
+MODEL_AND_INFO_NAME = "model_20240716_150606_e5465772fa96e75ee50f68eca55f6da432c90d4d52b5a873137a397722f1e7e8"
 MODEL_AND_INFO_PATH = os.path.join(MODELS_DIR, MODEL_AND_INFO_NAME)
 
 # Whether to fit maximum a posteriori GP for testing
@@ -69,96 +70,15 @@ LAZY_TEST = True
 GP_GEN_DEVICE = "cpu"
 
 
-########################### Test dataset settings ##############################
-test_dataset_config = dict(
-    ## How many times bigger the big test dataset is than the train dataset, > 0
-    ## test_factor=1 means same size, test_factor=0.5 means half the size, etc
-    test_factor=1.0, # 3.0
-    ## The proportion of the test dataset that is used for evaluating the model
-    ## after each epoch, between 0 and 1
-    small_test_proportion_of_test=1.0,
-    # The following two should be kept as they are -- ALWAYS want to fix the
-    # test. As long as the acqisition dataset is fixed, then whether the
-    # function samples dataset is fixed doesn't matter.
-    fix_test_samples_dataset=False,
-    fix_test_acquisition_dataset=True,
-)
-
-DIMENSION = 1
-
-###################### GP realization characteristics ##########################
-gp_realization_config = dict(
-    # Dimension of the optimization problem
-    dimension=DIMENSION,
-    # whether to randomize the GP parameters for training data
-    randomize_params=True,
-    # choose either "uniform" or "normal" (or a custom distribution)
-    xvalue_distribution="uniform",
-    observation_noise=False,
-    models=None,
-    model_probabilities=None
-)
-
-################## Settings for dataset size and generation ####################
-dataset_size_config = dict(
-    # The size of the training acquisition dataset
-    train_acquisition_size=2000,
-    # The amount that the dataset is expanded to save compute of GP realizations
-    expansion_factor=2,
-    # Whether to fix the training dataset function samples
-    # (as opposed to generating them randomly with each epoch)
-    fix_train_samples_dataset=True
-)
-
-########## Set number of history and candidate points generation ###############
-n_points_config = dict(
-    # This means whether n history points (or whether the total number of
-    # points) is log-uniform
-    loguniform=True,
-    # Whether to fix the number of candidate points (as opposed to randomized)
-    fix_n_candidates=True
-)
-if n_points_config['loguniform']:
-    n_points_config['pre_offset'] = 3.0
-if n_points_config['fix_n_candidates']:
-    # If fix_n_candidates is True, then the following are used:
-    n_points_config = dict(
-        # Number of candidate points for training. For MSE EI, could just set to 1.
-        train_n_candidates=50,
-        # Number of candidate points for testing.
-        test_n_candidates=50,
-        min_history=1,
-        max_history=8,
-        **n_points_config
-    )
-else:
-    # If fix_n_candidates is False, then the following are used:
-    n_points_config = dict(
-        min_n_candidates=2,
-        max_points=30,
-        **n_points_config
-    )
-
-dataset_transform_config = dict(
-    # Choose an outcome transform. Can be None if no outcome transform
-    # TODO (bug): str(Power(2)) = "Power()" but we'd like it to be "Power(2)" so it
-    # can be saved uniquely. Maybe use the attributes of the class or something
-    # instead. Or alternateively, just don't save the acquisition datasets, or
-    # transform the acquisition datasets directly. I think it would be easiest to
-    # just not save the acquisition datasets anymore.
-    outcome_transform=None,#Exp(),
-    standardize_outcomes=True
-)
-# Exp technically works, but Power does not
-# Make sure to set these appropriately depending on whether the transform
-# supports mean transform
-# if dataset_transform_config['outcome_transform'] is not None:
-#     GET_TRAIN_TRUE_GP_STATS = False
-#     GET_TEST_TRUE_GP_STATS = False
-
-
 ############################# Settings for training ############################
-POLICY_GRADIENT = True # True for the softmax thing, False for MSE EI
+# Set POLICY_GRADIENT based on the loaded model if loadin a model
+if LOAD_SAVED_MODEL:
+    POLICY_GRADIENT = load_json(
+        os.path.join(MODEL_AND_INFO_PATH, "training_config.json")
+    )['policy_gradient']
+else:
+    POLICY_GRADIENT = True # True for the softmax thing, False for MSE EI
+
 BATCH_SIZE = 32
 LEARNING_RATE = 3e-4
 EPOCHS = 100
@@ -194,10 +114,160 @@ if EARLY_STOPPING:
 ################################################################################
 
 
+########################### Test dataset settings ##############################
+test_dataset_config = dict(
+    ## How many times bigger the big test dataset is than the train dataset, > 0
+    ## test_factor=1 means same size, test_factor=0.5 means half the size, etc
+    test_factor=1.0, # 3.0
+    ## The proportion of the test dataset that is used for evaluating the model
+    ## after each epoch, between 0 and 1
+    small_test_proportion_of_test=1.0,
+    # The following two should be kept as they are -- ALWAYS want to fix the
+    # test. As long as the acqisition dataset is fixed, then whether the
+    # function samples dataset is fixed doesn't matter.
+    fix_test_samples_dataset=False,
+    fix_test_acquisition_dataset=True,
+)
+
+if LOAD_SAVED_DATASET_CONFIG:
+    gp_realization_config, dataset_size_config, n_points_config, \
+        dataset_transform_config, model_sampler = load_configs(MODEL_AND_INFO_PATH)
+    DIMENSION = get_dimension(model_sampler.get_model(0))
+else:
+    # Need the dimension to match if loading a saved model
+    if LOAD_SAVED_MODEL:
+        _model_sampler = RandomModelSampler.load(
+            os.path.join(MODEL_AND_INFO_PATH, "model_sampler"))
+        DIMENSION = get_dimension(_model_sampler.get_model(0))
+    else:
+        DIMENSION = 3
+
+    ###################### GP realization characteristics ##########################
+    gp_realization_config = dict(
+        # Dimension of the optimization problem
+        dimension=DIMENSION,
+        # whether to randomize the GP parameters for training data
+        randomize_params=False,
+        # choose either "uniform" or "normal" (or a custom distribution)
+        xvalue_distribution="uniform",
+        observation_noise=False,
+        models=None,
+        model_probabilities=None
+    )
+
+    ################## Settings for dataset size and generation ####################
+    dataset_size_config = dict(
+        # The size of the training acquisition dataset
+        train_acquisition_size=2000,
+        # The amount that the dataset is expanded to save compute of GP realizations
+        expansion_factor=2,
+        # Whether to fix the training dataset function samples
+        # (as opposed to generating them randomly with each epoch)
+        fix_train_samples_dataset=True
+    )
+
+    ########## Set number of history and candidate points generation ###############
+    n_points_config = dict(
+        # This means whether n history points (or whether the total number of
+        # points) is log-uniform
+        loguniform=True,
+        # Whether to fix the number of candidate points (as opposed to randomized)
+        fix_n_candidates=True
+    )
+    if n_points_config['loguniform']:
+        n_points_config['pre_offset'] = 3.0
+    if n_points_config['fix_n_candidates']:
+        # If fix_n_candidates is True, then the following are used:
+        n_points_config = dict(
+            # Number of candidate points for training. For MSE EI, could just set to 1.
+            train_n_candidates=50,
+            # Number of candidate points for testing.
+            test_n_candidates=50,
+            min_history=1,
+            max_history=8,
+            **n_points_config
+        )
+    else:
+        # If fix_n_candidates is False, then the following are used:
+        n_points_config = dict(
+            min_n_candidates=2,
+            max_points=30,
+            **n_points_config
+        )
+
+    dataset_transform_config = dict(
+        # Choose an outcome transform. Can be None if no outcome transform
+        # TODO (bug): str(Power(2)) = "Power()" but we'd like it to be "Power(2)" so it
+        # can be saved uniquely. Maybe use the attributes of the class or something
+        # instead. Or alternateively, just don't save the acquisition datasets, or
+        # transform the acquisition datasets directly. I think it would be easiest to
+        # just not save the acquisition datasets anymore.
+        outcome_transform=None,#Exp(),
+        standardize_outcomes=True
+    )
+# Exp technically works, but Power does not
+# Make sure to set these appropriately depending on whether the transform
+# supports mean transform
+# if dataset_transform_config['outcome_transform'] is not None:
+#     GET_TRAIN_TRUE_GP_STATS = False
+#     GET_TEST_TRUE_GP_STATS = False
+
+
+
+
+####################### Make the train and test datasets #######################
+dataset_kwargs = {
+    **gp_realization_config,
+    **dataset_size_config,
+    **n_points_config,
+    **dataset_transform_config}
+
+other_kwargs = dict(
+        **test_dataset_config,
+        
+        get_train_true_gp_stats=GET_TRAIN_TRUE_GP_STATS,
+        get_test_true_gp_stats=GET_TEST_TRUE_GP_STATS,
+        cache_datasets=CACHE_DATASETS,
+        lazy_train=LAZY_TRAIN,
+        lazy_test=LAZY_TEST,
+        gp_gen_device=GP_GEN_DEVICE,
+        
+        batch_size=BATCH_SIZE,
+        fix_train_acquisition_dataset=FIX_TRAIN_ACQUISITION_DATASET)
+
+train_aq_dataset, test_aq_dataset, small_test_aq_dataset = create_train_and_test_gp_acquisition_datasets(
+    **dataset_kwargs, **other_kwargs)
+
+# print("Training function samples dataset size:", len(train_dataset))
+print("Original training acquisition dataset size parameter:", dataset_size_config['train_acquisition_size'])
+print("Training acquisition dataset size:", len(train_aq_dataset),
+    "number of batches:", len(train_aq_dataset) // BATCH_SIZE, len(train_aq_dataset) % BATCH_SIZE)
+
+# print("Test function samples dataset size:", len(test_dataset))
+print("Test acquisition dataset size:", len(test_aq_dataset),
+    "number of batches:", len(test_aq_dataset) // BATCH_SIZE, len(test_aq_dataset) % BATCH_SIZE)
+if small_test_aq_dataset != test_aq_dataset:
+    print("Small test acquisition dataset size:", len(small_test_aq_dataset),
+            "number of batches:", len(small_test_aq_dataset) // BATCH_SIZE, len(small_test_aq_dataset) % BATCH_SIZE)
+
+# for item in train_aq_dataset.base_dataset:
+#     print(item.y_values.mean(), item.y_values.std(), item.y_values.shape)
+# exit()
+
+# print("Train acquisition dataset:")
+# print(train_aq_dataset)
+# print("\nTest acquisition dataset:")
+# print(test_aq_dataset)
+# if small_test_aq_dataset != test_aq_dataset:
+#     print("\nSmall test acquisition dataset:")
+#     print(small_test_aq_dataset)
+# print("\n")
+
+
 
 ################################### Get NN model ###############################
 
-if not TRAIN or LOAD_SAVED_MODEL_TO_TRAIN:    
+if LOAD_SAVED_MODEL:
     model = load_model(MODEL_AND_INFO_PATH).to(DEVICE)
 else:
     model = AcquisitionFunctionNetV1and2(
@@ -248,65 +318,12 @@ else:
 #                                     learn_alpha=LEARN_ALPHA,
 #                                     initial_alpha=INITIAL_ALPHA).to(DEVICE)
 
-
-################################################################################
-
 print(model)
 print("Number of trainable parameters:", count_trainable_parameters(model))
 print("Number of parameters:", count_parameters(model))
 
 
-####################### Make the train and test datasets #######################
-if LOAD_SAVED_DATASET_CONFIG:
-    gp_realization_config, dataset_size_config, n_points_config, \
-        dataset_transform_config, model_sampler = load_configs(MODEL_AND_INFO_PATH)
 
-dataset_kwargs = {
-    **gp_realization_config,
-    **dataset_size_config,
-    **n_points_config,
-    **dataset_transform_config}
-
-other_kwargs = dict(
-        **test_dataset_config,
-        
-        get_train_true_gp_stats=GET_TRAIN_TRUE_GP_STATS,
-        get_test_true_gp_stats=GET_TEST_TRUE_GP_STATS,
-        cache_datasets=CACHE_DATASETS,
-        lazy_train=LAZY_TRAIN,
-        lazy_test=LAZY_TEST,
-        gp_gen_device=GP_GEN_DEVICE,
-        
-        batch_size=BATCH_SIZE,
-        fix_train_acquisition_dataset=FIX_TRAIN_ACQUISITION_DATASET)
-
-train_aq_dataset, test_aq_dataset, small_test_aq_dataset = create_train_and_test_gp_acquisition_datasets(
-    **dataset_kwargs, **other_kwargs)
-
-# print("Training function samples dataset size:", len(train_dataset))
-print("Original training acquisition dataset size parameter:", dataset_size_config['train_acquisition_size'])
-print("Training acquisition dataset size:", len(train_aq_dataset),
-    "number of batches:", len(train_aq_dataset) // BATCH_SIZE, len(train_aq_dataset) % BATCH_SIZE)
-
-# print("Test function samples dataset size:", len(test_dataset))
-print("Test acquisition dataset size:", len(test_aq_dataset),
-    "number of batches:", len(test_aq_dataset) // BATCH_SIZE, len(test_aq_dataset) % BATCH_SIZE)
-if small_test_aq_dataset != test_aq_dataset:
-    print("Small test acquisition dataset size:", len(small_test_aq_dataset),
-            "number of batches:", len(small_test_aq_dataset) // BATCH_SIZE, len(small_test_aq_dataset) % BATCH_SIZE)
-
-# for item in train_aq_dataset.base_dataset:
-#     print(item.y_values.mean(), item.y_values.std(), item.y_values.shape)
-# exit()
-
-# print("Train acquisition dataset:")
-# print(train_aq_dataset)
-# print("\nTest acquisition dataset:")
-# print(test_aq_dataset)
-# if small_test_aq_dataset != test_aq_dataset:
-#     print("\nSmall test acquisition dataset:")
-#     print(small_test_aq_dataset)
-# print("\n")
 
 
 ######################## Train the model #######################################
@@ -386,13 +403,17 @@ if DIMENSION == 1:
     fig, axs = plot_nn_vs_gp_acquisition_function_1d_grid(
         test_aq_dataset, model, POLICY_GRADIENT, name,
         n_candidates, nrows, ncols,
-        plot_map=PLOT_MAP, nn_device=DEVICE)
+        plot_map=PLOT_MAP, nn_device=DEVICE,
+        # If POLICY_GRADIENT=False, set this to False if it's hard to see some
+        # of the plots
+        group_standardization=None 
+    )
     fname = f'acqusion_function_net_vs_gp_acquisition_function_1d_grid_{nrows}x{ncols}.pdf'
     path = os.path.join(MODEL_AND_INFO_PATH, fname)
     # Don't want to overwrite the plot if it already exists;
     # it could have been trained on different data from the data we are
     # evaluating it on if TRAIN=False.
-    if not os.path.exists(path):
+    if not os.path.exists(path) or LOAD_SAVED_DATASET_CONFIG:
         fig.savefig(path, bbox_inches='tight')
 else:
     it = iter(test_aq_dataset)
