@@ -18,9 +18,11 @@ from predict_EI_simple import calculate_EI_GP
 from train_acquisition_function_net import (
     load_configs,
     load_model,
+    print_stats,
     save_acquisition_function_net_configs,
     train_acquisition_function_net,
-    count_trainable_parameters, count_parameters)
+    count_trainable_parameters, count_parameters,
+    train_or_test_loop)
 from utils import DEVICE, Exp, save_json, load_json, convert_to_json_serializable
 from plot_utils import plot_nn_vs_gp_acquisition_function_1d_grid
 
@@ -32,13 +34,14 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 MODELS_DIR = os.path.join(script_dir, "saved_models")
 
 # Whether to train the model. If False, will load a saved model.
-TRAIN = True
+TRAIN = False
 # Whether to load a saved model to train
 LOAD_SAVED_MODEL_TO_TRAIN = False
 # Whether to load the saved dataset config specified in the model info directory
 LOAD_SAVED_DATASET_CONFIG = False
 
-MODEL_AND_INFO_NAME = "model_20240715_204121_e6101c167831be592f2608748e4175bd77837853ed05e81c56ec7f9f3ee61695"
+MODEL_AND_INFO_NAME = "model_20240716_010917_a3cf2269d9ef18d89800d5059878d662df8e9bbab2624e6adfd0a6653fcea168"
+# MODEL_AND_INFO_NAME = "model_20240716_012546_cea676c3cb0ad3ae82f9463cd125e83ca6569663016c684e4f2113f01f716272"
 MODEL_AND_INFO_PATH = os.path.join(MODELS_DIR, MODEL_AND_INFO_NAME)
 
 # Whether to fit maximum a posteriori GP for testing
@@ -88,7 +91,7 @@ gp_realization_config = dict(
     # Dimension of the optimization problem
     dimension=DIMENSION,
     # whether to randomize the GP parameters for training data
-    randomize_params=False,
+    randomize_params=True,
     # choose either "uniform" or "normal" (or a custom distribution)
     xvalue_distribution="uniform",
     observation_noise=False,
@@ -212,7 +215,7 @@ else:
                 layer_norm_pointnet=False,
                 layer_norm_before_end_mlp=False,
                 layer_norm_at_end_mlp=False,
-                standardize_outcomes=True,
+                standardize_outcomes=False,
                 include_best_y=False,
                 activation_pointnet="relu",
                 activation_mlp="relu").to(DEVICE)
@@ -317,7 +320,7 @@ if TRAIN:
     
     # Save the configs for the model and training and datasets
     (model_and_info_folder_name,
-     model_and_info_path, model_path) = save_acquisition_function_net_configs(
+     MODEL_AND_INFO_PATH, model_path) = save_acquisition_function_net_configs(
         MODELS_DIR, model, training_config,
         gp_realization_config, dataset_size_config, n_points_config,
         dataset_transform_config, train_aq_dataset.model_sampler)
@@ -354,6 +357,23 @@ if TRAIN:
         print(s.getvalue())
 
     print("Done training!")
+else:
+    training_history_path = os.path.join(MODEL_AND_INFO_PATH, 'model/training_history_data.json')
+    training_history_data = load_json(training_history_path)
+    final_test_stats_original = training_history_data['final_test_stats']
+    print_stats(final_test_stats_original,
+                "Final test stats on the original test dataset")
+
+    test_dataloader = test_aq_dataset.get_dataloader(
+                batch_size=BATCH_SIZE, drop_last=False)
+    final_test_stats = train_or_test_loop(
+                test_dataloader, model, train=False,
+                nn_device=DEVICE, policy_gradient=POLICY_GRADIENT,
+                verbose=False, desc=f"Compute final test stats",
+                get_true_gp_stats=GET_TEST_TRUE_GP_STATS,
+                get_map_gp_stats=False,
+                get_basic_stats=True)
+    print_stats(final_test_stats, "Final test stats on this test dataset")
 
 
 ######################## Plot performance of model #############################
@@ -368,7 +388,12 @@ if DIMENSION == 1:
         n_candidates, nrows, ncols,
         plot_map=PLOT_MAP, nn_device=DEVICE)
     fname = f'acqusion_function_net_vs_gp_acquisition_function_1d_grid_{nrows}x{ncols}.pdf'
-    fig.savefig(fname, bbox_inches='tight')
+    path = os.path.join(MODEL_AND_INFO_PATH, fname)
+    # Don't want to overwrite the plot if it already exists;
+    # it could have been trained on different data from the data we are
+    # evaluating it on if TRAIN=False.
+    if not os.path.exists(path):
+        fig.savefig(path, bbox_inches='tight')
 else:
     it = iter(test_aq_dataset)
     x_hist, y_hist, x_cand, improvements, gp_model = next(it)
