@@ -10,6 +10,10 @@ from utils import pad_tensor, remove_priors, add_priors
 torch.set_default_dtype(torch.double)
 
 
+# Trying to debug a crazy problem....
+DEBUG = False
+
+
 def calculate_EI_GP(model: SingleTaskGP, X_hist: Tensor, y_hist: Tensor,
                     X: Tensor, y: Optional[Tensor]=None, fit_params=False,
                     use_priors=True, log=False):
@@ -82,8 +86,22 @@ def calculate_EI_GP(model: SingleTaskGP, X_hist: Tensor, y_hist: Tensor,
     
     assert X_hist.size(2) == X.size(2) # d=d
 
-    # reset the data in the model to be this data
-    model.set_train_data_with_transforms(X_hist, y_hist, strict=False, train=fit_params)
+    has_outcome_transform = hasattr(model, "outcome_transform")
+
+    if DEBUG and has_outcome_transform:
+        means = model.outcome_transform._original_transform.means
+        stdvs = model.outcome_transform._original_transform.stdvs
+    
+        # y_hist, _ = model.outcome_transform(y_hist)
+        y_hist = means + stdvs * y_hist
+
+        del model.outcome_transform
+
+    if DEBUG and has_outcome_transform:
+        model.set_train_data(X_hist, y_hist.squeeze(-1), strict=False)
+    else:
+        # reset the data in the model to be this data
+        model.set_train_data_with_transforms(X_hist, y_hist, strict=False, train=fit_params)
 
     if fit_params:
         if not use_priors: # remove priors for MLE
@@ -97,6 +115,19 @@ def calculate_EI_GP(model: SingleTaskGP, X_hist: Tensor, y_hist: Tensor,
 
         if not use_priors: # add back the priors
             add_priors(named_priors_tuple_list)
+    
+    # try:
+    #     print("DEBUG means,stdvs:",
+    #           model.outcome_transform._original_transform.means.item(),
+    #           model.outcome_transform._original_transform.stdvs.item())
+    #     print("DEBUG model.train_targets:",
+    #         model.train_targets.squeeze(), model.train_targets.mean().item(),
+    #         model.train_targets.std().item())
+    #     print("DEBUG y_hist:", y_hist.squeeze(), y_hist.mean().item(), y_hist.std().item())
+    #     print("DEBUG untransformed y_hist:", model.outcome_transform(y_hist.squeeze()))
+    #     print()
+    # except AttributeError:
+    #     pass
 
     # best_f has shape (N,)
     best_f = y_hist.squeeze(2).amax(1) # unsqueezed so need to squeeze again
@@ -115,6 +146,9 @@ def calculate_EI_GP(model: SingleTaskGP, X_hist: Tensor, y_hist: Tensor,
     X = torch.transpose(X, 0, 1) # Now has shape (n_eval, N, 1, d)
 
     ei_values = EI_object(X) # shape (n_eval, N)
+
+    if DEBUG and has_outcome_transform:
+        ei_values = ei_values / stdvs
 
     # need to swap again to get to shape (N, n_eval)
     ei_values = torch.transpose(ei_values, 0, 1)
@@ -143,6 +177,17 @@ def calculate_EI_GP_padded_batch(x_hist, y_hist, x_cand, hist_mask, cand_mask,
 
     hist_lengths = None if hist_mask is None else hist_mask.sum(dim=1)
     cand_lengths = None if cand_mask is None else cand_mask.sum(dim=1)
+    
+    # try:
+    #     print("DEBUG: means and stdvs")
+    #     print([
+    #         (m.outcome_transform._original_transform.means.item(),
+    #             m.outcome_transform._original_transform.stdvs.item())
+    #         for m in models
+    #     ])
+    # except AttributeError:
+    #     pass
+
     ei_values = []
     for i in range(batch_size):
         x_hist_i_padded = x_hist[i] # shape (n_hist, dimension)

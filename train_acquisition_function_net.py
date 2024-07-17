@@ -438,6 +438,8 @@ def train_or_test_loop(dataloader: DataLoader,
         improvements = vals_cand if batch.give_improvements else \
             calculate_batch_improvement(y_hist, vals_cand, hist_mask, cand_mask)
 
+        # print("(DEBUG) Mean Improvement:", improvements.mean())
+
         # print("x_hist shape:", shape_or_none(x_hist), "y_hist shape:", shape_or_none(y_hist), "x_cand shape:", shape_or_none(x_cand), "improvements shape:", shape_or_none(improvements), "hist_mask shape:", shape_or_none(hist_mask), "cand_mask shape:", shape_or_none(cand_mask))
 
         this_batch_size = improvements.size(0)
@@ -462,6 +464,9 @@ def train_or_test_loop(dataloader: DataLoader,
                 nn_batch_stats = compute_myopic_acquisition_output_batch_stats(
                     nn_output, improvements_nn, cand_mask_nn, policy_gradient,
                     return_loss=train, reduction="sum")
+                # print("NN", nn_batch_stats)
+
+                # print("(DEBUG) Mean EI NN:", nn_output.mean())
                 
                 if train and not is_degenerate_batch:
                     # convert sum to mean so that this is consistent across batch sizes
@@ -489,12 +494,33 @@ def train_or_test_loop(dataloader: DataLoader,
         with torch.no_grad():
             if compute_true_gp_stats:
                 # Calculate true GP EI stats
+                # print(models[0].training)
                 ei_values_true_model = calculate_EI_GP_padded_batch(
                     x_hist, y_hist, x_cand, hist_mask, cand_mask, models)
+                # print(f"{ei_values_true_model=}, {ei_values_true_model.shape=}")
+                # print(f"{improvements=}, {improvements.shape=}")
+                # print(models[0].training, models[0])
+                
+                # exit()
                 true_gp_batch_stats = compute_myopic_acquisition_output_batch_stats(
                     ei_values_true_model, improvements, cand_mask,
                     policy_gradient=False, return_loss=False,
                     name="true_gp", reduction="sum")
+                # print(compute_myopic_acquisition_output_batch_stats(
+                #     ei_values_true_model, improvements, cand_mask,
+                #     policy_gradient=False, return_loss=False,
+                #     name="true_gp", reduction="mean"))
+                # print()
+                # print("GP", true_gp_batch_stats)
+                
+                # model0 = models[0]
+                # if hasattr(model0, "outcome_transform"):
+                #     print("Outcome transform:",
+                #           model0.outcome_transform._original_transform.means,
+                #           model0.outcome_transform._original_transform.stdvs)
+                
+                # print("(DEBUG) Mean EI GP:", ei_values_true_model.mean())
+
                 true_gp_stats_list.append(true_gp_batch_stats)
             
             if compute_basic_stats:
@@ -515,6 +541,7 @@ def train_or_test_loop(dataloader: DataLoader,
                         torch.zeros_like(improvements), improvements, cand_mask,
                         reduction="sum").item()
                 })
+        # print()
         
         if compute_map_gp_stats:
             # Calculate the MAP GP EI values

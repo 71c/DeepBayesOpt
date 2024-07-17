@@ -34,15 +34,15 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 MODELS_DIR = os.path.join(script_dir, "saved_models")
 
 # Whether to train the model.
-TRAIN = False
+TRAIN = True
 # Whether to load a saved model.
-LOAD_SAVED_MODEL = True
+LOAD_SAVED_MODEL = False
 # Whether to load the saved dataset config specified in the model info directory
-LOAD_SAVED_DATASET_CONFIG = True
+LOAD_SAVED_DATASET_CONFIG = False
 
 # MODEL_AND_INFO_NAME = "model_20240716_010917_a3cf2269d9ef18d89800d5059878d662df8e9bbab2624e6adfd0a6653fcea168"
 # MODEL_AND_INFO_NAME = "model_20240716_012546_cea676c3cb0ad3ae82f9463cd125e83ca6569663016c684e4f2113f01f716272"
-MODEL_AND_INFO_NAME = "model_20240716_150606_e5465772fa96e75ee50f68eca55f6da432c90d4d52b5a873137a397722f1e7e8"
+MODEL_AND_INFO_NAME = "model_20240716_183601_e5465772fa96e75ee50f68eca55f6da432c90d4d52b5a873137a397722f1e7e8"
 MODEL_AND_INFO_PATH = os.path.join(MODELS_DIR, MODEL_AND_INFO_NAME)
 
 # Whether to fit maximum a posteriori GP for testing
@@ -140,7 +140,7 @@ else:
             os.path.join(MODEL_AND_INFO_PATH, "model_sampler"))
         DIMENSION = get_dimension(_model_sampler.get_model(0))
     else:
-        DIMENSION = 3
+        DIMENSION = 1
 
     ###################### GP realization characteristics ##########################
     gp_realization_config = dict(
@@ -158,7 +158,7 @@ else:
     ################## Settings for dataset size and generation ####################
     dataset_size_config = dict(
         # The size of the training acquisition dataset
-        train_acquisition_size=2000,
+        train_acquisition_size=2700,
         # The amount that the dataset is expanded to save compute of GP realizations
         expansion_factor=2,
         # Whether to fix the training dataset function samples
@@ -183,8 +183,8 @@ else:
             train_n_candidates=50,
             # Number of candidate points for testing.
             test_n_candidates=50,
-            min_history=1,
-            max_history=8,
+            min_history=4,
+            max_history=10,
             **n_points_config
         )
     else:
@@ -203,7 +203,7 @@ else:
         # transform the acquisition datasets directly. I think it would be easiest to
         # just not save the acquisition datasets anymore.
         outcome_transform=None,#Exp(),
-        standardize_outcomes=True
+        standardize_outcomes=False
     )
 # Exp technically works, but Power does not
 # Make sure to set these appropriately depending on whether the transform
@@ -262,8 +262,7 @@ if small_test_aq_dataset != test_aq_dataset:
 #     print("\nSmall test acquisition dataset:")
 #     print(small_test_aq_dataset)
 # print("\n")
-
-
+# exit()
 
 ################################### Get NN model ###############################
 
@@ -285,7 +284,7 @@ else:
                 layer_norm_pointnet=False,
                 layer_norm_before_end_mlp=False,
                 layer_norm_at_end_mlp=False,
-                standardize_outcomes=False,
+                standardize_outcomes=True,
                 include_best_y=False,
                 activation_pointnet="relu",
                 activation_mlp="relu").to(DEVICE)

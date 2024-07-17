@@ -288,11 +288,13 @@ def _apply_outcome_transform(item: FunctionSamplesItem,
 
     ### Transform the y-values:
     Y_tf, _ = outcome_transform(item.y_values)
+    outcome_transform.eval()
 
     ### Add transformed model
     if retain_model and item.has_model:
         if inverse_outcome_transform is None:
             inverse_outcome_transform = invert_outcome_transform(outcome_transform)
+        inverse_outcome_transform.eval()
 
         new_model_params = getattr(item, "model_params", None)
         if new_model_params is not None:
@@ -305,6 +307,7 @@ def _apply_outcome_transform(item: FunctionSamplesItem,
                 inverse_outcome_transform, new_model_params["outcome_transform"])
         else:
             new_model_outcome_transform = inverse_outcome_transform
+        new_model_outcome_transform.eval()
         new_model_params["outcome_transform"] = new_model_outcome_transform 
         model = item._model
     else:
