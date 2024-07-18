@@ -35,7 +35,19 @@ MODELS_DIR = os.path.join(script_dir, "saved_models")
 # model_and_info_name = "model_20240716_230558_f182344a0fd9ee8ac324de86db74ccf2f2b60ea2fa07f471cdfb3a9728a64d5d"
 
 # Same as above but 64 instead of 32
-model_and_info_name = "model_20240717_141109_b7a5a9f189d98493d8f3eefef37e9bd5b4ed023742ddd6f60d4ae91e7c0350e9"
+# model_and_info_name = "model_20240717_141109_b7a5a9f189d98493d8f3eefef37e9bd5b4ed023742ddd6f60d4ae91e7c0350e9"
+
+# 50K train size; MSE loss; 64 widths
+# Best max EI: 0.3141892009482172
+# model_and_info_name = "model_20240717_212151_f3ff357217b4bce861abb578d2b853eebad30b90e2345c4062393bfca2417a3e"
+
+# Same as above but training size is 200K, and layer-width 128 instead of 64
+# Best max EI: 0.35370628685185046
+# model_and_info_name = "model_20240718_004436_e1c8afcd9487924a8dbedbb6675293c42d94e30a63eabcf0c35338d19e3b64f4"
+
+# Same as above but training size is 800K, and layer-width 256 instead of 128
+# Best max EI: 0.36729013620012463
+model_and_info_name = "model_20240718_030711_3b42b16944fa8b5d8affffdd7c130d4188d4d8f7335a4c99758399fa7efa79ec"
 
 MODEL_AND_INFO_PATH = os.path.join(MODELS_DIR, model_and_info_name)
 
@@ -230,7 +242,6 @@ options_dict = {
     **options_dict_nn
 }
 
-
 results_generator = LazyOptimizationResultsMultipleMethods(
     options_dict, gp_realizations, init_x, config['n_iter'],
     SEED, objective_names, RESULTS_DIR, dim=dim, bounds=bounds, maximize=True)
@@ -248,9 +259,9 @@ save_json(config_with_n_functions_json, os.path.join(plots_dir, 'config.json'))
 plot_optimization_results_multiple_methods(
     optimization_results=results_generator,
     max_n_functions_to_plot=5,
-    alpha=0.05,
+    alpha=0.1,
     sharey=False,
-    aspect=2.,
+    aspect=1.35,
     scale=1.,
     objective_names_plot=function_plot_names,
     plots_fname_desc=None,

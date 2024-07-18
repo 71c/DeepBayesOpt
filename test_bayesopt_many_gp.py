@@ -110,7 +110,7 @@ results_generator = LazyOptimizationResultsMultipleMethods(
 plot_optimization_results_multiple_methods(
     optimization_results=results_generator,
     max_n_functions_to_plot=5,
-    alpha=0.05,
+    alpha=0.4,
     sharey=False,
     aspect=1.,
     scale=0.5,

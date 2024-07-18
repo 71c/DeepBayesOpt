@@ -45,13 +45,32 @@ LOAD_SAVED_DATASET_CONFIG = False
 # MODEL_AND_INFO_NAME = "model_20240716_183601_e5465772fa96e75ee50f68eca55f6da432c90d4d52b5a873137a397722f1e7e8"
 
 # G2
-# 6-dim, policy gradient, Exp, 14-50 history points
+# 6-dim, policy gradient, Exp, 14-50 history points, 32-dim layers
 # outcomes standardized both dataset and history outcomes in forward
-# trained for 100 epochs
+# trained for 100 epochs, policy gradient, train_acquisition_size=10_000
+# Best max EI: 0.18619710690677405
 # MODEL_AND_INFO_NAME = "model_20240716_230558_f182344a0fd9ee8ac324de86db74ccf2f2b60ea2fa07f471cdfb3a9728a64d5d"
 
 # Same as above but 64 instead of 32
-MODEL_AND_INFO_NAME = "model_20240717_141109_b7a5a9f189d98493d8f3eefef37e9bd5b4ed023742ddd6f60d4ae91e7c0350e9"
+# Best max EI: 0.27558372714299717
+# MODEL_AND_INFO_NAME = "model_20240717_141109_b7a5a9f189d98493d8f3eefef37e9bd5b4ed023742ddd6f60d4ae91e7c0350e9"
+
+# Same as above but trained with MSE
+# Best max EI: 0.29747663472631614
+# MODEL_AND_INFO_NAME = "model_20240717_210109_c32da74f287bd08d0ef2a3c21c91cb59e5a8672bebf25cdc9638e846ba2a556c"
+
+# Same as above but training dataset size is 50K instead of 10K
+# Best max EI: 0.3141892009482172
+# MODEL_AND_INFO_NAME = "model_20240717_212151_f3ff357217b4bce861abb578d2b853eebad30b90e2345c4062393bfca2417a3e"
+
+# Same as above but training size is 200K, and layer-width 128 instead of 64
+# Best max EI: 0.35370628685185046
+# MODEL_AND_INFO_NAME = "model_20240718_004436_e1c8afcd9487924a8dbedbb6675293c42d94e30a63eabcf0c35338d19e3b64f4"
+
+# Same as above but training size is 800K, and layer-width 256 instead of 128
+# Best max EI: 0.36729013620012463
+MODEL_AND_INFO_NAME = "model_20240718_030711_3b42b16944fa8b5d8affffdd7c130d4188d4d8f7335a4c99758399fa7efa79ec"
+
 
 MODEL_AND_INFO_PATH = os.path.join(MODELS_DIR, MODEL_AND_INFO_NAME)
 
@@ -87,10 +106,10 @@ if LOAD_SAVED_MODEL:
         os.path.join(MODEL_AND_INFO_PATH, "training_config.json")
     )['policy_gradient']
 else:
-    POLICY_GRADIENT = True # True for the softmax thing, False for MSE EI
+    POLICY_GRADIENT = False # True for the softmax thing, False for MSE EI
 
 BATCH_SIZE = 64
-LEARNING_RATE = 2e-4
+LEARNING_RATE = 3e-4
 EPOCHS = 200
 FIX_TRAIN_ACQUISITION_DATASET = False
 
@@ -102,7 +121,7 @@ INITIAL_ALPHA = 1.0
 ALPHA_INCREMENT = None # equivalent to 0.0
 
 EARLY_STOPPING = True
-PATIENCE = 10
+PATIENCE = 20
 MIN_DELTA = 0.0
 CUMULATIVE_DELTA = False
 
@@ -128,7 +147,7 @@ if EARLY_STOPPING:
 test_dataset_config = dict(
     ## How many times bigger the big test dataset is than the train dataset, > 0
     ## test_factor=1 means same size, test_factor=0.5 means half the size, etc
-    test_factor=1.0, # 3.0
+    test_factor=0.05, # 3.0
     ## The proportion of the test dataset that is used for evaluating the model
     ## after each epoch, between 0 and 1
     small_test_proportion_of_test=1.0,
@@ -168,7 +187,7 @@ else:
     ################## Settings for dataset size and generation ####################
     dataset_size_config = dict(
         # The size of the training acquisition dataset
-        train_acquisition_size=10_000,
+        train_acquisition_size=800_000,
         # The amount that the dataset is expanded to save compute of GP realizations
         expansion_factor=2,
         # Whether to fix the training dataset function samples
@@ -194,7 +213,7 @@ else:
             # Number of candidate points for testing.
             test_n_candidates=50,
             min_history=14,
-            max_history=50,
+            max_history=54,
             **n_points_config
         )
     else:
@@ -221,7 +240,6 @@ else:
 # if dataset_transform_config['outcome_transform'] is not None:
 #     GET_TRAIN_TRUE_GP_STATS = False
 #     GET_TEST_TRUE_GP_STATS = False
-
 
 
 
@@ -282,9 +300,9 @@ else:
     model = AcquisitionFunctionNetV1and2(
                 DIMENSION,
                 pooling="max",
-                history_enc_hidden_dims=[64, 64],
-                encoded_history_dim=64,
-                aq_func_hidden_dims=[64, 64],
+                history_enc_hidden_dims=[256, 256],
+                encoded_history_dim=256,
+                aq_func_hidden_dims=[256, 256],
                 input_xcand_to_local_nn=True,
                 input_xcand_to_final_mlp=False,
                 include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
