@@ -187,7 +187,11 @@ class NNAcquisitionOptimizer(ModelAcquisitionOptimizer):
     def get_model(self):
         # Assumed that the NN was trained to maximize... so this hack should probably work
         y = self.y if self.maximize else -self.y
-        return AcquisitionFunctionNetModel(self.model, self.x, y)
+
+        # Need to put it on the GPU
+        nn_device = next(self.model.parameters()).device
+        return AcquisitionFunctionNetModel(
+            self.model, self.x.to(nn_device), y.to(nn_device))
 
 
 class GPAcquisitionOptimizer(ModelAcquisitionOptimizer):

@@ -24,7 +24,7 @@ from train_acquisition_function_net import (
     count_trainable_parameters, count_parameters,
     train_or_test_loop)
 from utils import DEVICE, Exp, get_dimension, save_json, load_json, convert_to_json_serializable
-from plot_utils import plot_nn_vs_gp_acquisition_function_1d_grid
+from plot_utils import plot_nn_vs_gp_acquisition_function_1d_grid, plot_acquisition_function_net_training_history
 
 import logging
 logging.basicConfig(level=logging.WARNING)
@@ -42,7 +42,17 @@ LOAD_SAVED_DATASET_CONFIG = False
 
 # MODEL_AND_INFO_NAME = "model_20240716_010917_a3cf2269d9ef18d89800d5059878d662df8e9bbab2624e6adfd0a6653fcea168"
 # MODEL_AND_INFO_NAME = "model_20240716_012546_cea676c3cb0ad3ae82f9463cd125e83ca6569663016c684e4f2113f01f716272"
-MODEL_AND_INFO_NAME = "model_20240716_183601_e5465772fa96e75ee50f68eca55f6da432c90d4d52b5a873137a397722f1e7e8"
+# MODEL_AND_INFO_NAME = "model_20240716_183601_e5465772fa96e75ee50f68eca55f6da432c90d4d52b5a873137a397722f1e7e8"
+
+# G2
+# 6-dim, policy gradient, Exp, 14-50 history points
+# outcomes standardized both dataset and history outcomes in forward
+# trained for 100 epochs
+# MODEL_AND_INFO_NAME = "model_20240716_230558_f182344a0fd9ee8ac324de86db74ccf2f2b60ea2fa07f471cdfb3a9728a64d5d"
+
+# Same as above but 64 instead of 32
+MODEL_AND_INFO_NAME = "model_20240717_141109_b7a5a9f189d98493d8f3eefef37e9bd5b4ed023742ddd6f60d4ae91e7c0350e9"
+
 MODEL_AND_INFO_PATH = os.path.join(MODELS_DIR, MODEL_AND_INFO_NAME)
 
 # Whether to fit maximum a posteriori GP for testing
@@ -79,9 +89,9 @@ if LOAD_SAVED_MODEL:
 else:
     POLICY_GRADIENT = True # True for the softmax thing, False for MSE EI
 
-BATCH_SIZE = 32
-LEARNING_RATE = 3e-4
-EPOCHS = 100
+BATCH_SIZE = 64
+LEARNING_RATE = 2e-4
+EPOCHS = 200
 FIX_TRAIN_ACQUISITION_DATASET = False
 
 # Only used if POLICY_GRADIENT is True
@@ -92,7 +102,7 @@ INITIAL_ALPHA = 1.0
 ALPHA_INCREMENT = None # equivalent to 0.0
 
 EARLY_STOPPING = True
-PATIENCE = 20
+PATIENCE = 10
 MIN_DELTA = 0.0
 CUMULATIVE_DELTA = False
 
@@ -140,7 +150,7 @@ else:
             os.path.join(MODEL_AND_INFO_PATH, "model_sampler"))
         DIMENSION = get_dimension(_model_sampler.get_model(0))
     else:
-        DIMENSION = 1
+        DIMENSION = 6
 
     ###################### GP realization characteristics ##########################
     gp_realization_config = dict(
@@ -158,7 +168,7 @@ else:
     ################## Settings for dataset size and generation ####################
     dataset_size_config = dict(
         # The size of the training acquisition dataset
-        train_acquisition_size=2700,
+        train_acquisition_size=10_000,
         # The amount that the dataset is expanded to save compute of GP realizations
         expansion_factor=2,
         # Whether to fix the training dataset function samples
@@ -183,8 +193,8 @@ else:
             train_n_candidates=50,
             # Number of candidate points for testing.
             test_n_candidates=50,
-            min_history=4,
-            max_history=10,
+            min_history=14,
+            max_history=50,
             **n_points_config
         )
     else:
@@ -202,8 +212,8 @@ else:
         # instead. Or alternateively, just don't save the acquisition datasets, or
         # transform the acquisition datasets directly. I think it would be easiest to
         # just not save the acquisition datasets anymore.
-        outcome_transform=None,#Exp(),
-        standardize_outcomes=False
+        outcome_transform=Exp(),
+        standardize_outcomes=True
     )
 # Exp technically works, but Power does not
 # Make sure to set these appropriately depending on whether the transform
@@ -272,9 +282,9 @@ else:
     model = AcquisitionFunctionNetV1and2(
                 DIMENSION,
                 pooling="max",
-                history_enc_hidden_dims=[32, 32],
-                encoded_history_dim=32,
-                aq_func_hidden_dims=[32, 32],
+                history_enc_hidden_dims=[64, 64],
+                encoded_history_dim=64,
+                aq_func_hidden_dims=[64, 64],
                 input_xcand_to_local_nn=True,
                 input_xcand_to_final_mlp=False,
                 include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
@@ -320,8 +330,6 @@ else:
 print(model)
 print("Number of trainable parameters:", count_trainable_parameters(model))
 print("Number of parameters:", count_parameters(model))
-
-
 
 
 
@@ -373,8 +381,10 @@ if TRAIN:
         print(s.getvalue())
 
     print("Done training!")
-else:
-    training_history_path = os.path.join(MODEL_AND_INFO_PATH, 'model/training_history_data.json')
+
+training_history_path = os.path.join(MODEL_AND_INFO_PATH, 'model', 'training_history_data.json')
+
+if not TRAIN:
     training_history_data = load_json(training_history_path)
     final_test_stats_original = training_history_data['final_test_stats']
     print_stats(final_test_stats_original,
@@ -390,6 +400,12 @@ else:
                 get_map_gp_stats=False,
                 get_basic_stats=True)
     print_stats(final_test_stats, "Final test stats on this test dataset")
+
+
+history_fig = plot_acquisition_function_net_training_history(training_history_data)
+history_plot_path = os.path.join(MODEL_AND_INFO_PATH, 'model', 'training_history.pdf')
+if not os.path.exists(history_plot_path) or LOAD_SAVED_DATASET_CONFIG:
+    history_fig.savefig(history_plot_path, bbox_inches='tight')
 
 
 ######################## Plot performance of model #############################
@@ -416,14 +432,16 @@ if DIMENSION == 1:
         fig.savefig(path, bbox_inches='tight')
 else:
     it = iter(test_aq_dataset)
-    x_hist, y_hist, x_cand, improvements, gp_model = next(it)
+    item = next(it)
+    x_hist, y_hist, x_cand, improvements, gp_model = item
+    x_hist_nn, y_hist_nn, x_cand_nn, improvements_nn = item.to(DEVICE).tuple_no_model
     print(f"Number of history points: {x_hist.size(0)}")
 
     x_cand = torch.rand(n_candidates, DIMENSION)
 
     aq_fn = LikelihoodFreeNetworkAcquisitionFunction.from_net(
-        model, x_hist, y_hist, exponentiate=not POLICY_GRADIENT, softmax=False)
-    ei_nn = aq_fn(x_cand.unsqueeze(1))
+        model, x_hist_nn, y_hist_nn, exponentiate=not POLICY_GRADIENT, softmax=False)
+    ei_nn = aq_fn(x_cand.to(DEVICE).unsqueeze(1))
 
     ei_true = calculate_EI_GP(gp_model, x_hist, y_hist, x_cand, log=False)
     if PLOT_MAP:
@@ -436,14 +454,14 @@ else:
     # print(f"{name} MAP:")
     # print(ei_map)
 
-    plt.scatter(ei_true.detach().numpy(), ei_nn.detach().numpy())
+    plt.scatter(ei_true.detach().cpu().numpy(), ei_nn.detach().cpu().numpy())
     plt.xlabel(f'{name} True')
     plt.ylabel(f'{name} NN')
     plt.title(f'{name} True vs {name} NN')
 
     if PLOT_MAP:
         plt.figure()
-        plt.scatter(ei_true.detach().numpy(), ei_map.detach().numpy())
+        plt.scatter(ei_true.detach().cpu().numpy(), ei_map.detach().cpu().numpy())
         plt.xlabel(f'{name} True')
         plt.ylabel(f'{name} MAP')
         plt.title(f'{name} True vs {name} MAP')

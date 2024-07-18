@@ -1,8 +1,9 @@
 from collections import OrderedDict
 import json
 import inspect
+import math
 import os
-from typing import Any, List, Optional, Sequence, Union
+from typing import Any, Callable, List, Optional, Sequence, Tuple, Union
 import warnings
 from numpy import isin
 import torch
@@ -12,8 +13,9 @@ from botorch.models.model import Model
 from botorch.acquisition.acquisition import AcquisitionFunction
 from botorch.exceptions import UnsupportedError
 from botorch.utils.transforms import t_batch_mode_transform, match_batch_shape
+from botorch.utils.safe_math import fatmax, smooth_amax
 from abc import ABC, abstractmethod
-from utils import load_json, pad_tensor, save_json
+from utils import load_json, pad_tensor, save_json, to_device
 
 import logging
 
@@ -237,13 +239,47 @@ class Dense(nn.Sequential):
 
 
 def add_neg_inf_for_max(x, mask):
-    neg_inf = torch.zeros_like(x)
+    # neg_inf = torch.zeros_like(x)
+    # mask_expanded = expand_dim(mask, -1, x.size(-1))
+    # neg_inf[~mask_expanded] = float("-inf")
+    # return x + neg_inf
+
     mask_expanded = expand_dim(mask, -1, x.size(-1))
-    neg_inf[~mask_expanded] = float("-inf")
-    return x + neg_inf
+    return x.masked_fill(~mask_expanded, float("-inf"))
 
 
-POOLING_METHODS = {"max", "sum", "experiment1", "experiment2", "experiment3"}
+# doesn't work gives nan
+# class SmoothMax(nn.Module):
+#     def __init__(self, ndims, initial_tau=0.05):
+#         super().__init__()
+#         # self._log_tau = nn.Parameter(
+#         #     torch.full((ndims,), math.log(initial_tau))
+#         # )
+#         # self._log_tau = nn.Parameter(
+#         #     torch.tensor(math.log(initial_tau))
+#         # )
+#         self._log_tau = nn.Parameter(
+#             torch.tensor(0.0)
+#         )
+#         self.ndims = ndims
+    
+#     def forward(self, x, keepdim=False):
+#         if x.size(-1) != self.ndims:
+#             raise ValueError("incorrect dimensions")
+#         # tau = torch.exp(self._log_tau)
+#         # tau = torch.nn.functional.softplus(self._log_tau)
+#         tau = torch.sigmoid(self._log_tau)
+
+#         # new_shape = [1] * (x.ndim - 1) + [self.ndims]
+#         # tau = tau.view(*new_shape)
+#         ret = smooth_amax(x, dim=-2, keepdim=keepdim, tau=tau)
+#         print("tau", self._log_tau, tau, ret)
+#         return ret
+
+
+POOLING_METHODS = {
+    "max", "sum", "fatmax",
+    "experiment1", "experiment2", "experiment3"}
 class PointNetLayer(nn.Module):
     def __init__(self, input_dim: int, hidden_dims: Sequence[int]=[256, 256],
                  output_dim: int=1024, pooling="max", **dense_kwargs):
@@ -255,6 +291,8 @@ class PointNetLayer(nn.Module):
             output_dim = output_dim + 2
         elif pooling == "experiment3":
             output_dim = output_dim + 1
+        # elif pooling == "fatmax":  # Doesn't work gives nan
+        #     self.smoothmax_module = SmoothMax(ndims=output_dim)
 
         self.network = Dense(input_dim, hidden_dims, output_dim, **dense_kwargs)
 
@@ -294,14 +332,32 @@ class PointNetLayer(nn.Module):
         # "global feature"
         if self.pooling == "sum":
             ret = torch.sum(local_features, dim=-2, keepdim=keepdim)
-        elif self.pooling == "max":
-            ret = torch.max(
-                # This works for maxing. If ReLU is applied at the end, then
-                # we could instead just use the one for summing.
-                local_features if mask is None else add_neg_inf_for_max(local_features, mask),
-                dim=-2, keepdim=keepdim).values
+        elif self.pooling == "max" or self.pooling == "fatmax":
+            # This works for maxing. If ReLU is applied at the end, then
+            # we could instead just use the one for summing.
+            tmp = local_features if mask is None else add_neg_inf_for_max(local_features, mask)
+            
+            if self.pooling == "max":
+                ret = torch.max(tmp, dim=-2, keepdim=keepdim).values
+            else:
+                # ret = fatmax(tmp, dim=-2, keepdim=keepdim) # gives nan
+                # ret = self.smoothmax_module(tmp, keepdim=keepdim) # gives nan
+                ret = smooth_amax(tmp, dim=-2, keepdim=keepdim, tau=0.1) # works
+                
+            
+            # print("x has any infs:", torch.isinf(x).any().item())
+            # print("x has any nans:", torch.isnan(x).any().item())
+            # print("x:", x)
+            # print("local_features:", local_features)
+            # print("tmp:", tmp)
+            # print("ret:", ret)
+            # print()
+
             if mask is not None:
-                ret[ret == float("-inf")] = 0.0
+                # ret[ret == float("-inf")] = 0.0
+                # ret = ret.masked_fill(maxvals.isinf(), 0.0)
+                ret = ret.masked_fill(ret.isinf(), 0.0)
+            
         elif self.pooling == "experiment1":
             output_dim = (local_features.size(-1) - 3) // 2
             softmax_in = local_features[..., :output_dim]
@@ -645,6 +701,14 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
     def forward(self, x_hist, y_hist, x_cand,
                 hist_mask=None, cand_mask=None,
                 exponentiate=False, softmax=False):
+        # Put on GPU if it's not already
+        nn_device = next(self.parameters()).device
+        x_hist = x_hist.to(nn_device)
+        y_hist = y_hist.to(nn_device)
+        x_cand = x_cand.to(nn_device)
+        hist_mask = to_device(hist_mask, nn_device)
+        cand_mask = to_device(cand_mask, nn_device)
+
         y_hist = check_xy_dims_add_y_output_dim(x_hist, y_hist, "x_hist", "y_hist")
         hist_mask = check_xy_dims_add_y_output_dim(x_hist, hist_mask, "x_hist", "hist_mask")
         cand_mask = check_xy_dims_add_y_output_dim(x_cand, cand_mask, "x_cand", "cand_mask")

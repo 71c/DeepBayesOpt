@@ -1,3 +1,4 @@
+from typing import Callable
 import copy
 import os
 import matplotlib.pyplot as plt
@@ -7,6 +8,7 @@ from train_acquisition_function_net import load_configs, load_model
 torch.set_default_dtype(torch.float64)
 from botorch.utils.sampling import draw_sobol_samples
 from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprovement
+from botorch.models.transforms.outcome import Standardize
 
 from bayesopt import (GPAcquisitionOptimizer, LazyOptimizationResultsMultipleMethods,
                       NNAcquisitionOptimizer, RandomSearch,
@@ -14,7 +16,7 @@ from bayesopt import (GPAcquisitionOptimizer, LazyOptimizationResultsMultipleMet
 
 from utils import (concatenate_outcome_transforms, convert_to_json_serializable,
                    dict_to_hash, dict_to_str, dict_to_fname_str, get_dimension,
-                   get_gp, combine_nested_dicts, DEVICE, Exp, invert_outcome_transform, save_json)
+                   get_gp, combine_nested_dicts, DEVICE, Exp, invert_outcome_transform, sanitize_file_name, save_json)
 from dataset_with_models import RandomModelSampler
 
 from gpytorch.kernels import MaternKernel, ScaleKernel, RBFKernel
@@ -25,7 +27,16 @@ PLOTS_DIR = os.path.join(script_dir, 'plots')
 RESULTS_DIR = os.path.join(script_dir, 'bayesopt_results')
 MODELS_DIR = os.path.join(script_dir, "saved_models")
 
-model_and_info_name = "model_20240715_204121_e6101c167831be592f2608748e4175bd77837853ed05e81c56ec7f9f3ee61695" # untransformed
+# model_and_info_name = "model_20240715_204121_e6101c167831be592f2608748e4175bd77837853ed05e81c56ec7f9f3ee61695" # untransformed
+
+# G2
+# 6-dim, policy gradient, Exp, 14-50 history points
+# outcomes standardized both dataset and history outcomes in forward
+# model_and_info_name = "model_20240716_230558_f182344a0fd9ee8ac324de86db74ccf2f2b60ea2fa07f471cdfb3a9728a64d5d"
+
+# Same as above but 64 instead of 32
+model_and_info_name = "model_20240717_141109_b7a5a9f189d98493d8f3eefef37e9bd5b4ed023742ddd6f60d4ae91e7c0350e9"
+
 MODEL_AND_INFO_PATH = os.path.join(MODELS_DIR, model_and_info_name)
 
 nn_model = load_model(MODEL_AND_INFO_PATH).to(DEVICE)
@@ -42,7 +53,7 @@ dimensions.add(get_dimension(gp_sampler.get_model(0)))
 if len(dimensions) > 1:
     raise ValueError("Multiple dimensions found in configs")
 dim = dimensions.pop()
-
+print("DIMENSION:", dim)
 
 DIFFERENT_GP = False
 # These are the settings to use if DIFFERENT_GP is True:
@@ -52,7 +63,7 @@ OUTCOME_TRANSFORM = Exp()
 n_functions = 3
 
 opt_config = {
-    'n_iter': 7,
+    'n_iter': 40,
     'seed': 12,
     'n_trials_per_function': 5,
     'n_initial_samples': 2*(dim+1)
@@ -106,13 +117,21 @@ random_gps, gp_realizations, objective_names, function_plot_names = get_random_g
 outcome_transform = config['outcome_transform']
 if outcome_transform is not None:
     objective_names = [
-        f"{name}_{outcome_transform}" for name in objective_names]
+        sanitize_file_name(f"{name}_{outcome_transform}")
+        for name in objective_names]
     function_plot_names = [
         f"{name} ({outcome_transform.__class__.__name__} transform)"
         for name in function_plot_names]
+
+    # Need to make a new function for this, otherwise it doesn't work right
+    def transform_gp_realization(gp_realization):
+        def transformed_gp(x):
+            # remember it also takes optional argument Yvar and returns (Y, Yvar)
+            return outcome_transform(gp_realization(x))[0]
+        return transformed_gp
+
     gp_realizations = [
-        # remember it also takes optional argument Yvar and returns (Y, Yvar)
-        lambda x: outcome_transform(gp_realization(x))[0]
+        transform_gp_realization(gp_realization)
         for gp_realization in gp_realizations
     ]
 
@@ -159,13 +178,25 @@ else:
             'optimizer_kwargs_per_function': [
                 {'model': gp} for gp in random_gps]
         }
+    
+    nontransformed_gps_with_standardize = []
+    for gp in random_gps:
+        new_gp = copy.deepcopy(gp)
+        new_gp.outcome_transform = Standardize(m=1)
+        nontransformed_gps_with_standardize.append(new_gp)
+    nontransform_opt_outcome_standardize = {
+            'optimizer_kwargs_per_function': [
+                {'model': gp} for gp in nontransformed_gps_with_standardize]
+        }
+
 
     gp_options_true = {
         'True GP params (with transform)': {**gp_options['True GP'], **transform_opt}
     }
     gp_transform_options = {
         'true GP model with transform': transform_opt,
-        'untransformed GP model': nontransform_opt
+        'untransformed GP model': nontransform_opt,
+        'untransformed GP model with outcome standardize': nontransform_opt_outcome_standardize
     }
     gp_options_untrue = combine_nested_dicts(
         {k: v for k, v in gp_options.items() if k != 'True GP'},
@@ -219,11 +250,12 @@ plot_optimization_results_multiple_methods(
     max_n_functions_to_plot=5,
     alpha=0.05,
     sharey=False,
-    aspect=1.,
-    scale=0.5,
+    aspect=2.,
+    scale=1.,
     objective_names_plot=function_plot_names,
     plots_fname_desc=None,
-    plots_title=config_str,
+    # plots_title=config_str,
+    plots_title="Fixed kernel, Exp transform, 6 dimensions, 14 initial points, 40 iterations, 5 trial/func",
     plots_dir=plots_dir
 )
 plt.show()
