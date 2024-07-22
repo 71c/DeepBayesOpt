@@ -194,6 +194,7 @@ class Dense(nn.Sequential):
     def __init__(self, input_dim: int, hidden_dims: Sequence[int]=[256, 64],
                  output_dim: int=1, activation_at_end=False,
                  layer_norm_before_end=False, layer_norm_at_end=False,
+                 dropout:Optional[float]=None, dropout_at_end=True,
                  activation:str="relu"):
         """
         Args:
@@ -234,6 +235,9 @@ class Dense(nn.Sequential):
                 # layers.append(nn.Softplus())
                 # layers.append(nn.SELU())
                 layers.append(activation())
+            
+            if dropout is not None and (i != n_layers - 1 or dropout_at_end):
+                layers.append(nn.Dropout(dropout))
         
         super().__init__(*layers)
 
@@ -294,6 +298,8 @@ class PointNetLayer(nn.Module):
         # elif pooling == "fatmax":  # Doesn't work gives nan
         #     self.smoothmax_module = SmoothMax(ndims=output_dim)
 
+        if 'dropout_at_end' not in dense_kwargs:
+            dense_kwargs['dropout_at_end'] = True
         self.network = Dense(input_dim, hidden_dims, output_dim, **dense_kwargs)
 
         if pooling in POOLING_METHODS:
@@ -652,7 +658,9 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
         self.dense = Dense(input_to_final_layer_dim, aq_func_hidden_dims, 1,
                            activation_at_end=False,
                            layer_norm_before_end=layer_norm_before_end,
-                           layer_norm_at_end=False, **dense_kwargs)
+                           layer_norm_at_end=False,
+                           dropout_at_end=False,
+                           **dense_kwargs)
         
         self.layer_norm_at_end = layer_norm_at_end
         self.standardize_outcomes = standardize_outcomes
@@ -829,8 +837,10 @@ class AcquisitionFunctionNetV1and2(AcquisitionFunctionNetWithFinalMLP):
                  include_alpha=False, learn_alpha=False, initial_alpha=1.0,
                  activation_at_end_pointnet=True,
                  layer_norm_pointnet=False,
+                 dropout_pointnet=None,
                  layer_norm_before_end_mlp=False,
                  layer_norm_at_end_mlp=False,
+                 dropout_mlp=None,
                  standardize_outcomes=False,
                  include_best_y=False,
                  activation_pointnet:str="relu",
@@ -888,6 +898,8 @@ class AcquisitionFunctionNetV1and2(AcquisitionFunctionNetWithFinalMLP):
         pointnet_kwargs = dict(activation_at_end=activation_at_end_pointnet,
                 layer_norm_before_end=layer_norm_pointnet,
                 layer_norm_at_end=layer_norm_pointnet,
+                dropout=dropout_pointnet,
+                dropout_at_end=True,
                 activation=activation_pointnet)
         
         if n_pointnets == 1:
@@ -914,7 +926,8 @@ class AcquisitionFunctionNetV1and2(AcquisitionFunctionNetWithFinalMLP):
                          learn_alpha, initial_alpha,
                          layer_norm_before_end_mlp, layer_norm_at_end_mlp,
                          standardize_outcomes=standardize_outcomes,
-                         activation=activation_mlp)
+                         activation=activation_mlp,
+                         dropout=dropout_mlp)
         self.dimension = dimension
         self.include_best_y = include_best_y
     

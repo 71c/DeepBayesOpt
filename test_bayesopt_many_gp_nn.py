@@ -47,20 +47,60 @@ MODELS_DIR = os.path.join(script_dir, "saved_models")
 
 # Same as above but training size is 800K, and layer-width 256 instead of 128
 # Best max EI: 0.36729013620012463
-model_and_info_name = "model_20240718_030711_3b42b16944fa8b5d8affffdd7c130d4188d4d8f7335a4c99758399fa7efa79ec"
+# model_and_info_name = "model_20240718_030711_3b42b16944fa8b5d8affffdd7c130d4188d4d8f7335a4c99758399fa7efa79ec"
 
-MODEL_AND_INFO_PATH = os.path.join(MODELS_DIR, model_and_info_name)
 
-nn_model = load_model(MODEL_AND_INFO_PATH).to(DEVICE)
+## Dataset size comparison
+# model_and_info_names = [
+#     # MSE, trained on 14-54 history and 50 candidate points, width 256, 6D, fixed params,
+#     # no dataset or NN-history outcome transforms, training size 50K; ei_max: 0.08256165126391311
+#     "model_20240720_032737_39e71d4622815b884867c11201f77b0c24488c2300408de3a1f7ec5478517bd2",
+#     # MSE, trained on 14-54 history and 50 candidate points, width 256, 6D, fixed params,
+#     # no dataset or NN-history outcome transforms, training size 300K; ei_max: 0.08693664313535554
+#     "model_20240720_041525_7a99c1685961e1d895428262ca983b9883f1cb5ffe47dc944b34083d0183d389",
+#     # MSE, trained on 14-54 history and 50 candidate points, width 256, 6D, fixed params,
+#     # no dataset or NN-history outcome transforms, training size 1800K; ei_max: 0.0882794855344188
+#     "model_20240720_073340_0a363bb237949dc076c8e1873cb00d0d4bb159bd255ed360d0dda90d92a5dddb"
+# ]
+# model_and_info_plot_names = [
+#     "NN, 50K training size", "NN, 300K training size", "NN, 1800K training size"
+# ]
+# plots_title = "MSE with 50 candidates, layer-width 256, 6D, fixed params, no standardizations or transforms, 14 initial points, 40 iterations, 5 trial/func"
 
+## Standardize history in NN or not comparison
+model_and_info_names = [
+    # MSE, trained on 14-54 history and 50 candidate points, width 256, 6D, fixed params,
+    # no dataset or NN-history outcome transforms, training size 300K; ei_max: 0.08693664313535554
+    "model_20240720_041525_7a99c1685961e1d895428262ca983b9883f1cb5ffe47dc944b34083d0183d389",
+    # MSE, trained on 14-54 history and 50 candidate points, width 256, 6D, fixed params,
+    # no dataset transforms, standardized history outcomes to NN, training size 300K; ei_max: 0.08552981475318698
+    "model_20240720_174324_a0827f9d932527b5b33f569b3f93d8eb07d42996593d533a22de6193ce386174",
+]
+model_and_info_plot_names = [
+    "NN, history outcomes not standardized", "NN, history outcomes standardized"
+]
+plots_title = "Compare history standardization: MSE with 50 candidates, layer-width 256, 6D, fixed params, no transforms, 300K training size, 14 initial points, 40 iterations, 5 trial/func"
+
+
+model_and_info_paths = [
+    os.path.join(MODELS_DIR, model_and_info_name)
+    for model_and_info_name in model_and_info_names
+]
+
+nn_models = [
+    load_model(model_and_info_path).to(DEVICE)
+    for model_and_info_path in model_and_info_paths
+]
+
+# Assume that all the configs are the same
 gp_realization_config, dataset_size_config, n_points_config, \
-        dataset_transform_config, gp_sampler = load_configs(MODEL_AND_INFO_PATH)
+        dataset_transform_config, gp_sampler = load_configs(model_and_info_paths[0])
 
 dimensions = set()
 if 'dimension' in gp_realization_config:
     dimensions.add(gp_realization_config['dimension'])
-if hasattr(nn_model, 'dimension'):
-    dimensions.add(nn_model.dimension)
+if hasattr(nn_models[0], 'dimension'):
+    dimensions.add(nn_models[0].dimension)
 dimensions.add(get_dimension(gp_sampler.get_model(0)))
 if len(dimensions) > 1:
     raise ValueError("Multiple dimensions found in configs")
@@ -84,7 +124,7 @@ config = {
     'dim': dim,
     'observation_noise': gp_realization_config['observation_noise'],
     'randomize_params': gp_sampler.randomize_params,
-    'model_and_info_name': model_and_info_name,
+    'model_and_info_names': model_and_info_names,
     'outcome_transform': dataset_transform_config['outcome_transform'],
     'different_gp': DIFFERENT_GP,
     **opt_config
@@ -229,11 +269,13 @@ options_dict_random = {
 }
 
 options_dict_nn = {
-    'NN': {
+    nn_plot_name: {
         'optimizer_class': NNAcquisitionOptimizer,
         'model': nn_model,
         'nn_model_name': model_and_info_name
     }
+    for nn_plot_name, nn_model, model_and_info_name
+    in zip(model_and_info_plot_names, nn_models, model_and_info_names)
 }
 
 options_dict = {
@@ -266,7 +308,7 @@ plot_optimization_results_multiple_methods(
     objective_names_plot=function_plot_names,
     plots_fname_desc=None,
     # plots_title=config_str,
-    plots_title="Fixed kernel, Exp transform, 6 dimensions, 14 initial points, 40 iterations, 5 trial/func",
+    plots_title=plots_title,
     plots_dir=plots_dir
 )
 plt.show()

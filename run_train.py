@@ -26,6 +26,8 @@ from train_acquisition_function_net import (
 from utils import DEVICE, Exp, get_dimension, save_json, load_json, convert_to_json_serializable
 from plot_utils import plot_nn_vs_gp_acquisition_function_1d_grid, plot_acquisition_function_net_training_history
 
+import argparse
+
 import logging
 logging.basicConfig(level=logging.WARNING)
 
@@ -33,12 +35,89 @@ logging.basicConfig(level=logging.WARNING)
 script_dir = os.path.dirname(os.path.abspath(__file__))
 MODELS_DIR = os.path.join(script_dir, "saved_models")
 
+# Run like, e.g.,
+# python run_train.py --dimension 6 --layer_width 256 --train_acquisition_size 1000 --test_factor 0.1
+
+parser = argparse.ArgumentParser()
+parser.add_argument(
+    '--no-train', 
+    action='store_false', 
+    dest='train', 
+    help='If set, do not train the model. Default is to train the model.'
+)
+parser.add_argument(
+    '--load_saved_model', 
+    action='store_true', 
+    help='Whether to load a saved model. Set this flag to load the saved model.'
+)
+parser.add_argument(
+    '--load_saved_dataset_config', 
+    action='store_true', 
+    help='Whether to load the saved dataset config specified in the model info directory. Set this flag to load the saved dataset config.'
+)
+parser.add_argument(
+    '--model_and_info_name', 
+    type=str, 
+    help='Name of the model and info directory. Must be specified if load_saved_model or load_saved_dataset_config'
+)
+parser.add_argument(
+    '--train_acquisition_size', 
+    type=int, 
+    help='Size of the train acqusition dataset'
+)
+parser.add_argument(
+    '--test_acquisition_size', 
+    type=int, 
+    help='Size of the test acqusition dataset (optional)'
+)
+parser.add_argument(
+    '--test_factor', 
+    type=float, 
+    help='Size of the test acqusition dataset as a proportion of train_acquisition_size (optional)'
+)
+parser.add_argument(
+    '--randomize_params', 
+    action='store_true',
+    help='Set this to randomize the GP parameters. Default is False.'
+)
+parser.add_argument(
+    '--dimension', 
+    type=int, 
+    help='Dimension of the optimization problem'
+)
+parser.add_argument(
+    '--standardize_dataset_outcomes', 
+    action='store_true', 
+    help='Whether to standardize the outcomes of the dataset (independently for each item). Default is False'
+)
+parser.add_argument(
+    '--exponentiate_dataset_outcomes', 
+    action='store_true', 
+    help='Whether to exponentiate the outcomes of the dataset. Default is False'
+)
+parser.add_argument(
+    '--standardize_nn_history_outcomes', 
+    action='store_true', 
+    help='Whether to standardize the history outcomes when computing the NN acquisition function. Default is False'
+)
+parser.add_argument(
+    '--layer_width', 
+    type=int,
+    help='The width of the NN layers. Required if load_saved_model=False'
+)
+parser.add_argument(
+    '--policy_gradient', 
+    action='store_true',
+    help='Set this flag to enable policy gradient training. Default is to use MSE training.'
+)
+args = parser.parse_args()
+
 # Whether to train the model.
-TRAIN = True
+TRAIN = args.train
 # Whether to load a saved model.
-LOAD_SAVED_MODEL = False
+LOAD_SAVED_MODEL = args.load_saved_model
 # Whether to load the saved dataset config specified in the model info directory
-LOAD_SAVED_DATASET_CONFIG = False
+LOAD_SAVED_DATASET_CONFIG = args.load_saved_dataset_config
 
 # MODEL_AND_INFO_NAME = "model_20240716_010917_a3cf2269d9ef18d89800d5059878d662df8e9bbab2624e6adfd0a6653fcea168"
 # MODEL_AND_INFO_NAME = "model_20240716_012546_cea676c3cb0ad3ae82f9463cd125e83ca6569663016c684e4f2113f01f716272"
@@ -69,10 +148,16 @@ LOAD_SAVED_DATASET_CONFIG = False
 
 # Same as above but training size is 800K, and layer-width 256 instead of 128
 # Best max EI: 0.36729013620012463
-MODEL_AND_INFO_NAME = "model_20240718_030711_3b42b16944fa8b5d8affffdd7c130d4188d4d8f7335a4c99758399fa7efa79ec"
+# MODEL_AND_INFO_NAME = "model_20240718_030711_3b42b16944fa8b5d8affffdd7c130d4188d4d8f7335a4c99758399fa7efa79ec"
 
+if LOAD_SAVED_MODEL or LOAD_SAVED_DATASET_CONFIG:
+    if args.model_and_info_name is None:
+        raise ValueError("model_and_info_name should be specified if load_saved_model or load_saved_dataset_config")
+    MODEL_AND_INFO_NAME = args.model_and_info_name
+    MODEL_AND_INFO_PATH = os.path.join(MODELS_DIR, MODEL_AND_INFO_NAME)
 
-MODEL_AND_INFO_PATH = os.path.join(MODELS_DIR, MODEL_AND_INFO_NAME)
+if (not LOAD_SAVED_MODEL) and (args.layer_width is None):
+    raise ValueError("layer_width must be specified if load_saved_model=False")
 
 # Whether to fit maximum a posteriori GP for testing
 FIT_MAP_GP = False
@@ -106,10 +191,10 @@ if LOAD_SAVED_MODEL:
         os.path.join(MODEL_AND_INFO_PATH, "training_config.json")
     )['policy_gradient']
 else:
-    POLICY_GRADIENT = False # True for the softmax thing, False for MSE EI
+    POLICY_GRADIENT = args.policy_gradient # True for the softmax thing, False for MSE EI
 
 BATCH_SIZE = 64
-LEARNING_RATE = 3e-4
+LEARNING_RATE = 3e-4 # 1e-2 # 3e-3
 EPOCHS = 200
 FIX_TRAIN_ACQUISITION_DATASET = False
 
@@ -143,40 +228,32 @@ if EARLY_STOPPING:
 ################################################################################
 
 
-########################### Test dataset settings ##############################
-test_dataset_config = dict(
-    ## How many times bigger the big test dataset is than the train dataset, > 0
-    ## test_factor=1 means same size, test_factor=0.5 means half the size, etc
-    test_factor=0.05, # 3.0
-    ## The proportion of the test dataset that is used for evaluating the model
-    ## after each epoch, between 0 and 1
-    small_test_proportion_of_test=1.0,
-    # The following two should be kept as they are -- ALWAYS want to fix the
-    # test. As long as the acqisition dataset is fixed, then whether the
-    # function samples dataset is fixed doesn't matter.
-    fix_test_samples_dataset=False,
-    fix_test_acquisition_dataset=True,
-)
-
 if LOAD_SAVED_DATASET_CONFIG:
     gp_realization_config, dataset_size_config, n_points_config, \
         dataset_transform_config, model_sampler = load_configs(MODEL_AND_INFO_PATH)
     DIMENSION = get_dimension(model_sampler.get_model(0))
 else:
+    if args.train_acquisition_size is None:
+        raise ValueError("train_acquisition_size should be specified if not loding from dataset config")
+    if args.randomize_params is None:
+        raise ValueError("randomize_params should be specified if not loding from dataset config")
+
     # Need the dimension to match if loading a saved model
     if LOAD_SAVED_MODEL:
         _model_sampler = RandomModelSampler.load(
             os.path.join(MODEL_AND_INFO_PATH, "model_sampler"))
         DIMENSION = get_dimension(_model_sampler.get_model(0))
     else:
-        DIMENSION = 6
+        if args.dimension is None:
+            raise ValueError("dimension should be specified if not loading a dataset config or saved model")
+        DIMENSION = args.dimension
 
     ###################### GP realization characteristics ##########################
     gp_realization_config = dict(
         # Dimension of the optimization problem
         dimension=DIMENSION,
         # whether to randomize the GP parameters for training data
-        randomize_params=False,
+        randomize_params=args.randomize_params,
         # choose either "uniform" or "normal" (or a custom distribution)
         xvalue_distribution="uniform",
         observation_noise=False,
@@ -187,7 +264,7 @@ else:
     ################## Settings for dataset size and generation ####################
     dataset_size_config = dict(
         # The size of the training acquisition dataset
-        train_acquisition_size=800_000,
+        train_acquisition_size=args.train_acquisition_size,
         # The amount that the dataset is expanded to save compute of GP realizations
         expansion_factor=2,
         # Whether to fix the training dataset function samples
@@ -231,8 +308,8 @@ else:
         # instead. Or alternateively, just don't save the acquisition datasets, or
         # transform the acquisition datasets directly. I think it would be easiest to
         # just not save the acquisition datasets anymore.
-        outcome_transform=Exp(),
-        standardize_outcomes=True
+        outcome_transform=Exp() if args.exponentiate_dataset_outcomes else None,
+        standardize_outcomes=args.standardize_dataset_outcomes
     )
 # Exp technically works, but Power does not
 # Make sure to set these appropriately depending on whether the transform
@@ -241,6 +318,32 @@ else:
 #     GET_TRAIN_TRUE_GP_STATS = False
 #     GET_TEST_TRUE_GP_STATS = False
 
+
+########################### Test dataset settings ##############################
+if args.test_factor is None:
+    if args.test_acquisition_size is None:
+        raise ValueError("Either test_factor or test_acquisition_size should be specified")
+    else:
+        test_factor = args.test_acquisition_size / dataset_size_config['train_acquisition_size']
+else:
+    if args.test_acquisition_size is None:
+        test_factor = args.test_factor
+    else:
+        raise ValueError("Only one of test_factor or test_acquisition_size should be specified")
+
+test_dataset_config = dict(
+    ## How many times bigger the big test dataset is than the train dataset, > 0
+    ## test_factor=1 means same size, test_factor=0.5 means half the size, etc
+    test_factor=test_factor, # 3.0
+    ## The proportion of the test dataset that is used for evaluating the model
+    ## after each epoch, between 0 and 1
+    small_test_proportion_of_test=1.0,
+    # The following two should be kept as they are -- ALWAYS want to fix the
+    # test. As long as the acqisition dataset is fixed, then whether the
+    # function samples dataset is fixed doesn't matter.
+    fix_test_samples_dataset=False,
+    fix_test_acquisition_dataset=True,
+)
 
 
 ####################### Make the train and test datasets #######################
@@ -300,9 +403,9 @@ else:
     model = AcquisitionFunctionNetV1and2(
                 DIMENSION,
                 pooling="max",
-                history_enc_hidden_dims=[256, 256],
-                encoded_history_dim=256,
-                aq_func_hidden_dims=[256, 256],
+                history_enc_hidden_dims=[args.layer_width, args.layer_width],
+                encoded_history_dim=args.layer_width,
+                aq_func_hidden_dims=[args.layer_width, args.layer_width],
                 input_xcand_to_local_nn=True,
                 input_xcand_to_final_mlp=False,
                 include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
@@ -310,11 +413,13 @@ else:
                 initial_alpha=INITIAL_ALPHA,
                 activation_at_end_pointnet=True,
                 layer_norm_pointnet=False,
+                dropout_pointnet=None, # 0.1
                 layer_norm_before_end_mlp=False,
                 layer_norm_at_end_mlp=False,
-                standardize_outcomes=True,
+                dropout_mlp=None, # 0.1
+                standardize_outcomes=args.standardize_nn_history_outcomes,
                 include_best_y=False,
-                activation_pointnet="relu",
+                activation_pointnet="relu",#balut
                 activation_mlp="relu").to(DEVICE)
 # model = AcquisitionFunctionNetV4(DIMENSION,
 #                                  history_enc_hidden_dims=[32, 32], pooling="max",
@@ -367,7 +472,9 @@ if TRAIN:
         gp_realization_config, dataset_size_config, n_points_config,
         dataset_transform_config, train_aq_dataset.model_sampler)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
+    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE,
+                                #  weight_decay=1e-2
+                                 )
     # optimizer = torch.optim.RMSprop(model.parameters(), lr=learning_rate)
     training_history_data = train_acquisition_function_net(
         model, train_aq_dataset, optimizer, POLICY_GRADIENT, EPOCHS, BATCH_SIZE,
@@ -380,7 +487,7 @@ if TRAIN:
         get_train_true_gp_stats=GET_TRAIN_TRUE_GP_STATS,
         get_test_true_gp_stats=GET_TEST_TRUE_GP_STATS,
         save_dir=model_path,
-        save_incremental_best_models=False,
+        save_incremental_best_models=True,
         early_stopping=EARLY_STOPPING,
         patience=PATIENCE,
         min_delta=MIN_DELTA,

@@ -10,6 +10,7 @@ from acquisition_function_net import AcquisitionFunctionNet, LikelihoodFreeNetwo
 from predict_EI_simple import calculate_EI_GP
 
 
+
 def plot_gp_posterior(ax, posterior, test_x, train_x, train_y, color, name=None):
     if not hasattr(posterior, "mvn"):
         # This in general won't correspond to the actual probability distribution AT ALL
