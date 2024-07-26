@@ -179,9 +179,11 @@ class NNAcquisitionOptimizer(ModelAcquisitionOptimizer):
                  initial_points: Tensor,
                  objective: Callable,
                  model: AcquisitionFunctionNet,
-                 bounds: Optional[Tensor]=None):
+                 bounds: Optional[Tensor]=None,
+                 **acqf_kwargs):
         super().__init__(dim, maximize, initial_points, objective, 
-                         LikelihoodFreeNetworkAcquisitionFunction, bounds)
+                         LikelihoodFreeNetworkAcquisitionFunction, bounds,
+                         **acqf_kwargs)
         self.model = model
     
     def get_model(self):
@@ -235,7 +237,7 @@ class GPAcquisitionOptimizer(ModelAcquisitionOptimizer):
         return self.model
 
 
-class LazyOptimizationResultsSingleMethod:
+class OptimizationResultsSingleMethod:
     def __init__(self,
                  objectives: List[Callable],
                  initial_points: Tensor,
@@ -525,7 +527,7 @@ class LazyOptimizationResultsSingleMethod:
             pbar.close()
 
 
-class LazyOptimizationResultsMultipleMethods:
+class OptimizationResultsMultipleMethods:
     def __init__(self,
             options_dict: dict[str, dict[str, Any]],
             objectives: List[Callable],
@@ -548,7 +550,7 @@ class LazyOptimizationResultsMultipleMethods:
         n_funcs_to_optimize_per_method = []
         n_trials_list = []
         for options_name, options in options_dict.items():
-            optimization_results = LazyOptimizationResultsSingleMethod(
+            optimization_results = OptimizationResultsSingleMethod(
                 objectives=objectives,
                 initial_points=initial_points,
                 n_iter=n_iter,
@@ -629,12 +631,13 @@ class LazyOptimizationResultsMultipleMethods:
 
 
 def plot_optimization_results_multiple_methods(
-        optimization_results: LazyOptimizationResultsMultipleMethods,
+        optimization_results: OptimizationResultsMultipleMethods,
         max_n_functions_to_plot: int=5,
         alpha=0.05,
         sharey=True,
         aspect=2.0,
         scale=0.5,
+        combined_options_to_plot: Optional[dict[str, list[str]]]=None,
         objective_names_plot: Optional[list[str]]=None,
         plots_fname_desc: Optional[str]=None,
         plots_title: Optional[str]=None,
@@ -651,7 +654,8 @@ def plot_optimization_results_multiple_methods(
     
     if plots_title is None:
         plots_title = 'Optimization results' if plots_fname_desc is None else plots_fname_desc
-    _plots_fname_desc = '' if plots_fname_desc is None else '_' + sanitize_file_name(plots_fname_desc)
+    _plots_fname_desc = '' if plots_fname_desc is None else '_' + sanitize_file_name(
+        plots_fname_desc)
     
     if plots_dir is not None:
         os.makedirs(plots_dir, exist_ok=True)
@@ -689,33 +693,42 @@ def plot_optimization_results_multiple_methods(
                         dpi=300, format='pdf', bbox_inches='tight')
     
     # Plot all optimizatoins means with error bars in one plot
-    fig, axes = plt.subplots(1, n_objectives_to_plot,
-                        figsize=(width * n_objectives_to_plot, height),
-                        sharex=True, sharey=sharey)
-    if n_objectives_to_plot == 1:
-        axes = [axes]
+    if combined_options_to_plot is None:
+        combined_options_to_plot = {}
+    combined_options_to_plot = {
+        'all': list(options_dict),
+        **combined_options_to_plot
+    }
 
-    for func_index in range(n_objectives_to_plot):
-        func_name = objective_names[func_index]
-        func_plot_name = objective_names_plot[func_index]
-        ax = axes[func_index]
+    for options_list_name, options_list in combined_options_to_plot.items():
+        fig, axes = plt.subplots(1, n_objectives_to_plot,
+                            figsize=(width * n_objectives_to_plot, height),
+                            sharex=True, sharey=sharey)
+        if n_objectives_to_plot == 1:
+            axes = [axes]
 
-        for options_name in options_dict:
-            data = results[func_name][options_name]
-            best_y = data['best_y']
-            plot_optimization_trajectories_error_bars(
-                ax, best_y, options_name, alpha)
-        ax.set_xlabel('Iteration')
-        ax.set_ylabel('Best function value')
-        ax.set_title(f'Function {func_plot_name}')
-        ax.legend()
-    fig.suptitle(plots_title)
-    fig.tight_layout()
-    
-    if plots_dir is not None:
-        filename = f"functions_optimization{_plots_fname_desc}.pdf"
-        plt.savefig(os.path.join(plots_dir, filename),
-                    dpi=300, format='pdf', bbox_inches='tight')
+        for func_index in range(n_objectives_to_plot):
+            func_name = objective_names[func_index]
+            func_plot_name = objective_names_plot[func_index]
+            ax = axes[func_index]
+
+            for options_name in options_list:
+                data = results[func_name][options_name]
+                best_y = data['best_y']
+                plot_optimization_trajectories_error_bars(
+                    ax, best_y, options_name, alpha)
+            ax.set_xlabel('Iteration')
+            ax.set_ylabel('Best function value')
+            ax.set_title(f'Function {func_plot_name}')
+            ax.legend()
+        fig.suptitle(f'{plots_title}, {options_list_name}')
+        fig.tight_layout()
+        
+        if plots_dir is not None:
+            filename = sanitize_file_name(
+                f"functions_optimization{_plots_fname_desc}_{options_list_name}.pdf")
+            plt.savefig(os.path.join(plots_dir, filename),
+                        dpi=300, format='pdf', bbox_inches='tight')
     
     ## Plot aggregate data (TODO) (might not be necessary)
     ## Old code:
@@ -727,7 +740,6 @@ def plot_optimization_results_multiple_methods(
     # plt.title('Aggregate Optimization Trajectory')
     # filename = f"aggregate_optimization_{config_str}.pdf"
     # plt.savefig(filename, dpi=300, format='pdf', bbox_inches='tight')
-
 
 
 import scipy.stats as stats
@@ -809,4 +821,6 @@ def get_random_gp_functions(gp_sampler:RandomModelSampler,
             gp_realizations.append(gp_realization)
             function_names.append(f'gp_{realization_hash}')
     return random_gps, gp_realizations, function_names, function_plot_names
+
+
 

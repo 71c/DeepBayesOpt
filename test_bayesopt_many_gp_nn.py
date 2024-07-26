@@ -10,13 +10,13 @@ from botorch.utils.sampling import draw_sobol_samples
 from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprovement
 from botorch.models.transforms.outcome import Standardize
 
-from bayesopt import (GPAcquisitionOptimizer, LazyOptimizationResultsMultipleMethods,
+from bayesopt import (GPAcquisitionOptimizer, OptimizationResultsMultipleMethods,
                       NNAcquisitionOptimizer, RandomSearch,
                       get_random_gp_functions, plot_optimization_results_multiple_methods)
 
 from utils import (concatenate_outcome_transforms, convert_to_json_serializable,
                    dict_to_hash, dict_to_str, dict_to_fname_str, get_dimension,
-                   get_gp, combine_nested_dicts, DEVICE, Exp, invert_outcome_transform, sanitize_file_name, save_json)
+                   get_gp, combine_nested_dicts, DEVICE, Exp, invert_outcome_transform, load_json, sanitize_file_name, save_json)
 from dataset_with_models import RandomModelSampler
 
 from gpytorch.kernels import MaternKernel, ScaleKernel, RBFKernel
@@ -90,6 +90,18 @@ model_and_info_paths = [
 nn_models = [
     load_model(model_and_info_path).to(DEVICE)
     for model_and_info_path in model_and_info_paths
+]
+
+policy_gradient_flags = [
+    load_json(
+        os.path.join(model_and_info_path, "training_config.json")
+    )["policy_gradient"]
+    for model_and_info_path in model_and_info_paths
+]
+
+model_and_info_plot_names = [
+    f"{name} ({'policy gradient' if policy_gradient else 'MSE'})"
+    for name, policy_gradient in zip(model_and_info_plot_names, policy_gradient_flags)
 ]
 
 # Assume that all the configs are the same
@@ -201,7 +213,7 @@ if outcome_transform is not None:
 
 acquisition_functions = {
     'Log EI': LogExpectedImprovement,
-    # 'EI': ExpectedImprovement
+    'EI': ExpectedImprovement
 }
 gp_options = {
     'True GP': {'fit_params': False},
@@ -209,18 +221,16 @@ gp_options = {
     # 'MLE': {'fit_params': True, 'mle': True}
 }
 
-acquisition_function_options = {
-    name: {'acquisition_function_class': acq_func_class}
-    for name, acq_func_class in acquisition_functions.items()}
 
-kwargs_always = {
+kwargs_always_gp = {
     'optimizer_class': GPAcquisitionOptimizer,
 }
 
 if outcome_transform is None:
-    kwargs_always['optimizer_kwargs_per_function'] = [
+    kwargs_always_gp['optimizer_kwargs_per_function'] = [
         {'model': gp} for gp in random_gps]
-    options_to_combine = [acquisition_function_options, gp_options]
+    gp_options_to_combine = gp_options
+    
 else:
     transform_opt = {
             'optimizer_kwargs_per_function': [
@@ -241,7 +251,6 @@ else:
                 {'model': gp} for gp in nontransformed_gps_with_standardize]
         }
 
-
     gp_options_true = {
         'True GP params (with transform)': {**gp_options['True GP'], **transform_opt}
     }
@@ -254,29 +263,46 @@ else:
         {k: v for k, v in gp_options.items() if k != 'True GP'},
         gp_transform_options)
 
-    options_to_combine = [acquisition_function_options,
-                          {**gp_options_true, **gp_options_untrue}]
+    gp_options_to_combine = {**gp_options_true, **gp_options_untrue}
+
+
+acquisition_function_options = {
+    name: {'acquisition_function_class': acq_func_class}
+    for name, acq_func_class in acquisition_functions.items()}
+
+options_to_combine = [acquisition_function_options, gp_options_to_combine]
 
 options_dict_gp = {
     key: {
-        **kwargs_always,
+        **kwargs_always_gp,
         **value
-    } for key,value in combine_nested_dicts(*options_to_combine).items()
+    } for key, value in combine_nested_dicts(*options_to_combine).items()
 }
 
 options_dict_random = {
     'Random Search': {'optimizer_class': RandomSearch}
 }
 
-options_dict_nn = {
-    nn_plot_name: {
+options_dict_nn = {}
+for nn_plot_name, nn_model, model_and_info_name, pg in zip(
+    model_and_info_plot_names, nn_models, model_and_info_names, policy_gradient_flags):
+    option_dict = {
         'optimizer_class': NNAcquisitionOptimizer,
         'model': nn_model,
         'nn_model_name': model_and_info_name
     }
-    for nn_plot_name, nn_model, model_and_info_name
-    in zip(model_and_info_plot_names, nn_models, model_and_info_names)
-}
+    if pg:
+        # defaults to exponentiate=False
+        options_dict_nn[nn_plot_name] = option_dict
+    else:
+        options_dict_nn[f"{nn_plot_name} (with softplus)"] = {
+            'exponentiate': True,
+            **option_dict
+        }
+        options_dict_nn[f"{nn_plot_name} (without softplus)"] = {
+            'exponentiate': False,
+            **option_dict
+        }
 
 options_dict = {
     **options_dict_gp,
@@ -284,13 +310,41 @@ options_dict = {
     **options_dict_nn
 }
 
-results_generator = LazyOptimizationResultsMultipleMethods(
+has_any_mse = any(not pg for pg in policy_gradient_flags)
+
+is_ei_acqf_dict = {
+    LogExpectedImprovement: False,
+    ExpectedImprovement: True
+}
+def is_ei_option(option_dict):
+    if option_dict['optimizer_class'] is NNAcquisitionOptimizer:
+        return option_dict.get('exponentiate', False)
+    if option_dict['optimizer_class'] is GPAcquisitionOptimizer:
+        acqf_cls = option_dict['acquisition_function_class']
+        return is_ei_acqf_dict.get(acqf_cls, None)
+    return None
+
+combined_options_to_plot = {
+    'no EI methods': [
+        option_name for option_name, option_dict in options_dict.items()
+        if is_ei_option(option_dict) in {False, None}
+    ]
+}
+if has_any_mse:
+    combined_options_to_plot['EI methods'] = [
+        option_name for option_name, option_dict in options_dict.items()
+        if is_ei_option(option_dict) in {True, None}
+    ]
+
+
+results_generator = OptimizationResultsMultipleMethods(
     options_dict, gp_realizations, init_x, config['n_iter'],
     SEED, objective_names, RESULTS_DIR, dim=dim, bounds=bounds, maximize=True)
 
-
-config_json = {k: v.__class__.__name__ if k == 'outcome_transform' else v
-               for k, v in config.items()}
+config_json = {
+    k: v.__class__.__name__ if k == 'outcome_transform' and v is not None else v
+    for k, v in config.items()
+}
 config_str = dict_to_str(config_json)
 
 config_with_n_functions_json = {**config_json, 'n_functions': n_functions}
@@ -305,6 +359,7 @@ plot_optimization_results_multiple_methods(
     sharey=False,
     aspect=1.35,
     scale=1.,
+    combined_options_to_plot=combined_options_to_plot,
     objective_names_plot=function_plot_names,
     plots_fname_desc=None,
     # plots_title=config_str,

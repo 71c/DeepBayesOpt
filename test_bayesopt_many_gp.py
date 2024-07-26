@@ -5,7 +5,7 @@ torch.set_default_dtype(torch.float64)
 from botorch.utils.sampling import draw_sobol_samples
 from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprovement
 
-from bayesopt import (GPAcquisitionOptimizer, LazyOptimizationResultsMultipleMethods,
+from bayesopt import (GPAcquisitionOptimizer, OptimizationResultsMultipleMethods,
                       NNAcquisitionOptimizer, RandomSearch,
                       get_random_gp_functions, plot_optimization_results_multiple_methods)
 
@@ -103,7 +103,7 @@ options_dict = {**options_dict_gp,
                 **options_dict_random
 }
 
-results_generator = LazyOptimizationResultsMultipleMethods(
+results_generator = OptimizationResultsMultipleMethods(
     options_dict, gp_realizations, init_x, config['n_iter'],
     SEED, objective_names, RESULTS_DIR, dim=dim, bounds=bounds, maximize=True)
 
