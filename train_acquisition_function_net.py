@@ -1,4 +1,5 @@
 import copy
+from email import policy
 import math
 from multiprocessing import Value
 import os
@@ -7,7 +8,7 @@ import torch
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from torch.distributions import Categorical
-from acquisition_function_net import AcquisitionFunctionNet
+from acquisition_function_net import AcquisitionFunctionNet, AcquisitionFunctionNetWithFinalMLP
 from dataset_with_models import RandomModelSampler
 from predict_EI_simple import calculate_EI_GP_padded_batch
 from tqdm import tqdm
@@ -270,8 +271,14 @@ def print_train_batch_stats(nn_batch_stats, nn_model, policy_gradient,
         loss_value = nn_batch_stats["ei_softmax"]
     else:
         loss_value = nn_batch_stats["mse"]
-    if nn_model.includes_alpha:
-        suffix += f", alpha={nn_model.get_alpha():>7f}"
+    if isinstance(nn_model, AcquisitionFunctionNetWithFinalMLP):
+        if nn_model.includes_alpha:
+            suffix += f", alpha={nn_model.get_alpha():>7f}"
+        if not policy_gradient:
+            beta = nn_model.get_beta()
+            tau = 1 / beta
+            suffix += f", tau={tau:>7f}"
+
     print(f"{prefix}: {loss_value:>7f}{suffix}  [{batch_index+1:>4d}/{n_batches:>4d}]")
 
 
@@ -450,6 +457,9 @@ def train_or_test_loop(dataloader: DataLoader,
         
         dataset_length += this_batch_size
 
+        if has_models:
+            models = batch.model
+
         if nn_model is not None:
             (x_hist_nn, y_hist_nn, x_cand_nn, vals_cand_nn,
              hist_mask_nn, cand_mask_nn) = batch.to(nn_device).tuple_no_model
@@ -467,7 +477,7 @@ def train_or_test_loop(dataloader: DataLoader,
                 # print("NN", nn_batch_stats)
 
                 # print("(DEBUG) Mean EI NN:", nn_output.mean())
-                
+
                 if train and not is_degenerate_batch:
                     # convert sum to mean so that this is consistent across batch sizes
                     loss = nn_batch_stats.pop("loss") / this_batch_size # (== batch_size)
@@ -485,12 +495,31 @@ def train_or_test_loop(dataloader: DataLoader,
                                                 n_training_batches,
                                                 reduction="sum",
                                                 batch_size=this_batch_size)
-                
+                        
+                        # Debug code
+                        if not policy_gradient:
+                            nn_output_no_transform = nn_model(
+                                x_hist_nn, y_hist_nn, x_cand_nn, hist_mask_nn, cand_mask_nn,
+                                exponentiate=False, softmax=False)
+                            mean = nn_output_no_transform.mean().item()
+                            std = nn_output_no_transform.std().item()
+                            min_val = nn_output_no_transform.min().item()
+                            max_val = nn_output_no_transform.max().item()
+                            print(f"(DEBUG) nn_output_no_transform mean={mean:>4f}, "
+                                  f"std={std:>4f}, min={min_val:>4f}, max={max_val:>4f}")
+                            min_tf = nn_output.min().item()
+                            max_tf = nn_output.max().item()
+                            print(f"(DEBUG) nn_output min={min_tf:>4f}, max={max_tf:>4f}")
+
+                            if has_models:
+                                ei_values_true_model = calculate_EI_GP_padded_batch(
+                                    x_hist, y_hist, x_cand, hist_mask, cand_mask, models)
+                                min_ei_gp = ei_values_true_model.min().item()
+                                max_ei_gp = ei_values_true_model.max().item()
+                                print(f"(DEBUG) ei_values_true_model min={min_ei_gp:>4f}, max={max_ei_gp:>4f}")
+
                 nn_batch_stats_list.append(nn_batch_stats)
-        
-        if has_models:
-            models = batch.model
-        
+
         with torch.no_grad():
             if compute_true_gp_stats:
                 # Calculate true GP EI stats

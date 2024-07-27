@@ -16,6 +16,7 @@ from botorch.utils.transforms import t_batch_mode_transform, match_batch_shape
 from botorch.utils.safe_math import fatmax, smooth_amax
 from abc import ABC, abstractmethod
 from utils import load_json, pad_tensor, save_json, to_device
+from nn_utils import Dense, LearnableSoftplus, PositiveScalar
 
 import logging
 
@@ -95,151 +96,6 @@ def masked_softmax(vec, mask, dim=-1):
     zeros = (masked_sums == 0)
     masked_sums += zeros
     return masked_exps/masked_sums
-
-
-class SoftmaxOrExponentiateLayer(nn.Module):
-    def __init__(self, softmax_dim=-1,
-                 include_alpha=False, learn_alpha=False, initial_alpha=1.0):
-        """Initialize the SoftmaxOrExponentiateLayer class.
-
-        Args:
-            softmax_dim (int, default: -1):
-                The dimension along which to apply the softmax.
-            include_alpha (bool, default: False):
-                Whether to include an alpha parameter.
-            learn_alpha (bool, default: False):
-                Whether to learn the alpha parameter.
-            initial_alpha (float, default: 1.0):
-                The initial value for the alpha parameter.
-        """
-        super().__init__()
-        self.softmax_dim = softmax_dim
-        self.includes_alpha = include_alpha
-        if include_alpha:
-            if learn_alpha:
-                self._log_alpha = nn.Parameter(torch.tensor(0.0))
-            else:
-                # register a buffer which is _log_alpha but not a parameter
-                self.register_buffer("_log_alpha", torch.tensor(0.0))
-            self.set_alpha(initial_alpha)
-
-    def get_alpha(self):
-        if not self.includes_alpha:
-            raise ValueError("Model does not include alpha.")
-        return torch.exp(self._log_alpha)
-    
-    def set_alpha(self, val):
-        if not self.includes_alpha:
-            raise ValueError("Model does not include alpha.")
-        val = torch.log(torch.as_tensor(val))
-        try:
-            self._log_alpha.data.copy_(val.expand_as(self._log_alpha))
-        except RuntimeError:
-            self._log_alpha.data = val
-    
-    def forward(self, x, mask=None, exponentiate=False, softmax=False):
-        """Compute the acquisition function.
-
-        Args:
-            x (torch.Tensor):
-                input tensor
-            mask (torch.Tensor, optional):
-                mask tensor
-            exponentiate (bool, optional): Whether to exponentiate the output.
-                Default is False. For EI, False corresponds to the log of the
-                acquisition function (e.g. log EI), and True corresponds to
-                the acquisition function itself (e.g. EI).
-                Only applies if self.includes_alpha is False.
-            softmax (bool, optional): Whether to apply softmax to the output.
-                Only applies if self.includes_alpha is True. Default is False.
-
-        Returns:
-            torch.Tensor: Exponentiated or softmaxed tensor.
-        """
-        if softmax:
-            if self.includes_alpha:
-                x = x * self.get_alpha()
-            if mask is None:
-                x = nn.functional.softmax(x, dim=self.softmax_dim)
-            else:
-                x = masked_softmax(x, mask, dim=self.softmax_dim)
-        elif self.training and self.includes_alpha:
-            warnings.warn("The model is in training mode but softmax is False "
-                          "and alpha is included in the model. "
-                          "If this is unintentional, set softmax=True.")
-
-        if exponentiate:
-            if self.includes_alpha:
-                raise ValueError(
-                    "It doesn't make sense to exponentiate and use alpha at "
-                    "the same time. Should set softmax=True instead of exponentiate=True.")
-            if softmax:
-                raise ValueError(
-                    "It doesn't make sense to exponentiate and use softmax at "
-                    "the same time. Should set softmax=False instead.")
-            # x = torch.exp(x)
-            x = nn.functional.softplus(x)
-
-        return x
-
-
-ACTIVATIONS = {
-    "relu": nn.ReLU,
-    "softplus": nn.Softplus,
-    "selu": nn.SELU
-}
-
-class Dense(nn.Sequential):
-    """Dense neural network with ReLU activations."""
-    def __init__(self, input_dim: int, hidden_dims: Sequence[int]=[256, 64],
-                 output_dim: int=1, activation_at_end=False,
-                 layer_norm_before_end=False, layer_norm_at_end=False,
-                 dropout:Optional[float]=None, dropout_at_end=True,
-                 activation:str="relu"):
-        """
-        Args:
-            input_dim (int):
-                The dimensionality of the input.
-            hidden_dims (Sequence[int], default: [256, 64]):
-                A sequence of integers representing the sizes of the hidden
-                layers.
-            output_dim (int, default: 1):
-                The dimensionality of the output.
-            activation_at_end (bool, default: False):
-                Whether to apply the activation function at the end.
-        """
-        if not isinstance(activation, str):
-            raise ValueError("activation must be a string.")
-        if activation not in ACTIVATIONS:
-            raise ValueError(f"activation must be one of {ACTIVATIONS.keys()}")
-        activation = ACTIVATIONS[activation]
-
-        layer_widths = [input_dim] + list(hidden_dims) + [output_dim]
-        n_layers = len(layer_widths) - 1
-        
-        layers = []
-        for i in range(n_layers):
-            in_dim, out_dim = layer_widths[i], layer_widths[i+1]
-            
-            layers.append(nn.Linear(in_dim, out_dim))
-            
-            add_layer_norm = layer_norm_at_end if i == n_layers - 1 else layer_norm_before_end
-            if add_layer_norm:
-                layers.append(nn.LayerNorm(out_dim))
-
-                # if i == 0:
-                #     layers.append(nn.LayerNorm(out_dim))
-            
-            if i != n_layers - 1 or activation_at_end:
-                # layers.append(nn.ReLU())
-                # layers.append(nn.Softplus())
-                # layers.append(nn.SELU())
-                layers.append(activation())
-            
-            if dropout is not None and (i != n_layers - 1 or dropout_at_end):
-                layers.append(nn.Dropout(dropout))
-        
-        super().__init__(*layers)
 
 
 def add_neg_inf_for_max(x, mask):
@@ -611,6 +467,97 @@ class AcquisitionFunctionNetWithSoftmaxAndExponentiate(AcquisitionFunctionNet):
         pass  # pragma: no cover
 
 
+class SoftmaxOrSoftplusLayer(nn.Module):
+    def __init__(self, softmax_dim=-1,
+                 include_alpha=False, learn_alpha=False, initial_alpha=1.0,
+                 initial_beta=1.0, learn_beta=False):
+        """Initialize the SoftmaxOrSoftplusLayer class.
+
+        Args:
+            softmax_dim (int, default: -1):
+                The dimension along which to apply the softmax.
+            include_alpha (bool, default: False):
+                Whether to include an alpha parameter.
+            learn_alpha (bool, default: False):
+                Whether to learn the alpha parameter.
+            initial_alpha (float, default: 1.0):
+                The initial value for the alpha parameter.
+        """
+        super().__init__()
+        self.softmax_dim = softmax_dim
+
+        self.includes_alpha = include_alpha
+        if include_alpha:
+            self._alpha = PositiveScalar(learnable=learn_alpha,
+                                         initial_val=initial_alpha,
+                                         softplus=False)
+        
+        self.learn_beta = learn_beta
+        if learn_beta:
+            self.softplus = LearnableSoftplus(initial_beta)
+        else:
+            self.softplus = nn.Softplus(initial_beta)
+
+    def get_alpha(self):
+        if not self.includes_alpha:
+            raise ValueError("Model does not include alpha.")
+        return self._alpha.get_value()
+    
+    def set_alpha(self, val):
+        if not self.includes_alpha:
+            raise ValueError("Model does not include alpha.")
+        self._alpha.set_value(val)
+    
+    def forward(self, x, mask=None, exponentiate=False, softmax=False):
+        """Compute the acquisition function.
+
+        Args:
+            x (torch.Tensor):
+                input tensor
+            mask (torch.Tensor, optional):
+                mask tensor
+            exponentiate (bool, optional): Whether to exponentiate the output.
+                Default is False. For EI, False corresponds to the log of the
+                acquisition function (e.g. log EI), and True corresponds to
+                the acquisition function itself (e.g. EI).
+                Only applies if self.includes_alpha is False.
+            softmax (bool, optional): Whether to apply softmax to the output.
+                Only applies if self.includes_alpha is True. Default is False.
+
+        Returns:
+            torch.Tensor: Exponentiated or softmaxed tensor.
+        """
+        if softmax:
+            if self.includes_alpha:
+                x = x * self.get_alpha()
+            if mask is None:
+                x = nn.functional.softmax(x, dim=self.softmax_dim)
+            else:
+                x = masked_softmax(x, mask, dim=self.softmax_dim)
+            
+            if self.learn_beta:
+                warnings.warn("softmax is True but learn_beta is also True. "
+                              "This is probably unintentional.")
+
+        elif self.training and self.includes_alpha:
+            warnings.warn("The model is in training mode but softmax is False "
+                          "and alpha is included in the model. "
+                          "If this is unintentional, set softmax=True.")
+
+        if exponentiate:
+            if self.includes_alpha:
+                raise ValueError(
+                    "It doesn't make sense to exponentiate and use alpha at "
+                    "the same time. Should set softmax=True instead of exponentiate=True.")
+            if softmax:
+                raise ValueError(
+                    "It doesn't make sense to exponentiate and use softmax at "
+                    "the same time. Should set softmax=False instead.")
+            x = self.softplus(x)
+
+        return x
+
+
 MIN_STDV = 1e-8
 
 class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExponentiate):
@@ -623,6 +570,8 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
                  include_alpha=False,
                  learn_alpha=False,
                  initial_alpha=1.0,
+                 initial_beta=1.0,
+                 learn_beta=False,
                  layer_norm_before_end=False,
                  layer_norm_at_end=False,
                  standardize_outcomes=False,
@@ -665,16 +614,22 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
         self.layer_norm_at_end = layer_norm_at_end
         self.standardize_outcomes = standardize_outcomes
         
-        self.transform = SoftmaxOrExponentiateLayer(softmax_dim=-2,
-                                            include_alpha=include_alpha,
-                                            learn_alpha=learn_alpha,
-                                            initial_alpha=initial_alpha)
+        self.transform = SoftmaxOrSoftplusLayer(
+            softmax_dim=-2,
+            include_alpha=include_alpha,
+            learn_alpha=learn_alpha,
+            initial_alpha=initial_alpha,
+            initial_beta=initial_beta,
+            learn_beta=learn_beta)
     
     def get_alpha(self):
         return self.transform.get_alpha()
 
     def set_alpha(self, val):
         self.transform.set_alpha(val)
+    
+    def get_beta(self):
+        return self.transform.softplus.beta
 
     @property
     def includes_alpha(self):
@@ -835,6 +790,7 @@ class AcquisitionFunctionNetV1and2(AcquisitionFunctionNetWithFinalMLP):
                  input_xcand_to_local_nn=True,
                  input_xcand_to_final_mlp=False,
                  include_alpha=False, learn_alpha=False, initial_alpha=1.0,
+                 initial_beta=1.0, learn_beta=False,
                  activation_at_end_pointnet=True,
                  layer_norm_pointnet=False,
                  dropout_pointnet=None,
@@ -924,6 +880,7 @@ class AcquisitionFunctionNetV1and2(AcquisitionFunctionNetWithFinalMLP):
         super().__init__(initial_modules, final_layer_input_dim,
                          aq_func_hidden_dims, include_alpha,
                          learn_alpha, initial_alpha,
+                         initial_beta, learn_beta,
                          layer_norm_before_end_mlp, layer_norm_at_end_mlp,
                          standardize_outcomes=standardize_outcomes,
                          activation=activation_mlp,
@@ -970,7 +927,8 @@ class AcquisitionFunctionNetV3(AcquisitionFunctionNetWithFinalMLP):
                  aq_func_hidden_dims=[256, 64], layer_norm=False,
                  layer_norm_at_end_mlp=False, include_y=False,
                  standardize_outcomes=False,
-                 include_alpha=False, learn_alpha=False, initial_alpha=1.0):
+                 include_alpha=False, learn_alpha=False, initial_alpha=1.0,
+                 initial_beta=1.0, learn_beta=False):
         """
         Args:
             dimension (int): The dimensionality of the input space.
@@ -1022,6 +980,7 @@ class AcquisitionFunctionNetV3(AcquisitionFunctionNetWithFinalMLP):
         super().__init__(initial_modules, mean_dim + std_dim,
                          aq_func_hidden_dims, include_alpha,
                          learn_alpha, initial_alpha,
+                         initial_beta, learn_beta,
                          layer_norm_before_end=layer_norm,
                          layer_norm_at_end=layer_norm_at_end_mlp,
                          standardize_outcomes=standardize_outcomes)
@@ -1084,7 +1043,8 @@ class AcquisitionFunctionNetV4(AcquisitionFunctionNetWithFinalMLP):
                  standardize_outcomes=False,
                  include_mean=True,
                  include_local_features=False,
-                 include_alpha=False, learn_alpha=False, initial_alpha=1.0):
+                 include_alpha=False, learn_alpha=False, initial_alpha=1.0,
+                 initial_beta=1.0, learn_beta=False):
         """
         Args:
             dimension (int): The dimensionality of the input space.
@@ -1139,6 +1099,7 @@ class AcquisitionFunctionNetV4(AcquisitionFunctionNetWithFinalMLP):
         super().__init__(initial_modules, std_dim + (mean_dim if include_mean else 0),
                          aq_func_hidden_dims, include_alpha,
                          learn_alpha, initial_alpha,
+                         initial_beta, learn_beta,
                          layer_norm_before_end=layer_norm,
                          layer_norm_at_end=layer_norm_at_end_mlp,
                          standardize_outcomes=standardize_outcomes)
@@ -1249,7 +1210,8 @@ def flatten_last_two_dimensions(tensor):
 
 class AcquisitionFunctionNetDense(AcquisitionFunctionNetWithFinalMLP):
     def __init__(self, dimension, max_history, hidden_dims=[256, 64],
-                 include_alpha=False, learn_alpha=False, initial_alpha=1.0):
+                 include_alpha=False, learn_alpha=False, initial_alpha=1.0,
+                 initial_beta=1.0, learn_beta=False):
         """
         Args:
             dimension (int): The dimensionality of the input space.
@@ -1266,7 +1228,8 @@ class AcquisitionFunctionNetDense(AcquisitionFunctionNetWithFinalMLP):
         self.max_history = max_history
         self.input_dim = max_history * (2 * dimension + 1)
         super().__init__(OrderedDict(), self.input_dim, hidden_dims,
-                         include_alpha, learn_alpha, initial_alpha)
+                         include_alpha, learn_alpha, initial_alpha,
+                         initial_beta, learn_beta)
         self.dimension = dimension
     
     def _get_mlp_input(self, x_hist, y_hist, x_cand,

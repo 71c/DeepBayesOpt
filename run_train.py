@@ -37,6 +37,7 @@ MODELS_DIR = os.path.join(script_dir, "saved_models")
 
 # Run like, e.g.,
 # python run_train.py --dimension 6 --layer_width 256 --train_acquisition_size 1000 --test_factor 0.1
+# python run_train.py --layer_width 32 --learn_tau --initial_tau 0.5 --train_acquisition_size 10000 --test_acquisition_size 1000 --dimension 6
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -109,6 +110,18 @@ parser.add_argument(
     '--policy_gradient', 
     action='store_true',
     help='Set this flag to enable policy gradient training. Default is to use MSE training.'
+)
+parser.add_argument(
+    '--learn_tau', 
+    action='store_true',
+    help=('Set this flag to enable learning of tau=1/beta which is the parameter for softplus'
+          ' applied at the end of the MSE acquisition function. Default is False. '
+          'This is only used if policy_gradient=False.')
+)
+parser.add_argument(
+    '--initial_tau',
+    type=float,
+    help='Initial value of tau. Default is 1.0. This is only used if policy_gradient=False.'
 )
 args = parser.parse_args()
 
@@ -205,6 +218,8 @@ LEARN_ALPHA = True
 INITIAL_ALPHA = 1.0
 ALPHA_INCREMENT = None # equivalent to 0.0
 
+INCLUDE_ALPHA = INCLUDE_ALPHA and POLICY_GRADIENT
+
 EARLY_STOPPING = True
 PATIENCE = 20
 MIN_DELTA = 0.0
@@ -216,15 +231,28 @@ training_config = dict(
     learning_rate=LEARNING_RATE,
     epochs=EPOCHS,
     fix_train_acquisition_dataset=FIX_TRAIN_ACQUISITION_DATASET,
-    alpha_increment=ALPHA_INCREMENT,
     early_stopping=EARLY_STOPPING
 )
+if POLICY_GRADIENT:
+    training_config = dict(
+        **training_config,
+        include_alpha=INCLUDE_ALPHA,
+        learn_alpha=LEARN_ALPHA,
+        initial_alpha=INITIAL_ALPHA,
+        alpha_increment=ALPHA_INCREMENT)
+    if args.learn_tau:
+        raise ValueError("learn_tau should be False if policy_gradient is True")
+    if args.initial_tau is not None:
+        raise ValueError("initial_tau should not be specified if policy_gradient is True")
 if EARLY_STOPPING:
     training_config = dict(
         **training_config,
         patience=PATIENCE,
         min_delta=MIN_DELTA,
         cumulative_delta=CUMULATIVE_DELTA)
+
+if args.initial_tau is None:
+    args.initial_tau = 1.0
 ################################################################################
 
 
@@ -408,9 +436,11 @@ else:
                 aq_func_hidden_dims=[args.layer_width, args.layer_width],
                 input_xcand_to_local_nn=True,
                 input_xcand_to_final_mlp=False,
-                include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
+                include_alpha=INCLUDE_ALPHA,
                 learn_alpha=LEARN_ALPHA,
                 initial_alpha=INITIAL_ALPHA,
+                initial_beta=1.0 / args.initial_tau,
+                learn_beta=args.learn_tau,
                 activation_at_end_pointnet=True,
                 layer_norm_pointnet=False,
                 dropout_pointnet=None, # 0.1
