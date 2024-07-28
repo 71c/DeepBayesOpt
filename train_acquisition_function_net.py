@@ -278,6 +278,9 @@ def print_train_batch_stats(nn_batch_stats, nn_model, policy_gradient,
             beta = nn_model.get_beta()
             tau = 1 / beta
             suffix += f", tau={tau:>7f}"
+            if nn_model.transform.softplus_batchnorm:
+                const = nn_model.transform.batchnorm.weight.get_value().item()
+                suffix += f", batchnorm constant={const:>7f}"
 
     print(f"{prefix}: {loss_value:>7f}{suffix}  [{batch_index+1:>4d}/{n_batches:>4d}]")
 
@@ -511,12 +514,12 @@ def train_or_test_loop(dataloader: DataLoader,
                             max_tf = nn_output.max().item()
                             print(f"(DEBUG) nn_output min={min_tf:>4f}, max={max_tf:>4f}")
 
-                            if has_models:
-                                ei_values_true_model = calculate_EI_GP_padded_batch(
-                                    x_hist, y_hist, x_cand, hist_mask, cand_mask, models)
-                                min_ei_gp = ei_values_true_model.min().item()
-                                max_ei_gp = ei_values_true_model.max().item()
-                                print(f"(DEBUG) ei_values_true_model min={min_ei_gp:>4f}, max={max_ei_gp:>4f}")
+                            # if has_models:
+                            #     ei_values_true_model = calculate_EI_GP_padded_batch(
+                            #         x_hist, y_hist, x_cand, hist_mask, cand_mask, models)
+                            #     min_ei_gp = ei_values_true_model.min().item()
+                            #     max_ei_gp = ei_values_true_model.max().item()
+                            #     print(f"(DEBUG) ei_values_true_model min={min_ei_gp:>4f}, max={max_ei_gp:>4f}")
 
                 nn_batch_stats_list.append(nn_batch_stats)
 

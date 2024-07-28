@@ -123,6 +123,17 @@ parser.add_argument(
     type=float,
     help='Initial value of tau. Default is 1.0. This is only used if policy_gradient=False.'
 )
+parser.add_argument(
+    '--softplus_batchnorm',
+    action='store_true',
+    help='Set this flag to apply positive-batchnorm after softplus in the MSE acquisition function. Default is False.'
+)
+parser.add_argument(
+    '--softplus_batchnorm_momentum',
+    type=float,
+    default=0.1,
+    help='Momentum for the batchnorm after softplus in the MSE acquisition function. Default is 0.1.'
+)
 args = parser.parse_args()
 
 # Whether to train the model.
@@ -244,6 +255,8 @@ if POLICY_GRADIENT:
         raise ValueError("learn_tau should be False if policy_gradient is True")
     if args.initial_tau is not None:
         raise ValueError("initial_tau should not be specified if policy_gradient is True")
+    if args.softplus_batchnorm:
+        raise ValueError("softplus_batchnorm should be False if policy_gradient is True")
 if EARLY_STOPPING:
     training_config = dict(
         **training_config,
@@ -434,6 +447,7 @@ else:
                 history_enc_hidden_dims=[args.layer_width, args.layer_width],
                 encoded_history_dim=args.layer_width,
                 aq_func_hidden_dims=[args.layer_width, args.layer_width],
+                output_dim=1,
                 input_xcand_to_local_nn=True,
                 input_xcand_to_final_mlp=False,
                 include_alpha=INCLUDE_ALPHA,
@@ -441,6 +455,8 @@ else:
                 initial_alpha=INITIAL_ALPHA,
                 initial_beta=1.0 / args.initial_tau,
                 learn_beta=args.learn_tau,
+                softplus_batchnorm=args.softplus_batchnorm,
+                softplus_batchnorm_momentum=args.softplus_batchnorm_momentum,
                 activation_at_end_pointnet=True,
                 layer_norm_pointnet=False,
                 dropout_pointnet=None, # 0.1

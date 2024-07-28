@@ -16,7 +16,7 @@ from botorch.utils.transforms import t_batch_mode_transform, match_batch_shape
 from botorch.utils.safe_math import fatmax, smooth_amax
 from abc import ABC, abstractmethod
 from utils import load_json, pad_tensor, save_json, to_device
-from nn_utils import Dense, LearnableSoftplus, PositiveScalar
+from nn_utils import Dense, LearnableSoftplus, PositiveBatchNorm, PositiveScalar
 
 import logging
 
@@ -426,7 +426,8 @@ class AcquisitionFunctionNet(nn.Module, ABC):
             that shouldn't matter since the mask will take care of it.
 
         Returns:
-            torch.Tensor: A `batch_shape x n_cand` tensor of acquisition values.
+            torch.Tensor: A `batch_shape x n_cand x output_dim` tensor of acquisition
+            values. (`output_dim` is 1 for most acquisition functions)
         """
         pass  # pragma: no cover
 
@@ -462,7 +463,8 @@ class AcquisitionFunctionNetWithSoftmaxAndExponentiate(AcquisitionFunctionNet):
                 Only applies if self.includes_alpha is True.
 
         Returns:
-            torch.Tensor: A `batch_shape x n_cand` tensor of acquisition values.
+            torch.Tensor: A `batch_shape x n_cand x output_dim` tensor of acquisition
+            values. (`output_dim` is 1 for most acquisition functions)
         """
         pass  # pragma: no cover
 
@@ -470,7 +472,11 @@ class AcquisitionFunctionNetWithSoftmaxAndExponentiate(AcquisitionFunctionNet):
 class SoftmaxOrSoftplusLayer(nn.Module):
     def __init__(self, softmax_dim=-1,
                  include_alpha=False, learn_alpha=False, initial_alpha=1.0,
-                 initial_beta=1.0, learn_beta=False):
+                 initial_beta=1.0, learn_beta=False,
+                 softplus_batchnorm=False,
+                 softplus_batchnorm_num_features=1,
+                 softplus_batchnorm_dim=-1,
+                 softplus_batchnorm_momentum=0.1):
         """Initialize the SoftmaxOrSoftplusLayer class.
 
         Args:
@@ -482,14 +488,18 @@ class SoftmaxOrSoftplusLayer(nn.Module):
                 Whether to learn the alpha parameter.
             initial_alpha (float, default: 1.0):
                 The initial value for the alpha parameter.
+            initial_beta (float, default: 1.0):
+                The initial value for the beta parameter.
+            learn_beta (bool, default: False):
+                Whether to learn the beta parameter.
         """
         super().__init__()
         self.softmax_dim = softmax_dim
 
         self.includes_alpha = include_alpha
         if include_alpha:
-            self._alpha = PositiveScalar(learnable=learn_alpha,
-                                         initial_val=initial_alpha,
+            self._alpha = PositiveScalar(initial_val=initial_alpha,
+                                         learnable=learn_alpha,
                                          softplus=False)
         
         self.learn_beta = learn_beta
@@ -497,6 +507,16 @@ class SoftmaxOrSoftplusLayer(nn.Module):
             self.softplus = LearnableSoftplus(initial_beta)
         else:
             self.softplus = nn.Softplus(initial_beta)
+        
+        self.register_buffer("softplus_batchnorm",
+                             torch.as_tensor(softplus_batchnorm))
+        if softplus_batchnorm:
+            self.batchnorm = PositiveBatchNorm(
+                num_features=softplus_batchnorm_num_features,
+                dim=softplus_batchnorm_dim,
+                momentum=softplus_batchnorm_momentum,
+                affine=True,
+                track_running_stats=True)
 
     def get_alpha(self):
         if not self.includes_alpha:
@@ -555,6 +575,9 @@ class SoftmaxOrSoftplusLayer(nn.Module):
                     "the same time. Should set softmax=False instead.")
             x = self.softplus(x)
 
+            if self.softplus_batchnorm:
+                x = self.batchnorm(x, mask=mask)
+
         return x
 
 
@@ -567,11 +590,14 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
     def __init__(self, initial_modules: OrderedDict,
                  input_to_final_layer_dim: int,
                  aq_func_hidden_dims: Sequence[int]=[256, 64],
+                 output_dim=1,
                  include_alpha=False,
                  learn_alpha=False,
                  initial_alpha=1.0,
                  initial_beta=1.0,
                  learn_beta=False,
+                 softplus_batchnorm=False,
+                 softplus_batchnorm_momentum=0.1,
                  layer_norm_before_end=False,
                  layer_norm_at_end=False,
                  standardize_outcomes=False,
@@ -604,7 +630,9 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
         for key, val in initial_modules.items():
             setattr(self, key, val)
 
-        self.dense = Dense(input_to_final_layer_dim, aq_func_hidden_dims, 1,
+        self.dense = Dense(input_to_final_layer_dim,
+                           aq_func_hidden_dims,
+                           output_dim,
                            activation_at_end=False,
                            layer_norm_before_end=layer_norm_before_end,
                            layer_norm_at_end=False,
@@ -620,7 +648,12 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
             learn_alpha=learn_alpha,
             initial_alpha=initial_alpha,
             initial_beta=initial_beta,
-            learn_beta=learn_beta)
+            learn_beta=learn_beta,
+            softplus_batchnorm=softplus_batchnorm,
+            softplus_batchnorm_num_features=output_dim,
+            softplus_batchnorm_dim=-1,
+            softplus_batchnorm_momentum=softplus_batchnorm_momentum,
+        )
     
     def get_alpha(self):
         return self.transform.get_alpha()
@@ -721,6 +754,8 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
         acquisition_values = self.dense(a)
 
         if self.layer_norm_at_end:
+            # This doesn't handle mask correctly; TODO
+            # (only if I'll even end up using this which I probably won't)
             if acquisition_values.dim() > 2:
                 acquisition_values = (acquisition_values - torch.mean(acquisition_values, dim=(-3, -2), keepdim=True)) / torch.std(acquisition_values, dim=(-3, -2), keepdim=True)
 
@@ -735,7 +770,7 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
             # Mask out the padded values
             acquisition_values = acquisition_values * cand_mask
 
-        return acquisition_values.squeeze(-1) # shape (*, n_cand)
+        return acquisition_values
 
 
 def concat_y_hist_with_best_y(y_hist, hist_mask, subtract=False):
@@ -787,10 +822,12 @@ class AcquisitionFunctionNetV1and2(AcquisitionFunctionNetWithFinalMLP):
     def __init__(self,
                  dimension, history_enc_hidden_dims=[256, 256], pooling="max",
                  encoded_history_dim=1024, aq_func_hidden_dims=[256, 64],
+                 output_dim=1,
                  input_xcand_to_local_nn=True,
                  input_xcand_to_final_mlp=False,
                  include_alpha=False, learn_alpha=False, initial_alpha=1.0,
                  initial_beta=1.0, learn_beta=False,
+                 softplus_batchnorm=False, softplus_batchnorm_momentum=0.1,
                  activation_at_end_pointnet=True,
                  layer_norm_pointnet=False,
                  dropout_pointnet=None,
@@ -878,9 +915,10 @@ class AcquisitionFunctionNetV1and2(AcquisitionFunctionNetWithFinalMLP):
         final_layer_input_dim = encoded_history_dim + (dimension if input_xcand_to_final_mlp else 0)
     
         super().__init__(initial_modules, final_layer_input_dim,
-                         aq_func_hidden_dims, include_alpha,
-                         learn_alpha, initial_alpha,
+                         aq_func_hidden_dims, output_dim,
+                         include_alpha, learn_alpha, initial_alpha,
                          initial_beta, learn_beta,
+                         softplus_batchnorm, softplus_batchnorm_momentum,
                          layer_norm_before_end_mlp, layer_norm_at_end_mlp,
                          standardize_outcomes=standardize_outcomes,
                          activation=activation_mlp,
@@ -924,11 +962,15 @@ class AcquisitionFunctionNetV3(AcquisitionFunctionNetWithFinalMLP):
                  encoded_history_dim=1024,
                  mean_enc_hidden_dims=[256, 256], mean_dim=1,
                  std_enc_hidden_dims=[256, 256], std_dim=1,
-                 aq_func_hidden_dims=[256, 64], layer_norm=False,
+                 aq_func_hidden_dims=[256, 64], output_dim=1,
+                 layer_norm=False,
                  layer_norm_at_end_mlp=False, include_y=False,
                  standardize_outcomes=False,
                  include_alpha=False, learn_alpha=False, initial_alpha=1.0,
-                 initial_beta=1.0, learn_beta=False):
+                 initial_beta=1.0, learn_beta=False,
+                 softplus_batchnorm=False, softplus_batchnorm_momentum=0.1,
+                 activation_pointnet:str="relu",
+                 activation_mlp:str="relu"):
         """
         Args:
             dimension (int): The dimensionality of the input space.
@@ -971,19 +1013,23 @@ class AcquisitionFunctionNetV3(AcquisitionFunctionNetWithFinalMLP):
                                mean_enc_hidden_dims, mean_dim,
                                activation_at_end=False,
                                layer_norm_before_end=layer_norm,
-                               layer_norm_at_end=False)),
+                               layer_norm_at_end=False,
+                               activation=activation_pointnet)),
             ('std_net', PointNetLayer(
             tmp, std_enc_hidden_dims,
             std_dim, pooling, activation_at_end=True,
-            layer_norm_before_end=layer_norm, layer_norm_at_end=False))
+            layer_norm_before_end=layer_norm, layer_norm_at_end=False,
+            activation=activation_pointnet))
         ])
         super().__init__(initial_modules, mean_dim + std_dim,
-                         aq_func_hidden_dims, include_alpha,
-                         learn_alpha, initial_alpha,
+                         aq_func_hidden_dims, output_dim,
+                         include_alpha, learn_alpha, initial_alpha,
                          initial_beta, learn_beta,
+                         softplus_batchnorm, softplus_batchnorm_momentum,
                          layer_norm_before_end=layer_norm,
                          layer_norm_at_end=layer_norm_at_end_mlp,
-                         standardize_outcomes=standardize_outcomes)
+                         standardize_outcomes=standardize_outcomes,
+                         activation=activation_mlp)
         self.dimension = dimension
     
     def _get_mlp_input(self, x_hist, y_hist, x_cand,
@@ -1038,13 +1084,18 @@ class AcquisitionFunctionNetV4(AcquisitionFunctionNetWithFinalMLP):
                  encoded_history_dim=1024,
                  mean_enc_hidden_dims=[256, 256], mean_dim=1,
                  std_enc_hidden_dims=[256, 256], std_dim=1,
-                 aq_func_hidden_dims=[256, 64], layer_norm=False,
+                 aq_func_hidden_dims=[256, 64],
+                 output_dim=1,
+                 layer_norm=False,
                  layer_norm_at_end_mlp=False,
                  standardize_outcomes=False,
                  include_mean=True,
                  include_local_features=False,
                  include_alpha=False, learn_alpha=False, initial_alpha=1.0,
-                 initial_beta=1.0, learn_beta=False):
+                 initial_beta=1.0, learn_beta=False,
+                 softplus_batchnorm=False, softplus_batchnorm_momentum=0.1,
+                 activation_pointnet:str="relu",
+                 activation_mlp:str="relu"):
         """
         Args:
             dimension (int): The dimensionality of the input space.
@@ -1080,12 +1131,14 @@ class AcquisitionFunctionNetV4(AcquisitionFunctionNetWithFinalMLP):
             ('history_encoder', PointNetLayer(
             3 * dimension + 2, history_enc_hidden_dims, encoded_history_dim, pooling,
             activation_at_end=False,
-            layer_norm_before_end=layer_norm, layer_norm_at_end=layer_norm)),
+            layer_norm_before_end=layer_norm, layer_norm_at_end=layer_norm,
+            activation=activation_pointnet)),
             ('std_net', PointNetLayer(
             std_input_dim, std_enc_hidden_dims,
             std_dim, pooling, activation_at_end=include_mean,
             layer_norm_before_end=layer_norm,
-            layer_norm_at_end=layer_norm and not include_mean))
+            layer_norm_at_end=layer_norm and not include_mean,
+            activation=activation_pointnet))
         ])
         if include_mean:
             mean_input_dim = encoded_history_dim + (
@@ -1094,15 +1147,18 @@ class AcquisitionFunctionNetV4(AcquisitionFunctionNetWithFinalMLP):
                                mean_enc_hidden_dims, mean_dim,
                                activation_at_end=False,
                                layer_norm_before_end=layer_norm,
-                               layer_norm_at_end=False)
+                               layer_norm_at_end=False,
+                               activation=activation_pointnet)
         
         super().__init__(initial_modules, std_dim + (mean_dim if include_mean else 0),
-                         aq_func_hidden_dims, include_alpha,
-                         learn_alpha, initial_alpha,
+                         aq_func_hidden_dims, output_dim,
+                         include_alpha, learn_alpha, initial_alpha,
                          initial_beta, learn_beta,
+                         softplus_batchnorm, softplus_batchnorm_momentum,
                          layer_norm_before_end=layer_norm,
                          layer_norm_at_end=layer_norm_at_end_mlp,
-                         standardize_outcomes=standardize_outcomes)
+                         standardize_outcomes=standardize_outcomes,
+                         activation=activation_mlp)
         self.dimension = dimension
         self.include_mean = include_mean
         self.include_local_features = include_local_features
@@ -1210,8 +1266,12 @@ def flatten_last_two_dimensions(tensor):
 
 class AcquisitionFunctionNetDense(AcquisitionFunctionNetWithFinalMLP):
     def __init__(self, dimension, max_history, hidden_dims=[256, 64],
+                 output_dim=1,
                  include_alpha=False, learn_alpha=False, initial_alpha=1.0,
-                 initial_beta=1.0, learn_beta=False):
+                 initial_beta=1.0, learn_beta=False,
+                 softplus_batchnorm=False, softplus_batchnorm_momentum=0.1,
+                 standardize_outcomes=False,
+                 activation:str="relu"):
         """
         Args:
             dimension (int): The dimensionality of the input space.
@@ -1228,8 +1288,14 @@ class AcquisitionFunctionNetDense(AcquisitionFunctionNetWithFinalMLP):
         self.max_history = max_history
         self.input_dim = max_history * (2 * dimension + 1)
         super().__init__(OrderedDict(), self.input_dim, hidden_dims,
+                         output_dim,
                          include_alpha, learn_alpha, initial_alpha,
-                         initial_beta, learn_beta)
+                         initial_beta, learn_beta,
+                         softplus_batchnorm, softplus_batchnorm_momentum,
+                            layer_norm_before_end=False,
+                            layer_norm_at_end=False,
+                            standardize_outcomes=standardize_outcomes,
+                            activation=activation)
         self.dimension = dimension
     
     def _get_mlp_input(self, x_hist, y_hist, x_cand,
