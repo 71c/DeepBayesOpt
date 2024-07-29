@@ -38,6 +38,7 @@ MODELS_DIR = os.path.join(script_dir, "saved_models")
 # Run like, e.g.,
 # python run_train.py --dimension 6 --layer_width 256 --train_acquisition_size 1000 --test_factor 0.1
 # python run_train.py --layer_width 32 --learn_tau --initial_tau 0.5 --train_acquisition_size 10000 --test_acquisition_size 1000 --dimension 6
+# python run_train.py --layer_width 128 --learn_tau --initial_tau 0.5 --train_acquisition_size 50000 --test_acquisition_size 10000 --dimension 6 --softplus_batchnorm
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -218,7 +219,7 @@ else:
     POLICY_GRADIENT = args.policy_gradient # True for the softmax thing, False for MSE EI
 
 BATCH_SIZE = 64
-LEARNING_RATE = 3e-4 # 1e-2 # 3e-3
+LEARNING_RATE = 3e-3  # 3e-4
 EPOCHS = 200
 FIX_TRAIN_ACQUISITION_DATASET = False
 
