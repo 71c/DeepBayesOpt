@@ -39,6 +39,7 @@ MODELS_DIR = os.path.join(script_dir, "saved_models")
 # python run_train.py --dimension 6 --layer_width 256 --train_acquisition_size 1000 --test_factor 0.1
 # python run_train.py --layer_width 32 --learn_tau --initial_tau 0.5 --train_acquisition_size 10000 --test_acquisition_size 1000 --dimension 6
 # python run_train.py --layer_width 128 --learn_tau --initial_tau 0.5 --train_acquisition_size 50000 --test_acquisition_size 10000 --dimension 6 --softplus_batchnorm
+# python run_train.py --layer_width 128 --train_acquisition_size 50000 --test_acquisition_size 10000 --dimension 6 --positive_linear_at_end
 
 parser = argparse.ArgumentParser()
 parser.add_argument(
@@ -134,6 +135,11 @@ parser.add_argument(
     type=float,
     default=0.1,
     help='Momentum for the batchnorm after softplus in the MSE acquisition function. Default is 0.1.'
+)
+parser.add_argument(
+    '--positive_linear_at_end',
+    action='store_true',
+    help='Set this flag to apply positive linear at end technique. Default is False.'
 )
 args = parser.parse_args()
 
@@ -458,6 +464,7 @@ else:
                 learn_beta=args.learn_tau,
                 softplus_batchnorm=args.softplus_batchnorm,
                 softplus_batchnorm_momentum=args.softplus_batchnorm_momentum,
+                positive_linear_at_end=args.positive_linear_at_end,
                 activation_at_end_pointnet=True,
                 layer_norm_pointnet=False,
                 dropout_pointnet=None, # 0.1

@@ -12,6 +12,17 @@ ACTIVATIONS = {
     "selu": nn.SELU
 }
 
+
+def get_initialized_linear(in_dim, out_dim, activation):
+    linear = nn.Linear(in_dim, out_dim)
+    if activation == "softplus":
+        activation = "relu" # approximate
+    nn.init.kaiming_uniform_(linear.weight, nonlinearity=activation)
+    if linear.bias is not None:
+        nn.init.zeros_(linear.bias)
+    return linear
+
+
 class Dense(nn.Sequential):
     """Dense neural network with ReLU activations."""
     def __init__(self, input_dim: int, hidden_dims: Sequence[int]=[256, 64],
@@ -35,7 +46,7 @@ class Dense(nn.Sequential):
             raise ValueError("activation must be a string.")
         if activation not in ACTIVATIONS:
             raise ValueError(f"activation must be one of {ACTIVATIONS.keys()}")
-        activation = ACTIVATIONS[activation]
+        activation_func = ACTIVATIONS[activation]
 
         layer_widths = [input_dim] + list(hidden_dims) + [output_dim]
         n_layers = len(layer_widths) - 1
@@ -43,21 +54,21 @@ class Dense(nn.Sequential):
         layers = []
         for i in range(n_layers):
             in_dim, out_dim = layer_widths[i], layer_widths[i+1]
+
+            apply_activation = i != n_layers - 1 or activation_at_end
             
-            layers.append(nn.Linear(in_dim, out_dim))
+            # layers.append(nn.Linear(in_dim, out_dim))
+            layers.append(get_initialized_linear(
+                in_dim, out_dim,
+                activation=activation if apply_activation else 'linear'
+            ))
             
             add_layer_norm = layer_norm_at_end if i == n_layers - 1 else layer_norm_before_end
             if add_layer_norm:
                 layers.append(nn.LayerNorm(out_dim))
-
-                # if i == 0:
-                #     layers.append(nn.LayerNorm(out_dim))
             
-            if i != n_layers - 1 or activation_at_end:
-                # layers.append(nn.ReLU())
-                # layers.append(nn.Softplus())
-                # layers.append(nn.SELU())
-                layers.append(activation())
+            if apply_activation:
+                layers.append(activation_func())
             
             if dropout is not None and (i != n_layers - 1 or dropout_at_end):
                 layers.append(nn.Dropout(dropout))

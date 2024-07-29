@@ -581,6 +581,14 @@ class SoftmaxOrSoftplusLayer(nn.Module):
         return x
 
 
+def get_best_y(y_hist, hist_mask=None):
+    if hist_mask is not None:
+        neg_inf = torch.zeros_like(y_hist)
+        neg_inf[~hist_mask] = float("-inf")
+        return (y_hist + neg_inf).amax(-2, keepdim=True)
+    return y_hist.amax(-2, keepdim=True)
+
+
 MIN_STDV = 1e-8
 
 class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExponentiate):
@@ -598,6 +606,7 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
                  learn_beta=False,
                  softplus_batchnorm=False,
                  softplus_batchnorm_momentum=0.1,
+                 positive_linear_at_end=False,
                  layer_norm_before_end=False,
                  layer_norm_at_end=False,
                  standardize_outcomes=False,
@@ -630,17 +639,32 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
         for key, val in initial_modules.items():
             setattr(self, key, val)
 
+        if positive_linear_at_end:
+            if learn_beta:
+                raise ValueError(
+                    "positive_linear_at_end and learn_beta can't both be True.")
+            hidden_dims = aq_func_hidden_dims[:-1]
+            dense_output_dim = aq_func_hidden_dims[-1] * output_dim
+        else:
+            hidden_dims = aq_func_hidden_dims
+            dense_output_dim = output_dim
         self.dense = Dense(input_to_final_layer_dim,
-                           aq_func_hidden_dims,
-                           output_dim,
+                           hidden_dims,
+                           dense_output_dim,
                            activation_at_end=False,
                            layer_norm_before_end=layer_norm_before_end,
                            layer_norm_at_end=False,
                            dropout_at_end=False,
                            **dense_kwargs)
         
-        self.layer_norm_at_end = layer_norm_at_end
-        self.standardize_outcomes = standardize_outcomes
+        self.register_buffer("positive_linear_at_end",
+                             torch.as_tensor(positive_linear_at_end))
+        self.register_buffer("output_dim",
+                             torch.as_tensor(output_dim))
+        self.register_buffer("layer_norm_at_end",
+                             torch.as_tensor(layer_norm_at_end))
+        self.register_buffer("standardize_outcomes",
+                             torch.as_tensor(standardize_outcomes))
         
         self.transform = SoftmaxOrSoftplusLayer(
             softmax_dim=-2,
@@ -750,17 +774,39 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
         # shape (*, n_cand, input_to_final_layer_dim)
         a = self._get_mlp_input(x_hist, y_hist, x_cand, hist_mask, cand_mask)
 
-        # shape (*, n_cand, 1)
+        # shape (*, n_cand, output_dim)
         acquisition_values = self.dense(a)
 
         if self.layer_norm_at_end:
             # This doesn't handle mask correctly; TODO
             # (only if I'll even end up using this which I probably won't)
+            if cand_mask is not None:
+                raise NotImplementedError("layer_norm_at_end doesn't handle mask correctly.")
             if acquisition_values.dim() > 2:
                 acquisition_values = (acquisition_values - torch.mean(acquisition_values, dim=(-3, -2), keepdim=True)) / torch.std(acquisition_values, dim=(-3, -2), keepdim=True)
+        
+        if self.positive_linear_at_end:
+            last_hidden_dim = acquisition_values.shape[-1] // self.output_dim.item()
 
-        acquisition_values = self.transform(acquisition_values, mask=cand_mask,
-                                            exponentiate=exponentiate, softmax=softmax)
+            # shape (*, n_cand, last_hidden_dim, output_dim)
+            acquisition_values = acquisition_values.view(*acquisition_values.shape[:-1],
+                                                        last_hidden_dim,
+                                                        self.output_dim.item())
+            
+            # shape (*, 1, 1)
+            best_y = get_best_y(y_hist, hist_mask)
+            # shape (*, 1, 1, 1)
+            best_y = best_y.unsqueeze(-1)
+
+            acquisition_values = nn.functional.relu(
+                acquisition_values - best_y, inplace=True)
+            # shape (*, n_cand, output_dim)
+            acquisition_values = acquisition_values.mean(dim=-2, keepdim=False)
+
+        acquisition_values = self.transform(
+            acquisition_values, mask=cand_mask,
+            exponentiate=exponentiate and not self.positive_linear_at_end,
+            softmax=softmax)
         
         if self.standardize_outcomes and exponentiate:
             # Assume that if exponentiate=True, then we are computing EI
@@ -774,14 +820,7 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
 
 
 def concat_y_hist_with_best_y(y_hist, hist_mask, subtract=False):
-    if hist_mask is not None:
-        neg_inf = torch.zeros_like(y_hist)
-        neg_inf[~hist_mask] = float("-inf")
-        best_f = (y_hist + neg_inf).amax(-2, keepdim=True)
-    else:
-        best_f = y_hist.amax(-2, keepdim=True)
-    best_f = best_f.expand_as(y_hist)
-
+    best_f = get_best_y(y_hist, hist_mask).expand_as(y_hist)
     if subtract:
         return torch.cat((best_f, best_f - y_hist), dim=-1)
     return torch.cat((best_f, y_hist), dim=-1)
@@ -828,6 +867,7 @@ class AcquisitionFunctionNetV1and2(AcquisitionFunctionNetWithFinalMLP):
                  include_alpha=False, learn_alpha=False, initial_alpha=1.0,
                  initial_beta=1.0, learn_beta=False,
                  softplus_batchnorm=False, softplus_batchnorm_momentum=0.1,
+                 positive_linear_at_end=False,
                  activation_at_end_pointnet=True,
                  layer_norm_pointnet=False,
                  dropout_pointnet=None,
@@ -919,6 +959,7 @@ class AcquisitionFunctionNetV1and2(AcquisitionFunctionNetWithFinalMLP):
                          include_alpha, learn_alpha, initial_alpha,
                          initial_beta, learn_beta,
                          softplus_batchnorm, softplus_batchnorm_momentum,
+                         positive_linear_at_end,
                          layer_norm_before_end_mlp, layer_norm_at_end_mlp,
                          standardize_outcomes=standardize_outcomes,
                          activation=activation_mlp,
