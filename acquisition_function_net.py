@@ -2,6 +2,7 @@ from collections import OrderedDict
 import json
 import inspect
 import math
+from multiprocessing import Value
 import os
 from typing import Any, Callable, List, Optional, Sequence, Tuple, Union
 import warnings
@@ -607,6 +608,7 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
                  softplus_batchnorm=False,
                  softplus_batchnorm_momentum=0.1,
                  positive_linear_at_end=False,
+                 gp_ei_computation=False,
                  layer_norm_before_end=False,
                  layer_norm_at_end=False,
                  standardize_outcomes=False,
@@ -638,6 +640,10 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
             raise ValueError("initial_modules must be an instance of OrderedDict.")
         for key, val in initial_modules.items():
             setattr(self, key, val)
+        
+        if positive_linear_at_end and gp_ei_computation:
+            raise ValueError(
+                "positive_linear_at_end and gp_ei_computation can't both be True.")
 
         if positive_linear_at_end:
             if learn_beta:
@@ -645,6 +651,12 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
                     "positive_linear_at_end and learn_beta can't both be True.")
             hidden_dims = aq_func_hidden_dims[:-1]
             dense_output_dim = aq_func_hidden_dims[-1] * output_dim
+        elif gp_ei_computation:
+            if learn_beta:
+                raise ValueError(
+                    "gp_ei_computation and learn_beta can't both be True.")
+            hidden_dims = aq_func_hidden_dims
+            dense_output_dim = 2 * output_dim
         else:
             hidden_dims = aq_func_hidden_dims
             dense_output_dim = output_dim
@@ -659,6 +671,8 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
         
         self.register_buffer("positive_linear_at_end",
                              torch.as_tensor(positive_linear_at_end))
+        self.register_buffer("gp_ei_computation",
+                             torch.as_tensor(gp_ei_computation))
         self.register_buffer("output_dim",
                              torch.as_tensor(output_dim))
         self.register_buffer("layer_norm_at_end",
@@ -785,7 +799,7 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
             if acquisition_values.dim() > 2:
                 acquisition_values = (acquisition_values - torch.mean(acquisition_values, dim=(-3, -2), keepdim=True)) / torch.std(acquisition_values, dim=(-3, -2), keepdim=True)
         
-        if self.positive_linear_at_end:
+        if self.positive_linear_at_end or self.gp_ei_computation:
             last_hidden_dim = acquisition_values.shape[-1] // self.output_dim.item()
 
             # shape (*, n_cand, last_hidden_dim, output_dim)
@@ -793,20 +807,32 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
                                                         last_hidden_dim,
                                                         self.output_dim.item())
             
-            # shape (*, 1, 1)
-            best_y = get_best_y(y_hist, hist_mask)
-            # shape (*, 1, 1, 1)
-            best_y = best_y.unsqueeze(-1)
+            if self.positive_linear_at_end:
+                # # shape (*, 1, 1)
+                # best_y = get_best_y(y_hist, hist_mask)
+                # # shape (*, 1, 1, 1)
+                # best_y = best_y.unsqueeze(-1)
+                # acquisition_values = nn.functional.relu(
+                #     acquisition_values - best_y, inplace=True)
 
-            acquisition_values = nn.functional.relu(
-                acquisition_values - best_y, inplace=True)
-            # shape (*, n_cand, output_dim)
-            acquisition_values = acquisition_values.mean(dim=-2, keepdim=False)
+                acquisition_values = nn.functional.relu(
+                    acquisition_values, inplace=False)
+
+                # shape (*, n_cand, output_dim)
+                acquisition_values = acquisition_values.mean(dim=-2, keepdim=False)
+            else:
+                # shape (*, 1, 1)
+                best_y = get_best_y(y_hist, hist_mask)
+                means = acquisition_values[..., 0, :]
+                sigmas = nn.functional.softplus(acquisition_values[..., 1, :], beta=1.)
+                acquisition_values = sigmas * nn.functional.softplus(
+                    (means - best_y) / sigmas, beta=1.77)
 
         acquisition_values = self.transform(
             acquisition_values, mask=cand_mask,
-            exponentiate=exponentiate and not self.positive_linear_at_end,
-            softmax=softmax)
+            exponentiate=exponentiate and not (self.positive_linear_at_end or self.gp_ei_computation),
+            softmax=softmax
+        )
         
         if self.standardize_outcomes and exponentiate:
             # Assume that if exponentiate=True, then we are computing EI
@@ -868,6 +894,7 @@ class AcquisitionFunctionNetV1and2(AcquisitionFunctionNetWithFinalMLP):
                  initial_beta=1.0, learn_beta=False,
                  softplus_batchnorm=False, softplus_batchnorm_momentum=0.1,
                  positive_linear_at_end=False,
+                 gp_ei_computation=False,
                  activation_at_end_pointnet=True,
                  layer_norm_pointnet=False,
                  dropout_pointnet=None,
@@ -960,6 +987,7 @@ class AcquisitionFunctionNetV1and2(AcquisitionFunctionNetWithFinalMLP):
                          initial_beta, learn_beta,
                          softplus_batchnorm, softplus_batchnorm_momentum,
                          positive_linear_at_end,
+                         gp_ei_computation,
                          layer_norm_before_end_mlp, layer_norm_at_end_mlp,
                          standardize_outcomes=standardize_outcomes,
                          activation=activation_mlp,
@@ -1435,7 +1463,7 @@ class AcquisitionFunctionNetModel(Model):
                 If any are unspecified, then the default values will be used.
 
         Returns:
-            Tensor: The output tensor of shape `(batch_shape) x n_cand`.
+            Tensor: The output tensor of shape `(batch_shape) x n_cand x output_dim`.
 
         Raises:
             RuntimeError: If the encoded history is not available.
@@ -1454,7 +1482,7 @@ class AcquisitionFunctionNetModel(Model):
         logger.debug(f"In AcquisitionFunctionNetModel.forward, X.shape = {X.shape}")
 
         ret = self.model(self.train_X, self.train_Y, X, **kwargs)
-        assert ret.shape == X.shape[:-1]
+        assert ret.shape[:-1] == X.shape[:-1]
         return ret
 
 
@@ -1495,6 +1523,9 @@ class LikelihoodFreeNetworkAcquisitionFunction(AcquisitionFunction):
 
         # shape (b)
         output = self.model(X, **self.kwargs)
+        if output.shape[-1] != 1:
+            raise UnsupportedError("Only one output dimension is supported")
+        output = output.squeeze(-1)
         assert output.shape == X.shape[:-1]
         return output
 

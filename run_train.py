@@ -37,8 +37,8 @@ MODELS_DIR = os.path.join(script_dir, "saved_models")
 
 # Run like, e.g.,
 # python run_train.py --dimension 6 --layer_width 256 --train_acquisition_size 1000 --test_factor 0.1
-# python run_train.py --layer_width 32 --learn_tau --initial_tau 0.5 --train_acquisition_size 10000 --test_acquisition_size 1000 --dimension 6
-# python run_train.py --layer_width 128 --learn_tau --initial_tau 0.5 --train_acquisition_size 50000 --test_acquisition_size 10000 --dimension 6 --softplus_batchnorm
+# python run_train.py --layer_width 32 --train_acquisition_size 10000 --test_acquisition_size 1000 --dimension 6 --learn_tau --initial_tau 0.5
+# python run_train.py --layer_width 128 --train_acquisition_size 50000 --test_acquisition_size 10000 --dimension 6 --learn_tau --initial_tau 0.5 --softplus_batchnorm
 # python run_train.py --layer_width 128 --train_acquisition_size 50000 --test_acquisition_size 10000 --dimension 6 --positive_linear_at_end
 
 parser = argparse.ArgumentParser()
@@ -141,6 +141,11 @@ parser.add_argument(
     action='store_true',
     help='Set this flag to apply positive linear at end technique. Default is False.'
 )
+parser.add_argument(
+    '--gp_ei_computation',
+    action='store_true',
+    help='Set this flag to apply gp_ei_computation at end technique. Default is False.'
+)
 args = parser.parse_args()
 
 # Whether to train the model.
@@ -225,7 +230,7 @@ else:
     POLICY_GRADIENT = args.policy_gradient # True for the softmax thing, False for MSE EI
 
 BATCH_SIZE = 64
-LEARNING_RATE = 3e-3  # 3e-4
+LEARNING_RATE = 3e-4  # 3e-3
 EPOCHS = 200
 FIX_TRAIN_ACQUISITION_DATASET = False
 
@@ -453,6 +458,7 @@ else:
                 pooling="max",
                 history_enc_hidden_dims=[args.layer_width, args.layer_width],
                 encoded_history_dim=args.layer_width,
+                # aq_func_hidden_dims=[args.layer_width, args.layer_width, 4 * args.layer_width],
                 aq_func_hidden_dims=[args.layer_width, args.layer_width],
                 output_dim=1,
                 input_xcand_to_local_nn=True,
@@ -465,6 +471,7 @@ else:
                 softplus_batchnorm=args.softplus_batchnorm,
                 softplus_batchnorm_momentum=args.softplus_batchnorm_momentum,
                 positive_linear_at_end=args.positive_linear_at_end,
+                gp_ei_computation=args.gp_ei_computation,
                 activation_at_end_pointnet=True,
                 layer_norm_pointnet=False,
                 dropout_pointnet=None, # 0.1
@@ -473,36 +480,37 @@ else:
                 dropout_mlp=None, # 0.1
                 standardize_outcomes=args.standardize_nn_history_outcomes,
                 include_best_y=False,
-                activation_pointnet="relu",#balut
+                activation_pointnet="relu",
                 activation_mlp="relu").to(DEVICE)
-# model = AcquisitionFunctionNetV4(DIMENSION,
-#                                  history_enc_hidden_dims=[32, 32], pooling="max",
-#                  include_local_features=True,
-#                  encoded_history_dim=4, include_mean=False,
-#                  mean_enc_hidden_dims=[32, 32], mean_dim=1,
-#                  std_enc_hidden_dims=[32, 32], std_dim=32,
-#                  aq_func_hidden_dims=[32, 32], layer_norm=True,
-#                  layer_norm_at_end_mlp=False,
-#                  include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
-#                                  learn_alpha=LEARN_ALPHA,
-#                                  initial_alpha=INITIAL_ALPHA).to(DEVICE)
+    
+    # model = AcquisitionFunctionNetV4(DIMENSION,
+    #                                 history_enc_hidden_dims=[32, 32], pooling="max",
+    #                 include_local_features=True,
+    #                 encoded_history_dim=4, include_mean=False,
+    #                 mean_enc_hidden_dims=[32, 32], mean_dim=1,
+    #                 std_enc_hidden_dims=[32, 32], std_dim=32,
+    #                 aq_func_hidden_dims=[32, 32], layer_norm=True,
+    #                 layer_norm_at_end_mlp=False,
+    #                 include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
+    #                                 learn_alpha=LEARN_ALPHA,
+    #                                 initial_alpha=INITIAL_ALPHA).to(DEVICE)
 
-# model = AcquisitionFunctionNetV3(DIMENSION,
-#                                  history_enc_hidden_dims=[32, 32], pooling="max",
-#                  encoded_history_dim=32,
-#                  mean_enc_hidden_dims=[32, 32], mean_dim=1,
-#                  std_enc_hidden_dims=[32, 32], std_dim=16,
-#                  aq_func_hidden_dims=[32, 32], layer_norm=False,
-#                  layer_norm_at_end_mlp=False, include_y=True,
-#                  include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
-#                                  learn_alpha=LEARN_ALPHA,
-#                                  initial_alpha=INITIAL_ALPHA).to(DEVICE)
+    # model = AcquisitionFunctionNetV3(DIMENSION, pooling="max",
+    #                 history_enc_hidden_dims=[args.layer_width, args.layer_width],
+    #                 encoded_history_dim=args.layer_width,
+    #                 mean_enc_hidden_dims=[args.layer_width, args.layer_width], mean_dim=1,
+    #                 std_enc_hidden_dims=[args.layer_width, args.layer_width], std_dim=16,
+    #                 aq_func_hidden_dims=[args.layer_width, args.layer_width], layer_norm=False,
+    #                 layer_norm_at_end_mlp=False, include_y=True,
+    #                 include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
+    #                                 learn_alpha=LEARN_ALPHA,
+    #                                 initial_alpha=INITIAL_ALPHA).to(DEVICE)
 
-# model = AcquisitionFunctionNetDense(DIMENSION, MAX_HISTORY,
-#                                     hidden_dims=[128, 128, 64, 32],
-#                                     include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
-#                                     learn_alpha=LEARN_ALPHA,
-#                                     initial_alpha=INITIAL_ALPHA).to(DEVICE)
+    # model = AcquisitionFunctionNetDense(DIMENSION, MAX_HISTORY,
+    #                                     hidden_dims=[128, 128, 64, 32],
+    #                                     include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
+    #                                     learn_alpha=LEARN_ALPHA,
+    #                                     initial_alpha=INITIAL_ALPHA).to(DEVICE)
 
 print(model)
 print("Number of trainable parameters:", count_trainable_parameters(model))
