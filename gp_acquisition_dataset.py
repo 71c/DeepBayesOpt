@@ -147,7 +147,12 @@ def create_gp_acquisition_dataset(base_dataset_size,
         if fix_n_samples:
             aq_dataset_extra_info = dict(**aq_dataset_extra_info,
                                          min_history=min_history, max_history=max_history)
-        aq_dataset_extra_info_str = dict_to_fname_str(aq_dataset_extra_info)
+        
+        # aq_dataset_extra_info_str = dict_to_fname_str(aq_dataset_extra_info)
+        # Can't have everything in the file name because it's too long, would give,
+        # OSError: [Errno 36] File name too long
+        aq_dataset_extra_info_str = dict_to_hash(aq_dataset_extra_info)
+        
         aq_dataset_name = f"{base_name}_acquisition_{aq_dataset_extra_info_str}"
         aq_dataset_path = os.path.join(DATASETS_DIR, aq_dataset_name)
 

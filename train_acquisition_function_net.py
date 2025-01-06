@@ -499,20 +499,20 @@ def train_or_test_loop(dataloader: DataLoader,
                                                 reduction="sum",
                                                 batch_size=this_batch_size)
                         
-                        # Debug code
-                        if not policy_gradient:
-                            nn_output_no_transform = nn_model(
-                                x_hist_nn, y_hist_nn, x_cand_nn, hist_mask_nn, cand_mask_nn,
-                                exponentiate=False, softmax=False)
-                            mean = nn_output_no_transform.mean().item()
-                            std = nn_output_no_transform.std().item()
-                            min_val = nn_output_no_transform.min().item()
-                            max_val = nn_output_no_transform.max().item()
-                            print(f"(DEBUG) nn_output_no_transform mean={mean:>4f}, "
-                                  f"std={std:>4f}, min={min_val:>4f}, max={max_val:>4f}")
-                            min_tf = nn_output.min().item()
-                            max_tf = nn_output.max().item()
-                            print(f"(DEBUG) nn_output min={min_tf:>4f}, max={max_tf:>4f}")
+                        # # Debug code
+                        # if not policy_gradient:
+                        #     nn_output_no_transform = nn_model(
+                        #         x_hist_nn, y_hist_nn, x_cand_nn, hist_mask_nn, cand_mask_nn,
+                        #         exponentiate=False, softmax=False)
+                        #     mean = nn_output_no_transform.mean().item()
+                        #     std = nn_output_no_transform.std().item()
+                        #     min_val = nn_output_no_transform.min().item()
+                        #     max_val = nn_output_no_transform.max().item()
+                        #     print(f"(DEBUG) nn_output_no_transform mean={mean:>4f}, "
+                        #           f"std={std:>4f}, min={min_val:>4f}, max={max_val:>4f}")
+                        #     min_tf = nn_output.min().item()
+                        #     max_tf = nn_output.max().item()
+                        #     print(f"(DEBUG) nn_output min={min_tf:>4f}, max={max_tf:>4f}")
 
                             # if has_models:
                             #     ei_values_true_model = calculate_EI_GP_padded_batch(
