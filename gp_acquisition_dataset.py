@@ -15,12 +15,6 @@ from botorch.models.gp_regression import SingleTaskGP
 def get_n_datapoints_random_gen_fixed_n_candidates(
         loguniform=True, pre_offset=None,
         min_history=1, max_history=8, n_candidates=50):
-    if min_history is None:
-        min_history = 1
-    if max_history is None:
-        max_history = 8
-    if n_candidates is None:
-        n_candidates = 50
     if loguniform:
         if pre_offset is None:
             pre_offset = 3.0
@@ -71,6 +65,12 @@ def create_gp_acquisition_dataset(base_dataset_size,
         min_history=None, max_history=None, n_candidates=None,
         min_n_candidates=None, max_points=None,
 
+        # Whether to fix the number of samples and draw random history (rather than
+        # random number of samples and use all remaining samples as history).
+        # Setting this to True is more realistic.
+        # Only used if fixing the number of candidates.
+        fix_n_samples=True,
+
         expansion_factor=1,
         give_improvements:bool=True,
         
@@ -92,13 +92,24 @@ def create_gp_acquisition_dataset(base_dataset_size,
     if type(give_improvements) is not bool:
         raise ValueError("give_improvements should be a boolean.")
     
-    # Get the 
     if min_n_candidates is None and max_points is None:
         fix_n_candidates = True
-        n_datapoints_kwargs = dict(
-            loguniform=loguniform, pre_offset=pre_offset,
-            min_history=min_history, max_history=max_history,
-            n_candidates=n_candidates)
+        if min_history is None:
+            min_history = 1
+        if max_history is None:
+            max_history = 8
+        if n_candidates is None:
+            n_candidates = 50
+        if fix_n_samples:
+            n_datapoints_kwargs = dict(
+                loguniform=False, pre_offset=None,
+                min_history=max_history + 5, max_history=max_history + 5,
+                n_candidates=n_candidates)
+        else:
+            n_datapoints_kwargs = dict(
+                loguniform=loguniform, pre_offset=pre_offset,
+                min_history=min_history, max_history=max_history,
+                n_candidates=n_candidates)
     elif min_history is None and max_history is None and n_candidates is None:
         fix_n_candidates = False
         if min_n_candidates is None:
@@ -110,6 +121,8 @@ def create_gp_acquisition_dataset(base_dataset_size,
         raise ValueError(
             "Either min_n_candidates and max_points or min_history, " \
             "max_history and n_candidates should be specified.")
+    
+    fix_n_samples = fix_n_candidates and fix_n_samples
     
     gp_dataset_kwargs_non_datapoints = dict(
         dimension=dimension, randomize_params=randomize_params,
@@ -125,12 +138,16 @@ def create_gp_acquisition_dataset(base_dataset_size,
         function_dataset_hash = dict_to_hash(gp_dataset_save_kwargs)
         base_name = f"{name_}base_size={base_dataset_size}_{function_dataset_hash}"
 
-        aq_dataset_extra_info_str = dict_to_fname_str(
-            dict(fix_acquisition_samples=fix_acquisition_samples,
+        aq_dataset_extra_info = dict(fix_acquisition_samples=fix_acquisition_samples,
             expansion_factor=expansion_factor,
             outcome_transform=outcome_transform,
             standardize_outcomes=standardize_outcomes,
-            give_improvements=give_improvements))
+            give_improvements=give_improvements,
+            fix_n_samples=fix_n_samples)
+        if fix_n_samples:
+            aq_dataset_extra_info = dict(**aq_dataset_extra_info,
+                                         min_history=min_history, max_history=max_history)
+        aq_dataset_extra_info_str = dict_to_fname_str(aq_dataset_extra_info)
         aq_dataset_name = f"{base_name}_acquisition_{aq_dataset_extra_info_str}"
         aq_dataset_path = os.path.join(DATASETS_DIR, aq_dataset_name)
 
@@ -188,11 +205,14 @@ def create_gp_acquisition_dataset(base_dataset_size,
 
         if fix_n_candidates:
             extra_kwargs = dict(n_candidate_points=n_candidates)
+            if fix_n_samples:
+                extra_kwargs = dict(**extra_kwargs,
+                                    min_history=min_history, max_history=max_history)
         else:
             extra_kwargs = dict(n_candidate_points="uniform",
                                 min_n_candidates=min_n_candidates)
         aq_dataset = FunctionSamplesAcquisitionDataset(
-            function_samples_dataset, n_samples="all",
+            function_samples_dataset, n_samples="uniform" if fix_n_samples else "all",
             give_improvements=give_improvements,
             dataset_size_factor=expansion_factor, **extra_kwargs)
     
@@ -245,7 +265,9 @@ def create_train_and_test_gp_acquisition_datasets(
         loguniform:bool=True, pre_offset:Optional[float]=None, fix_n_candidates:bool=True,
         train_n_candidates:Optional[int]=None, test_n_candidates:Optional[int]=None,
         min_history:Optional[int]=None, max_history:Optional[int]=None,
-        min_n_candidates:Optional[int]=None, max_points:Optional[int]=None):
+        min_n_candidates:Optional[int]=None, max_points:Optional[int]=None,
+        
+        fix_n_samples:Optional[bool]=None):
     train_samples_size = math.ceil(train_acquisition_size / expansion_factor)
 
     total_samples_dataset_size = math.ceil(train_samples_size * (1 + test_factor))
@@ -285,7 +307,8 @@ def create_train_and_test_gp_acquisition_datasets(
         expansion_factor=expansion_factor, loguniform=loguniform,
         pre_offset=pre_offset if loguniform else None, batch_size=batch_size,
         device=gp_gen_device, cache=cache_datasets,
-        give_improvements=False)
+        give_improvements=False,
+        fix_n_samples=fix_n_samples)
 
     train_aq_dataset = create_gp_acquisition_dataset(
         train_samples_size, lazy=lazy_train,

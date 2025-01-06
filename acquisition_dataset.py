@@ -252,6 +252,7 @@ class FunctionSamplesAcquisitionDataset(
                  n_candidate_points:Union[int,str,Sequence[int]]=1,
                  n_samples:str="all", give_improvements:bool=True,
                  min_n_candidates=2,
+                 min_history=1, max_history=None,
                  dataset_size_factor:Optional[int]=None):
         r"""
         Args:
@@ -282,12 +283,13 @@ class FunctionSamplesAcquisitionDataset(
                 iteration. Specifically,
                     - If n_candidate_points is "uniform" or "binomial", then
                     n_samples is chosen uniformly at random in
-                    [min_n_candidates+1...n], where n is the number of samples
-                    in the dataset iteration, and then n_candidate_points is
-                    chosen based on that.
+                    [min_n_candidates+min_history...n], where n is the number of
+                    samples in the dataset iteration, and then n_candidate_points
+                    is chosen based on that.
                     - If n_candidate_points is an integer or a tuple of two
                     integers, then n_candidate_points is first chosen and then
-                    n_samples is chosen uniformly in [n_candidate_points+1...n].
+                    n_samples is chosen uniformly in
+                    [n_candidate_points+min_history...n].
             
             give_improvements (bool): Whether to generate improvement values as
                 targets instead of raw y-values of the candidate points.
@@ -295,6 +297,10 @@ class FunctionSamplesAcquisitionDataset(
             min_n_candidates (int): The minimum number of candidate points for
                 every iteration. Only used if n_candidate_points is "uniform" or
                 "binomial"; ignored otherwise.
+            
+            min_history (int): The minimum number of history points (default: 1).
+
+            max_history (int): The maximum number of history points (default: None).
             
             dataset_size_factor (Optional[int]): If the base dataset is a
                 map-style dataset
@@ -338,6 +344,14 @@ class FunctionSamplesAcquisitionDataset(
         if not isinstance(min_n_candidates, int) or min_n_candidates <= 0:
             raise ValueError(f"min_n_candidates should be a positive integer, but got min_n_candidates={min_n_candidates}")
         self.min_n_candidates = min_n_candidates
+
+        if not isinstance(min_history, int) or min_history <= 0:
+            raise ValueError(f"min_history should be a positive integer, but got min_history={min_history}")
+        self.min_history = min_history
+
+        if not ((isinstance(max_history, int) and max_history > 0) or max_history is None):
+            raise ValueError(f"max_history should be a positive integer or None, but got max_history={max_history}")
+        self.max_history = max_history
         
         if not isinstance(give_improvements, bool):
             raise TypeError(f"give_improvements should be a boolean value, but got give_improvements={give_improvements}")
@@ -397,6 +411,8 @@ class FunctionSamplesAcquisitionDataset(
             n_samples=self.n_samples,
             give_improvements=self.give_improvements,
             min_n_candidates=self.min_n_candidates,
+            min_history=self.min_history,
+            max_history=self.max_history,
             dataset_size_factor=self.dataset_size_factor
         )
 
@@ -482,39 +498,51 @@ class FunctionSamplesAcquisitionDataset(
             return self.copy_with_expanded_size(size_factor)
 
     def _pick_random_n_samples_and_n_candidates(self, n_datapoints_original):
+        min_history = self.min_history
+        max_history = math.inf if self.max_history is None else self.max_history
+
         if self._gen_n_candidates_first:
             # generate n_candidates first; either fixed or random
             n_candidates = self._gen_n_candidates()
 
-            # Need to have at least 1 history point
-            if not (n_candidates+1 <= n_datapoints_original):
-                raise ValueError(f"n_datapoints_original={n_datapoints_original} should be at least n_candidates+1={n_candidates+1}")
+            # Need to have at least `min_history` history points
+            if not (n_candidates + min_history <= n_datapoints_original):
+                raise ValueError(f"n_datapoints_original={n_datapoints_original} should be at least n_candidates+min_history={n_candidates}+{min_history}")
+
+            # n_history = n_samples - n_candidates <= max_history
+            # n_samples <= max_history + n_candidates
 
             # generate n_samples
+            max_n_samples = min(n_datapoints_original, max_history + n_candidates)
             if self.n_samples == "all":
-                n_samples = n_datapoints_original
+                n_samples = max_n_samples
             elif self.n_samples == "uniform":
-                n_samples = uniform_randint(n_candidates+1, n_datapoints_original)
+                n_samples = uniform_randint(n_candidates+min_history, max_n_samples)
         else:
             # n_candidates is "uniform" or "binomial"
 
             min_n_candidates = self.min_n_candidates
 
-            if not (min_n_candidates+1 <= n_datapoints_original):
-                raise ValueError(f"n_datapoints_original={n_datapoints_original} should be at least min_n_candidates+1={min_n_candidates+1}")
+            if not (min_n_candidates + min_history <= n_datapoints_original):
+                raise ValueError(f"n_datapoints_original={n_datapoints_original} should be at least min_n_candidates+min_history={min_n_candidates}+{min_history}")
 
             # generate n_samples first; either "all" or "uniform"
             if self.n_samples == "all":
                 n_samples = n_datapoints_original
             elif self.n_samples == "uniform":
-                n_samples = uniform_randint(min_n_candidates+1, n_datapoints_original)
+                n_samples = uniform_randint(min_n_candidates+min_history, n_datapoints_original)
 
             # generate n_candidates
+            # n_history = n_samples - n_candidates >= min_history
+            # n_samples - min_history >= n_candidates
+            # n_history = n_samples - n_candidates <= max_history
+            # n_samples - max_history <= n_candidates
+            min_cands = max(min_n_candidates, n_samples - max_history)
             if self.n_candidate_points == "uniform":
-                n_candidates = uniform_randint(min_n_candidates, n_samples-1)
+                n_candidates = uniform_randint(min_cands, n_samples-min_history)
             elif self.n_candidate_points == "binomial":
                 n_candidates = int(torch.distributions.Binomial(n_samples, 0.5).sample())
-                while not (min_n_candidates <= n_candidates <= n_samples-1):
+                while not (min_cands <= n_candidates <= n_samples-min_history):
                     n_candidates = int(torch.distributions.Binomial(n_samples, 0.5).sample())
         
         if torch.is_tensor(n_samples):

@@ -329,9 +329,15 @@ else:
     n_points_config = dict(
         # This means whether n history points (or whether the total number of
         # points) is log-uniform
-        loguniform=True,
+        loguniform=False,
         # Whether to fix the number of candidate points (as opposed to randomized)
-        fix_n_candidates=True
+        fix_n_candidates=True,
+        # If this is True, we fix the number of samples in each item at
+        # maximum when generating the function samples dataset -- which is more
+        # realistic (Only used if # of candidates is fixed).
+        # If this is False, then the number of samples in each item is
+        # randomized to reflect random number of history points.
+        fix_n_samples=True
     )
     if n_points_config['loguniform']:
         n_points_config['pre_offset'] = 3.0
@@ -339,7 +345,7 @@ else:
         # If fix_n_candidates is True, then the following are used:
         n_points_config = dict(
             # Number of candidate points for training. For MSE EI, could just set to 1.
-            train_n_candidates=50,
+            train_n_candidates=1,
             # Number of candidate points for testing.
             test_n_candidates=50,
             min_history=14,

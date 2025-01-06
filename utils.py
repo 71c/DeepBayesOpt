@@ -10,6 +10,7 @@ from functools import partial, lru_cache
 import json
 
 import numpy as np
+import scipy
 from scipy.optimize import root_scalar
 import torch
 
@@ -36,6 +37,13 @@ from torch.nn import ModuleList
 from botorch.models.model import Model
 from botorch.models.gp_regression import SingleTaskGP
 from botorch.models.gpytorch import GPyTorchModel, BatchedMultiOutputGPyTorchModel
+from botorch.acquisition.analytic import _ei_helper, _log_ei_helper
+from botorch.utils.probability.utils import get_constants_like
+from botorch.utils.probability.utils import (
+    ndtr as Phi,
+    phi,
+)
+from scipy.optimize import newton
 
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -1317,3 +1325,51 @@ def get_param_value(module, name):
 #     for name, param in model.named_parameters()
 # }
 
+
+_neg_inv_sqrt_2 = -(1 / math.sqrt(2))
+_inv_sqrt_2pi = 1 / math.sqrt(math.tau)
+# _constant_1 = math.log(0.5 / math.sqrt(math.tau))
+_constant_1 = -0.5 * math.log(8.0 * math.pi)
+_constant_2 = 0.5755
+
+def _approx_ei_helper_inverse(v: Tensor) -> Tensor:
+    const1, const2 = get_constants_like((_constant_1, _constant_2), v)
+    tmp_log = const1 - torch.log(v)
+    val_low = -torch.sqrt(2 * (tmp_log - torch.log(tmp_log)))
+    val_med = const2 * torch.log(-1 + torch.exp(v / const2))
+    return torch.where(
+        v <= 0.05, val_low,
+        torch.where(v <= 10.0, val_med, v)
+    )
+
+def Phi_numpy(x):
+    r"""Standard normal CDF."""
+    return 0.5 * scipy.special.erfc(_neg_inv_sqrt_2 * x)
+def phi_numpy(x: Tensor) -> Tensor:
+    r"""Standard normal PDF."""
+    return _inv_sqrt_2pi * np.exp(-0.5 * x**2)
+def ei_helper_numpy(u):
+    return phi_numpy(u) + u * Phi_numpy(u)
+
+def ei_helper_inverse(v: Tensor) -> Tensor:
+    log_v = torch.log(v).numpy()
+
+    def f(x):
+        return _log_ei_helper(torch.from_numpy(x)).numpy() - log_v
+    def fprime(x):
+        return Phi_numpy(x) / ei_helper_numpy(x)
+    def fprime2(x):
+        return (phi_numpy(x) * ei_helper_numpy(x) - Phi_numpy(x)**2) / ei_helper_numpy(x)**2
+
+    x0 = _approx_ei_helper_inverse(v).numpy()
+    result = newton(f, x0, fprime=fprime, fprime2=fprime2, tol=1e-10, maxiter=50)
+    return torch.tensor(result, dtype=v.dtype, device=v.device)
+
+
+def gi_normal(cbar: Tensor, mu: Tensor, sigma: Tensor) -> Tensor:
+    u = ei_helper_inverse(cbar / sigma)
+    return mu - sigma * u
+
+def probability_y_greater_than_gi_normal(cbar: Tensor, sigma: Tensor) -> Tensor:
+    u = ei_helper_inverse(cbar / sigma)
+    return Phi(u)
