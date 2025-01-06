@@ -16,15 +16,16 @@ from acquisition_function_net import (
     AcquisitionFunctionNetDense, LikelihoodFreeNetworkAcquisitionFunction)
 from predict_EI_simple import calculate_EI_GP
 from train_acquisition_function_net import (
+    METHODS,
     load_configs,
     load_model,
     print_stats,
     save_acquisition_function_net_configs,
     train_acquisition_function_net,
-    count_trainable_parameters, count_parameters,
     train_or_test_loop)
 from utils import DEVICE, Exp, get_dimension, save_json, load_json, convert_to_json_serializable
 from plot_utils import plot_nn_vs_gp_acquisition_function_1d_grid, plot_acquisition_function_net_training_history
+from nn_utils import count_trainable_parameters, count_parameters
 
 import argparse
 
@@ -42,6 +43,7 @@ MODELS_DIR = os.path.join(script_dir, "saved_models")
 # python run_train.py --layer_width 128 --train_acquisition_size 50000 --test_acquisition_size 10000 --dimension 6 --positive_linear_at_end
 
 parser = argparse.ArgumentParser()
+
 parser.add_argument(
     '--no-train', 
     action='store_false', 
@@ -63,6 +65,22 @@ parser.add_argument(
     type=str, 
     help='Name of the model and info directory. Must be specified if load_saved_model or load_saved_dataset_config'
 )
+
+# Which AF training loss function to use
+parser.add_argument(
+    '--method', 
+    choices=METHODS,
+    default='mse_ei',
+)
+
+# Layer width
+parser.add_argument(
+    '--layer_width', 
+    type=int,
+    help='The width of the NN layers. Required if load_saved_model=False'
+)
+
+# Dataset Train and Test Size
 parser.add_argument(
     '--train_acquisition_size', 
     type=int, 
@@ -78,6 +96,7 @@ parser.add_argument(
     type=float, 
     help='Size of the test acqusition dataset as a proportion of train_acquisition_size (optional)'
 )
+# Dataset settings
 parser.add_argument(
     '--randomize_params', 
     action='store_true',
@@ -98,54 +117,53 @@ parser.add_argument(
     action='store_true', 
     help='Whether to exponentiate the outcomes of the dataset. Default is False'
 )
+
+### Optional settings for EI NN architecture
 parser.add_argument(
     '--standardize_nn_history_outcomes', 
     action='store_true', 
     help='Whether to standardize the history outcomes when computing the NN acquisition function. Default is False'
 )
-parser.add_argument(
-    '--layer_width', 
-    type=int,
-    help='The width of the NN layers. Required if load_saved_model=False'
-)
-parser.add_argument(
-    '--policy_gradient', 
-    action='store_true',
-    help='Set this flag to enable policy gradient training. Default is to use MSE training.'
-)
+
+### Options for NN when method=mse_ei
 parser.add_argument(
     '--learn_tau', 
     action='store_true',
     help=('Set this flag to enable learning of tau=1/beta which is the parameter for softplus'
           ' applied at the end of the MSE acquisition function. Default is False. '
-          'This is only used if policy_gradient=False.')
+          'This is only used if method=mse_ei.')
 )
 parser.add_argument(
     '--initial_tau',
     type=float,
-    help='Initial value of tau. Default is 1.0. This is only used if policy_gradient=False.'
+    help='Initial value of tau. Default is 1.0. This is only used if method=mse_ei.'
 )
 parser.add_argument(
     '--softplus_batchnorm',
     action='store_true',
-    help='Set this flag to apply positive-batchnorm after softplus in the MSE acquisition function. Default is False.'
+    help=('Set this flag to apply positive-batchnorm after softplus in the MSE acquisition function. '
+          'Default is False. This is only used if method=mse_ei.')
 )
 parser.add_argument(
     '--softplus_batchnorm_momentum',
     type=float,
     default=0.1,
-    help='Momentum for the batchnorm after softplus in the MSE acquisition function. Default is 0.1.'
+    help=('Momentum for the batchnorm after softplus in the MSE acquisition function. Default is 0.1. '
+          'This is only used if method=mse_ei.')
 )
 parser.add_argument(
     '--positive_linear_at_end',
     action='store_true',
-    help='Set this flag to apply positive linear at end technique. Default is False.'
+    help=('Set this flag to apply positive linear at end technique. Default is False. '
+          'This is only used if method=mse_ei.')
 )
 parser.add_argument(
     '--gp_ei_computation',
     action='store_true',
-    help='Set this flag to apply gp_ei_computation at end technique. Default is False.'
+    help=('Set this flag to apply gp_ei_computation at end technique. Default is False. '
+          'This is only used if method=mse_ei.')
 )
+
 args = parser.parse_args()
 
 # Whether to train the model.
@@ -223,11 +241,13 @@ GP_GEN_DEVICE = "cpu"
 ############################# Settings for training ############################
 # Set POLICY_GRADIENT based on the loaded model if loadin a model
 if LOAD_SAVED_MODEL:
-    POLICY_GRADIENT = load_json(
+    METHOD = load_json(
         os.path.join(MODEL_AND_INFO_PATH, "training_config.json")
-    )['policy_gradient']
+    )['method']
 else:
-    POLICY_GRADIENT = args.policy_gradient # True for the softmax thing, False for MSE EI
+    METHOD = args.method
+
+POLICY_GRADIENT = (METHOD == 'policy_gradient')
 
 BATCH_SIZE = 64
 LEARNING_RATE = 3e-4  # 3e-3
@@ -249,7 +269,7 @@ MIN_DELTA = 0.0
 CUMULATIVE_DELTA = False
 
 training_config = dict(
-    policy_gradient=POLICY_GRADIENT,
+    method=METHOD,
     batch_size=BATCH_SIZE,
     learning_rate=LEARNING_RATE,
     epochs=EPOCHS,
@@ -263,12 +283,19 @@ if POLICY_GRADIENT:
         learn_alpha=LEARN_ALPHA,
         initial_alpha=INITIAL_ALPHA,
         alpha_increment=ALPHA_INCREMENT)
+
+if METHOD != 'mse_ei':
     if args.learn_tau:
-        raise ValueError("learn_tau should be False if policy_gradient is True")
+        raise ValueError("learn_tau should be False if method != mse_ei")
     if args.initial_tau is not None:
-        raise ValueError("initial_tau should not be specified if policy_gradient is True")
+        raise ValueError("initial_tau should not be specified if method != mse_ei")
     if args.softplus_batchnorm:
-        raise ValueError("softplus_batchnorm should be False if policy_gradient is True")
+        raise ValueError("softplus_batchnorm should be False if method != mse_ei")
+    if args.positive_linear_at_end:
+        raise ValueError("positive_linear_at_end should be False if method != mse_ei")
+    if args.gp_ei_computation:
+        raise ValueError("gp_ei_computation should be False if method != mse_ei")
+
 if EARLY_STOPPING:
     training_config = dict(
         **training_config,
@@ -545,7 +572,7 @@ if TRAIN:
                                  )
     # optimizer = torch.optim.RMSprop(model.parameters(), lr=learning_rate)
     training_history_data = train_acquisition_function_net(
-        model, train_aq_dataset, optimizer, POLICY_GRADIENT, EPOCHS, BATCH_SIZE,
+        model, train_aq_dataset, optimizer, METHOD, EPOCHS, BATCH_SIZE,
         DEVICE, ALPHA_INCREMENT, verbose=VERBOSE, n_train_printouts_per_epoch=10,
         test_dataset=test_aq_dataset, small_test_dataset=small_test_aq_dataset,
         get_train_stats_while_training=True,
@@ -587,7 +614,7 @@ if not TRAIN:
                 batch_size=BATCH_SIZE, drop_last=False)
     final_test_stats = train_or_test_loop(
                 test_dataloader, model, train=False,
-                nn_device=DEVICE, policy_gradient=POLICY_GRADIENT,
+                nn_device=DEVICE, method=METHOD,
                 verbose=False, desc=f"Compute final test stats",
                 get_true_gp_stats=GET_TEST_TRUE_GP_STATS,
                 get_map_gp_stats=False,
@@ -603,7 +630,7 @@ if not os.path.exists(history_plot_path) or LOAD_SAVED_DATASET_CONFIG:
 
 ######################## Plot performance of model #############################
 n_candidates = 2_000
-name = "acquisition" if POLICY_GRADIENT else "EI"
+name = "EI" if METHOD == "mse_ei" else "acquisition"
 PLOT_MAP = False
 
 if DIMENSION == 1:
@@ -633,7 +660,7 @@ else:
     x_cand = torch.rand(n_candidates, DIMENSION)
 
     aq_fn = LikelihoodFreeNetworkAcquisitionFunction.from_net(
-        model, x_hist_nn, y_hist_nn, exponentiate=not POLICY_GRADIENT, softmax=False)
+        model, x_hist_nn, y_hist_nn, exponentiate=(METHOD == 'mse_ei'), softmax=False)
     ei_nn = aq_fn(x_cand.to(DEVICE).unsqueeze(1))
 
     ei_true = calculate_EI_GP(gp_model, x_hist, y_hist, x_cand, log=False)

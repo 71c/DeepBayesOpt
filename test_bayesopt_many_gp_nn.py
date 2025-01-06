@@ -92,16 +92,22 @@ nn_models = [
     for model_and_info_path in model_and_info_paths
 ]
 
-policy_gradient_flags = [
+methods = [
     load_json(
         os.path.join(model_and_info_path, "training_config.json")
-    )["policy_gradient"]
+    )["method"]
     for model_and_info_path in model_and_info_paths
 ]
 
+method_descriptions = {
+    'policy_gradient': 'policy gradient',
+    'mse_ei': 'MSE EI',
+    'gittins': 'Gittins index'
+}
+
 model_and_info_plot_names = [
-    f"{name} ({'policy gradient' if policy_gradient else 'MSE'})"
-    for name, policy_gradient in zip(model_and_info_plot_names, policy_gradient_flags)
+    f"{name} ({method_descriptions[method]})"
+    for name, method in zip(model_and_info_plot_names, methods)
 ]
 
 # Assume that all the configs are the same
@@ -284,17 +290,14 @@ options_dict_random = {
 }
 
 options_dict_nn = {}
-for nn_plot_name, nn_model, model_and_info_name, pg in zip(
-    model_and_info_plot_names, nn_models, model_and_info_names, policy_gradient_flags):
+for nn_plot_name, nn_model, model_and_info_name, method in zip(
+    model_and_info_plot_names, nn_models, model_and_info_names, methods):
     option_dict = {
         'optimizer_class': NNAcquisitionOptimizer,
         'model': nn_model,
         'nn_model_name': model_and_info_name
     }
-    if pg:
-        # defaults to exponentiate=False
-        options_dict_nn[nn_plot_name] = option_dict
-    else:
+    if method == 'mse_ei':
         options_dict_nn[f"{nn_plot_name} (with softplus)"] = {
             'exponentiate': True,
             **option_dict
@@ -303,6 +306,9 @@ for nn_plot_name, nn_model, model_and_info_name, pg in zip(
             'exponentiate': False,
             **option_dict
         }
+    else:
+        # defaults to exponentiate=False
+        options_dict_nn[nn_plot_name] = option_dict
 
 options_dict = {
     **options_dict_gp,
@@ -310,7 +316,7 @@ options_dict = {
     **options_dict_nn
 }
 
-has_any_mse = any(not pg for pg in policy_gradient_flags)
+has_any_mse = any(method == 'mse_ei' for method in methods)
 
 is_ei_acqf_dict = {
     LogExpectedImprovement: False,

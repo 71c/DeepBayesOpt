@@ -19,12 +19,8 @@ from utils import convert_to_json_serializable, dict_to_hash, int_linspace, calc
 from datetime import datetime
 
 
-def count_trainable_parameters(model):
-    return sum(p.numel() for p in model.parameters() if p.requires_grad)
-
-
-def count_parameters(model):
-    return sum(p.numel() for p in model.parameters())
+METHODS = ['mse_ei', 'policy_gradient', 'gittins']
+METHODS_STR = ', '.join(f"'{x}'" for x in METHODS)
 
 
 def check_2d_or_3d_tensors(*tensors):
@@ -150,10 +146,8 @@ def compute_ei_max(output, improvements, cand_mask, reduction="mean"):
 
 
 def compute_myopic_acquisition_output_batch_stats(
-        output, improvements, cand_mask, policy_gradient:bool,
+        output, improvements, cand_mask, method:str,
         return_loss:bool=False, name:str="", reduction="mean"):
-    if not isinstance(policy_gradient, bool):
-        raise ValueError("policy_gradient should be a boolean")
     if not isinstance(return_loss, bool):
         raise ValueError("return_loss should be a boolean")
     if not isinstance(name, str):
@@ -164,7 +158,7 @@ def compute_myopic_acquisition_output_batch_stats(
     output_detached = output.detach()
 
     ret = {}
-    if policy_gradient:
+    if method == "policy_gradient":
         ret[name+"avg_normalized_entropy"] = get_average_normalized_entropy(
             output_detached, mask=cand_mask, reduction=reduction).item()
 
@@ -173,12 +167,16 @@ def compute_myopic_acquisition_output_batch_stats(
         ret[name+"ei_softmax"] = ei_softmax.item()
         if return_loss:
             ret[name+"loss"] = -ei_softmax  # Note the negative sign
-    else:
+    elif method == "mse_ei":
         mse = mse_loss(output if return_loss else output_detached,
                        improvements, cand_mask, reduction)
         ret[name+"mse"] = mse.item()
         if return_loss:
             ret[name+"loss"] = mse
+    elif method == "gittins":
+        raise NotImplementedError("Gittins index not implemented")
+    else:
+        raise ValueError(f"method must be one of {METHODS_STR}; it was {method}")
 
     ret[name+"ei_max"] = compute_ei_max(output_detached, improvements,
                                         cand_mask, reduction)
@@ -201,7 +199,7 @@ def print_things(rows, prefix=''):
     print("\n".join(row_strings))
 
 
-def print_stats(stats, dataset_name):
+def print_stats(stats, dataset_name, method):
     print(f'{dataset_name}:\nExpected 1-step improvement:')
     
     has_true_gp = 'true_gp_ei_max' in stats
@@ -229,8 +227,7 @@ def print_stats(stats, dataset_name):
             direct_things_to_print.append(this_thing)
     print_things(direct_things_to_print, prefix="  ")
     
-    policy_gradient = 'ei_softmax' in stats
-    if not policy_gradient:
+    if method == 'mse_ei':
         print('Improvement MSE:')
 
         things_to_print = [
@@ -251,7 +248,7 @@ def print_stats(stats, dataset_name):
         print_things(direct_things_to_print, prefix="  ")
 
 
-def print_train_batch_stats(nn_batch_stats, nn_model, policy_gradient,
+def print_train_batch_stats(nn_batch_stats, nn_model, method,
                             batch_index, n_batches,
                             reduction="mean", batch_size=None):
     if reduction == "mean":
@@ -263,18 +260,24 @@ def print_train_batch_stats(nn_batch_stats, nn_model, policy_gradient,
     else:
         raise ValueError("'reduction' must be either 'mean' or 'sum'")
 
-    prefix = "Expected 1-step improvement" if policy_gradient else "MSE"
     suffix = ""
-    if policy_gradient:
+    if method == 'policy_gradient':
+        prefix = "Expected 1-step improvement"
         avg_normalized_entropy = nn_batch_stats["avg_normalized_entropy"]
         suffix += f", avg normalized entropy={avg_normalized_entropy:>7f}"
         loss_value = nn_batch_stats["ei_softmax"]
-    else:
+    elif method == 'mse_ei':
+        prefix = "MSE"
         loss_value = nn_batch_stats["mse"]
+    elif method == 'gittins':
+        prefix = "TODO"
+        raise NotImplementedError("gittins not implemented yet")
+    else:
+        raise ValueError()
     if isinstance(nn_model, AcquisitionFunctionNetWithFinalMLP):
         if nn_model.includes_alpha:
             suffix += f", alpha={nn_model.get_alpha():>7f}"
-        if not policy_gradient:
+        if method == 'mse_ei':
             beta = nn_model.get_beta()
             tau = 1 / beta
             suffix += f", tau={tau:>7f}"
@@ -305,7 +308,7 @@ def train_or_test_loop(dataloader: DataLoader,
                        nn_model: Optional[AcquisitionFunctionNet]=None,
                        train:Optional[bool]=None,
                        nn_device=None,
-                       policy_gradient:Optional[bool]=None,
+                       method:Optional[str]=None,
                        verbose:bool=True,
                        desc:Optional[str]=None,
                        
@@ -358,8 +361,8 @@ def train_or_test_loop(dataloader: DataLoader,
     if nn_model is not None: # evaluating a NN model
         if not isinstance(nn_model, AcquisitionFunctionNet):
             raise ValueError("nn_model must be a AcquisitionFunctionNet instance")
-        if not isinstance(policy_gradient, bool):
-            raise ValueError("'policy_gradient' must be a boolean if evaluating a NN model")
+        if method not in METHODS:
+            raise ValueError(f"'method' must be one of {METHODS_STR} if evaluating a NN model; it was {method}")
         if not isinstance(train, bool):
             raise ValueError("'train' must be a boolean if evaluating a NN model")
         
@@ -380,8 +383,8 @@ def train_or_test_loop(dataloader: DataLoader,
             nn_model.eval()
 
     else: # just evaluating the dataset, no NN model
-        if policy_gradient is not None:
-            raise ValueError("'policy_gradient' must not be specified if not evaluating a NN model")
+        if method is not None:
+            raise ValueError("'method' must not be specified if not evaluating a NN model")
         if train is not None:
             raise ValueError("'train' must not be specified if not evaluating a NN model")
         if nn_device is not None:
@@ -441,7 +444,7 @@ def train_or_test_loop(dataloader: DataLoader,
         else:
             it = tqdm(it, desc=desc)
         tic(desc)
-    
+        
     dataset_length = 0
     for i, batch in enumerate(it):
         x_hist, y_hist, x_cand, vals_cand, hist_mask, cand_mask = batch.tuple_no_model
@@ -472,10 +475,10 @@ def train_or_test_loop(dataloader: DataLoader,
             with torch.set_grad_enabled(train and not is_degenerate_batch):
                 nn_output = nn_model(
                     x_hist_nn, y_hist_nn, x_cand_nn, hist_mask_nn, cand_mask_nn,
-                    exponentiate=not policy_gradient, softmax=policy_gradient)
-                
+                    exponentiate=(method == "mse_ei"), softmax=(method == "policy_gradient"))
+
                 nn_batch_stats = compute_myopic_acquisition_output_batch_stats(
-                    nn_output, improvements_nn, cand_mask_nn, policy_gradient,
+                    nn_output, improvements_nn, cand_mask_nn, method,
                     return_loss=train, reduction="sum")
                 # print("NN", nn_batch_stats)
 
@@ -494,13 +497,13 @@ def train_or_test_loop(dataloader: DataLoader,
                     
                     if verbose and n_train_printouts is not None and i in print_indices:
                         print_train_batch_stats(nn_batch_stats, nn_model,
-                                                policy_gradient, i,
+                                                method, i,
                                                 n_training_batches,
                                                 reduction="sum",
                                                 batch_size=this_batch_size)
                         
                         # # Debug code
-                        # if not policy_gradient:
+                        # if method == 'mse_ei':
                         #     nn_output_no_transform = nn_model(
                         #         x_hist_nn, y_hist_nn, x_cand_nn, hist_mask_nn, cand_mask_nn,
                         #         exponentiate=False, softmax=False)
@@ -536,11 +539,11 @@ def train_or_test_loop(dataloader: DataLoader,
                 # exit()
                 true_gp_batch_stats = compute_myopic_acquisition_output_batch_stats(
                     ei_values_true_model, improvements, cand_mask,
-                    policy_gradient=False, return_loss=False,
+                    method='mse_ei', return_loss=False,
                     name="true_gp", reduction="sum")
                 # print(compute_myopic_acquisition_output_batch_stats(
                 #     ei_values_true_model, improvements, cand_mask,
-                #     policy_gradient=False, return_loss=False,
+                #     method='mse_ei', return_loss=False,
                 #     name="true_gp", reduction="mean"))
                 # print()
                 # print("GP", true_gp_batch_stats)
@@ -581,7 +584,7 @@ def train_or_test_loop(dataloader: DataLoader,
                 x_hist, y_hist, x_cand, hist_mask, cand_mask, models, fit_params=True)
             map_gp_batch_stats = compute_myopic_acquisition_output_batch_stats(
                     ei_values_map, improvements, cand_mask,
-                    policy_gradient=False, return_loss=False,
+                    method='mse_ei', return_loss=False,
                     name="map_gp", reduction="sum")
             map_gp_stats_list.append(map_gp_batch_stats)
     assert dataset_length == len(dataset)
@@ -680,7 +683,7 @@ def train_acquisition_function_net(
         nn_model: AcquisitionFunctionNet,
         train_dataset: AcquisitionDataset,
         optimizer: torch.optim.Optimizer,
-        policy_gradient: bool,
+        method: str,
         n_epochs: int,
         batch_size: int,
         nn_device=None,
@@ -787,7 +790,7 @@ def train_acquisition_function_net(
         
         train_stats_while_training = train_or_test_loop(
             train_dataloader, nn_model, train=True,
-            nn_device=nn_device, policy_gradient=policy_gradient,
+            nn_device=nn_device, method=method,
             verbose=verbose, desc=f"Epoch {t+1} train",
             n_train_printouts=n_train_printouts_per_epoch,
             optimizer=optimizer,
@@ -804,12 +807,12 @@ def train_acquisition_function_net(
             train_stats['while_training'] = train_nn_stats_while_training
             if verbose:
                 print_stats({**train_stats['while_training'], **non_nn_train_stats},
-                            "Train stats while training")
+                            "Train stats while training", method)
 
         if get_train_stats_after_training:
             train_stats['after_training'] = train_or_test_loop(
                 train_dataloader, nn_model, train=False,
-                nn_device=nn_device, policy_gradient=policy_gradient,
+                nn_device=nn_device, method=method,
                 verbose=verbose, desc=f"Epoch {t+1} compute train stats",
                 # Don't need to compute non-NN stats because already computed them
                 # while training, and we ensured that the train dataset is fixed for this epoch.
@@ -818,21 +821,21 @@ def train_acquisition_function_net(
                 get_basic_stats=False)
             if verbose:
                 print_stats({**train_stats['after_training'], **non_nn_train_stats},
-                            "Train stats after training")
+                            "Train stats after training", method)
         
         epoch_stats = {'train': train_stats}
 
         if test_during_training:
             test_stats = train_or_test_loop(
                 small_test_dataloader, nn_model, train=False,
-                nn_device=nn_device, policy_gradient=policy_gradient,
+                nn_device=nn_device, method=method,
                 verbose=verbose, desc=f"Epoch {t+1} compute test stats",
                 get_true_gp_stats=get_test_true_gp_stats,
                 get_map_gp_stats=get_test_map_gp_stats,
                 get_basic_stats=True)
             epoch_stats['test'] = test_stats
             if verbose:
-                print_stats(test_stats, "Test stats")
+                print_stats(test_stats, "Test stats", method)
         
         training_history_data['stats_epochs'].append(epoch_stats)
 
@@ -905,14 +908,14 @@ def train_acquisition_function_net(
                 batch_size=batch_size, drop_last=False)
             final_test_stats = train_or_test_loop(
                 test_dataloader, nn_model, train=False,
-                nn_device=nn_device, policy_gradient=policy_gradient,
+                nn_device=nn_device, method=method,
                 verbose=verbose, desc=f"Compute final test stats",
                 get_true_gp_stats=get_test_true_gp_stats_after_training,
                 get_map_gp_stats=get_test_map_gp_stats,
                 get_basic_stats=True)
         training_history_data['final_test_stats'] = final_test_stats
         if verbose:
-            print_stats(final_test_stats, "Final test stats")
+            print_stats(final_test_stats, "Final test stats", method)
     
     if save_dir is not None:
         save_json(training_history_data, training_history_path, indent=4)

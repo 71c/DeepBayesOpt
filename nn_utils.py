@@ -6,6 +6,13 @@ from gpytorch.utils.transforms import inv_softplus
 from botorch.utils.transforms import normalize_indices
 
 
+def count_trainable_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters())
+
+
 ACTIVATIONS = {
     "relu": nn.ReLU,
     "softplus": nn.Softplus,
