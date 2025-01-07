@@ -15,7 +15,7 @@ from tqdm import tqdm
 from acquisition_dataset import AcquisitionDataset
 from botorch.exceptions import UnsupportedError
 from tictoc import tic, toc
-from utils import convert_to_json_serializable, dict_to_hash, int_linspace, calculate_batch_improvement, load_json, save_json
+from utils import convert_to_json_serializable, dict_to_hash, int_linspace, calculate_batch_improvement, load_json, probability_y_greater_than_gi_normal, save_json
 from datetime import datetime
 
 
@@ -103,7 +103,7 @@ def myopic_policy_gradient_ei(probabilities, improvements, reduction="mean"):
         raise ValueError("'reduction' must be either 'mean' or 'sum'")
 
 
-def mse_loss(pred_improvements, improvements, mask, reduction="mean"):
+def mse_loss(pred_improvements, improvements, mask=None, reduction="mean"):
     """Calculate the MSE loss. Handle padding with mask for the case that
     there is padding. This works because the padded values are both zero
     so (0 - 0)^2 = 0. Equivalent to reduction="mean" if no padding.
@@ -114,6 +114,7 @@ def mse_loss(pred_improvements, improvements, mask, reduction="mean"):
         improvements (Tensor): The improvements tensor.
             Shape (batch_size, n_cand)
         mask (Tensor or None): The mask tensor, shape (batch_size, n_cand)
+        reduction (str): The reduction method. Either "mean" or "sum".
     """
     pred_improvements, improvements, mask = check_2d_or_3d_tensors(
         pred_improvements, improvements, mask)
@@ -138,6 +139,48 @@ def mse_loss(pred_improvements, improvements, mask, reduction="mean"):
     if reduction == "mean":
         return mse_per_batch.mean()
     return mse_per_batch.sum()
+
+
+def gittins_loss(pred_gi, y, lamdas, costs=None,
+                 normalize=False, known_costs=True,
+                 mask=None, reduction="mean"):
+    """Calculate the Gittins index loss.
+
+    Args:
+        pred_gi (Tensor): The predicted Gittins indices. Shape (batch_size, n_cand)
+        y (Tensor): The y values. Shape (batch_size, n_cand)
+        lamdas (Tensor): The lambda values. Shape (batch_size, n_cand)
+        costs (Tensor or None): The costs tensor, shape (batch_size, n_cand)
+        normalize (bool): Whether to normalize the loss function as proposed
+        known_costs (bool): Whether the costs `costs` are known (only applicable if
+            normalize=True and costs != None)
+        mask (Tensor or None): The mask tensor, shape (batch_size, n_cand)
+        reduction (str): The reduction method. Either "mean" or "sum".
+    """
+    pred_gi, y, lamdas, costs, mask = check_2d_or_3d_tensors(
+        pred_gi, y, lamdas, costs, mask)
+    
+    if reduction not in {"mean", "sum"}:
+        raise ValueError("'reduction' must be either 'mean' or 'sum'")
+
+    c = lamdas if costs is None else lamdas * costs
+    losses = 0.5 * c**2 + c * (pred_gi - y) + 0.5 * F.relu(y - pred_gi)**2
+
+    if normalize:
+        normalize_c = c if known_costs else lamdas
+        normalization_consts = probability_y_greater_than_gi_normal(
+            cbar=normalize_c, sigma=1.0)
+        losses = losses / normalization_consts
+
+    if mask is None:
+        mean_error_per_batch = losses.mean(dim=1)
+    else:
+        losses *= mask
+        mean_error_per_batch = losses.sum(dim=1) / mask.sum(dim=1).double()
+
+    if reduction == "mean":
+        return mean_error_per_batch.mean()
+    return mean_error_per_batch.sum()
 
 
 def compute_ei_max(output, improvements, cand_mask, reduction="mean"):
@@ -173,8 +216,8 @@ def compute_myopic_acquisition_output_batch_stats(
         ret[name+"mse"] = mse.item()
         if return_loss:
             ret[name+"loss"] = mse
-    elif method == "gittins":
-        raise NotImplementedError("Gittins index not implemented")
+    elif method in METHODS:
+        pass # Don't do anything
     else:
         raise ValueError(f"method must be one of {METHODS_STR}; it was {method}")
 
@@ -469,10 +512,24 @@ def train_or_test_loop(dataloader: DataLoader,
         if nn_model is not None:
             (x_hist_nn, y_hist_nn, x_cand_nn, vals_cand_nn,
              hist_mask_nn, cand_mask_nn) = batch.to(nn_device).tuple_no_model
-            improvements_nn = vals_cand_nn if batch.give_improvements else \
-            calculate_batch_improvement(y_hist_nn, vals_cand_nn, hist_mask_nn, cand_mask_nn)
+            
+            if batch.give_improvements:
+                if method == 'gittins':
+                    raise RuntimeError(
+                        "Has batch.give_improvements==True but we need the y values for Gittins index loss")
+                improvements_nn = vals_cand_nn
+            else:
+                y_cand_nn = vals_cand_nn
+                improvements_nn = calculate_batch_improvement(
+                    y_hist_nn, vals_cand_nn, hist_mask_nn, cand_mask_nn)
+            
+            # TODO: Have as (optional) input to this function the min and max lambda values
+            # TODO: Have as inmput this function option of whether to normalize GI loss
+            # TODO: Generate random lambda values for GI loss case
 
             with torch.set_grad_enabled(train and not is_degenerate_batch):
+                # TODO: Make the NN able to have as input extra information (in our case,
+                # lambda values)
                 nn_output = nn_model(
                     x_hist_nn, y_hist_nn, x_cand_nn, hist_mask_nn, cand_mask_nn,
                     exponentiate=(method == "mse_ei"), softmax=(method == "policy_gradient"))
@@ -481,8 +538,14 @@ def train_or_test_loop(dataloader: DataLoader,
                     nn_output, improvements_nn, cand_mask_nn, method,
                     return_loss=train, reduction="sum")
                 # print("NN", nn_batch_stats)
-
                 # print("(DEBUG) Mean EI NN:", nn_output.mean())
+
+                if method == 'gittins':
+                    loss = gittins_loss(nn_output, y_cand_nn, lamdas, costs=None,
+                                        normalize=normalize_gi_loss, known_costs=True,
+                                        mask=cand_mask_nn, reduction="sum")
+                    nn_batch_stats["gittins_loss"] = loss.item()
+                    nn_batch_stats["loss"] = loss
 
                 if train and not is_degenerate_batch:
                     # convert sum to mean so that this is consistent across batch sizes
