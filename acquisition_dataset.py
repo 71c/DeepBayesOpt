@@ -24,6 +24,9 @@ torch.set_default_dtype(torch.double)
 
 
 class AcquisitionDatasetModelItem(TupleWithModel):
+    """
+    x_hist shape: `batch_shape x n_hist x d`
+    """
     args_names = ['x_hist', 'y_hist', 'x_cand', 'vals_cand']
     kwargs_names = ['give_improvements']
 

@@ -361,7 +361,13 @@ def train_or_test_loop(dataloader: DataLoader,
 
                        get_true_gp_stats:Optional[bool]=None,
                        get_map_gp_stats:bool=False,
-                       get_basic_stats:bool=True):
+                       get_basic_stats:bool=True,
+                       
+                       # Only used when method="gittins" and train=True
+                       lambda_min:Optional[float]=None,
+                       lambda_max:Optional[float]=None,
+                       nn_input_lambda:bool=True,
+                       normalize_gi_loss:bool=False):
     if not isinstance(dataloader, DataLoader):
         raise ValueError("dataloader must be a torch DataLoader")
     
@@ -404,10 +410,25 @@ def train_or_test_loop(dataloader: DataLoader,
     if nn_model is not None: # evaluating a NN model
         if not isinstance(nn_model, AcquisitionFunctionNet):
             raise ValueError("nn_model must be a AcquisitionFunctionNet instance")
-        if method not in METHODS:
-            raise ValueError(f"'method' must be one of {METHODS_STR} if evaluating a NN model; it was {method}")
         if not isinstance(train, bool):
             raise ValueError("'train' must be a boolean if evaluating a NN model")
+        if method not in METHODS:
+            raise ValueError(f"'method' must be one of {METHODS_STR} if evaluating a NN model; it was {method}")
+        if method == "gittins":
+            if not (isinstance(lambda_min, float) and lambda_min > 0):
+                raise ValueError(f"lambda_min must be a positive float if method='gittins'; it was {lambda_min}")
+            if lambda_max is None:
+                lambda_max = lambda_min
+            elif not (isinstance(lambda_max, float) and lambda_max > 0):
+                raise ValueError(f"lambda_max must be a positive float if method='gittins'; it was {lambda_max}")
+            if not (lambda_min <= lambda_max):
+                raise ValueError("lambda_min must be less than or equal to lambda_max")
+            log_lambda_min = math.log(lambda_min)
+            log_lambda_max = math.log(lambda_max)
+            if not isinstance(nn_input_lambda, bool):
+                raise ValueError("nn_input_lambda must be a boolean")
+            if not isinstance(normalize_gi_loss, bool):
+                raise ValueError("normalize_gi_loss must be a boolean") 
         
         if train:
             if optimizer is None:
@@ -521,11 +542,11 @@ def train_or_test_loop(dataloader: DataLoader,
             else:
                 y_cand_nn = vals_cand_nn
                 improvements_nn = calculate_batch_improvement(
-                    y_hist_nn, vals_cand_nn, hist_mask_nn, cand_mask_nn)
+                    y_hist_nn, y_cand_nn, hist_mask_nn, cand_mask_nn)
             
-            # TODO: Have as (optional) input to this function the min and max lambda values
-            # TODO: Have as inmput this function option of whether to normalize GI loss
-            # TODO: Generate random lambda values for GI loss case
+            if method == 'gittins':
+                log_lambdas = torch.rand_like(vals_cand_nn, dtype=torch.double) * (log_lambda_max - log_lambda_min) + log_lambda_min
+                lambdas = torch.exp(log_lambdas)
 
             with torch.set_grad_enabled(train and not is_degenerate_batch):
                 # TODO: Make the NN able to have as input extra information (in our case,
@@ -541,7 +562,7 @@ def train_or_test_loop(dataloader: DataLoader,
                 # print("(DEBUG) Mean EI NN:", nn_output.mean())
 
                 if method == 'gittins':
-                    loss = gittins_loss(nn_output, y_cand_nn, lamdas, costs=None,
+                    loss = gittins_loss(nn_output, y_cand_nn, lambdas, costs=None,
                                         normalize=normalize_gi_loss, known_costs=True,
                                         mask=cand_mask_nn, reduction="sum")
                     nn_batch_stats["gittins_loss"] = loss.item()

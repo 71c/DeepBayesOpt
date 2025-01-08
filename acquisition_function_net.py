@@ -14,10 +14,9 @@ from botorch.models.model import Model
 from botorch.acquisition.acquisition import AcquisitionFunction
 from botorch.exceptions import UnsupportedError
 from botorch.utils.transforms import t_batch_mode_transform, match_batch_shape
-from botorch.utils.safe_math import fatmax, smooth_amax
 from abc import ABC, abstractmethod
 from utils import load_json, pad_tensor, save_json, to_device
-from nn_utils import Dense, LearnableSoftplus, PositiveBatchNorm, PositiveScalar
+from nn_utils import Dense, LearnableSoftplus, MultiLayerPointNet, PointNetLayer, PositiveBatchNorm, PositiveScalar, check_xy_dims_add_y_output_dim, expand_dim, masked_softmax
 
 import logging
 
@@ -30,46 +29,6 @@ logger = logging.getLogger('acquisition_function_net')
 logger.setLevel(logging.DEBUG if DEBUG else logging.WARNING)
 
 
-def expand_dim(tensor, dim, k):
-    new_shape = list(tensor.shape)
-    new_shape[dim] = k
-    return tensor.expand(*new_shape)
-
-
-def check_xy_dims_add_y_output_dim(x: Tensor, y: Union[Tensor, None],
-                                   x_name: str, y_name: str) -> Tensor:
-    """Check that the dimensions of x and y are as expected, and add an output
-    dimension to y if there is none.
-    
-    Args:
-        x (Tensor): The input tensor x.
-        y (Tensor or None): The input tensor y.
-        x_name (str): The name of the x tensor.
-        y_name (str): The name of the y tensor.
-    
-    Returns:
-        Tensor: The modified y tensor, with an added output dimension
-        if it was missing.
-    """
-    if y is None:
-        return y
-    if x.dim() < 2:
-        raise ValueError(
-            f"{x_name} must have at least 2 dimensions,"
-            f" but has only {x.dim()} dimensions."
-        )
-    if x.dim() != y.dim():
-        if (x.dim() - y.dim() == 1) and (x.shape[:-1] == y.shape):
-            y = y.unsqueeze(-1)
-        else:
-            raise ValueError(f"{x_name} and {y_name} must have the same number of dimensions or {y_name} must have one fewer dimension than {x_name}.")
-    if x.size(-2) != y.size(-2):
-        raise ValueError(f"{x_name} and {y_name} must have the same number of points in the history dimension.")
-    if y.size(-1) != 1:
-        raise ValueError(f"{y_name} must have one output dimension.")
-    return y
-
-
 def add_tbatch_dimension(x: Tensor, x_name: str):
     if x.dim() < 2:
         raise ValueError(
@@ -77,263 +36,6 @@ def add_tbatch_dimension(x: Tensor, x_name: str):
             f" but has only {x.dim()} dimensions."
         )
     return x if x.dim() > 2 else x.unsqueeze(0)
-
-
-# https://discuss.pytorch.org/t/apply-mask-softmax/14212/13
-def masked_softmax(vec, mask, dim=-1):
-    if mask is None:
-        return nn.functional.softmax(vec, dim=dim)
-    neg_inf = torch.zeros_like(vec)
-    mask_expanded = expand_dim(mask, -1, vec.size(-1))
-    neg_inf[~mask_expanded] = float("-inf")
-    masked_vec = vec + neg_inf
-
-    # masked_vec = vec * mask
-
-    max_vec = torch.max(masked_vec, dim=dim, keepdim=True).values
-    exps = torch.exp(vec-max_vec)
-    masked_exps = exps * mask
-    masked_sums = masked_exps.sum(dim, keepdim=True)
-    zeros = (masked_sums == 0)
-    masked_sums += zeros
-    return masked_exps/masked_sums
-
-
-def add_neg_inf_for_max(x, mask):
-    # neg_inf = torch.zeros_like(x)
-    # mask_expanded = expand_dim(mask, -1, x.size(-1))
-    # neg_inf[~mask_expanded] = float("-inf")
-    # return x + neg_inf
-
-    mask_expanded = expand_dim(mask, -1, x.size(-1))
-    return x.masked_fill(~mask_expanded, float("-inf"))
-
-
-# doesn't work gives nan
-# class SmoothMax(nn.Module):
-#     def __init__(self, ndims, initial_tau=0.05):
-#         super().__init__()
-#         # self._log_tau = nn.Parameter(
-#         #     torch.full((ndims,), math.log(initial_tau))
-#         # )
-#         # self._log_tau = nn.Parameter(
-#         #     torch.tensor(math.log(initial_tau))
-#         # )
-#         self._log_tau = nn.Parameter(
-#             torch.tensor(0.0)
-#         )
-#         self.ndims = ndims
-    
-#     def forward(self, x, keepdim=False):
-#         if x.size(-1) != self.ndims:
-#             raise ValueError("incorrect dimensions")
-#         # tau = torch.exp(self._log_tau)
-#         # tau = torch.nn.functional.softplus(self._log_tau)
-#         tau = torch.sigmoid(self._log_tau)
-
-#         # new_shape = [1] * (x.ndim - 1) + [self.ndims]
-#         # tau = tau.view(*new_shape)
-#         ret = smooth_amax(x, dim=-2, keepdim=keepdim, tau=tau)
-#         print("tau", self._log_tau, tau, ret)
-#         return ret
-
-
-POOLING_METHODS = {
-    "max", "sum", "fatmax",
-    "experiment1", "experiment2", "experiment3"}
-class PointNetLayer(nn.Module):
-    def __init__(self, input_dim: int, hidden_dims: Sequence[int]=[256, 256],
-                 output_dim: int=1024, pooling="max", **dense_kwargs):
-        super().__init__()
-
-        if pooling == "experiment1":
-            output_dim = output_dim * 2 + 3
-        elif pooling == "experiment2":
-            output_dim = output_dim + 2
-        elif pooling == "experiment3":
-            output_dim = output_dim + 1
-        # elif pooling == "fatmax":  # Doesn't work gives nan
-        #     self.smoothmax_module = SmoothMax(ndims=output_dim)
-
-        if 'dropout_at_end' not in dense_kwargs:
-            dense_kwargs['dropout_at_end'] = True
-        self.network = Dense(input_dim, hidden_dims, output_dim, **dense_kwargs)
-
-        if pooling in POOLING_METHODS:
-            self.pooling = pooling
-        else:
-            raise ValueError(f"pooling must be one of {POOLING_METHODS}")
-    
-    def forward(self, x, mask=None, keepdim=True, return_local_features=False):
-        """Computes the output of the PointNet layer.
-
-        Args:
-            x (torch.Tensor): Input tensor with shape (*, n, input_dim).
-            mask (torch.Tensor): Mask tensor with shape (*, n) or (*, n, 1).
-                If None, then mask is all ones.
-            keepdim (boolean): whether to remove the `n` dimension from output
-
-        Returns:
-            torch.Tensor: Output with shape (*, 1, output_dim) if keepdim=True
-            or with shape (*, output_dim) if keepdim=False
-        """
-        # shape (*, n, output_dim)
-        logger.debug(f"x.shape: {x.shape}")
-        local_features = self.network(x)
-
-        # for name, param in self.network.named_parameters():
-        #     logger.debug(f"Parameter: {name}")
-        #     logger.debug(f"Parameter shape: {param.shape}")
-        #     logger.debug(f"Parameter value: {param}")
-
-        # Mask out the padded values. It is sufficient to mask at the end.
-        if mask is not None:
-            # shape (*, n, 1)
-            mask = check_xy_dims_add_y_output_dim(x, mask, "x", "mask")
-            local_features = local_features * mask
-        
-        # "global feature"
-        if self.pooling == "sum":
-            ret = torch.sum(local_features, dim=-2, keepdim=keepdim)
-        elif self.pooling == "max" or self.pooling == "fatmax":
-            # This works for maxing. If ReLU is applied at the end, then
-            # we could instead just use the one for summing.
-            tmp = local_features if mask is None else add_neg_inf_for_max(local_features, mask)
-            
-            if self.pooling == "max":
-                ret = torch.max(tmp, dim=-2, keepdim=keepdim).values
-            else:
-                # ret = fatmax(tmp, dim=-2, keepdim=keepdim) # gives nan
-                # ret = self.smoothmax_module(tmp, keepdim=keepdim) # gives nan
-                ret = smooth_amax(tmp, dim=-2, keepdim=keepdim, tau=0.1) # works
-                
-            
-            # print("x has any infs:", torch.isinf(x).any().item())
-            # print("x has any nans:", torch.isnan(x).any().item())
-            # print("x:", x)
-            # print("local_features:", local_features)
-            # print("tmp:", tmp)
-            # print("ret:", ret)
-            # print()
-
-            if mask is not None:
-                # ret[ret == float("-inf")] = 0.0
-                # ret = ret.masked_fill(maxvals.isinf(), 0.0)
-                ret = ret.masked_fill(ret.isinf(), 0.0)
-            
-        elif self.pooling == "experiment1":
-            output_dim = (local_features.size(-1) - 3) // 2
-            softmax_in = local_features[..., :output_dim]
-            vals = local_features[..., output_dim:-3]
-            alphas_1 = nn.functional.softplus(local_features[..., -3:-2])
-            alphas_2 = nn.functional.softplus(local_features[..., -2:-1])
-            betas = nn.functional.sigmoid(local_features[..., -1:])
-            
-            # softmaxes_1 = masked_softmax(softmax_in * alphas_1, mask, dim=-2)
-            # softmaxes_2 = masked_softmax(vals * alphas_2, mask, dim=-2)
-            # tmp = betas * softmaxes_1 + (1 - betas) * softmaxes_2
-            # ret = torch.sum(vals * tmp, dim=-2, keepdim=keepdim)
-
-            tmp = betas * softmax_in * alphas_1 + (1 - betas) * vals * alphas_2
-            softmaxes = masked_softmax(tmp, mask, dim=-2)
-            ret = torch.sum(vals * softmaxes, dim=-2, keepdim=keepdim)
-        elif self.pooling == "experiment2":
-            output_dim = (local_features.size(-1) - 2) // 2
-            softmax_in = local_features[..., :output_dim]
-            vals = local_features[..., output_dim:-2]
-            alphas_1 = nn.functional.softplus(local_features[..., -2:-1])
-            alphas_2 = nn.functional.softplus(local_features[..., -1:])
-
-            softmaxes_1 = masked_softmax(softmax_in * alphas_1, mask, dim=-2)
-            softmaxes_2 = masked_softmax(vals * alphas_2, mask, dim=-2)
-            out_1 = torch.sum(vals * softmaxes_1, dim=-2, keepdim=keepdim)
-            out_2 = torch.sum(vals * softmaxes_2, dim=-2, keepdim=keepdim)
-            ret = torch.cat((out_1, out_2), dim=-1)
-        elif self.pooling == "experiment3":
-            output_dim = (local_features.size(-1) - 1) // 2
-            
-            vals = local_features[..., :output_dim]
-            ret_max = torch.max(
-                vals if mask is None else add_neg_inf_for_max(vals, mask),
-                dim=-2, keepdim=keepdim).values
-            if mask is not None:
-                ret_max[ret_max == float("-inf")] = 0.0
-            
-            softmax_in = local_features[..., output_dim:-1]
-            alphas = nn.functional.softplus(local_features[..., -1:])
-            softmaxes = masked_softmax(softmax_in * alphas, mask, dim=-2)
-            out = torch.sum(vals * softmaxes, dim=-2, keepdim=keepdim)
-
-            ret = torch.cat((ret_max, out), dim=-1)
-        
-        if return_local_features:
-            return ret, local_features
-        return ret
-
-
-class MultiLayerPointNet(nn.Module):
-    def __init__(self, input_dim: int, hidden_dims: Sequence[Sequence[int]],
-                 output_dims: Sequence[int], poolings: Sequence[str],
-                 dense_kwargs_list: List[dict], use_local_features=True):
-        super().__init__()
-
-        if not (len(hidden_dims) == len(output_dims) == len(poolings) == len(dense_kwargs_list)):
-            raise ValueError("hidden_dims, output_dims, poolings, and dense_kwargs_list must have the same length.")
-        
-        n_layers = len(hidden_dims)
-        
-        if use_local_features:
-            input_dims = [input_dim] + [output_dims[i-1] * 2 for i in range(1, n_layers)]
-        else:
-            input_dims = [input_dim] + [output_dims[i-1] + input_dim for i in range(1, n_layers)]
-        self.use_local_features = use_local_features
-
-        self.pointnets = nn.ModuleList([
-            PointNetLayer(input_dims[i], hidden_dims[i], output_dims[i],
-                          poolings[i], **dense_kwargs_list[i])
-            for i in range(n_layers)
-        ])
-    
-    def forward(self, x, mask=None, keepdim=True):
-        """Computes the output of the PointNet layers.
-
-        Args:
-            x (torch.Tensor): Input tensor with shape (*, n, input_dim).
-            mask (torch.Tensor): Mask tensor with shape (*, n) or (*, n, 1).
-                If None, then mask is all ones.
-            keepdim (boolean): whether to remove the `n` dimension from output
-
-        Returns:
-            torch.Tensor: Output with shape (*, 1, output_dim) if keepdim=True
-            or with shape (*, output_dim) if keepdim=False
-        """
-        if self.use_local_features:
-            global_feat, local_feat = self.pointnets[0](x, mask, keepdim=True, return_local_features=True)
-        else:
-            # shape (*, 1, output_dims[0])
-            global_feat = self.pointnets[0](x, mask, keepdim=True)
-
-        n = x.size(-2)
-
-        for i in range(1, len(self.pointnets)):
-            # shape (*, n, output_dims[i-1])
-            expanded_global_feat = expand_dim(global_feat, -2, n)
-            
-            if self.use_local_features:
-                # shape (*, n, output_dims[i-1] * 2)
-                in_i = torch.cat((local_feat, expanded_global_feat), dim=-1)
-            else:
-                # shape (*, n, input_dim + output_dims[i-1])
-                in_i = torch.cat((x, expanded_global_feat), dim=-1)
-
-            # shape (*, 1, output_dims[i])
-            keepdim_i = keepdim if i == len(self.pointnets) - 1 else True
-            if self.use_local_features:
-                global_feat, local_feat = self.pointnets[i](in_i, mask, keepdim=keepdim_i, return_local_features=True)
-            else:
-                global_feat = self.pointnets[i](in_i, mask, keepdim=keepdim_i)
-
-        return global_feat
 
 
 # Dictionary to keep track of subclasses
@@ -433,6 +135,95 @@ class AcquisitionFunctionNet(nn.Module, ABC):
         pass  # pragma: no cover
 
 
+class AcquisitionFunctionNetFixedDimension(AcquisitionFunctionNet):
+    r"""This is an abstract class that is meant to represent an
+    AcquisitionFunctionNet that has a fixed dimension of x values (function inputs)
+    it can work with.
+    It is expected that all subclasses have the following two properties:
+      1. Have a parameter named "dimension" as one of the parameters in __init__
+      2. In the __init__, it does "self.dimension = dimension".
+    This is enforced by contract rather than explicitly in the code because that makes
+    it easier to implement and less complicated.
+    """
+    pass
+
+
+class GittinsAcquisitionFunctionNet(AcquisitionFunctionNetFixedDimension):
+    def __init__(self, dimension, acquisition_function_class,
+                 variable_lambda:bool,
+                 costs_in_history:bool, cost_is_input:bool,
+                 assume_y_independent_cost:bool=False,
+                 **init_kwargs):
+        r"""Initialize the GittinsAcquisitionFunctionNet class.
+        
+        Args:
+            dimension (int):
+                Dimension of the input space.
+            acquisition_function_class (subclass of AcquisitionFunctionNetFixedDimension):
+                The class of the acquisition function to use.
+            variable_lambda (bool):
+                Whether to use a variable lambda that is input to the NN.
+            costs_in_history (bool):
+                Whether the past costs are in the history.
+            cost_is_input (bool):
+                Whether the cost of a candidate is an input to the NN
+                (in this case we can know the cost before evaluation).
+            assume_y_independent_cost (bool, default: False):
+                Whether to assume that the cost is independent of the function value
+                conditioned on the history and candidate point,
+                so that only lambda*cost is input rather than (lambda*cost, cost).
+                ONLY applicable if both variable_lambda=True and cost_is_input=True.
+            **init_kwargs:
+                Arguments to pass to the acquisition function class __init__
+                except for the dimension argument.
+        
+        `costs_in_history` and `cost_is_input` can be chosen based on the following
+        rules, if `heterogeneous_costs` tells whether costs are heterogeneous and
+        `known_cost` tells whether the cost is known before evaluation:
+        if heterogeneous_costs:
+            if known_cost:
+                costs_in_history: Could be False since we already know the cost.
+                    Could also set True if we think that past costs tell us
+                    something about future y values.
+                cost_is_input: True
+            else:
+                costs_in_history: True
+                cost_is_input: False
+        else:
+            costs_in_history: False
+            cost_is_input: False
+        """
+        if type(variable_lambda) is not bool:
+            raise ValueError("variable_lambda should be bool")
+        if type(costs_in_history) is not bool:
+            raise ValueError("costs_in_history should be bool")
+        if type(cost_is_input) is not bool:
+            raise ValueError("cost_is_input should be bool")
+        self.variable_lambda = variable_lambda
+        self.costs_in_history = costs_in_history
+        self.cost_is_input = cost_is_input
+
+        if variable_lambda and cost_is_input:
+            if type(assume_y_independent_cost) is not bool:
+                raise ValueError("assume_y_independent_cost should be bool")
+            input_dimension = dimension + (1 if assume_y_independent_cost else 2)
+            self.assume_y_independent_cost = assume_y_independent_cost
+        else:
+            input_dimension = dimension + variable_lambda + cost_is_input
+        
+        if not issubclass(acquisition_function_class, AcquisitionFunctionNetFixedDimension):
+            raise ValueError("acquisition_function_class should be a subclass of AcquisitionFunctionNetFixedDimension")
+        if acquisition_function_class is GittinsAcquisitionFunctionNet:
+            raise ValueError("acquisition_function_class should not be GittinsAcquisitionFunctionNet")
+        if 'dimension' in init_kwargs:
+            raise ValueError("dimension should not be in init_kwargs")
+        self.base_model = acquisition_function_class(dimension=input_dimension, **init_kwargs)
+
+    def forward(self, x_hist, y_hist, x_cand, hist_mask=None, cand_mask=None,
+                cost_hist=None, lambda_cand=None, cost_cand=None):
+        pass  # pragma: no cover
+
+
 class AcquisitionFunctionNetWithSoftmaxAndExponentiate(AcquisitionFunctionNet):
     @abstractmethod
     def forward(self, x_hist, y_hist, x_cand, hist_mask=None, cand_mask=None,
@@ -443,7 +234,7 @@ class AcquisitionFunctionNetWithSoftmaxAndExponentiate(AcquisitionFunctionNet):
             x_hist (torch.Tensor):
                 A `batch_shape x n_hist x d` tensor of training features.
             y_hist (torch.Tensor):
-                A `batch_shape x n_hist` or `batch_shape x n_hist x 1`
+                A `batch_shape x n_hist` or `batch_shape x n_hist x n_out`
                 tensor of training observations.
             x_cand (torch.Tensor):
                 Candidate input tensor with shape `batch_shape x n_cand x d`.
@@ -716,7 +507,7 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
             x_hist (torch.Tensor):
                 A `batch_shape x n_hist x d` tensor of training features.
             y_hist (torch.Tensor):
-                A `batch_shape x n_hist x 1` tensor of training observations.
+                A `batch_shape x n_hist x n_out` tensor of training observations.
             x_cand (torch.Tensor):
                 A `batch_shape x n_cand x d` tensor of candidate points.
             hist_mask (torch.Tensor):
@@ -1403,7 +1194,8 @@ class AcquisitionFunctionNetModel(Model):
         Args:
             model: The acquisition function network model.
             train_X: A `batch_shape x n x d` tensor of training features.
-            train_Y: A `batch_shape x n x 1` or `batch_shape x n` tensor of training observations.
+            train_Y: A `batch_shape x n x m` or `batch_shape x n` tensor of
+                training observations, where `m` is the number of outputs.
         """
         super().__init__()
         if not isinstance(model, AcquisitionFunctionNet):
