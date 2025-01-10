@@ -1,4 +1,4 @@
-from typing import Optional, Sequence, Union
+from typing import Optional, Sequence, Union, List
 import torch
 from torch import nn
 from torch import Tensor
@@ -344,20 +344,27 @@ def expand_dim(tensor, dim, k):
     return tensor.expand(*new_shape)
 
 
-def check_xy_dims_add_y_output_dim(x: Tensor, y: Union[Tensor, None],
-                                   x_name: str, y_name: str) -> Tensor:
-    """Check that the dimensions of x and y are as expected, and add an output
-    dimension to y if there is none.
+def check_xy_dims(x: Tensor, y: Union[Tensor, None],
+                  x_name: str, y_name: str,
+                  expected_y_dim:Optional[int]=None) -> Tensor:
+    """If y is None, return y. Otherwise, check that the dimensions of x and y are as
+    expected, add an output dimension to y if there is none, and return y.
     
     Args:
-        x (Tensor): The input tensor x.
-        y (Tensor or None): The input tensor y.
-        x_name (str): The name of the x tensor.
-        y_name (str): The name of the y tensor.
+        x (Tensor):
+            The input tensor x, `batch_shape x n x d`
+        y (Tensor or None):
+            The input tensor y, `batch_shape x n x m` or `batch_shape x n`
+        x_name (str):
+            The name of the x tensor.
+        y_name (str):
+            The name of the y tensor.
+        expected_y_dim (int or None):
+            The expected number of dimensions for y. None means that the number
+            of dimensions is not checked.
     
     Returns:
-        Tensor: The modified y tensor, with an added output dimension
-        if it was missing.
+        Tensor: The given y tensor, with an added output dimension if it was missing.
     """
     if y is None:
         return y
@@ -373,8 +380,13 @@ def check_xy_dims_add_y_output_dim(x: Tensor, y: Union[Tensor, None],
             raise ValueError(f"{x_name} and {y_name} must have the same number of dimensions or {y_name} must have one fewer dimension than {x_name}.")
     if x.size(-2) != y.size(-2):
         raise ValueError(f"{x_name} and {y_name} must have the same number of points in the history dimension.")
-    if y.size(-1) != 1:
-        raise ValueError(f"{y_name} must have one output dimension.")
+    if expected_y_dim is not None:
+        if y.size(-1) != expected_y_dim:
+            raise ValueError(
+                f"{y_name} must have {expected_y_dim} output dimension"
+                    + ('s' if expected_y_dim > 1 else ''))
+    elif y.size(-1) < 1:
+        raise ValueError(f"{y_name} must have at least one output dimension.")
     return y
 
 
@@ -488,7 +500,7 @@ class PointNetLayer(nn.Module):
         # Mask out the padded values. It is sufficient to mask at the end.
         if mask is not None:
             # shape (*, n, 1)
-            mask = check_xy_dims_add_y_output_dim(x, mask, "x", "mask")
+            mask = check_xy_dims(x, mask, "x", "mask", expected_y_dim=1)
             local_features = local_features * mask
         
         # "global feature"

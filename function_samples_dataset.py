@@ -26,7 +26,7 @@ class FunctionSamplesItem(TupleWithModel):
 
     def validate_data(self):
         # Ensures that they have the same ndim, and that
-        # y_values has an ouput dimension.
+        # y_values has an output dimension.
         SingleTaskGP._validate_tensor_args(self.x_values, self.y_values)
 
     def get_outcome_dim(self):
@@ -44,7 +44,7 @@ class FunctionSamplesItem(TupleWithModel):
     It is expected that the yielded values are either
     (x_values, y_values, model) or (x_values, y_values), where
     - x_values: A tensor of shape (n_datapoints, dimension)
-    - y_values: A tensor of shape (n_datapoints, 1)
+    - y_values: A tensor of shape (n_datapoints, m) where m is the output dimension
     - model: A SingleTaskGP instance that was used to generate the data
 
     Subclasses include:
@@ -59,7 +59,7 @@ class FunctionSamplesItem(TupleWithModel):
     dataset = some FunctionSamplesDataset instance
     for x_values, y_values, model in dataset:
         # x_values has shape (n_datapoints, dimension)
-        # y_values has shape (n_datapoints, 1)
+        # y_values has shape (n_datapoints, m)
         # do something with x_values, y_values, and model
     ```
     """,
@@ -695,4 +695,3 @@ class RepeatedFunctionSamplesIterableDataset(
         return [
             type(self)(split_dataset, self.size_factor)
             for split_dataset in self.base_dataset.random_split(lengths)]
-

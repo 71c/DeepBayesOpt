@@ -16,7 +16,7 @@ from botorch.exceptions import UnsupportedError
 from botorch.utils.transforms import t_batch_mode_transform, match_batch_shape
 from abc import ABC, abstractmethod
 from utils import load_json, pad_tensor, save_json, to_device
-from nn_utils import Dense, LearnableSoftplus, MultiLayerPointNet, PointNetLayer, PositiveBatchNorm, PositiveScalar, check_xy_dims_add_y_output_dim, expand_dim, masked_softmax
+from nn_utils import Dense, LearnableSoftplus, MultiLayerPointNet, PointNetLayer, PositiveBatchNorm, PositiveScalar, check_xy_dims, expand_dim, masked_softmax
 
 import logging
 
@@ -38,7 +38,13 @@ def add_tbatch_dimension(x: Tensor, x_name: str):
     return x if x.dim() > 2 else x.unsqueeze(0)
 
 
-# Dictionary to keep track of subclasses
+def safe_issubclass(obj, parent):
+    """Returns whether `obj` is a class that is a subclass of `parent`.
+    In contrast to `issubclass`, doesn't raise TypeError when `obj` is not a class."""
+    return isinstance(obj, type) and issubclass(obj, parent)
+
+
+# Dictionary to keep track of subclasses of AcquisitionFunctionNet
 CLASSES = {}
 
 class AcquisitionFunctionNet(nn.Module, ABC):
@@ -46,6 +52,7 @@ class AcquisitionFunctionNet(nn.Module, ABC):
     likelihood-free Bayesian optimization."""
 
     def __init_subclass__(cls, **kwargs):
+        print(f"INIT SUBCLASS, {cls=}, {super()=}")
         # Preserve the original __init__ method
         original_init = cls.__init__
 
@@ -53,6 +60,8 @@ class AcquisitionFunctionNet(nn.Module, ABC):
             # Call the original __init__ method with all keyword arguments
             original_init(self, *args, **kwargs)
 
+            # We only do the introspection if we are constructing THIS exact class
+            # (and not a subclass further down the hierarchy)
             if self.__class__ is cls:
                 # Convert args to kwargs
                 sig = inspect.signature(original_init)
@@ -65,8 +74,26 @@ class AcquisitionFunctionNet(nn.Module, ABC):
                 bound_args.apply_defaults()
                 all_kwargs = bound_args.arguments
 
+                # Detect VAR_KEYWORD parameters (i.e. **kwargs) and flatten them
+                # to fix the problem that all_kwargs = {..., 'kwargs': {...}}
+                # arises due to apply_defaults when there's ** kind of parameters.
+                for param_name, param in sig.parameters.items():
+                    if param.kind == param.VAR_KEYWORD and param_name in all_kwargs:
+                        # all_kwargs[param_name] is the dict that ended up in **whatever
+                        var_kw_dict = all_kwargs.pop(param_name)  # remove it from top-level
+                        # Flatten all items inside that dict:
+                        for k, v in var_kw_dict.items():
+                            all_kwargs[k] = v
+
                 # Remove 'self' from the kwargs
                 all_kwargs.pop('self', None)
+
+                # If there are any subclasses of AcquisitionFunctionNet in the kwargs,
+                # replace them with their name
+                all_kwargs = {
+                    k: v.__name__ if safe_issubclass(v, AcquisitionFunctionNet) else v
+                    for k, v in all_kwargs.items()
+                }
 
                 self._init_kwargs = all_kwargs
 
@@ -79,6 +106,12 @@ class AcquisitionFunctionNet(nn.Module, ABC):
         # Call the original __init_subclass__ method
         super().__init_subclass__(**kwargs)
     
+    @property
+    @abstractmethod
+    def output_dim(self) -> int:
+        r"""Returns the output dimension"""
+        pass  # pragma: no cover
+
     def get_info_dict(self) -> dict[str, Union[str, dict[str, Any]]]:
         return {
             "class_name": self.__class__.__name__,
@@ -102,28 +135,34 @@ class AcquisitionFunctionNet(nn.Module, ABC):
             model_class = CLASSES[class_name]
         except KeyError:
             raise RuntimeError(f"Subclass {class_name} of {cls.__name__} does not exist")
-        return model_class(**model_info["kwargs"])
+        kwargs = {
+            k: CLASSES[v] if type(v) is str and v in CLASSES else v
+            for k, v in model_info["kwargs"].items()
+        }
+        return model_class(**kwargs)
 
     @abstractmethod
-    def forward(self, x_hist, y_hist, x_cand, hist_mask=None, cand_mask=None,
-                **kwargs):
+    def forward(self, x_hist:Tensor, y_hist:Tensor, x_cand:Tensor,
+                hist_mask:Optional[Tensor]=None, cand_mask:Optional[Tensor]=None,
+                **kwargs) -> Tensor:
         """Forward pass of the acquisition function network.
 
         Args:
             x_hist (torch.Tensor):
                 A `batch_shape x n_hist x d` tensor of training features.
             y_hist (torch.Tensor):
-                A `batch_shape x n_hist` or `batch_shape x n_hist x 1`
+                A `batch_shape x n_hist` or `batch_shape x n_hist x n_out`
                 tensor of training observations.
             x_cand (torch.Tensor):
                 Candidate input tensor with shape `batch_shape x n_cand x d`.
-            hist_mask (torch.Tensor): Mask tensor for the history inputs with
-                shape `batch_shape x n_hist` or `batch_shape x n_hist x 1`.
-                If None, then mask is all ones.
-            cand_mask (torch.Tensor): Mask tensor for the candidate inputs with
-                shape `batch_shape x n_cand` or `batch_shape x n_cand x 1`.
-                If None, then mask is all ones.
-            **kwargs: Additional arguments.
+            hist_mask (torch.Tensor, optional):
+                Mask tensor for the history inputs with shape `batch_shape x n_hist`
+                or `batch_shape x n_hist x 1`. If None, then mask is all ones.
+            cand_mask (torch.Tensor, optional):
+                Mask tensor for the candidate inputs with shape `batch_shape x n_cand`
+                or `batch_shape x n_cand x 1`. If None, then mask is all ones.
+            **kwargs:
+                Any potential additional arguments.
 
         Note: It is assumed x_hist and y_hist are padded (with zeros), although
             that shouldn't matter since the mask will take care of it.
@@ -134,22 +173,116 @@ class AcquisitionFunctionNet(nn.Module, ABC):
         """
         pass  # pragma: no cover
 
+    def preprocess_inputs(self, x_hist:Tensor, y_hist:Tensor, x_cand:Tensor,
+                hist_mask:Optional[Tensor]=None, cand_mask:Optional[Tensor]=None,
+                **kwargs):
+        # Put on GPU if it's not already
+        nn_device = next(self.parameters()).device
+        x_hist = x_hist.to(nn_device)
+        y_hist = y_hist.to(nn_device)
+        x_cand = x_cand.to(nn_device)
+        
+        hist_mask = to_device(hist_mask, nn_device)
+        cand_mask = to_device(cand_mask, nn_device)
 
-class AcquisitionFunctionNetFixedDimension(AcquisitionFunctionNet):
-    r"""This is an abstract class that is meant to represent an
-    AcquisitionFunctionNet that has a fixed dimension of x values (function inputs)
-    it can work with.
-    It is expected that all subclasses have the following two properties:
-      1. Have a parameter named "dimension" as one of the parameters in __init__
-      2. In the __init__, it does "self.dimension = dimension".
-    This is enforced by contract rather than explicitly in the code because that makes
-    it easier to implement and less complicated.
+        y_hist = check_xy_dims(x_hist, y_hist, "x_hist", "y_hist")
+        hist_mask = check_xy_dims(x_hist, hist_mask, "x_hist", "hist_mask", expected_y_dim=1)
+        cand_mask = check_xy_dims(x_cand, cand_mask, "x_cand", "cand_mask", expected_y_dim=1)
+
+        return dict(
+            x_hist=x_hist,
+            y_hist=y_hist,
+            x_cand=x_cand,
+            hist_mask=hist_mask,
+            cand_mask=cand_mask,
+            **kwargs
+        )
+
+
+class ParameterizedAcquisitionFunctionNet(AcquisitionFunctionNet):
+    r"""This is an abstract class that is meant to represent a generic
+    AcquisitionFunctionNet that has some number of acquisition function parameters.
+    It is expected that all subclasses have the following parameter in their __init__:
+      `n_acqf_params`: a non-negative integer representing the number of scalar
+        variable paramters that can be passed in to the acquisition funciton. 
     """
-    pass
+    def __init_subclass__(cls, **kwargs):
+        init_sig = inspect.signature(cls.__init__)
+        if 'n_acqf_params' not in init_sig.parameters:
+            raise TypeError(
+                f"Class {cls.__name__} is missing required init param 'n_acqf_params' "
+                "since it is a subclass of ParameterizedAcquisitionFunctionNet"
+            )
+        super().__init_subclass__(**kwargs)
+
+    @abstractmethod
+    def forward(self, x_hist:Tensor, y_hist:Tensor, x_cand:Tensor,
+                acqf_params:Optional[Tensor]=None,
+                hist_mask:Optional[Tensor]=None,
+                cand_mask:Optional[Tensor]=None) -> Tensor:
+        """Forward pass of the acquisition function network.
+
+        Args:
+            x_hist (torch.Tensor):
+                A `batch_shape x n_hist x d` tensor of training features.
+            y_hist (torch.Tensor):
+                A `batch_shape x n_hist` or `batch_shape x n_hist x n_out`
+                tensor of training observations.
+            x_cand (torch.Tensor):
+                Candidate input tensor with shape `batch_shape x n_cand x d`.
+            acqf_params (torch.Tensor, optional):
+                Tensor of shape `batch_shape x n_cand x n_acqf_params`. Represents any
+                variable parameters for the acquisition function, for example
+                lambda for the Gittins index or best_f for expected improvement.
+            hist_mask (torch.Tensor, optional):
+                Mask tensor for the history inputs with shape `batch_shape x n_hist`
+                or `batch_shape x n_hist x 1`. If None, then mask is all ones.
+            cand_mask (torch.Tensor, optional):
+                Mask tensor for the candidate inputs with shape `batch_shape x n_cand`
+                or `batch_shape x n_cand x 1`. If None, then mask is all ones.
+
+        Note: It is assumed x_hist and y_hist are padded (with zeros), although
+            that shouldn't matter since the mask will take care of it.
+
+        Returns:
+            torch.Tensor: A `batch_shape x n_cand x output_dim` tensor of acquisition
+            values. (`output_dim` is 1 for most acquisition functions)
+        """
+        pass  # pragma: no cover
+
+    def preprocess_inputs(self, x_hist:Tensor, y_hist:Tensor, x_cand:Tensor,
+                acqf_params:Optional[Tensor]=None,
+                hist_mask:Optional[Tensor]=None,
+                cand_mask:Optional[Tensor]=None):
+        existing = super().preprocess_inputs(x_hist, y_hist, x_cand,
+                                             hist_mask=hist_mask, cand_mask=cand_mask)
+        nn_device = next(self.parameters()).device
+        acqf_params = to_device(acqf_params, nn_device)
+        acqf_params = check_xy_dims(x_cand, acqf_params, "x_cand", "acqf_params")
+        existing['acqf_params'] = acqf_params
+        return existing
 
 
-class GittinsAcquisitionFunctionNet(AcquisitionFunctionNetFixedDimension):
-    def __init__(self, dimension, acquisition_function_class,
+class AcquisitionFunctionNetFixedOutputDim(AcquisitionFunctionNet):
+    r"""This is an abstract class that is meant to represent a generic
+    AcquisitionFunctionNet that has a fixed dimension of y values in the history
+    (function outputs and other things).
+    It is expected that all subclasses have the following parameter in their __init__:
+      `n_out`: a positive integer representing the number of "y values" or outputs in
+      the history.
+    """
+    def __init_subclass__(cls, **kwargs):
+        init_sig = inspect.signature(cls.__init__)
+        if 'n_out' not in init_sig.parameters:
+            raise TypeError(
+                f"Class {cls.__name__} is missing required init param 'n_out' "
+                "since it is a subclass of AcquisitionFunctionNetFixedOutputDim"
+            )
+        super().__init_subclass__(**kwargs)
+
+
+class GittinsAcquisitionFunctionNet(AcquisitionFunctionNet):
+    def __init__(self, acquisition_function_class,
                  variable_lambda:bool,
                  costs_in_history:bool, cost_is_input:bool,
                  assume_y_independent_cost:bool=False,
@@ -157,9 +290,7 @@ class GittinsAcquisitionFunctionNet(AcquisitionFunctionNetFixedDimension):
         r"""Initialize the GittinsAcquisitionFunctionNet class.
         
         Args:
-            dimension (int):
-                Dimension of the input space.
-            acquisition_function_class (subclass of AcquisitionFunctionNetFixedDimension):
+            acquisition_function_class (subclass of AcquisitionFunctionNetFixedOutputDim):
                 The class of the acquisition function to use.
             variable_lambda (bool):
                 Whether to use a variable lambda that is input to the NN.
@@ -193,6 +324,8 @@ class GittinsAcquisitionFunctionNet(AcquisitionFunctionNetFixedDimension):
             costs_in_history: False
             cost_is_input: False
         """
+        super().__init__()
+
         if type(variable_lambda) is not bool:
             raise ValueError("variable_lambda should be bool")
         if type(costs_in_history) is not bool:
@@ -206,59 +339,106 @@ class GittinsAcquisitionFunctionNet(AcquisitionFunctionNetFixedDimension):
         if variable_lambda and cost_is_input:
             if type(assume_y_independent_cost) is not bool:
                 raise ValueError("assume_y_independent_cost should be bool")
-            input_dimension = dimension + (1 if assume_y_independent_cost else 2)
+            n_acqf_params = 1 if assume_y_independent_cost else 2
             self.assume_y_independent_cost = assume_y_independent_cost
         else:
-            input_dimension = dimension + variable_lambda + cost_is_input
+            n_acqf_params = variable_lambda + cost_is_input
         
-        if not issubclass(acquisition_function_class, AcquisitionFunctionNetFixedDimension):
-            raise ValueError("acquisition_function_class should be a subclass of AcquisitionFunctionNetFixedDimension")
-        if acquisition_function_class is GittinsAcquisitionFunctionNet:
-            raise ValueError("acquisition_function_class should not be GittinsAcquisitionFunctionNet")
-        if 'dimension' in init_kwargs:
-            raise ValueError("dimension should not be in init_kwargs")
-        self.base_model = acquisition_function_class(dimension=input_dimension, **init_kwargs)
+        if not issubclass(acquisition_function_class, AcquisitionFunctionNetFixedOutputDim):
+            raise ValueError(
+                "acquisition_function_class should be a subclass of AcquisitionFunctionNetFixedOutputDim")
+        additional_kwargs = {
+            'n_out': 1 + costs_in_history # for AcquisitionFunctionNetFixedOutputDim
+        }
+        if issubclass(acquisition_function_class, ParameterizedAcquisitionFunctionNet):
+            additional_kwargs['n_acqf_params'] = n_acqf_params
+        elif n_acqf_params > 0:
+            raise ValueError(
+                "acquisition_function_class should be a subclass of "
+                f"ParameterizedAcquisitionFunctionNet since there are {n_acqf_params} parameters")
+        
+        self.base_model = acquisition_function_class(**additional_kwargs, **init_kwargs)
 
-    def forward(self, x_hist, y_hist, x_cand, hist_mask=None, cand_mask=None,
-                cost_hist=None, lambda_cand=None, cost_cand=None):
-        pass  # pragma: no cover
-
-
-class AcquisitionFunctionNetWithSoftmaxAndExponentiate(AcquisitionFunctionNet):
-    @abstractmethod
-    def forward(self, x_hist, y_hist, x_cand, hist_mask=None, cand_mask=None,
-                exponentiate=False, softmax=False):
-        """Forward pass of the acquisition function network.
-
+    def forward(self, x_hist, y_hist, x_cand,
+                cost_hist=None, lambda_cand=None, cost_cand=None,
+                hist_mask=None, cand_mask=None):
+        r"""Forward pass of the acquisition function network.
         Args:
             x_hist (torch.Tensor):
                 A `batch_shape x n_hist x d` tensor of training features.
             y_hist (torch.Tensor):
-                A `batch_shape x n_hist` or `batch_shape x n_hist x n_out`
-                tensor of training observations.
+                A `batch_shape x n_hist x output_dim` tensor of training observations.
             x_cand (torch.Tensor):
                 Candidate input tensor with shape `batch_shape x n_cand x d`.
-            hist_mask (torch.Tensor): Mask tensor for the history inputs with
-                shape `batch_shape x n_hist` or `batch_shape x n_hist x 1`.
-                If None, then mask is all ones.
-            cand_mask (torch.Tensor): Mask tensor for the candidate inputs with
-                shape `batch_shape x n_cand` or `batch_shape x n_cand x 1`.
-                If None, then mask is all ones.
-            exponentiate (bool, default: False):
-                Whether to exponentiate the output.
-                For EI, False corresponds to the log of the acquisition function
-                (e.g. log EI), and True corresponds to the acquisition function
-                itself (e.g. EI).
-                Only applies if self.includes_alpha is False.
-            softmax (bool, default: False):
-                Whether to apply softmax to the output.
-                Only applies if self.includes_alpha is True.
-
+            cost_hist (torch.Tensor, optional):
+                A `batch_shape x n_hist` or `batch_shape x n_hist x 1` tensor of costs
+                for the history points.
+            lambda_cand (torch.Tensor, optional):
+                A `batch_shape x n_cand` or `batch_shape x n_cand x 1` tensor of lambda
+                values for the candidate points.
+            cost_cand (torch.Tensor, optional):
+                A `batch_shape x n_cand` or `batch_shape x n_cand x 1` tensor of costs
+                for the candidate points.
+            hist_mask (torch.Tensor, optional):
+                Mask tensor for the history inputs with shape `batch_shape x n_hist`
+                or `batch_shape x n_hist x 1`. If None, then mask is all ones.
+            cand_mask (torch.Tensor, optional):
+                Mask tensor for the candidate inputs with shape `batch_shape x n_cand`
+                or `batch_shape x n_cand x 1`. If None, then mask is all ones.
         Returns:
             torch.Tensor: A `batch_shape x n_cand x output_dim` tensor of acquisition
             values. (`output_dim` is 1 for most acquisition functions)
         """
-        pass  # pragma: no cover
+        ## Handle the history of y and cost
+        y_hist = check_xy_dims(x_hist, y_hist, "x_hist", "y_hist", expected_y_dim=1)
+        if self.costs_in_history:
+            if cost_hist is None:
+                raise ValueError("cost_hist must be specified if costs_in_history=True")
+            cost_hist = check_xy_dims(x_hist, cost_hist, "x_hist", "cost_hist", expected_y_dim=1)
+            y_hist = torch.cat((y_hist, cost_hist), dim=-1)
+        elif cost_hist is not None:
+            raise ValueError("cost_hist should not be specified if costs_in_history=False")
+
+        ## Make sure the lambda and cost are specified or not as expected
+        if self.variable_lambda:
+            if lambda_cand is None:
+                raise ValueError("lambda_cand must be specified if variable_lambda=True")
+            lambda_cand = check_xy_dims(x_cand, lambda_cand, "x_cand", "lambda_cand", expected_y_dim=1)
+        elif lambda_cand is not None:
+            raise ValueError("lambda_cand should not be specified if variable_lambda=False")
+        if self.cost_is_input:
+            if cost_cand is None:
+                raise ValueError("cost_cand must be specified if cost_is_input=True")
+            cost_cand = check_xy_dims(x_cand, cost_cand, "x_cand", "cost_cand", expected_y_dim=1)
+        elif cost_cand is not None:
+            raise ValueError("cost_cand should not be specified if cost_is_input=False")
+        
+        ## Set the necessary acqf_params
+        # (if at least one of variable_lambda or cost_is_input)
+        if self.variable_lambda and self.cost_is_input:
+            lambda_cost_cand = lambda_cand * cost_cand
+            if self.assume_y_independent_cost:
+                acqf_params = lambda_cost_cand
+            else:
+                acqf_params = torch.cat((lambda_cost_cand, cost_cand), dim=-1)
+        elif self.variable_lambda:
+            acqf_params = lambda_cand
+        elif self.cost_is_input:
+            acqf_params = cost_cand
+        
+        call_kwargs = dict(
+            x_hist=x_hist,
+            y_hist=y_hist,
+            x_cand=x_cand,
+            hist_mask=hist_mask,
+            cand_mask=cand_mask
+        )
+
+        # Add acqf_params if necessary
+        if self.variable_lambda or self.cost_is_input:
+            call_kwargs['acqf_params'] = acqf_params
+        
+        return self.base_model(**call_kwargs)
 
 
 class SoftmaxOrSoftplusLayer(nn.Module):
@@ -383,7 +563,47 @@ def get_best_y(y_hist, hist_mask=None):
 
 MIN_STDV = 1e-8
 
-class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExponentiate):
+def standardize_observations(y_hist, hist_mask):
+    max_n_hist = y_hist.size(-2)
+
+    if hist_mask is None:
+        means = y_hist.mean(dim=-2, keepdim=True)
+    else:
+        n_hists = hist_mask.sum(dim=-2, keepdim=True).double()
+        if (n_hists == 0).any():
+            raise ValueError(f"Can't standardize with no observations. {n_hists=}.")
+            # shape batch_size x 1 x 1
+        means = y_hist.sum(dim=-2, keepdim=True) / n_hists
+
+    if max_n_hist < 1:
+        raise ValueError(f"Can't standardize with no observations. {y_hist.shape=}.")
+    elif max_n_hist == 1:
+        stdvs = torch.ones(
+                (*y_hist.shape[:-2], 1, y_hist.shape[-1]),
+                dtype=y_hist.dtype, device=y_hist.device)
+    else:
+        if hist_mask is None:
+            stdvs = y_hist.std(dim=-2, keepdim=True)
+        else:
+                # shape batch_size x max_n_hist x 1
+                # Need to mask it
+            means_expanded = expand_dim(
+                    means, -2, max_n_hist) * hist_mask
+                # Since both y_hist and means_expanded are mask with zeros,
+                # (0 - 0)^2 = 0 so this is also mask with zeros, good.
+            squared_differences = nn.functional.mse_loss(
+                    y_hist, means_expanded, reduction='none')
+            denominators = (n_hists - 1.0).where(n_hists == 1.0, torch.full_like(n_hists, 1.0))
+            variances = squared_differences.sum(dim=-2, keepdim=True) / denominators
+            variances = variances.where(n_hists == 1.0, torch.full_like(variances, 1.0))
+            stdvs = torch.sqrt(variances)
+        
+    stdvs = stdvs.where(stdvs >= MIN_STDV, torch.full_like(stdvs, 1.0))
+    y_hist = (y_hist - means) / stdvs
+    return y_hist, stdvs
+
+
+class AcquisitionFunctionNetWithFinalMLP(ParameterizedAcquisitionFunctionNet):
     """Abstract class for an acquisition function network with a final MLP
     layer. Subclasses should implement the `_get_mlp_input` method."""
     
@@ -391,6 +611,129 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
                  input_to_final_layer_dim: int,
                  aq_func_hidden_dims: Sequence[int]=[256, 64],
                  output_dim=1,
+                 layer_norm_before_end=False,
+                 layer_norm_at_end=False,
+                 standardize_outcomes=False,
+                 **dense_kwargs):
+        """Initializes the MLP layer at the end of the acquisition function.
+        Subclasses should call this method in their `__init__` method.
+
+        Args:
+            initial_modules (OrderedDict): the initial modules that are to be
+                used before the final MLP. It is a good idea to specify them
+                here in super().__init__ rather than setting these attributes
+                yourself because that way, they are listed first when the module
+                is printed, which makes conceptual sense.
+            input_to_final_layer_dim (int):
+                The dimensionality of the input.
+            aq_func_hidden_dims (Sequence[int], default: [256, 64]):
+                A sequence of integers representing the sizes of the hidden
+                layers of the final fully connected network.
+        """
+        super().__init__()
+
+        if not isinstance(initial_modules, OrderedDict):
+            raise ValueError("initial_modules must be an instance of OrderedDict.")
+        for key, val in initial_modules.items():
+            setattr(self, key, val)
+
+        self.dense = Dense(input_to_final_layer_dim,
+                           aq_func_hidden_dims,
+                           output_dim,
+                           activation_at_end=False,
+                           layer_norm_before_end=layer_norm_before_end,
+                           layer_norm_at_end=False,
+                           dropout_at_end=False,
+                           **dense_kwargs)
+        
+        self.register_buffer("output_dim",
+                             torch.as_tensor(output_dim))
+        self.register_buffer("layer_norm_at_end",
+                             torch.as_tensor(layer_norm_at_end))
+        self.register_buffer("standardize_outcomes",
+                             torch.as_tensor(standardize_outcomes))
+
+    @abstractmethod
+    def _get_mlp_input(self, x_hist, y_hist, x_cand, acqf_params=None,
+                       hist_mask=None, cand_mask=None) -> Tensor:
+        """Compute the input to the final MLP network.
+        This method should be implemented in a subclass.
+
+        Args:
+            x_hist (torch.Tensor):
+                A `batch_shape x n_hist x d` tensor of training features.
+            y_hist (torch.Tensor):
+                A `batch_shape x n_hist x n_out` tensor of training observations.
+            x_cand (torch.Tensor):
+                A `batch_shape x n_cand x d` tensor of candidate points.
+            acqf_params (torch.Tensor, optional):
+                Tensor of shape `batch_shape x n_cand x n_params`. Represents any
+                variable parameters for the acquisition function, for example
+                lambda for the Gittins index or best_f for expected improvement.
+            hist_mask (torch.Tensor):
+                A `batch_shape x n_hist x 1` mask tensor for the history inputs.
+                If None, then mask is all ones.
+            cand_mask (torch.Tensor):
+                A `batch_shape x n_cand x 1` mask tensor for the candidate
+                inputs. If None, then mask is all ones.
+
+        Returns:
+            torch.Tensor: The `batch_shape x n_cand x input_to_final_layer_dim`
+            input tensor to the final MLP network.
+        """
+        pass  # pragma: no cove
+
+    def _get_acquisition_values_and_stdvs(
+            self, x_hist, y_hist, x_cand, acqf_params=None,
+            hist_mask=None, cand_mask=None):
+        preprocessed = self.preprocess_inputs(
+            x_hist, y_hist, x_cand, acqf_params=acqf_params,
+            hist_mask=hist_mask, cand_mask=cand_mask)
+
+        if self.standardize_outcomes:
+            y_hist, stdvs = standardize_observations(y_hist, hist_mask)
+            preprocessed['y_hist'] = y_hist
+
+        # shape (*, n_cand, input_to_final_layer_dim)
+        a = self._get_mlp_input(**preprocessed)
+
+        # shape (*, n_cand, output_dim)
+        acquisition_values = self.dense(a)
+
+        if self.layer_norm_at_end:
+            # This doesn't handle mask correctly; TODO
+            # (only if I'll even end up using this which I probably won't)
+            if cand_mask is not None:
+                raise NotImplementedError("layer_norm_at_end doesn't handle mask correctly.")
+            if acquisition_values.dim() > 2:
+                acquisition_values = (acquisition_values - torch.mean(acquisition_values, dim=(-3, -2), keepdim=True)) / torch.std(acquisition_values, dim=(-3, -2), keepdim=True)
+        
+        return acquisition_values, stdvs
+    
+    def forward(self, x_hist, y_hist, x_cand, acqf_params=None,
+                hist_mask=None, cand_mask=None) -> Tensor:
+        acquisition_values, stdvs = self._get_acquisition_values_and_stdvs(
+            x_hist, y_hist, x_cand, acqf_params, hist_mask, cand_mask)
+
+        if cand_mask is not None:
+            # Mask out the padded values
+            acquisition_values = acquisition_values * cand_mask
+
+        return acquisition_values
+
+
+class AcquisitionFunctionNetWithFinalMLPSoftmaxExponentiate(AcquisitionFunctionNetWithFinalMLP):
+    """Abstract class for an acquisition function network with a final MLP
+    layer. Subclasses should implement the `_get_mlp_input` method."""
+    
+    def __init__(self, initial_modules: OrderedDict,
+                 input_to_final_layer_dim: int,
+                 aq_func_hidden_dims: Sequence[int]=[256, 64],
+                 output_dim=1,
+                 layer_norm_before_end=False,
+                 layer_norm_at_end=False,
+                 standardize_outcomes=False,
+
                  include_alpha=False,
                  learn_alpha=False,
                  initial_alpha=1.0,
@@ -400,9 +743,7 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
                  softplus_batchnorm_momentum=0.1,
                  positive_linear_at_end=False,
                  gp_ei_computation=False,
-                 layer_norm_before_end=False,
-                 layer_norm_at_end=False,
-                 standardize_outcomes=False,
+
                  **dense_kwargs):
         """Initializes the MLP layer at the end of the acquisition function.
         Subclasses should call this method in their `__init__` method.
@@ -425,13 +766,6 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
             initial_alpha (float, default: 1.0):
                 The initial value for the alpha parameter.
         """
-        super().__init__()
-
-        if not isinstance(initial_modules, OrderedDict):
-            raise ValueError("initial_modules must be an instance of OrderedDict.")
-        for key, val in initial_modules.items():
-            setattr(self, key, val)
-        
         if positive_linear_at_end and gp_ei_computation:
             raise ValueError(
                 "positive_linear_at_end and gp_ei_computation can't both be True.")
@@ -451,25 +785,21 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
         else:
             hidden_dims = aq_func_hidden_dims
             dense_output_dim = output_dim
-        self.dense = Dense(input_to_final_layer_dim,
-                           hidden_dims,
-                           dense_output_dim,
-                           activation_at_end=False,
-                           layer_norm_before_end=layer_norm_before_end,
-                           layer_norm_at_end=False,
-                           dropout_at_end=False,
-                           **dense_kwargs)
+        
+        super().__init__(
+            initial_modules=initial_modules,
+            input_to_final_layer_dim=input_to_final_layer_dim,
+            aq_func_hidden_dims=hidden_dims,
+            output_dim=dense_output_dim,
+            layer_norm_before_end=layer_norm_before_end,
+            layer_norm_at_end=layer_norm_at_end,
+            standardize_outcomes=standardize_outcomes,
+            **dense_kwargs)
         
         self.register_buffer("positive_linear_at_end",
                              torch.as_tensor(positive_linear_at_end))
         self.register_buffer("gp_ei_computation",
                              torch.as_tensor(gp_ei_computation))
-        self.register_buffer("output_dim",
-                             torch.as_tensor(output_dim))
-        self.register_buffer("layer_norm_at_end",
-                             torch.as_tensor(layer_norm_at_end))
-        self.register_buffer("standardize_outcomes",
-                             torch.as_tensor(standardize_outcomes))
         
         self.transform = SoftmaxOrSoftplusLayer(
             softmax_dim=-2,
@@ -497,98 +827,12 @@ class AcquisitionFunctionNetWithFinalMLP(AcquisitionFunctionNetWithSoftmaxAndExp
     def includes_alpha(self):
         return self.transform.includes_alpha
     
-    @abstractmethod
-    def _get_mlp_input(self, x_hist, y_hist, x_cand,
-                       hist_mask=None, cand_mask=None):
-        """Compute the input to the final MLP network.
-        This method should be implemented in a subclass.
-
-        Args:
-            x_hist (torch.Tensor):
-                A `batch_shape x n_hist x d` tensor of training features.
-            y_hist (torch.Tensor):
-                A `batch_shape x n_hist x n_out` tensor of training observations.
-            x_cand (torch.Tensor):
-                A `batch_shape x n_cand x d` tensor of candidate points.
-            hist_mask (torch.Tensor):
-                A `batch_shape x n_hist x 1` mask tensor for the history inputs.
-                If None, then mask is all ones.
-            cand_mask (torch.Tensor):
-                A `batch_shape x n_cand x 1` mask tensor for the candidate
-                inputs. If None, then mask is all ones.
-
-        Returns:
-            torch.Tensor: The `batch_shape x n_cand x input_to_final_layer_dim`
-            input tensor to the final MLP network.
-        """
-        pass  # pragma: no cover
-    
-    def forward(self, x_hist, y_hist, x_cand,
+    def forward(self, x_hist, y_hist, x_cand, acqf_params=None,
                 hist_mask=None, cand_mask=None,
-                exponentiate=False, softmax=False):
-        # Put on GPU if it's not already
-        nn_device = next(self.parameters()).device
-        x_hist = x_hist.to(nn_device)
-        y_hist = y_hist.to(nn_device)
-        x_cand = x_cand.to(nn_device)
-        hist_mask = to_device(hist_mask, nn_device)
-        cand_mask = to_device(cand_mask, nn_device)
-
-        y_hist = check_xy_dims_add_y_output_dim(x_hist, y_hist, "x_hist", "y_hist")
-        hist_mask = check_xy_dims_add_y_output_dim(x_hist, hist_mask, "x_hist", "hist_mask")
-        cand_mask = check_xy_dims_add_y_output_dim(x_cand, cand_mask, "x_cand", "cand_mask")
-
-        if self.standardize_outcomes:
-            max_n_hist = y_hist.size(-2)
-
-            if hist_mask is None:
-                means = y_hist.mean(dim=-2, keepdim=True)
-            else:
-                n_hists = hist_mask.sum(dim=-2, keepdim=True).double()
-                if (n_hists == 0).any():
-                    raise ValueError(f"Can't standardize with no observations. {n_hists=}.")
-                # shape batch_size x 1 x 1
-                means = y_hist.sum(dim=-2, keepdim=True) / n_hists
-
-            if max_n_hist < 1:
-                raise ValueError(f"Can't standardize with no observations. {y_hist.shape=}.")
-            elif max_n_hist == 1:
-                stdvs = torch.ones(
-                    (*y_hist.shape[:-2], 1, y_hist.shape[-1]),
-                    dtype=y_hist.dtype, device=y_hist.device)
-            else:
-                if hist_mask is None:
-                    stdvs = y_hist.std(dim=-2, keepdim=True)
-                else:
-                    # shape batch_size x max_n_hist x 1
-                    # Need to mask it
-                    means_expanded = expand_dim(
-                        means, -2, max_n_hist) * hist_mask
-                    # Since both y_hist and means_expanded are mask with zeros,
-                    # (0 - 0)^2 = 0 so this is also mask with zeros, good.
-                    squared_differences = nn.functional.mse_loss(
-                        y_hist, means_expanded, reduction='none')
-                    denominators = (n_hists - 1.0).where(n_hists == 1.0, torch.full_like(n_hists, 1.0))
-                    variances = squared_differences.sum(dim=-2, keepdim=True) / denominators
-                    variances = variances.where(n_hists == 1.0, torch.full_like(variances, 1.0))
-                    stdvs = torch.sqrt(variances)
-            
-            stdvs = stdvs.where(stdvs >= MIN_STDV, torch.full_like(stdvs, 1.0))
-            y_hist = (y_hist - means) / stdvs
-
-        # shape (*, n_cand, input_to_final_layer_dim)
-        a = self._get_mlp_input(x_hist, y_hist, x_cand, hist_mask, cand_mask)
-
-        # shape (*, n_cand, output_dim)
-        acquisition_values = self.dense(a)
-
-        if self.layer_norm_at_end:
-            # This doesn't handle mask correctly; TODO
-            # (only if I'll even end up using this which I probably won't)
-            if cand_mask is not None:
-                raise NotImplementedError("layer_norm_at_end doesn't handle mask correctly.")
-            if acquisition_values.dim() > 2:
-                acquisition_values = (acquisition_values - torch.mean(acquisition_values, dim=(-3, -2), keepdim=True)) / torch.std(acquisition_values, dim=(-3, -2), keepdim=True)
+                exponentiate=False, softmax=False) -> Tensor:
+        acquisition_values, stdvs = self._get_acquisition_values_and_stdvs(
+            x_hist, y_hist, x_cand, acqf_params=acqf_params,
+            hist_mask=hist_mask, cand_mask=cand_mask)
         
         if self.positive_linear_at_end or self.gp_ei_computation:
             last_hidden_dim = acquisition_values.shape[-1] // self.output_dim.item()
@@ -644,12 +888,39 @@ def concat_y_hist_with_best_y(y_hist, hist_mask, subtract=False):
 
 
 def _get_xy_hist_and_cand(x_hist, y_hist, x_cand, hist_mask=None, include_y=True):
-    # shape (*, n_hist, dimension+1)
+    """Combines historical data and candidate data for Bayesian optimization.
+
+    Args:
+        x_hist (torch.Tensor):
+            Historical input data with shape (*, n_hist, dim_hist).
+        y_hist (torch.Tensor):
+            Historical output data with shape (*, n_hist, n_out).
+        x_cand (torch.Tensor):
+            Candidate input data with shape (*, n_cand, dim_cand).
+        hist_mask (torch.Tensor, optional):
+            Mask for historical data with shape (*, n_hist, 1).
+        include_y (bool, default: True):
+            Whether to include historical output data in the combined tensor.
+
+    Returns:
+        A tuple containing:
+            - xy_hist (torch.Tensor):
+                Combined historical input and output data with shape
+                (*, n_hist, dim_hist+n_out).
+            - xy_hist_and_cand (torch.Tensor):
+                Combined candidate and historical data with shape
+                (*, n_cand, n_hist, dim_cand+dim_hist+n_out) if include_y is True,
+                otherwise with shape (*, n_cand, n_hist, dim_cand+dim_hist).
+            - mask (torch.Tensor or None):
+                Expanded mask for historical data with shape (*, n_cand, n_hist, 1) if
+                hist_mask is provided, otherwise None.
+    """
+    # shape (*, n_hist, dim_hist+n_out)
     xy_hist = torch.cat((x_hist, y_hist), dim=-1)
 
     n_hist = x_hist.size(-2)
     n_cand = x_cand.size(-2)
-    # shape (*, n_cand, n_hist, dimension)
+    # shape (*, n_cand, n_hist, dim_cand)
     x_cand_expanded = expand_dim(x_cand.unsqueeze(-2), -2, n_hist)
 
     # hist_mask has shape (*, n_hist, 1), so need to expand to match.
@@ -657,35 +928,56 @@ def _get_xy_hist_and_cand(x_hist, y_hist, x_cand, hist_mask=None, include_y=True
     mask = None if hist_mask is None else expand_dim(hist_mask.unsqueeze(-3), -3, n_cand)
 
     if include_y:
-        # shape (*, n_cand, n_hist, dimension+1)
+        # shape (*, n_cand, n_hist, dim_hist+n_out)
         xy_hist_expanded = expand_dim(xy_hist.unsqueeze(-3), -3, n_cand)
 
-        # shape (*, n_cand, n_hist, 2*dimension+1)
+        # shape (*, n_cand, n_hist, dim_cand+dim_hist+n_out)
         xy_hist_and_cand = torch.cat((x_cand_expanded, xy_hist_expanded), dim=-1)
 
         return xy_hist, xy_hist_and_cand, mask
     else:
-        # shape (*, n_cand, n_hist, dimension)
+        # shape (*, n_cand, n_hist, dim_hist)
         x_hist_expanded = expand_dim(x_hist.unsqueeze(-3), -3, n_cand)
 
-        # shape (*, n_cand, n_hist, 2*dimension)
+        # shape (*, n_cand, n_hist, dim_cand+dim_hist)
         x_hist_and_cand = torch.cat((x_cand_expanded, x_hist_expanded), dim=-1)
 
         return xy_hist, x_hist_and_cand, mask
 
+    # def __init__(self, initial_modules: OrderedDict,
+    #              input_to_final_layer_dim: int,
+    #              aq_func_hidden_dims: Sequence[int]=[256, 64],
+    #              output_dim=1,
+    #              layer_norm_before_end=False,
+    #              layer_norm_at_end=False,
+    #              standardize_outcomes=False,
 
-class AcquisitionFunctionNetV1and2(AcquisitionFunctionNetWithFinalMLP):
+    #              include_alpha=False,
+    #              learn_alpha=False,
+    #              initial_alpha=1.0,
+    #              initial_beta=1.0,
+    #              learn_beta=False,
+    #              softplus_batchnorm=False,
+    #              softplus_batchnorm_momentum=0.1,
+    #              positive_linear_at_end=False,
+    #              gp_ei_computation=False,
+
+    #              **dense_kwargs):
+
+class AcquisitionFunctionNetV1and2(AcquisitionFunctionNetWithFinalMLPSoftmaxExponentiate):
     def __init__(self,
                  dimension, history_enc_hidden_dims=[256, 256], pooling="max",
                  encoded_history_dim=1024, aq_func_hidden_dims=[256, 64],
                  output_dim=1,
                  input_xcand_to_local_nn=True,
                  input_xcand_to_final_mlp=False,
+                 
                  include_alpha=False, learn_alpha=False, initial_alpha=1.0,
                  initial_beta=1.0, learn_beta=False,
                  softplus_batchnorm=False, softplus_batchnorm_momentum=0.1,
                  positive_linear_at_end=False,
                  gp_ei_computation=False,
+                 
                  activation_at_end_pointnet=True,
                  layer_norm_pointnet=False,
                  dropout_pointnet=None,
@@ -816,7 +1108,7 @@ class AcquisitionFunctionNetV1and2(AcquisitionFunctionNetWithFinalMLP):
         return out
 
 
-class AcquisitionFunctionNetV3(AcquisitionFunctionNetWithFinalMLP):
+class AcquisitionFunctionNetV3(AcquisitionFunctionNetWithFinalMLPSoftmaxExponentiate):
     def __init__(self,
                  dimension, history_enc_hidden_dims=[256, 256], pooling="max",
                  encoded_history_dim=1024,
@@ -938,7 +1230,7 @@ class AcquisitionFunctionNetV3(AcquisitionFunctionNetWithFinalMLP):
         return mean_and_std
 
 
-class AcquisitionFunctionNetV4(AcquisitionFunctionNetWithFinalMLP):
+class AcquisitionFunctionNetV4(AcquisitionFunctionNetWithFinalMLPSoftmaxExponentiate):
     def __init__(self,
                  dimension, history_enc_hidden_dims=[256, 256], pooling="max",
                  encoded_history_dim=1024,
@@ -1124,7 +1416,7 @@ def flatten_last_two_dimensions(tensor):
     return tensor.reshape(tensor.shape[:-2] + (-1,))
 
 
-class AcquisitionFunctionNetDense(AcquisitionFunctionNetWithFinalMLP):
+class AcquisitionFunctionNetDense(AcquisitionFunctionNetWithFinalMLPSoftmaxExponentiate):
     def __init__(self, dimension, max_history, hidden_dims=[256, 64],
                  output_dim=1,
                  include_alpha=False, learn_alpha=False, initial_alpha=1.0,
@@ -1204,8 +1496,9 @@ class AcquisitionFunctionNetModel(Model):
         self.model = model
 
         if train_X is not None and train_Y is not None:
-            # Check that the dimensions are compatible, and add an output dimension to train_Y if there is none
-            train_Y = check_xy_dims_add_y_output_dim(train_X, train_Y, "train_X", "train_Y")
+            # Check that the dimensions are compatible, and add an output dimension
+            # to train_Y if there is none
+            train_Y = check_xy_dims(train_X, train_Y, "train_X", "train_Y")
             
             # Add a batch dimension to both if they don't have it
             # Don't think I need to do this actually
@@ -1239,7 +1532,7 @@ class AcquisitionFunctionNetModel(Model):
             new_X, new_Y = X, Y
         else:
             # Check dimensions & add output dimension to Y if there is none
-            Y = check_xy_dims_add_y_output_dim(X, Y, "X", "Y")
+            Y = check_xy_dims(X, Y, "X", "Y")
             X = match_batch_shape(X, self.train_X)
             Y = match_batch_shape(Y, self.train_Y)
             new_X = torch.cat(self.train_X, X, dim=-2)
