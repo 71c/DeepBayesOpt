@@ -26,9 +26,9 @@ torch.set_default_dtype(torch.double)
 class AcquisitionDatasetModelItem(TupleWithModel):
     """
     x_hist shape: `batch_shape x n_hist x d`
-    y_hist shape: `batch_shape x n_hist x n_out`
+    y_hist shape: `batch_shape x n_hist x n_hist_out`
     x_cand shape: `batch_shape x n_cand x d`
-    vals_cand shape: `batch_shape x n_cand x k` where 1 <= k <= n_out
+    vals_cand shape: `batch_shape x n_cand x k` where 1 <= k <= n_hist_out
     """
     args_names = ['x_hist', 'y_hist', 'x_cand', 'vals_cand']
     kwargs_names = ['give_improvements']
@@ -259,7 +259,8 @@ class FunctionSamplesAcquisitionDataset(
                  n_samples:str="all", give_improvements:bool=True,
                  min_n_candidates=2,
                  min_history=1, max_history=None,
-                 dataset_size_factor:Optional[int]=None):
+                 dataset_size_factor:Optional[int]=None,
+                 y_cand_indices:Union[str,Sequence[int]]="all"):
         r"""
         Args:
             dataset (FunctionSamplesDataset):
@@ -317,6 +318,11 @@ class FunctionSamplesAcquisitionDataset(
                 If the base dataset is an iterable-style dataset
                 (i.e. GaussianProcessRandomDataset), then this
                 parameter should not be specified.
+            
+            y_cand_indices (Union[str, Sequence[int]], default: "all"):
+                Which indices of the y values to include from the dataset as the
+                candidate y values. "all" means all of them, and a list of indices means
+                use those indices.
         """
         # whether to generate `n_candidates` first or not
         self._gen_n_candidates_first = True
@@ -374,6 +380,18 @@ class FunctionSamplesAcquisitionDataset(
             dataset_size_factor = 1
         elif not isinstance(dataset_size_factor, int) or dataset_size_factor <= 0:
             raise ValueError(f"dataset_size_factor should be a positive integer, but got {dataset_size_factor=}")
+        
+        if y_cand_indices == "all":
+            self._y_cand_indices = "all"
+        elif isinstance(y_cand_indices, Sequence):
+            if not all(isinstance(i, int) for i in y_cand_indices):
+                raise ValueError("y_cand_indices should be 'all' or a list of "
+                                 f"integers, but got {y_cand_indices=}")
+            self._y_cand_indices = list(y_cand_indices)
+        else:
+            raise ValueError(
+                "y_cand_indices should be 'all' or a list of integers, "
+                f"but got {y_cand_indices=}")
 
         self._dataset_is_iterable_style = isinstance(dataset, IterableDataset)
 
@@ -557,7 +575,7 @@ class FunctionSamplesAcquisitionDataset(
 
     def __iter__(self):
         # x_values has shape (n_datapoints, dimension)
-        # y_values has shape (n_datapoints, 1)
+        # y_values has shape (n_datapoints, n_out)
         for item in self._data_iterable:
             if not isinstance(item, FunctionSamplesItem):
                 raise TypeError(f"item should be an instance of FunctionSamplesItem, but got {item=}")
@@ -586,6 +604,9 @@ class FunctionSamplesAcquisitionDataset(
                 vals_cand = improvement_values
             else:
                 vals_cand = y_cand
+            
+            if self._y_cand_indices != "all":
+                vals_cand = vals_cand[:, self._y_cand_indices]
 
             yield AcquisitionDatasetModelItem(
                 x_hist, y_hist, x_cand, vals_cand, model, model_params,

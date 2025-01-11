@@ -3,11 +3,12 @@ import hashlib
 import itertools
 import os
 import re
+import json
+import inspect
 import math
 from typing import Any, TypeVar, Iterable, Sequence, List, Tuple, Dict, Optional, Union
 import warnings
 from functools import partial, lru_cache
-import json
 
 import numpy as np
 import scipy
@@ -618,6 +619,63 @@ def calculate_batch_improvement(y_hist_batch: torch.Tensor, y_cand_batch: Tensor
     return improvement_values_batch
 
 
+def expand_dim(tensor, dim, k):
+    new_shape = list(tensor.shape)
+    new_shape[dim] = k
+    return tensor.expand(*new_shape)
+
+
+MIN_STDV = 1e-8
+
+def standardize_y_hist(y_hist, hist_mask):
+    max_n_hist = y_hist.size(-2)
+
+    if hist_mask is None:
+        means = y_hist.mean(dim=-2, keepdim=True)
+    else:
+        n_hists = hist_mask.sum(dim=-2, keepdim=True).double()
+        if (n_hists == 0).any():
+            raise ValueError(f"Can't standardize with no observations. {n_hists=}.")
+        # shape batch_size x 1 x 1
+        means = y_hist.sum(dim=-2, keepdim=True) / n_hists
+
+    if max_n_hist < 1:
+        raise ValueError(f"Can't standardize with no observations. {y_hist.shape=}.")
+    elif max_n_hist == 1:
+        stdvs = torch.ones(
+                (*y_hist.shape[:-2], 1, y_hist.shape[-1]),
+                dtype=y_hist.dtype, device=y_hist.device)
+    else:
+        if hist_mask is None:
+            stdvs = y_hist.std(dim=-2, keepdim=True)
+        else:
+            # shape batch_size x max_n_hist x 1
+            # Need to mask it
+            means_expanded = expand_dim(
+                    means, -2, max_n_hist) * hist_mask
+            # Since both y_hist and means_expanded are mask with zeros,
+            # (0 - 0)^2 = 0 so this is also mask with zeros, good.
+            squared_differences = torch.nn.functional.mse_loss(
+                    y_hist, means_expanded, reduction='none')
+            denominators = (n_hists - 1.0).where(n_hists == 1.0, torch.full_like(n_hists, 1.0))
+            variances = squared_differences.sum(dim=-2, keepdim=True) / denominators
+            variances = variances.where(n_hists == 1.0, torch.full_like(variances, 1.0))
+            stdvs = torch.sqrt(variances)
+        
+    stdvs = stdvs.where(stdvs >= MIN_STDV, torch.full_like(stdvs, 1.0))
+    y_hist = (y_hist - means) / stdvs
+    return y_hist, stdvs
+
+
+def add_tbatch_dimension(x: Tensor, x_name: str):
+    if x.dim() < 2:
+        raise ValueError(
+            f"{x_name} must have at least 2 dimensions,"
+            f" but has only {x.dim()} dimensions."
+        )
+    return x if x.dim() > 2 else x.unsqueeze(0)
+
+
 def uniform_randint(min_val, max_val):
     return torch.randint(min_val, max_val+1, (1,), dtype=torch.int32).item()
 
@@ -915,8 +973,6 @@ def combine_nested_dicts(*dicts : Dict[str, Dict[K, V]]) -> Dict[str, Dict[K, V]
         ', '.join(names): combine_dicts([d[n] for d, n in zip(dicts, names)])
         for names in itertools.product(*dicts)
     }
-
-
 
 
 def pad_tensor(vec, length, dim, add_mask=False):
@@ -1249,6 +1305,116 @@ def resize_iterable(it, new_length: Optional[int] = None):
 
     return it
 
+
+def safe_issubclass(obj, parent):
+    """Returns whether `obj` is a class that is a subclass of `parent`.
+    In contrast to `issubclass`, doesn't raise TypeError when `obj` is not a class."""
+    return isinstance(obj, type) and issubclass(obj, parent)
+
+
+# Dictionary to keep track of subclasses of SaveableObject
+CLASSES = {}
+
+class SaveableObject:
+    @classmethod
+    def load_init(cls, folder: str) -> 'SaveableObject':
+        if cls is not SaveableObject:
+            raise UnsupportedError("This method is only supported for the base class.")
+        try:
+            info_dict = load_json(os.path.join(folder, "model_init.json"))
+        except (FileNotFoundError, json.decoder.JSONDecodeError) as e:
+            raise RuntimeError("Could not load model") from e
+        return cls._info_dict_to_instance(info_dict)
+    
+    def save_init(self, folder: str):
+        os.makedirs(folder, exist_ok=True)
+        save_json(self.get_info_dict(), os.path.join(folder, "model_init.json"))
+    
+    def get_info_dict(self) -> dict[str, Union[str, dict[str, Any]]]:
+        return {
+            "class_name": self.__class__.__name__,
+            "kwargs": self._init_kwargs
+        }
+
+    def __init_subclass__(cls, **kwargs):
+        # Preserve the original __init__ method
+        original_init = cls.__init__
+
+        def new_init(self, *args, **kwargs):
+            # Call the original __init__ method with all keyword arguments
+            original_init(self, *args, **kwargs)
+
+            # We only do the introspection if we are constructing THIS exact class
+            # (and not a subclass further down the hierarchy)
+            if self.__class__ is cls:
+                # Convert args to kwargs
+                sig = inspect.signature(original_init)
+                
+                # Can use either bind or bind_partial;
+                # we already ensured that all required arguments are passed
+                # because we already called the original __init__ method.
+                # Need to remember to put 'self' in the arguments.
+                bound_args = sig.bind(self, *args, **kwargs)
+                bound_args.apply_defaults()
+                all_kwargs = bound_args.arguments
+
+                # Detect VAR_KEYWORD parameters (i.e. **kwargs) and flatten them
+                # to fix the problem that all_kwargs = {..., 'kwargs': {...}}
+                # arises due to apply_defaults when there's ** kind of parameters.
+                for param_name, param in sig.parameters.items():
+                    if param.kind == param.VAR_KEYWORD and param_name in all_kwargs:
+                        # all_kwargs[param_name] is the dict that ended up in **whatever
+                        var_kw_dict = all_kwargs.pop(param_name)  # remove it from top-level
+                        # Flatten all items inside that dict:
+                        for k, v in var_kw_dict.items():
+                            all_kwargs[k] = v
+
+                # Remove 'self' from the kwargs
+                all_kwargs.pop('self', None)
+
+                for k, v in all_kwargs.items():
+                    # If there are any subclasses of SaveableObject in the
+                    # kwargs, replace them with their name
+                    if safe_issubclass(v, SaveableObject):
+                        all_kwargs[k] = v.__name__
+                    # If there are any instances of SaveableObject in the
+                    # kwargs, replace them with their info_dict
+                    elif isinstance(v, SaveableObject):
+                        all_kwargs[k] = v.get_info_dict()
+
+                self._init_kwargs = all_kwargs
+
+        # Replace the __init__ method with the new one
+        cls.__init__ = new_init
+
+        # Register the class in the CLASSES dictionary
+        CLASSES[cls.__name__] = cls
+
+        # Call the original __init_subclass__ method
+        super().__init_subclass__(**kwargs)
+    
+    @classmethod
+    def _info_dict_to_instance(cls, info_dict) -> 'SaveableObject':
+        if cls is not SaveableObject:
+            raise UnsupportedError("This method is only supported for the base class.")
+        
+        if set(info_dict.keys()) != {"class_name", "kwargs"}:
+            raise ValueError("info_dict should have keys 'class_name' and 'kwargs'")
+        
+        class_name = info_dict["class_name"]
+        try:
+            model_class = CLASSES[class_name]
+        except KeyError:
+            raise RuntimeError(f"Subclass {class_name} of {cls.__name__} does not exist")
+        
+        kwargs = info_dict["kwargs"]
+        for k, v in kwargs.items():
+            if type(v) is str and v in CLASSES:
+                kwargs[k] = CLASSES[v]
+            elif isinstance(v, dict) and set(v.keys()) == {"class_name", "kwargs"}:
+                kwargs[k] = cls._info_dict_to_instance(v)
+        
+        return model_class(**kwargs)
 
 
 # CLASSES = {}

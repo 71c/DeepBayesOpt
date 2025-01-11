@@ -11,9 +11,10 @@ from tictoc import tic, tocl
 from botorch.models.transforms.outcome import Power
 
 from gp_acquisition_dataset import create_train_and_test_gp_acquisition_datasets
+# AcquisitionFunctionNetV3, AcquisitionFunctionNetV4,
+#     AcquisitionFunctionNetDense
 from acquisition_function_net import (
-    AcquisitionFunctionNet, AcquisitionFunctionNetV1and2, AcquisitionFunctionNetV3, AcquisitionFunctionNetV4,
-    AcquisitionFunctionNetDense, LikelihoodFreeNetworkAcquisitionFunction)
+    AcquisitionFunctionBodyPointnetV1and2, AcquisitionFunctionNet, AcquisitionFunctionNetFinalMLP, AcquisitionFunctionNetFinalMLPSoftmaxExponentiate, ExpectedImprovementAcquisitionFunctionNet, GittinsAcquisitionFunctionNet, LikelihoodFreeNetworkAcquisitionFunction, TwoPartAcquisitionFunctionNetFixedHistoryOutputDim)
 from predict_EI_simple import calculate_EI_GP
 from train_acquisition_function_net import (
     METHODS,
@@ -356,6 +357,7 @@ else:
     n_points_config = dict(
         # This means whether n history points (or whether the total number of
         # points) is log-uniform
+        # (Note: This currently ONLY can make it log-uniform if fix_n_samples=False)
         loguniform=False,
         # Whether to fix the number of candidate points (as opposed to randomized)
         fix_n_candidates=True,
@@ -450,7 +452,12 @@ other_kwargs = dict(
         gp_gen_device=GP_GEN_DEVICE,
         
         batch_size=BATCH_SIZE,
-        fix_train_acquisition_dataset=FIX_TRAIN_ACQUISITION_DATASET)
+        fix_train_acquisition_dataset=FIX_TRAIN_ACQUISITION_DATASET,
+        
+        # For this particular, code, doing this works for both EI and Gittins index
+        # training in all cases -- all good
+        y_cand_indices=[0]
+)
 
 train_aq_dataset, test_aq_dataset, small_test_aq_dataset = create_train_and_test_gp_acquisition_datasets(
     **dataset_kwargs, **other_kwargs)
@@ -486,35 +493,62 @@ if small_test_aq_dataset != test_aq_dataset:
 if LOAD_SAVED_MODEL:
     model = load_model(MODEL_AND_INFO_PATH).to(DEVICE)
 else:
-    model = AcquisitionFunctionNetV1and2(
-                DIMENSION,
-                pooling="max",
-                history_enc_hidden_dims=[args.layer_width, args.layer_width],
-                encoded_history_dim=args.layer_width,
-                # aq_func_hidden_dims=[args.layer_width, args.layer_width, 4 * args.layer_width],
-                aq_func_hidden_dims=[args.layer_width, args.layer_width],
-                output_dim=1,
-                input_xcand_to_local_nn=True,
-                input_xcand_to_final_mlp=False,
-                include_alpha=INCLUDE_ALPHA,
-                learn_alpha=LEARN_ALPHA,
-                initial_alpha=INITIAL_ALPHA,
-                initial_beta=1.0 / args.initial_tau,
-                learn_beta=args.learn_tau,
-                softplus_batchnorm=args.softplus_batchnorm,
-                softplus_batchnorm_momentum=args.softplus_batchnorm_momentum,
-                positive_linear_at_end=args.positive_linear_at_end,
-                gp_ei_computation=args.gp_ei_computation,
-                activation_at_end_pointnet=True,
-                layer_norm_pointnet=False,
-                dropout_pointnet=None, # 0.1
-                layer_norm_before_end_mlp=False,
-                layer_norm_at_end_mlp=False,
-                dropout_mlp=None, # 0.1
-                standardize_outcomes=args.standardize_nn_history_outcomes,
-                include_best_y=False,
-                activation_pointnet="relu",
-                activation_mlp="relu").to(DEVICE)
+    af_body_init_params = dict(
+        dimension=DIMENSION,
+        
+        history_enc_hidden_dims=[args.layer_width, args.layer_width],
+        pooling="max",
+        encoded_history_dim=args.layer_width,
+
+        input_xcand_to_local_nn=True,
+        input_xcand_to_final_mlp=False,
+        
+        activation_at_end_pointnet=True,
+        layer_norm_pointnet=False,
+        dropout_pointnet=None,
+        activation_pointnet="relu",
+
+        include_best_y=False,
+        n_pointnets=1)
+    af_head_init_params = dict(
+        hidden_dims=[args.layer_width, args.layer_width],
+        activation="relu",
+        layer_norm_before_end=False,
+        layer_norm_at_end=False,
+        dropout=None,
+    )
+
+    if METHOD == 'gittins':
+        model = GittinsAcquisitionFunctionNet(
+            af_class=TwoPartAcquisitionFunctionNetFixedHistoryOutputDim,
+            variable_lambda=True,
+            costs_in_history=False,
+            cost_is_input=False,
+            af_body_class=AcquisitionFunctionBodyPointnetV1and2,
+            af_head_class=AcquisitionFunctionNetFinalMLP,
+            af_body_init_params=af_body_init_params,
+            af_head_init_params=af_head_init_params,
+            standardize_outcomes=False
+        ).to(DEVICE)
+    else:
+        af_head_init_params = dict(
+            **af_head_init_params,
+            include_alpha=INCLUDE_ALPHA,
+            learn_alpha=LEARN_ALPHA,
+            initial_alpha=INITIAL_ALPHA,
+            initial_beta=1.0 / args.initial_tau,
+            learn_beta=args.learn_tau,
+            softplus_batchnorm=args.softplus_batchnorm,
+            softplus_batchnorm_momentum=args.softplus_batchnorm_momentum,
+            positive_linear_at_end=args.positive_linear_at_end,
+            gp_ei_computation=args.gp_ei_computation
+        )
+        model = ExpectedImprovementAcquisitionFunctionNet(
+            af_body_class=AcquisitionFunctionBodyPointnetV1and2,
+            af_body_init_params=af_body_init_params,
+            af_head_init_params=af_head_init_params,
+            standardize_outcomes=False
+        ).to(DEVICE)
     
     # model = AcquisitionFunctionNetV4(DIMENSION,
     #                                 history_enc_hidden_dims=[32, 32], pooling="max",

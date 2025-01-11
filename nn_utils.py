@@ -1,10 +1,14 @@
-from typing import Optional, Sequence, Union, List
+from typing import Optional, Sequence, Union, List, Any
+import warnings
 import torch
 from torch import nn
 from torch import Tensor
 from gpytorch.utils.transforms import inv_softplus
 from botorch.utils.transforms import normalize_indices
 from botorch.utils.safe_math import fatmax, smooth_amax
+from abc import ABC, abstractmethod
+from botorch.exceptions import UnsupportedError
+from utils import expand_dim, load_json, save_json
 
 import logging
 
@@ -15,7 +19,6 @@ DEBUG = False
 logger = logging.getLogger('nn_utils')
 # Configure the logging
 logger.setLevel(logging.DEBUG if DEBUG else logging.WARNING)
-
 
 
 def count_trainable_parameters(model):
@@ -44,11 +47,13 @@ def get_initialized_linear(in_dim, out_dim, activation):
 
 class Dense(nn.Sequential):
     """Dense neural network with ReLU activations."""
-    def __init__(self, input_dim: int, hidden_dims: Sequence[int]=[256, 64],
-                 output_dim: int=1, activation_at_end=False,
+    def __init__(self,
+                 input_dim: int,
+                 hidden_dims: Sequence[int]=[256, 64],
+                 output_dim: int=1, 
+                 activation:str="relu", activation_at_end=False,
                  layer_norm_before_end=False, layer_norm_at_end=False,
-                 dropout:Optional[float]=None, dropout_at_end=True,
-                 activation:str="relu"):
+                 dropout:Optional[float]=None, dropout_at_end=True):
         """
         Args:
             input_dim (int):
@@ -338,10 +343,116 @@ class LearnableSoftplus(nn.Module):
         return custom_softplus(input, self._beta.get_value(), self.threshold)
 
 
-def expand_dim(tensor, dim, k):
-    new_shape = list(tensor.shape)
-    new_shape[dim] = k
-    return tensor.expand(*new_shape)
+class SoftmaxOrSoftplusLayer(nn.Module):
+    def __init__(self, softmax_dim=-1,
+                 include_alpha=False, learn_alpha=False, initial_alpha=1.0,
+                 initial_beta=1.0, learn_beta=False,
+                 softplus_batchnorm=False,
+                 softplus_batchnorm_num_features=1,
+                 softplus_batchnorm_dim=-1,
+                 softplus_batchnorm_momentum=0.1):
+        """Initialize the SoftmaxOrSoftplusLayer class.
+
+        Args:
+            softmax_dim (int, default: -1):
+                The dimension along which to apply the softmax.
+            include_alpha (bool, default: False):
+                Whether to include an alpha parameter.
+            learn_alpha (bool, default: False):
+                Whether to learn the alpha parameter.
+            initial_alpha (float, default: 1.0):
+                The initial value for the alpha parameter.
+            initial_beta (float, default: 1.0):
+                The initial value for the beta parameter.
+            learn_beta (bool, default: False):
+                Whether to learn the beta parameter.
+        """
+        super().__init__()
+        self.softmax_dim = softmax_dim
+
+        self.includes_alpha = include_alpha
+        if include_alpha:
+            self._alpha = PositiveScalar(initial_val=initial_alpha,
+                                         learnable=learn_alpha,
+                                         softplus=False)
+        
+        self.learn_beta = learn_beta
+        if learn_beta:
+            self.softplus = LearnableSoftplus(initial_beta)
+        else:
+            self.softplus = nn.Softplus(initial_beta)
+        
+        self.register_buffer("softplus_batchnorm",
+                             torch.as_tensor(softplus_batchnorm))
+        if softplus_batchnorm:
+            self.batchnorm = PositiveBatchNorm(
+                num_features=softplus_batchnorm_num_features,
+                dim=softplus_batchnorm_dim,
+                momentum=softplus_batchnorm_momentum,
+                affine=True,
+                track_running_stats=True)
+
+    def get_alpha(self):
+        if not self.includes_alpha:
+            raise ValueError("Model does not include alpha.")
+        return self._alpha.get_value()
+    
+    def set_alpha(self, val):
+        if not self.includes_alpha:
+            raise ValueError("Model does not include alpha.")
+        self._alpha.set_value(val)
+    
+    def forward(self, x, mask=None, exponentiate=False, softmax=False):
+        """Compute the acquisition function.
+
+        Args:
+            x (torch.Tensor):
+                input tensor
+            mask (torch.Tensor, optional):
+                mask tensor
+            exponentiate (bool, optional): Whether to exponentiate the output.
+                Default is False. For EI, False corresponds to the log of the
+                acquisition function (e.g. log EI), and True corresponds to
+                the acquisition function itself (e.g. EI).
+                Only applies if self.includes_alpha is False.
+            softmax (bool, optional): Whether to apply softmax to the output.
+                Only applies if self.includes_alpha is True. Default is False.
+
+        Returns:
+            torch.Tensor: Exponentiated or softmaxed tensor.
+        """
+        if softmax:
+            if self.includes_alpha:
+                x = x * self.get_alpha()
+            if mask is None:
+                x = nn.functional.softmax(x, dim=self.softmax_dim)
+            else:
+                x = masked_softmax(x, mask, dim=self.softmax_dim)
+            
+            if self.learn_beta:
+                warnings.warn("softmax is True but learn_beta is also True. "
+                              "This is probably unintentional.")
+
+        elif self.training and self.includes_alpha:
+            warnings.warn("The model is in training mode but softmax is False "
+                          "and alpha is included in the model. "
+                          "If this is unintentional, set softmax=True.")
+
+        if exponentiate:
+            if self.includes_alpha:
+                raise ValueError(
+                    "It doesn't make sense to exponentiate and use alpha at "
+                    "the same time. Should set softmax=True instead of exponentiate=True.")
+            if softmax:
+                raise ValueError(
+                    "It doesn't make sense to exponentiate and use softmax at "
+                    "the same time. Should set softmax=False instead.")
+            x = self.softplus(x)
+
+            if self.softplus_batchnorm:
+                x = self.batchnorm(x, mask=mask)
+
+        return x
 
 
 def check_xy_dims(x: Tensor, y: Union[Tensor, None],
@@ -468,6 +579,9 @@ class PointNetLayer(nn.Module):
 
         if 'dropout_at_end' not in dense_kwargs:
             dense_kwargs['dropout_at_end'] = True
+        
+        logger.debug(f"In PointNetLayer.__init__, dense_kwargs: {dense_kwargs}")
+
         self.network = Dense(input_dim, hidden_dims, output_dim, **dense_kwargs)
 
         if pooling in POOLING_METHODS:

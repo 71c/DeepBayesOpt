@@ -71,6 +71,8 @@ def create_gp_acquisition_dataset(base_dataset_size,
         # Only used if fixing the number of candidates.
         fix_n_samples=True,
 
+        y_cand_indices="all",
+
         expansion_factor=1,
         give_improvements:bool=True,
         
@@ -219,7 +221,9 @@ def create_gp_acquisition_dataset(base_dataset_size,
         aq_dataset = FunctionSamplesAcquisitionDataset(
             function_samples_dataset, n_samples="uniform" if fix_n_samples else "all",
             give_improvements=give_improvements,
-            dataset_size_factor=expansion_factor, **extra_kwargs)
+            dataset_size_factor=expansion_factor,
+            y_cand_indices=y_cand_indices,
+            **extra_kwargs)
     
     if fix_acquisition_samples:
         if not aq_dataset.data_is_fixed:
@@ -272,7 +276,9 @@ def create_train_and_test_gp_acquisition_datasets(
         min_history:Optional[int]=None, max_history:Optional[int]=None,
         min_n_candidates:Optional[int]=None, max_points:Optional[int]=None,
         
-        fix_n_samples:Optional[bool]=None):
+        fix_n_samples:Optional[bool]=None,
+        
+        y_cand_indices:Union[str,List[int]]="all"):
     train_samples_size = math.ceil(train_acquisition_size / expansion_factor)
 
     total_samples_dataset_size = math.ceil(train_samples_size * (1 + test_factor))
@@ -313,7 +319,8 @@ def create_train_and_test_gp_acquisition_datasets(
         pre_offset=pre_offset if loguniform else None, batch_size=batch_size,
         device=gp_gen_device, cache=cache_datasets,
         give_improvements=False,
-        fix_n_samples=fix_n_samples)
+        fix_n_samples=fix_n_samples,
+        y_cand_indices=y_cand_indices)
 
     train_aq_dataset = create_gp_acquisition_dataset(
         train_samples_size, lazy=lazy_train,

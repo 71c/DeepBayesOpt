@@ -8,7 +8,7 @@ import torch
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from torch.distributions import Categorical
-from acquisition_function_net import AcquisitionFunctionNet, AcquisitionFunctionNetWithFinalMLP
+from acquisition_function_net import AcquisitionFunctionNet, ExpectedImprovementAcquisitionFunctionNet
 from dataset_with_models import RandomModelSampler
 from predict_EI_simple import calculate_EI_GP_padded_batch
 from tqdm import tqdm
@@ -317,7 +317,7 @@ def print_train_batch_stats(nn_batch_stats, nn_model, method,
         raise NotImplementedError("gittins not implemented yet")
     else:
         raise ValueError()
-    if isinstance(nn_model, AcquisitionFunctionNetWithFinalMLP):
+    if isinstance(nn_model, ExpectedImprovementAcquisitionFunctionNet):
         if nn_model.includes_alpha:
             suffix += f", alpha={nn_model.get_alpha():>7f}"
         if method == 'mse_ei':
