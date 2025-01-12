@@ -23,6 +23,9 @@ from tictoc import tic, tocl
 torch.set_default_dtype(torch.double)
 
 
+# TODO: Could make it so that acqf_params are in here too
+# so that GI lambda values can be stored and costant for the test dataset,
+# but it's not absolutely necessary
 class AcquisitionDatasetModelItem(TupleWithModel):
     """
     x_hist shape: `batch_shape x n_hist x d`

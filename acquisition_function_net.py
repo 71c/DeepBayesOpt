@@ -587,7 +587,6 @@ class AcquisitionFunctionNetFinalMLPSoftmaxExponentiate(AcquisitionFunctionNetFi
                  positive_linear_at_end=False,
                  gp_ei_computation=False):
         """Initializes the MLP layer at the end of the acquisition function.
-        Subclasses should call this method in their `__init__` method.
 
         Args:
             input_dim (int):
@@ -1166,6 +1165,8 @@ class ExpectedImprovementAcquisitionFunctionNet(AcquisitionFunctionNet):
     def transform(self):
         return self.base_model.af_head.transform
 
+
+# TODO: Fix the below code to make sure it works with Gittins index
 
 class AcquisitionFunctionNetModel(Model):
     """In this case, the model is the acquisition function network itself.

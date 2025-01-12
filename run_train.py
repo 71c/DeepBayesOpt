@@ -38,10 +38,25 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 MODELS_DIR = os.path.join(script_dir, "saved_models")
 
 # Run like, e.g.,
-# python run_train.py --dimension 6 --layer_width 256 --train_acquisition_size 1000 --test_factor 0.1
-# python run_train.py --layer_width 32 --train_acquisition_size 10000 --test_acquisition_size 1000 --dimension 6 --learn_tau --initial_tau 0.5
-# python run_train.py --layer_width 128 --train_acquisition_size 50000 --test_acquisition_size 10000 --dimension 6 --learn_tau --initial_tau 0.5 --softplus_batchnorm
-# python run_train.py --layer_width 128 --train_acquisition_size 50000 --test_acquisition_size 10000 --dimension 6 --positive_linear_at_end
+
+# python run_train.py --method gittins --lamda 1e-1 --normalize_gi_loss --dimension 6 --layer_width 160 --train_acquisition_size 5000 --test_acquisition_size 1500 --no-save-model
+# python run_train.py --method gittins --lamda 1e-1 --normalize_gi_loss --dimension 6 --layer_width 160 --train_acquisition_size 20000 --test_acquisition_size 1500 --no-save-model
+
+# python run_train.py --method mse_ei --dimension 6 --layer_width 160 --train_acquisition_size 20000 --test_acquisition_size 1500 --no-save-model
+
+# python run_train.py --method gittins --lamda 1e-3 --dimension 6 --layer_width 64 --train_acquisition_size 5000 --test_factor 0.3
+# python run_train.py --method gittins --lamda_min 1e-5 --lamda_max 1e-1 --dimension 6 --layer_width 64 --train_acquisition_size 5000 --test_factor 0.3
+
+# python run_train.py --method mse_ei --dimension 6 --layer_width 64 --train_acquisition_size 5000 --test_factor 0.3
+
+# 
+# python run_train.py --method mse_ei --dimension 6 --layer_width 160 --train_acquisition_size 5000 --test_factor 0.3 --no-save-model
+
+# python run_train.py --method mse_ei --dimension 6 --layer_width 32 --train_acquisition_size 1000 --test_factor 0.1
+
+# python run_train.py --method mse_ei --layer_width 32 --train_acquisition_size 10000 --test_acquisition_size 1000 --dimension 6 --learn_tau --initial_tau 0.5
+# python run_train.py --method mse_ei --layer_width 128 --train_acquisition_size 50000 --test_acquisition_size 10000 --dimension 6 --learn_tau --initial_tau 0.5 --softplus_batchnorm
+# python run_train.py --method mse_ei --layer_width 128 --train_acquisition_size 50000 --test_acquisition_size 10000 --dimension 6 --positive_linear_at_end
 
 parser = argparse.ArgumentParser()
 
@@ -50,6 +65,13 @@ parser.add_argument(
     action='store_false', 
     dest='train', 
     help='If set, do not train the model. Default is to train the model.'
+)
+parser.add_argument(
+    '--no-save-model', 
+    action='store_false', 
+    dest='save_model', 
+    help=('If set, do not save the model. Default is to save the model. '
+          'Only applicable if training the model.')
 )
 parser.add_argument(
     '--load_saved_model', 
@@ -69,9 +91,9 @@ parser.add_argument(
 
 # Which AF training loss function to use
 parser.add_argument(
-    '--method', 
-    choices=METHODS,
-    default='mse_ei',
+    '--method',
+    required=True,
+    choices=METHODS
 )
 
 # Layer width
@@ -119,11 +141,37 @@ parser.add_argument(
     help='Whether to exponentiate the outcomes of the dataset. Default is False'
 )
 
-### Optional settings for EI NN architecture
+### Optional settings for NN architecture
 parser.add_argument(
     '--standardize_nn_history_outcomes', 
     action='store_true', 
-    help='Whether to standardize the history outcomes when computing the NN acquisition function. Default is False'
+    help=('Whether to standardize the history outcomes when computing the NN '
+          'acquisition function. Default is False.')
+)
+
+### Options when method=gittins
+parser.add_argument(
+    '--lamda_min',
+    type=float,
+    help=('Minimum value of lambda (if using variable lambda). '
+          'Only used if method=gittins.')
+)
+parser.add_argument(
+    '--lamda_max',
+    type=float,
+    help=('Maximum value of lambda (if using variable lambda). '
+          'Only used if method=gittins.')
+)
+parser.add_argument(
+    '--lamda',
+    type=float,
+    help='Value of lambda (if using constant lambda). Only used if method=gittins.'
+)
+parser.add_argument(
+    '--normalize_gi_loss', 
+    action='store_true', 
+    help=('Whether to normalize the Gittins index loss function. Default is False. '
+          'Only used if method=gittins.')
 )
 
 ### Options for NN when method=mse_ei
@@ -132,37 +180,37 @@ parser.add_argument(
     action='store_true',
     help=('Set this flag to enable learning of tau=1/beta which is the parameter for softplus'
           ' applied at the end of the MSE acquisition function. Default is False. '
-          'This is only used if method=mse_ei.')
+          'Only used if method=mse_ei.')
 )
 parser.add_argument(
     '--initial_tau',
     type=float,
-    help='Initial value of tau. Default is 1.0. This is only used if method=mse_ei.'
+    help='Initial value of tau. Default is 1.0. Only used if method=mse_ei.'
 )
 parser.add_argument(
     '--softplus_batchnorm',
     action='store_true',
     help=('Set this flag to apply positive-batchnorm after softplus in the MSE acquisition function. '
-          'Default is False. This is only used if method=mse_ei.')
+          'Default is False. Only used if method=mse_ei.')
 )
 parser.add_argument(
     '--softplus_batchnorm_momentum',
     type=float,
     default=0.1,
     help=('Momentum for the batchnorm after softplus in the MSE acquisition function. Default is 0.1. '
-          'This is only used if method=mse_ei.')
+          'Only used if method=mse_ei.')
 )
 parser.add_argument(
     '--positive_linear_at_end',
     action='store_true',
     help=('Set this flag to apply positive linear at end technique. Default is False. '
-          'This is only used if method=mse_ei.')
+          'Only used if method=mse_ei.')
 )
 parser.add_argument(
     '--gp_ei_computation',
     action='store_true',
     help=('Set this flag to apply gp_ei_computation at end technique. Default is False. '
-          'This is only used if method=mse_ei.')
+          'Only used if method=mse_ei.')
 )
 
 args = parser.parse_args()
@@ -210,6 +258,8 @@ if LOAD_SAVED_MODEL or LOAD_SAVED_DATASET_CONFIG:
         raise ValueError("model_and_info_name should be specified if load_saved_model or load_saved_dataset_config")
     MODEL_AND_INFO_NAME = args.model_and_info_name
     MODEL_AND_INFO_PATH = os.path.join(MODELS_DIR, MODEL_AND_INFO_NAME)
+else:
+    MODEL_AND_INFO_PATH = None
 
 if (not LOAD_SAVED_MODEL) and (args.layer_width is None):
     raise ValueError("layer_width must be specified if load_saved_model=False")
@@ -250,8 +300,8 @@ else:
 
 POLICY_GRADIENT = (METHOD == 'policy_gradient')
 
-BATCH_SIZE = 64
-LEARNING_RATE = 3e-4  # 3e-3
+BATCH_SIZE = 640 if METHOD == 'mse_ei' else 64 # just trying to hack it...don't worry
+LEARNING_RATE = 3e-3 if METHOD == 'gittins' else 3e-4
 EPOCHS = 200
 FIX_TRAIN_ACQUISITION_DATASET = False
 
@@ -285,17 +335,53 @@ if POLICY_GRADIENT:
         initial_alpha=INITIAL_ALPHA,
         alpha_increment=ALPHA_INCREMENT)
 
-if METHOD != 'mse_ei':
-    if args.learn_tau:
-        raise ValueError("learn_tau should be False if method != mse_ei")
-    if args.initial_tau is not None:
-        raise ValueError("initial_tau should not be specified if method != mse_ei")
-    if args.softplus_batchnorm:
-        raise ValueError("softplus_batchnorm should be False if method != mse_ei")
-    if args.positive_linear_at_end:
-        raise ValueError("positive_linear_at_end should be False if method != mse_ei")
-    if args.gp_ei_computation:
-        raise ValueError("gp_ei_computation should be False if method != mse_ei")
+for reason, reason_desc in [(METHOD != 'mse_ei', 'method != mse_ei'),
+                            (LOAD_SAVED_MODEL, 'load_saved_model=True')]:
+    if reason:
+        if args.learn_tau:
+            raise ValueError(f"learn_tau should be False if {reason_desc}")
+        if args.initial_tau is not None:
+            raise ValueError(f"initial_tau should not be specified if {reason_desc}")
+        if args.softplus_batchnorm:
+            raise ValueError(f"softplus_batchnorm should be False if {reason_desc}")
+        if args.positive_linear_at_end:
+            raise ValueError(f"positive_linear_at_end should be False if {reason_desc}")
+        if args.gp_ei_computation:
+            raise ValueError(f"gp_ei_computation should be False if {reason_desc}")
+
+lamda_given = args.lamda is not None
+lamda_min_given = args.lamda_min is not None
+lamda_max_given = args.lamda_max is not None
+if METHOD == 'gittins':
+    if lamda_given:
+        if lamda_min_given or lamda_max_given:
+            raise ValueError(
+                "If method=gittins, should specify only either lamda, or both lamda_min and lamda_max")
+        args.lamda_min = args.lamda # just to make it easier to pass in as parameter
+        VARIABLE_LAMBDA = False
+    else:
+        if not (lamda_min_given or lamda_max_given):
+            # No lamda anything is specified
+            raise ValueError(
+                "If method=gittins, need to specify either lamda, or both lamda_min and lamda_max")
+        if not lamda_min_given:
+            # lamda_max is given but lamda_min is not given
+            raise ValueError(
+                "If method=gittins and lamda_max is specified, then lamda_min must be specified")
+        if not lamda_max_given:
+            # lamda_min is given but lamda_max is not given
+            raise ValueError(
+                "If method=gittins and lamda_min is specified, then lamda_max must be specified")
+        VARIABLE_LAMBDA = True
+else: # METHOD = 'mse_ei' or 'policy_gradient'
+    if args.initial_tau is None:
+        args.initial_tau = 1.0
+    if lamda_given or lamda_min_given or lamda_max_given:
+        raise ValueError(
+            "If method != gittins, then lamda, lamda_min, and lamda_max should not be specified")
+    if args.normalize_gi_loss:
+        raise ValueError("normalize_gi_loss should be False if method != gittins")
+
 
 if EARLY_STOPPING:
     training_config = dict(
@@ -304,8 +390,6 @@ if EARLY_STOPPING:
         min_delta=MIN_DELTA,
         cumulative_delta=CUMULATIVE_DELTA)
 
-if args.initial_tau is None:
-    args.initial_tau = 1.0
 ################################################################################
 
 
@@ -374,7 +458,7 @@ else:
         # If fix_n_candidates is True, then the following are used:
         n_points_config = dict(
             # Number of candidate points for training. For MSE EI, could just set to 1.
-            train_n_candidates=1,
+            train_n_candidates=50 if METHOD == 'policy_gradient' else 1,
             # Number of candidate points for testing.
             test_n_candidates=50,
             min_history=14,
@@ -521,16 +605,16 @@ else:
     if METHOD == 'gittins':
         model = GittinsAcquisitionFunctionNet(
             af_class=TwoPartAcquisitionFunctionNetFixedHistoryOutputDim,
-            variable_lambda=True,
+            variable_lambda=VARIABLE_LAMBDA,
             costs_in_history=False,
             cost_is_input=False,
             af_body_class=AcquisitionFunctionBodyPointnetV1and2,
             af_head_class=AcquisitionFunctionNetFinalMLP,
             af_body_init_params=af_body_init_params,
             af_head_init_params=af_head_init_params,
-            standardize_outcomes=False
+            standardize_outcomes=args.standardize_nn_history_outcomes
         ).to(DEVICE)
-    else:
+    elif METHOD == 'policy_gradient' or METHOD == 'mse_ei':
         af_head_init_params = dict(
             **af_head_init_params,
             include_alpha=INCLUDE_ALPHA,
@@ -547,7 +631,7 @@ else:
             af_body_class=AcquisitionFunctionBodyPointnetV1and2,
             af_body_init_params=af_body_init_params,
             af_head_init_params=af_head_init_params,
-            standardize_outcomes=False
+            standardize_outcomes=args.standardize_nn_history_outcomes
         ).to(DEVICE)
     
     # model = AcquisitionFunctionNetV4(DIMENSION,
@@ -594,12 +678,15 @@ if TRAIN:
     if TIME:
         tic("Training!")
     
-    # Save the configs for the model and training and datasets
-    (model_and_info_folder_name,
-     MODEL_AND_INFO_PATH, model_path) = save_acquisition_function_net_configs(
-        MODELS_DIR, model, training_config,
-        gp_realization_config, dataset_size_config, n_points_config,
-        dataset_transform_config, train_aq_dataset.model_sampler)
+    if args.save_model:
+        # Save the configs for the model and training and datasets
+        (model_and_info_folder_name,
+        MODEL_AND_INFO_PATH, model_path) = save_acquisition_function_net_configs(
+            MODELS_DIR, model, training_config,
+            gp_realization_config, dataset_size_config, n_points_config,
+            dataset_transform_config, train_aq_dataset.model_sampler)
+    else:
+        model_path = None
 
     optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE,
                                 #  weight_decay=1e-2
@@ -607,7 +694,10 @@ if TRAIN:
     # optimizer = torch.optim.RMSprop(model.parameters(), lr=learning_rate)
     training_history_data = train_acquisition_function_net(
         model, train_aq_dataset, optimizer, METHOD, EPOCHS, BATCH_SIZE,
-        DEVICE, ALPHA_INCREMENT, verbose=VERBOSE, n_train_printouts_per_epoch=10,
+        DEVICE, verbose=VERBOSE, n_train_printouts_per_epoch=10,
+        alpha_increment=ALPHA_INCREMENT,
+        lambda_min=args.lamda_min, lambda_max=args.lamda_max,
+        normalize_gi_loss=args.normalize_gi_loss,
         test_dataset=test_aq_dataset, small_test_dataset=small_test_aq_dataset,
         get_train_stats_while_training=True,
         get_train_stats_after_training=True,
@@ -616,7 +706,7 @@ if TRAIN:
         get_train_true_gp_stats=GET_TRAIN_TRUE_GP_STATS,
         get_test_true_gp_stats=GET_TEST_TRUE_GP_STATS,
         save_dir=model_path,
-        save_incremental_best_models=True,
+        save_incremental_best_models=True and args.save_model,
         early_stopping=EARLY_STOPPING,
         patience=PATIENCE,
         min_delta=MIN_DELTA,
@@ -636,36 +726,41 @@ if TRAIN:
 
     print("Done training!")
 
-training_history_path = os.path.join(MODEL_AND_INFO_PATH, 'model', 'training_history_data.json')
 
-if not TRAIN:
-    training_history_data = load_json(training_history_path)
-    final_test_stats_original = training_history_data['final_test_stats']
-    print_stats(final_test_stats_original,
-                "Final test stats on the original test dataset")
+if MODEL_AND_INFO_PATH is not None:
+    training_history_path = os.path.join(
+        MODEL_AND_INFO_PATH, 'model', 'training_history_data.json')
 
-    test_dataloader = test_aq_dataset.get_dataloader(
-                batch_size=BATCH_SIZE, drop_last=False)
-    final_test_stats = train_or_test_loop(
-                test_dataloader, model, train=False,
-                nn_device=DEVICE, method=METHOD,
-                verbose=False, desc=f"Compute final test stats",
-                get_true_gp_stats=GET_TEST_TRUE_GP_STATS,
-                get_map_gp_stats=False,
-                get_basic_stats=True)
-    print_stats(final_test_stats, "Final test stats on this test dataset")
+    if not TRAIN:
+        training_history_data = load_json(training_history_path)
+        final_test_stats_original = training_history_data['final_test_stats']
+        print_stats(final_test_stats_original,
+                    "Final test stats on the original test dataset")
+
+        test_dataloader = test_aq_dataset.get_dataloader(
+                    batch_size=BATCH_SIZE, drop_last=False)
+        final_test_stats = train_or_test_loop(
+                    test_dataloader, model, train=False,
+                    nn_device=DEVICE, method=METHOD,
+                    verbose=False, desc=f"Compute final test stats",
+                    get_true_gp_stats=GET_TEST_TRUE_GP_STATS,
+                    get_map_gp_stats=False,
+                    get_basic_stats=True)
+        print_stats(final_test_stats, "Final test stats on this test dataset")
 
 
-history_fig = plot_acquisition_function_net_training_history(training_history_data)
-history_plot_path = os.path.join(MODEL_AND_INFO_PATH, 'model', 'training_history.pdf')
-if not os.path.exists(history_plot_path) or LOAD_SAVED_DATASET_CONFIG:
-    history_fig.savefig(history_plot_path, bbox_inches='tight')
+    history_fig = plot_acquisition_function_net_training_history(training_history_data)
+    history_plot_path = os.path.join(MODEL_AND_INFO_PATH, 'model', 'training_history.pdf')
+    if not os.path.exists(history_plot_path) or LOAD_SAVED_DATASET_CONFIG:
+        history_fig.savefig(history_plot_path, bbox_inches='tight')
 
 
 ######################## Plot performance of model #############################
 n_candidates = 2_000
 name = "EI" if METHOD == "mse_ei" else "acquisition"
 PLOT_MAP = False
+
+# TODO: Fix the below code to work with Gittins index
 
 if DIMENSION == 1:
     nrows, ncols = 5, 5

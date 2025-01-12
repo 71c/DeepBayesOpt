@@ -8,7 +8,7 @@ import torch
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from torch.distributions import Categorical
-from acquisition_function_net import AcquisitionFunctionNet, ExpectedImprovementAcquisitionFunctionNet
+from acquisition_function_net import AcquisitionFunctionNet, ExpectedImprovementAcquisitionFunctionNet, GittinsAcquisitionFunctionNet
 from dataset_with_models import RandomModelSampler
 from predict_EI_simple import calculate_EI_GP_padded_batch
 from tqdm import tqdm
@@ -141,24 +141,35 @@ def mse_loss(pred_improvements, improvements, mask=None, reduction="mean"):
     return mse_per_batch.sum()
 
 
-def gittins_loss(pred_gi, y, lamdas, costs=None,
-                 normalize=False, known_costs=True,
-                 mask=None, reduction="mean"):
+def calculate_gittins_loss(pred_gi, y, lamdas, costs=None,
+                           normalize=False, known_costs=True,
+                           mask=None, reduction="mean"):
     """Calculate the Gittins index loss.
 
     Args:
-        pred_gi (Tensor): The predicted Gittins indices. Shape (batch_size, n_cand)
-        y (Tensor): The y values. Shape (batch_size, n_cand)
-        lamdas (Tensor): The lambda values. Shape (batch_size, n_cand)
-        costs (Tensor or None): The costs tensor, shape (batch_size, n_cand)
-        normalize (bool): Whether to normalize the loss function as proposed
-        known_costs (bool): Whether the costs `costs` are known (only applicable if
-            normalize=True and costs != None)
-        mask (Tensor or None): The mask tensor, shape (batch_size, n_cand)
-        reduction (str): The reduction method. Either "mean" or "sum".
+        pred_gi (Tensor):
+            The predicted Gittins indices. Shape (batch_size, n_cand)
+        y (Tensor):
+            The y values. Shape (batch_size, n_cand)
+        lamdas (Tensor):
+            The lambda values. Shape (batch_size, n_cand), or a scalar tensor
+        costs (Tensor or None):
+            The costs tensor, shape (batch_size, n_cand)
+        normalize (bool):
+            Whether to normalize the loss function as proposed
+        known_costs (bool):
+            Whether the costs `costs` are known
+            (only applicable if normalize=True and costs != None)
+        mask (Tensor or None):
+            The mask tensor, shape (batch_size, n_cand)
+        reduction (str):
+            The reduction method. Either "mean" or "sum".
     """
-    pred_gi, y, lamdas, costs, mask = check_2d_or_3d_tensors(
-        pred_gi, y, lamdas, costs, mask)
+    if lamdas.dim() == 0:
+        pred_gi, y, costs, mask = check_2d_or_3d_tensors(pred_gi, y, costs, mask)
+    else:
+        pred_gi, y, lamdas, costs, mask = check_2d_or_3d_tensors(
+            pred_gi, y, lamdas, costs, mask)
     
     if reduction not in {"mean", "sum"}:
         raise ValueError("'reduction' must be either 'mean' or 'sum'")
@@ -189,7 +200,9 @@ def compute_ei_max(output, improvements, cand_mask, reduction="mean"):
 
 
 def compute_myopic_acquisition_output_batch_stats(
-        output, improvements, cand_mask, method:str,
+        output, cand_mask, method:str,
+        improvements=None,
+        y_cand=None, lambdas=None, normalize=None,
         return_loss:bool=False, name:str="", reduction="mean"):
     if not isinstance(return_loss, bool):
         raise ValueError("return_loss should be a boolean")
@@ -202,27 +215,41 @@ def compute_myopic_acquisition_output_batch_stats(
 
     ret = {}
     if method == "policy_gradient":
+        if improvements is None:
+            raise ValueError(
+                "improvements must be specified for method='policy_gradient'")
         ret[name+"avg_normalized_entropy"] = get_average_normalized_entropy(
             output_detached, mask=cand_mask, reduction=reduction).item()
-
         ei_softmax = myopic_policy_gradient_ei(
             output if return_loss else output_detached, improvements, reduction)
         ret[name+"ei_softmax"] = ei_softmax.item()
         if return_loss:
             ret[name+"loss"] = -ei_softmax  # Note the negative sign
     elif method == "mse_ei":
+        if improvements is None:
+            raise ValueError("improvements must be specified for method='mse_ei'")
         mse = mse_loss(output if return_loss else output_detached,
                        improvements, cand_mask, reduction)
         ret[name+"mse"] = mse.item()
         if return_loss:
             ret[name+"loss"] = mse
-    elif method in METHODS:
-        pass # Don't do anything
-    else:
-        raise ValueError(f"method must be one of {METHODS_STR}; it was {method}")
-
-    ret[name+"ei_max"] = compute_ei_max(output_detached, improvements,
-                                        cand_mask, reduction)
+    elif method == "gittins":
+        if y_cand is None:
+            raise ValueError("y_cand must be specified for method='gittins'")
+        if lambdas is None:
+            raise ValueError("lambdas must be specified for method='gittins'")
+        if normalize is None:
+            raise ValueError("normalize must be specified for method='gittins'")
+        gittins_loss = calculate_gittins_loss(
+            output if return_loss else output_detached, y_cand, lambdas,
+            costs=None, normalize=normalize, mask=cand_mask, reduction=reduction)
+        ret[name+"gittins_loss"] = gittins_loss.item()
+        if return_loss:
+            ret["loss"] = gittins_loss
+    
+    if improvements is not None:
+        ret[name+"ei_max"] = compute_ei_max(output_detached, improvements,
+                                            cand_mask, reduction)
 
     return ret
 
@@ -242,14 +269,27 @@ def print_things(rows, prefix=''):
     print("\n".join(row_strings))
 
 
-def print_stats(stats, dataset_name, method):
+def print_stat_summary(
+        stats, things_to_print, best_stat:Optional[str]=None,
+        inverse_ratio=False, sqrt_ratio=False, ratio_name='Ratio'):
+    best_val = None if best_stat is None else stats.get(best_stat)
+    direct_things_to_print = []
+    for stat_key, stat_print_name, print_ratio in things_to_print:
+        if stat_key in stats:
+            val = stats[stat_key]
+            this_thing = [stat_print_name+':', f'{val:>8f}']
+            if best_val is not None and print_ratio:
+                ratio = best_val / val if inverse_ratio else val / best_val
+                if sqrt_ratio:
+                    ratio = math.sqrt(ratio)
+                this_thing.extend([f'  {ratio_name}:', f'{ratio:>8f}'])
+            direct_things_to_print.append(this_thing)
+    print_things(direct_things_to_print, prefix="  ")
+
+
+def print_stats(stats:dict, dataset_name, method):
     print(f'{dataset_name}:\nExpected 1-step improvement:')
-    
-    has_true_gp = 'true_gp_ei_max' in stats
-    if has_true_gp:
-        true_gp_ei_max = stats['true_gp_ei_max']
-        true_gp_mse = stats['true_gp_mse']
-    
+
     things_to_print = [
         ('ei_softmax', 'NN (softmax)', True),
         ('ei_max', 'NN (max)', True),
@@ -258,37 +298,29 @@ def print_stats(stats, dataset_name, method):
         ('ei_random_search', 'Random search', True),
         ('ei_ideal', 'Ideal', True),
         ('avg_normalized_entropy', 'Avg norm. entropy', False)]
-
-    direct_things_to_print = []
-    for stat_key, stat_print_name, print_ratio in things_to_print:
-        if stat_key in stats:
-            val = stats[stat_key]
-            this_thing = [stat_print_name+':', f'{val:>8f}']
-            if has_true_gp and print_ratio:
-                ratio = val / true_gp_ei_max
-                this_thing.extend(['  Ratio:', f'{ratio:>8f}'])
-            direct_things_to_print.append(this_thing)
-    print_things(direct_things_to_print, prefix="  ")
+    print_stat_summary(
+        stats, things_to_print, best_stat='true_gp_ei_max',
+        inverse_ratio=False, sqrt_ratio=False)
     
     if method == 'mse_ei':
         print('Improvement MSE:')
-
         things_to_print = [
             ('mse', 'NN', True),
             ('true_gp_mse', 'True GP', False),
             ('map_gp_mse', 'MAP GP', True),
             ('mse_always_predict_0', 'Always predict 0', True)]
-        
-        direct_things_to_print = []
-        for stat_key, stat_print_name, print_ratio in things_to_print:
-            if stat_key in stats:
-                val = stats[stat_key]
-                this_thing = [stat_print_name+':', f'{val:>8f}']
-                if has_true_gp and print_ratio:
-                    ratio = math.sqrt(true_gp_mse / val)
-                    this_thing.extend(['  RMSE Ratio', f'{ratio:>8f}'])
-                direct_things_to_print.append(this_thing)
-        print_things(direct_things_to_print, prefix="  ")
+        print_stat_summary(
+            stats, things_to_print, best_stat='true_gp_mse',
+            inverse_ratio=True, sqrt_ratio=True, ratio_name='RMSE Ratio')
+    elif method == 'gittins':
+        print('Gittins index loss:')
+        things_to_print = [
+            ('gittins_loss', 'NN', True)
+            # TODO: Could exactly calculate the GP best loss
+        ]
+        print_stat_summary(
+            stats, things_to_print, best_stat=None,
+            inverse_ratio=True, sqrt_ratio=False)
 
 
 def print_train_batch_stats(nn_batch_stats, nn_model, method,
@@ -313,10 +345,10 @@ def print_train_batch_stats(nn_batch_stats, nn_model, method,
         prefix = "MSE"
         loss_value = nn_batch_stats["mse"]
     elif method == 'gittins':
-        prefix = "TODO"
-        raise NotImplementedError("gittins not implemented yet")
+        prefix = "Gittins index loss"
+        loss_value = nn_batch_stats["gittins_loss"]
     else:
-        raise ValueError()
+        raise UnsupportedError(f"method '{method}' is not supported")
     if isinstance(nn_model, ExpectedImprovementAcquisitionFunctionNet):
         if nn_model.includes_alpha:
             suffix += f", alpha={nn_model.get_alpha():>7f}"
@@ -356,17 +388,19 @@ def train_or_test_loop(dataloader: DataLoader,
                        desc:Optional[str]=None,
                        
                        n_train_printouts:Optional[int]=None,
-                       optimizer:Optional[torch.optim.Optimizer]=None, 
-                       alpha_increment:Optional[float]=None,
+                       optimizer:Optional[torch.optim.Optimizer]=None,
 
                        get_true_gp_stats:Optional[bool]=None,
                        get_map_gp_stats:bool=False,
                        get_basic_stats:bool=True,
+
+                       # Only used when method="mse_ei" or "policy_gradient"
+                       # (only does anything if method="policy_gradient")
+                       alpha_increment:Optional[float]=None,
                        
                        # Only used when method="gittins" and train=True
                        lambda_min:Optional[float]=None,
                        lambda_max:Optional[float]=None,
-                       nn_input_lambda:bool=True,
                        normalize_gi_loss:bool=False):
     if not isinstance(dataloader, DataLoader):
         raise ValueError("dataloader must be a torch DataLoader")
@@ -412,24 +446,61 @@ def train_or_test_loop(dataloader: DataLoader,
             raise ValueError("nn_model must be a AcquisitionFunctionNet instance")
         if not isinstance(train, bool):
             raise ValueError("'train' must be a boolean if evaluating a NN model")
-        if method not in METHODS:
-            raise ValueError(f"'method' must be one of {METHODS_STR} if evaluating a NN model; it was {method}")
-        if method == "gittins":
-            if not (isinstance(lambda_min, float) and lambda_min > 0):
-                raise ValueError(f"lambda_min must be a positive float if method='gittins'; it was {lambda_min}")
-            if lambda_max is None:
-                lambda_max = lambda_min
-            elif not (isinstance(lambda_max, float) and lambda_max > 0):
-                raise ValueError(f"lambda_max must be a positive float if method='gittins'; it was {lambda_max}")
-            if not (lambda_min <= lambda_max):
-                raise ValueError("lambda_min must be less than or equal to lambda_max")
-            log_lambda_min = math.log(lambda_min)
-            log_lambda_max = math.log(lambda_max)
-            if not isinstance(nn_input_lambda, bool):
-                raise ValueError("nn_input_lambda must be a boolean")
-            if not isinstance(normalize_gi_loss, bool):
-                raise ValueError("normalize_gi_loss must be a boolean") 
         
+        if method not in METHODS:
+            raise ValueError(
+                f"'method' must be one of {METHODS_STR} if evaluating a NN model; "
+                f"it was {method}")
+        if method == "gittins":
+            if not isinstance(nn_model, GittinsAcquisitionFunctionNet):
+                raise ValueError("nn_model must be a GittinsAcquisitionFunctionNet "
+                                 "instance if method='gittins'")
+            if nn_model.costs_in_history:
+                raise UnsupportedError("nn_model.costs_in_history=True is currently not"
+                                       " supported for method='gittins'")
+            if nn_model.cost_is_input:
+                raise UnsupportedError("nn_model.cost_is_input=True is currently not"
+                                       " supported for method='gittins'")
+
+            if not isinstance(normalize_gi_loss, bool):
+                raise ValueError("normalize_gi_loss must be a boolean")
+            
+            if not (isinstance(lambda_min, float) and lambda_min > 0):
+                raise ValueError("lambda_min must be a positive float if "
+                                 f"method='gittins'; it was {lambda_min}")
+
+            if nn_model.variable_lambda:
+                if lambda_max is None:
+                    raise ValueError(
+                        "lambda_max must be specified if nn_model.variable_lambda=True")
+                if not (isinstance(lambda_max, float) and lambda_max > 0):
+                    raise ValueError(
+                        "lambda_max must be a positive float if method='gittins' and "
+                        f"nn_model.variable_lambda=True; it was {lambda_max}")
+                if not (lambda_min < lambda_max):
+                    raise ValueError(
+                        "lambda_min must be less than lambda_max")
+                log_lambda_min = math.log(lambda_min)
+                log_lambda_diff = math.log(lambda_max) - log_lambda_min
+            else:
+                if lambda_max is not None:
+                    if lambda_max != lambda_min:
+                        raise ValueError(
+                            "lambda_max must be either unspecified or equal to "
+                            "lambda_min if nn_model.variable_lambda=False")
+                    lambda_max = None
+                lambda_const = torch.as_tensor(
+                    lambda_min, dtype=torch.double, device=nn_device)
+            nnei = False
+        elif method == 'policy_gradient' or method == 'mse_ei':
+            if not isinstance(nn_model, ExpectedImprovementAcquisitionFunctionNet):
+                raise ValueError(
+                    "nn_model must be a ExpectedImprovementAcquisitionFunctionNet "
+                    "instance if method='policy_gradient' or method='mse_ei'")
+            nnei = True
+        else:
+            raise UnsupportedError(f"method '{method}' is not supported")
+
         if train:
             if optimizer is None:
                 raise ValueError("optimizer must be specified if training")
@@ -545,29 +616,38 @@ def train_or_test_loop(dataloader: DataLoader,
                     y_hist_nn, y_cand_nn, hist_mask_nn, cand_mask_nn)
             
             if method == 'gittins':
-                log_lambdas = torch.rand_like(vals_cand_nn, dtype=torch.double) * (log_lambda_max - log_lambda_min) + log_lambda_min
-                lambdas = torch.exp(log_lambdas)
+                if nn_model.variable_lambda:
+                    log_lambdas = torch.rand_like(y_cand_nn, dtype=torch.double) \
+                        * log_lambda_diff + log_lambda_min
+                    lambdas = torch.exp(log_lambdas)
+                else:
+                    lambdas = lambda_const
+            else:
+                lambdas = None
 
             with torch.set_grad_enabled(train and not is_degenerate_batch):
-                # TODO: Make the NN able to have as input extra information (in our case,
-                # lambda values)
-                nn_output = nn_model(
-                    x_hist_nn, y_hist_nn, x_cand_nn, hist_mask_nn, cand_mask_nn,
-                    exponentiate=(method == "mse_ei"), softmax=(method == "policy_gradient"))
+                if method == 'gittins':
+                    lambda_cand = log_lambdas if nn_model.variable_lambda else None
+                    nn_output = nn_model(
+                        x_hist_nn, y_hist_nn, x_cand_nn,
+                        lambda_cand=lambda_cand,
+                        hist_mask=hist_mask_nn, cand_mask=cand_mask_nn,
+                        is_log=True
+                    )
+                else: # method = 'mse_ei' or 'policy_gradient' (nnei=True)
+                    nn_output = nn_model(
+                        x_hist_nn, y_hist_nn, x_cand_nn, hist_mask_nn, cand_mask_nn,
+                        exponentiate=(method == "mse_ei"),
+                        softmax=(method == "policy_gradient"))
 
                 nn_batch_stats = compute_myopic_acquisition_output_batch_stats(
-                    nn_output, improvements_nn, cand_mask_nn, method,
+                    nn_output, cand_mask_nn, method,
+                    improvements=improvements_nn,
+                    y_cand=y_cand_nn, lambdas=lambdas, normalize=normalize_gi_loss,
                     return_loss=train, reduction="sum")
                 # print("NN", nn_batch_stats)
                 # print("(DEBUG) Mean EI NN:", nn_output.mean())
-
-                if method == 'gittins':
-                    loss = gittins_loss(nn_output, y_cand_nn, lambdas, costs=None,
-                                        normalize=normalize_gi_loss, known_costs=True,
-                                        mask=cand_mask_nn, reduction="sum")
-                    nn_batch_stats["gittins_loss"] = loss.item()
-                    nn_batch_stats["loss"] = loss
-
+                
                 if train and not is_degenerate_batch:
                     # convert sum to mean so that this is consistent across batch sizes
                     loss = nn_batch_stats.pop("loss") / this_batch_size # (== batch_size)
@@ -576,7 +656,7 @@ def train_or_test_loop(dataloader: DataLoader,
                     loss.backward()
                     optimizer.step()
 
-                    if nn_model.includes_alpha and alpha_increment is not None:
+                    if nnei and nn_model.includes_alpha and alpha_increment is not None:
                         nn_model.set_alpha(nn_model.get_alpha() + alpha_increment)
                     
                     if verbose and n_train_printouts is not None and i in print_indices:
@@ -622,12 +702,12 @@ def train_or_test_loop(dataloader: DataLoader,
                 
                 # exit()
                 true_gp_batch_stats = compute_myopic_acquisition_output_batch_stats(
-                    ei_values_true_model, improvements, cand_mask,
-                    method='mse_ei', return_loss=False,
-                    name="true_gp", reduction="sum")
+                    ei_values_true_model, cand_mask, method='mse_ei',
+                    improvements=improvements,
+                    return_loss=False, name="true_gp", reduction="sum")
                 # print(compute_myopic_acquisition_output_batch_stats(
-                #     ei_values_true_model, improvements, cand_mask,
-                #     method='mse_ei', return_loss=False,
+                #     ei_values_true_model, cand_mask, method='mse_ei',
+                #     improvements=improvements, return_loss=False,
                 #     name="true_gp", reduction="mean"))
                 # print()
                 # print("GP", true_gp_batch_stats)
@@ -647,7 +727,7 @@ def train_or_test_loop(dataloader: DataLoader,
                 # the E(I) of selecting the point with the maximum I (cheating), and
                 # the MSE loss of always predicting 0
                 if cand_mask is None:
-                    random_search_probs = torch.ones_like(improvements) / improvements.size(1)
+                    random_search_probs = torch.ones_like(vals_cand) / vals_cand.size(1)
                 else:
                     random_search_probs = cand_mask.double() / cand_mask.sum(
                         dim=1, keepdim=True).double()
@@ -657,7 +737,7 @@ def train_or_test_loop(dataloader: DataLoader,
                     "ei_ideal": compute_ei_max(improvements, improvements,
                                                cand_mask, reduction="sum"),
                     "mse_always_predict_0": mse_loss(
-                        torch.zeros_like(improvements), improvements, cand_mask,
+                        torch.zeros_like(vals_cand), improvements, cand_mask,
                         reduction="sum").item()
                 })
         # print()
@@ -667,8 +747,8 @@ def train_or_test_loop(dataloader: DataLoader,
             ei_values_map = calculate_EI_GP_padded_batch(
                 x_hist, y_hist, x_cand, hist_mask, cand_mask, models, fit_params=True)
             map_gp_batch_stats = compute_myopic_acquisition_output_batch_stats(
-                    ei_values_map, improvements, cand_mask,
-                    method='mse_ei', return_loss=False,
+                    ei_values_map, cand_mask, method='mse_ei',
+                    improvements=improvements, return_loss=False,
                     name="map_gp", reduction="sum")
             map_gp_stats_list.append(map_gp_batch_stats)
     assert dataset_length == len(dataset)
@@ -771,9 +851,17 @@ def train_acquisition_function_net(
         n_epochs: int,
         batch_size: int,
         nn_device=None,
-        alpha_increment:Optional[float]=None,
         verbose:bool=True,
         n_train_printouts_per_epoch:Optional[int]=None,
+
+        # Only used when method="mse_ei" or "policy_gradient"
+        # (only does anything if method="policy_gradient")
+        alpha_increment:Optional[float]=None,
+        
+        # Only used when method="gittins" and train=True
+        lambda_min:Optional[float]=None,
+        lambda_max:Optional[float]=None,
+        normalize_gi_loss:bool=False,
         
         test_dataset: Optional[AcquisitionDataset]=None,
         small_test_dataset:Optional[AcquisitionDataset]=None,
@@ -879,6 +967,9 @@ def train_acquisition_function_net(
             n_train_printouts=n_train_printouts_per_epoch,
             optimizer=optimizer,
             alpha_increment=alpha_increment,
+            lambda_min=lambda_min,
+            lambda_max=lambda_max,
+            normalize_gi_loss=normalize_gi_loss,
             get_true_gp_stats=get_train_true_gp_stats,
             get_map_gp_stats=get_train_map_gp_stats,
             get_basic_stats=True)
@@ -898,6 +989,9 @@ def train_acquisition_function_net(
                 train_dataloader, nn_model, train=False,
                 nn_device=nn_device, method=method,
                 verbose=verbose, desc=f"Epoch {t+1} compute train stats",
+                lambda_min=lambda_min,
+                lambda_max=lambda_max,
+                normalize_gi_loss=normalize_gi_loss,
                 # Don't need to compute non-NN stats because already computed them
                 # while training, and we ensured that the train dataset is fixed for this epoch.
                 get_true_gp_stats=False,
@@ -914,6 +1008,9 @@ def train_acquisition_function_net(
                 small_test_dataloader, nn_model, train=False,
                 nn_device=nn_device, method=method,
                 verbose=verbose, desc=f"Epoch {t+1} compute test stats",
+                lambda_min=lambda_min,
+                lambda_max=lambda_max,
+                normalize_gi_loss=normalize_gi_loss,
                 get_true_gp_stats=get_test_true_gp_stats,
                 get_map_gp_stats=get_test_map_gp_stats,
                 get_basic_stats=True)
@@ -994,6 +1091,9 @@ def train_acquisition_function_net(
                 test_dataloader, nn_model, train=False,
                 nn_device=nn_device, method=method,
                 verbose=verbose, desc=f"Compute final test stats",
+                lambda_min=lambda_min,
+                lambda_max=lambda_max,
+                normalize_gi_loss=normalize_gi_loss,
                 get_true_gp_stats=get_test_true_gp_stats_after_training,
                 get_map_gp_stats=get_test_map_gp_stats,
                 get_basic_stats=True)

@@ -1518,10 +1518,13 @@ def ei_helper_numpy(u):
     return phi_numpy(u) + u * Phi_numpy(u)
 
 def ei_helper_inverse(v: Tensor) -> Tensor:
+    if not torch.is_tensor(v):
+        raise ValueError("v should be a torch tensor")
     log_v = torch.log(v).numpy()
 
     def f(x):
-        return _log_ei_helper(torch.from_numpy(x)).numpy() - log_v
+        x = torch.from_numpy(np.asarray(x))
+        return _log_ei_helper(x).numpy() - log_v
     def fprime(x):
         return Phi_numpy(x) / ei_helper_numpy(x)
     def fprime2(x):
