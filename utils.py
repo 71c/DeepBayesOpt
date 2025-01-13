@@ -1518,6 +1518,7 @@ def ei_helper_numpy(u):
     return phi_numpy(u) + u * Phi_numpy(u)
 
 def ei_helper_inverse(v: Tensor) -> Tensor:
+    v = v.cpu()
     if not torch.is_tensor(v):
         raise ValueError("v should be a torch tensor")
     log_v = torch.log(v).numpy()

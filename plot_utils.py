@@ -185,8 +185,8 @@ def plot_nn_vs_gp_acquisition_function_1d_grid(
 
 def plot_acquisition_function_net_training_history(training_history_data):
     stats_epochs = training_history_data['stats_epochs']
-    train_ei_max = [epoch['train']['after_training']['ei_max'] for epoch in stats_epochs]
-    test_ei_max = [epoch['test']['ei_max'] for epoch in stats_epochs]
+    train_ei_max = [epoch['train']['after_training']['maxei'] for epoch in stats_epochs]
+    test_ei_max = [epoch['test']['maxei'] for epoch in stats_epochs]
 
     epochs = np.arange(1, len(train_ei_max) + 1)
 

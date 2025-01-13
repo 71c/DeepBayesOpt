@@ -274,7 +274,7 @@ CPROFILE = False
 TIME = True
 VERBOSE = True
 
-CACHE_DATASETS = False
+CACHE_DATASETS = True
 
 # The following two are not important.
 LAZY_TRAIN = True
@@ -529,7 +529,7 @@ other_kwargs = dict(
         **test_dataset_config,
         
         get_train_true_gp_stats=GET_TRAIN_TRUE_GP_STATS,
-        get_test_true_gp_stats=GET_TEST_TRUE_GP_STATS,
+        get_test_true_gp_stats=False, #GET_TEST_TRUE_GP_STATS,
         cache_datasets=CACHE_DATASETS,
         lazy_train=LAZY_TRAIN,
         lazy_test=LAZY_TEST,

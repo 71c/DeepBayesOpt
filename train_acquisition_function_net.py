@@ -718,7 +718,7 @@ def train_or_test_loop(dataloader: DataLoader,
                     true_gp_batch_stats_gi = compute_acquisition_output_batch_stats(
                         gi_values_true_model, cand_mask, method='gittins',
                         improvements=improvements,
-                        y_cand=y_cand, lambdas=lambdas, normalize=normalize_gi_loss,
+                        y_cand=y_cand, lambdas=lambdas.cpu(), normalize=normalize_gi_loss,
                         return_loss=False, name="true_gp_gi", reduction="sum")
                     true_gp_batch_stats = {**true_gp_batch_stats, **true_gp_batch_stats_gi}
 
