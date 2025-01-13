@@ -40,7 +40,7 @@ MODELS_DIR = os.path.join(script_dir, "saved_models")
 # Run like, e.g.,
 
 # python run_train.py --method gittins --lamda 1e-1 --normalize_gi_loss --dimension 6 --layer_width 160 --train_acquisition_size 5000 --test_acquisition_size 1500 --no-save-model
-# python run_train.py --method gittins --lamda 1e-1 --normalize_gi_loss --dimension 6 --layer_width 160 --train_acquisition_size 20000 --test_acquisition_size 1500 --no-save-model
+# python run_train.py --method gittins --lamda 1e-1 --normalize_gi_loss --dimension 6 --layer_width 256 --train_acquisition_size 100000 --test_acquisition_size 10000
 
 # python run_train.py --method mse_ei --dimension 6 --layer_width 160 --train_acquisition_size 10000 --test_acquisition_size 1000 --no-save-model
 
@@ -120,6 +120,18 @@ parser.add_argument(
     help='Size of the test acqusition dataset as a proportion of train_acquisition_size (optional)'
 )
 # Dataset settings
+parser.add_argument(
+    '--train_n_candidates',
+    type=int,
+    default=15,
+    help='Number of candidate points for each item in the train dataset'
+)
+parser.add_argument(
+    '--test_n_candidates',
+    type=int,
+    default=50,
+    help='Number of candidate points for each item in the test dataset'
+)
 parser.add_argument(
     '--randomize_params', 
     action='store_true',
@@ -300,7 +312,7 @@ else:
 
 POLICY_GRADIENT = (METHOD == 'policy_gradient')
 
-BATCH_SIZE = 320 if METHOD == 'mse_ei' else 128 # just trying to hack it...don't worry
+BATCH_SIZE = 320 if METHOD == 'mse_ei' else 16 # just trying to hack it...don't worry
 LEARNING_RATE = 3e-3 if METHOD == 'gittins' else 3e-4
 EPOCHS = 200
 FIX_TRAIN_ACQUISITION_DATASET = False
@@ -458,9 +470,9 @@ else:
         # If fix_n_candidates is True, then the following are used:
         n_points_config = dict(
             # Number of candidate points for training. For MSE EI, could just set to 1.
-            train_n_candidates=50 if METHOD == 'policy_gradient' else 1,
+            train_n_candidates=args.train_n_candidates,
             # Number of candidate points for testing.
-            test_n_candidates=50,
+            test_n_candidates=args.test_n_candidates,
             min_history=14,
             max_history=54,
             **n_points_config

@@ -1,5 +1,6 @@
 from functools import partial
 import os
+from re import L
 import torch
 from botorch.models.gp_regression import SingleTaskGP
 
@@ -28,10 +29,10 @@ torch.set_default_dtype(torch.double)
 # but it's not absolutely necessary
 class AcquisitionDatasetModelItem(TupleWithModel):
     """
-    x_hist shape: `batch_shape x n_hist x d`
-    y_hist shape: `batch_shape x n_hist x n_hist_out`
-    x_cand shape: `batch_shape x n_cand x d`
-    vals_cand shape: `batch_shape x n_cand x k` where 1 <= k <= n_hist_out
+    x_hist shape: `n_hist x d`
+    y_hist shape: `n_hist x n_hist_out`
+    x_cand shape: `n_cand x d`
+    vals_cand shape: `n_cand x (k+z)`, 1 <= k <= n_hist_out, z >= 0
     """
     args_names = ['x_hist', 'y_hist', 'x_cand', 'vals_cand']
     kwargs_names = ['give_improvements']
@@ -440,7 +441,8 @@ class FunctionSamplesAcquisitionDataset(
             min_n_candidates=self.min_n_candidates,
             min_history=self.min_history,
             max_history=self.max_history,
-            dataset_size_factor=self.dataset_size_factor
+            dataset_size_factor=self.dataset_size_factor,
+            y_cand_indices=self._y_cand_indices
         )
 
     def save(self, dir_name: str, verbose:bool=True):
@@ -489,12 +491,10 @@ class FunctionSamplesAcquisitionDataset(
             FunctionSamplesAcquisitionDataset:
                 A new instance of the dataset with the expanded size.
         """
-        return type(self)(
-                self.base_dataset,
-                self.n_candidate_points,
-                self.n_samples, self.give_improvements, self.min_n_candidates,
-                size_factor)
-    
+        args, kwargs = self._init_params()
+        kwargs['dataset_size_factor'] = size_factor
+        return type(self)(*args, **kwargs)
+
     def copy_with_new_size(self, size: Optional[int] = None) -> "FunctionSamplesAcquisitionDataset":
         """Creates a copy of the dataset with a new size.
         If the base dataset has the `copy_with_new_size` method then it is used
@@ -631,3 +631,102 @@ class FunctionSamplesAcquisitionDataset(
                        self.give_improvements, self.min_n_candidates,
                        self.dataset_size_factor)
             for split_dataset in self.base_dataset.random_split(lengths)]
+
+
+class CostAwareAcquisitionDataset(
+    AcquisitionDataset, IterableDataset, SizedIterableMixin):
+    def __init__(self,
+                 base_dataset: AcquisitionDataset,
+                 lambda_min:float,
+                 lambda_max:Optional[float]=None):
+        if not isinstance(base_dataset, AcquisitionDataset):
+            raise ValueError("CostAwareAcquisitionDataset: base_dataset must be a AcquisitionDataset")
+        self.base_dataset = base_dataset
+
+        self._size = len_or_inf(base_dataset) # for SizedIterableMixin
+
+        if not (isinstance(lambda_min, float) and lambda_min > 0):
+            raise ValueError(f"lambda_min must be a positive float; was {lambda_min}")
+        self._log_lambda_min = math.log(lambda_min)
+        
+        if lambda_max is not None:
+            if not (isinstance(lambda_max, float) and lambda_max > 0):
+                raise ValueError(f"lambda_max must be a positive float; was {lambda_max}")
+            if not (lambda_min < lambda_max):
+                raise ValueError("lambda_min must be less than lambda_max")
+            self._log_lambda_diff = math.log(lambda_max) - self._log_lambda_min
+    
+        self.lambda_min = lambda_min
+        self.lambda_max = lambda_max
+    
+    def _init_params(self):
+        return (self.base_dataset,), dict(
+            lambda_min=self.lambda_min,
+            lambda_max=self.lambda_max
+        )
+
+    def save(self, dir_name: str, verbose:bool=True):
+        raise NotImplementedError
+    
+    @classmethod
+    def load(cls, dir_name: str, verbose=True):
+        raise NotImplementedError
+
+    @property
+    def data_is_fixed(self):
+        return self.base_dataset.data_is_fixed and self.lambda_max is None
+    
+    def data_is_loaded(self):
+        return self.base_dataset.data_is_loaded()
+
+    @property
+    def _model_sampler(self):
+        if not hasattr(self.base_dataset, "_model_sampler"):
+            raise RuntimeError(f"The base dataset of this {self.__class__.__name__} is a {self.base_dataset.__class__.__name__} "
+                               " which does not have the _model_sampler attribute")
+        return self.base_dataset._model_sampler
+    
+    def copy_with_expanded_size(self, size_factor: int) -> "CostAwareAcquisitionDataset":
+        return type(self)(
+            self.base_dataset.copy_with_expanded_size(size_factor),
+            lambda_min=self.lambda_min,
+            lambda_max=self.lambda_max
+        )
+    
+    def copy_with_new_size(self, size: Optional[int] = None) -> "CostAwareAcquisitionDataset":
+        return type(self)(
+            self.base_dataset.copy_with_new_size(size),
+            lambda_min=self.lambda_min,
+            lambda_max=self.lambda_max
+        )
+
+    def random_split(self, lengths: Sequence[Union[int, float]]) -> List['CostAwareAcquisitionDataset']:
+        return [
+            type(self)(ds, lambda_min=self.lambda_min, lambda_max=self.lambda_max)
+            for ds in self.base_dataset.random_split(lengths)
+        ]
+
+    def __iter__(self):
+        for item in self.base_dataset:
+            vals_cand = item.vals_cand # shape n_cand x (some number)
+            n_cand = vals_cand.size(0)
+
+            if self.lambda_max is None:
+                log_lambdas = torch.full((n_cand, 1), self._log_lambda_min,
+                                         dtype=vals_cand.dtype, device=vals_cand.device)
+            else:
+                log_lambdas = torch.rand(
+                    n_cand, 1, dtype=vals_cand.dtype, device=vals_cand.device) \
+                    * self._log_lambda_diff + self._log_lambda_min
+            
+            vals_cand = torch.cat((vals_cand, log_lambdas), dim=1)
+
+            if item.has_model:
+                yield AcquisitionDatasetModelItem(
+                    item.x_hist, item.y_hist, item.x_cand, vals_cand,
+                    item.model, item.model_params,
+                    give_improvements=item.give_improvements)
+            else:
+                yield AcquisitionDatasetModelItem(
+                    item.x_hist, item.y_hist, item.x_cand, vals_cand,
+                    give_improvements=item.give_improvements)
