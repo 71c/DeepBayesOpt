@@ -1030,7 +1030,7 @@ class GittinsAcquisitionFunctionNet(AcquisitionFunctionNet):
             x_hist (torch.Tensor):
                 A `batch_shape x n_hist x d` tensor of training features.
             y_hist (torch.Tensor):
-                A `batch_shape x n_hist x output_dim` tensor of training observations.
+                A `batch_shape x n_hist x 1` tensor of training observations.
             x_cand (torch.Tensor):
                 Candidate input tensor with shape `batch_shape x n_cand x d`.
             lambda_cand (torch.Tensor, optional):

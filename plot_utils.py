@@ -7,7 +7,7 @@ from torch import Tensor
 import torch.distributions as dist
 from acquisition_dataset import AcquisitionDataset
 from acquisition_function_net import AcquisitionFunctionNet, LikelihoodFreeNetworkAcquisitionFunction
-from predict_EI_simple import calculate_EI_GP
+from exact_gp_computations import calculate_EI_GP
 
 
 

@@ -15,7 +15,7 @@ from gp_acquisition_dataset import create_train_and_test_gp_acquisition_datasets
 #     AcquisitionFunctionNetDense
 from acquisition_function_net import (
     AcquisitionFunctionBodyPointnetV1and2, AcquisitionFunctionNet, AcquisitionFunctionNetFinalMLP, AcquisitionFunctionNetFinalMLPSoftmaxExponentiate, ExpectedImprovementAcquisitionFunctionNet, GittinsAcquisitionFunctionNet, LikelihoodFreeNetworkAcquisitionFunction, TwoPartAcquisitionFunctionNetFixedHistoryOutputDim)
-from predict_EI_simple import calculate_EI_GP
+from exact_gp_computations import calculate_EI_GP
 from train_acquisition_function_net import (
     METHODS,
     load_configs,
@@ -42,14 +42,14 @@ MODELS_DIR = os.path.join(script_dir, "saved_models")
 # python run_train.py --method gittins --lamda 1e-1 --normalize_gi_loss --dimension 6 --layer_width 160 --train_acquisition_size 5000 --test_acquisition_size 1500 --no-save-model
 # python run_train.py --method gittins --lamda 1e-1 --normalize_gi_loss --dimension 6 --layer_width 160 --train_acquisition_size 20000 --test_acquisition_size 1500 --no-save-model
 
-# python run_train.py --method mse_ei --dimension 6 --layer_width 160 --train_acquisition_size 20000 --test_acquisition_size 1500 --no-save-model
+# python run_train.py --method mse_ei --dimension 6 --layer_width 160 --train_acquisition_size 10000 --test_acquisition_size 1000 --no-save-model
 
-# python run_train.py --method gittins --lamda 1e-3 --dimension 6 --layer_width 64 --train_acquisition_size 5000 --test_factor 0.3
-# python run_train.py --method gittins --lamda_min 1e-5 --lamda_max 1e-1 --dimension 6 --layer_width 64 --train_acquisition_size 5000 --test_factor 0.3
+# python run_train.py --method mse_ei --dimension 6 --layer_width 160 --train_acquisition_size 1000 --test_acquisition_size 1000 --no-save-model
 
-# python run_train.py --method mse_ei --dimension 6 --layer_width 64 --train_acquisition_size 5000 --test_factor 0.3
+# python run_train.py --method gittins --lamda 1e-3 --dimension 6 --layer_width 160 --train_acquisition_size 20000 --test_acquisition_size 1500 --no-save-model
+# python run_train.py --method gittins --lamda_min 1e-5 --lamda_max 1e-1 --dimension 6 --layer_width 160 --train_acquisition_size 20000 --test_acquisition_size 1500 --no-save-model
 
-# 
+
 # python run_train.py --method mse_ei --dimension 6 --layer_width 160 --train_acquisition_size 5000 --test_factor 0.3 --no-save-model
 
 # python run_train.py --method mse_ei --dimension 6 --layer_width 32 --train_acquisition_size 1000 --test_factor 0.1
@@ -274,7 +274,7 @@ CPROFILE = False
 TIME = True
 VERBOSE = True
 
-CACHE_DATASETS = True
+CACHE_DATASETS = False
 
 # The following two are not important.
 LAZY_TRAIN = True
@@ -300,7 +300,7 @@ else:
 
 POLICY_GRADIENT = (METHOD == 'policy_gradient')
 
-BATCH_SIZE = 640 if METHOD == 'mse_ei' else 64 # just trying to hack it...don't worry
+BATCH_SIZE = 320 if METHOD == 'mse_ei' else 128 # just trying to hack it...don't worry
 LEARNING_RATE = 3e-3 if METHOD == 'gittins' else 3e-4
 EPOCHS = 200
 FIX_TRAIN_ACQUISITION_DATASET = False
@@ -718,11 +718,15 @@ if TRAIN:
 
     if CPROFILE:
         pr.disable()
-        s = io.StringIO()
-        sortby = SortKey.CUMULATIVE
-        ps = pstats.Stats(pr, stream=s).sort_stats(sortby)
+        
+        # s = io.StringIO()
+        # ps = pstats.Stats(pr, stream=s).sort_stats(SortKey.CUMULATIVE)
+        # ps.print_stats()
+        # print(s.getvalue())
+
+        s = open('stats_output.txt', 'w')
+        ps = pstats.Stats(pr, stream=s).sort_stats(SortKey.CUMULATIVE)
         ps.print_stats()
-        print(s.getvalue())
 
     print("Done training!")
 

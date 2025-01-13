@@ -490,7 +490,7 @@ def check_xy_dims(x: Tensor, y: Union[Tensor, None],
         else:
             raise ValueError(f"{x_name} and {y_name} must have the same number of dimensions or {y_name} must have one fewer dimension than {x_name}.")
     if x.size(-2) != y.size(-2):
-        raise ValueError(f"{x_name} and {y_name} must have the same number of points in the history dimension.")
+        raise ValueError(f"{x_name} and {y_name} must have the same number of points in the dimension -2.")
     if expected_y_dim is not None:
         if y.size(-1) != expected_y_dim:
             raise ValueError(

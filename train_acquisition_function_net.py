@@ -1,7 +1,5 @@
 import copy
-from email import policy
 import math
-from multiprocessing import Value
 import os
 from typing import Any, Optional
 import torch
@@ -10,7 +8,7 @@ import torch.nn.functional as F
 from torch.distributions import Categorical
 from acquisition_function_net import AcquisitionFunctionNet, ExpectedImprovementAcquisitionFunctionNet, GittinsAcquisitionFunctionNet
 from dataset_with_models import RandomModelSampler
-from predict_EI_simple import calculate_EI_GP_padded_batch
+from exact_gp_computations import calculate_EI_GP_padded_batch, calculate_gi_gp_padded_batch
 from tqdm import tqdm
 from acquisition_dataset import AcquisitionDataset
 from botorch.exceptions import UnsupportedError
@@ -194,12 +192,12 @@ def calculate_gittins_loss(pred_gi, y, lamdas, costs=None,
     return mean_error_per_batch.sum()
 
 
-def compute_ei_max(output, improvements, cand_mask, reduction="mean"):
+def compute_maxei(output, improvements, cand_mask, reduction="mean"):
     probs_max = max_one_hot(output, cand_mask)
     return myopic_policy_gradient_ei(probs_max, improvements, reduction).item()
 
 
-def compute_myopic_acquisition_output_batch_stats(
+def compute_acquisition_output_batch_stats(
         output, cand_mask, method:str,
         improvements=None,
         y_cand=None, lambdas=None, normalize=None,
@@ -248,7 +246,7 @@ def compute_myopic_acquisition_output_batch_stats(
             ret["loss"] = gittins_loss
     
     if improvements is not None:
-        ret[name+"ei_max"] = compute_ei_max(output_detached, improvements,
+        ret[name+"maxei"] = compute_maxei(output_detached, improvements,
                                             cand_mask, reduction)
 
     return ret
@@ -292,34 +290,35 @@ def print_stats(stats:dict, dataset_name, method):
 
     things_to_print = [
         ('ei_softmax', 'NN (softmax)', True),
-        ('ei_max', 'NN (max)', True),
-        ('true_gp_ei_max', 'True GP', False),
-        ('map_gp_ei_max', 'MAP GP', True),
+        ('maxei', 'NN (max)', True),
+        ('true_gp_ei_maxei', 'True GP EI', False),
+        ('map_gp_ei_maxei', 'MAP GP EI', True),
+        ('true_gp_gi_maxei', 'True GP GI', True),
         ('ei_random_search', 'Random search', True),
         ('ei_ideal', 'Ideal', True),
         ('avg_normalized_entropy', 'Avg norm. entropy', False)]
     print_stat_summary(
-        stats, things_to_print, best_stat='true_gp_ei_max',
+        stats, things_to_print, best_stat='true_gp_ei_maxei',
         inverse_ratio=False, sqrt_ratio=False)
     
     if method == 'mse_ei':
         print('Improvement MSE:')
         things_to_print = [
             ('mse', 'NN', True),
-            ('true_gp_mse', 'True GP', False),
-            ('map_gp_mse', 'MAP GP', True),
+            ('true_gp_ei_mse', 'True GP EI', False),
+            ('map_gp_ei_mse', 'MAP GP EI', True),
             ('mse_always_predict_0', 'Always predict 0', True)]
         print_stat_summary(
-            stats, things_to_print, best_stat='true_gp_mse',
+            stats, things_to_print, best_stat='true_gp_ei_mse',
             inverse_ratio=True, sqrt_ratio=True, ratio_name='RMSE Ratio')
     elif method == 'gittins':
         print('Gittins index loss:')
         things_to_print = [
-            ('gittins_loss', 'NN', True)
-            # TODO: Could exactly calculate the GP best loss
+            ('gittins_loss', 'NN', True),
+            ('true_gp_gi_gittins_loss', 'True GP GI', False)
         ]
         print_stat_summary(
-            stats, things_to_print, best_stat=None,
+            stats, things_to_print, best_stat='true_gp_gi',
             inverse_ratio=True, sqrt_ratio=False)
 
 
@@ -583,8 +582,11 @@ def train_or_test_loop(dataloader: DataLoader,
     dataset_length = 0
     for i, batch in enumerate(it):
         x_hist, y_hist, x_cand, vals_cand, hist_mask, cand_mask = batch.tuple_no_model
-        improvements = vals_cand if batch.give_improvements else \
-            calculate_batch_improvement(y_hist, vals_cand, hist_mask, cand_mask)
+        if batch.give_improvements:
+            improvements = vals_cand
+        else:
+            improvements = calculate_batch_improvement(y_hist, vals_cand, hist_mask, cand_mask)
+            y_cand = vals_cand
 
         # print("(DEBUG) Mean Improvement:", improvements.mean())
 
@@ -640,7 +642,7 @@ def train_or_test_loop(dataloader: DataLoader,
                         exponentiate=(method == "mse_ei"),
                         softmax=(method == "policy_gradient"))
 
-                nn_batch_stats = compute_myopic_acquisition_output_batch_stats(
+                nn_batch_stats = compute_acquisition_output_batch_stats(
                     nn_output, cand_mask_nn, method,
                     improvements=improvements_nn,
                     y_cand=y_cand_nn, lambdas=lambdas, normalize=normalize_gi_loss,
@@ -699,16 +701,31 @@ def train_or_test_loop(dataloader: DataLoader,
                 # print(f"{ei_values_true_model=}, {ei_values_true_model.shape=}")
                 # print(f"{improvements=}, {improvements.shape=}")
                 # print(models[0].training, models[0])
-                
-                # exit()
-                true_gp_batch_stats = compute_myopic_acquisition_output_batch_stats(
+
+                true_gp_batch_stats = compute_acquisition_output_batch_stats(
                     ei_values_true_model, cand_mask, method='mse_ei',
                     improvements=improvements,
-                    return_loss=False, name="true_gp", reduction="sum")
+                    return_loss=False, name="true_gp_ei", reduction="sum")
+
+                if lambdas is not None:
+                    gi_values_true_model = calculate_gi_gp_padded_batch(
+                        models,
+                        x_hist, y_hist, x_cand,
+                        lambda_cand=lambdas.to(x_cand),
+                        hist_mask=hist_mask, cand_mask=cand_mask,
+                        is_log=False
+                    )
+                    true_gp_batch_stats_gi = compute_acquisition_output_batch_stats(
+                        gi_values_true_model, cand_mask, method='gittins',
+                        improvements=improvements,
+                        y_cand=y_cand, lambdas=lambdas, normalize=normalize_gi_loss,
+                        return_loss=False, name="true_gp_gi", reduction="sum")
+                    true_gp_batch_stats = {**true_gp_batch_stats, **true_gp_batch_stats_gi}
+
                 # print(compute_myopic_acquisition_output_batch_stats(
                 #     ei_values_true_model, cand_mask, method='mse_ei',
                 #     improvements=improvements, return_loss=False,
-                #     name="true_gp", reduction="mean"))
+                #     name="true_gp_ei", reduction="mean"))
                 # print()
                 # print("GP", true_gp_batch_stats)
                 
@@ -734,7 +751,7 @@ def train_or_test_loop(dataloader: DataLoader,
                 basic_stats_list.append({
                     "ei_random_search": myopic_policy_gradient_ei(
                         random_search_probs, improvements, reduction="sum").item(),
-                    "ei_ideal": compute_ei_max(improvements, improvements,
+                    "ei_ideal": compute_maxei(improvements, improvements,
                                                cand_mask, reduction="sum"),
                     "mse_always_predict_0": mse_loss(
                         torch.zeros_like(vals_cand), improvements, cand_mask,
@@ -746,10 +763,10 @@ def train_or_test_loop(dataloader: DataLoader,
             # Calculate the MAP GP EI values
             ei_values_map = calculate_EI_GP_padded_batch(
                 x_hist, y_hist, x_cand, hist_mask, cand_mask, models, fit_params=True)
-            map_gp_batch_stats = compute_myopic_acquisition_output_batch_stats(
+            map_gp_batch_stats = compute_acquisition_output_batch_stats(
                     ei_values_map, cand_mask, method='mse_ei',
                     improvements=improvements, return_loss=False,
-                    name="map_gp", reduction="sum")
+                    name="map_gp_ei", reduction="sum")
             map_gp_stats_list.append(map_gp_batch_stats)
     assert dataset_length == len(dataset)
 
@@ -1020,15 +1037,15 @@ def train_acquisition_function_net(
         
         training_history_data['stats_epochs'].append(epoch_stats)
 
-        # Determine the ei_max statistic. Decreasing order of preference.
+        # Determine the maxei statistic. Decreasing order of preference.
         # We would usually only do these if test_during_training=True,
         # but why not cover all cases.
         if test_during_training:
-            cur_score = test_stats["ei_max"]
+            cur_score = test_stats["maxei"]
         elif get_train_stats_after_training:
-            cur_score = train_stats["after_training"]["ei_max"]
+            cur_score = train_stats["after_training"]["maxei"]
         else:
-            cur_score = train_nn_stats_while_training["ei_max"]
+            cur_score = train_nn_stats_while_training["maxei"]
         
         # If the best score increased, then update that and maybe save
         if best_score is None or cur_score > best_score:
@@ -1256,3 +1273,4 @@ def load_configs(model_and_info_path: str):
     
     return gp_realization_config, dataset_size_config, n_points_config, \
         dataset_transform_config, model_sampler
+ 
