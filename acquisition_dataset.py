@@ -146,9 +146,9 @@ def _collate_train_acquisition_function_samples(samples_list, has_models, cached
         x_hists, y_hists, x_cands, vals_cands = unzipped_lists
 
         # x_hist shape: (n_hist, dimension)
-        # y_hist shape: (n_hist, 1)
+        # y_hist shape: (n_hist, n_hist_out)
         # x_cand shape: (n_cand, dimension)
-        # vals_cand shape: (n_cand, 1)
+        # vals_cand shape: (n_cand, k+z), 1 <= k <= n_hist_out, z >= 0
 
         x_hist = max_pad_tensors_batch(x_hists, add_mask=False)
         y_hist, hist_mask = max_pad_tensors_batch(y_hists, add_mask=True)
@@ -160,6 +160,21 @@ def _collate_train_acquisition_function_samples(samples_list, has_models, cached
     return AcquisitionDatasetBatch(
         x_hist, y_hist, x_cand, vals_cand, hist_mask, cand_mask,
         model=models_list, give_improvements=give_improvements)
+
+
+def _make_mask(mask_shape, mask_index, n_ones, device):
+    ones_shape = list(mask_shape)
+    ones_shape[mask_index] = n_ones
+
+    n_zeros = mask_shape[mask_index] - n_ones
+
+    zeros_shape = list(mask_shape)
+    zeros_shape[mask_index] = n_zeros
+
+    mask_true = torch.ones(*ones_shape, dtype=torch.bool, device=device)
+    mask_false = torch.zeros(*zeros_shape, dtype=torch.bool, device=device)
+
+    return torch.cat((mask_true, mask_false), dim=mask_index)
 
 
 # get_dataloader is a method of AcquisitionDataset
@@ -190,9 +205,9 @@ def _get_dataloader(self, batch_size=32, shuffle=None,
         are not associated with the dataset.
         
         x_hist has shape (batch_size, n_hist, dimension),
-        y_hist and hist_mask have shape (batch_size, n_hist),
+        y_hist and hist_mask have shape (batch_size, n_hist, n_hist_out),
         x_cand has shape (batch_size, n_cand, dimension),
-        vals_cand and cand_mask have shape (batch_size, n_cand),
+        vals_cand and cand_mask have shape (batch_size, n_cand, k+z),
         and models is a batch_size length tuple of GP models associated
         with the dataset.
         Everything is padded with zeros along with the corresponding masks.
@@ -219,9 +234,16 @@ def _get_dataloader(self, batch_size=32, shuffle=None,
             for item in tqdm(self, desc="Padding"):
                 x_hist, y_hist, x_cand, vals_cand = item.tuple_no_model
                 x_hist_padded = pad_tensor(x_hist, max_hist, dim=0, add_mask=False)
-                y_hist_padded, hist_mask = pad_tensor(y_hist, max_hist, dim=0, add_mask=True)
                 x_cand_padded = pad_tensor(x_cand, max_cand, dim=0, add_mask=False)
-                vals_cand_padded, cand_mask = pad_tensor(vals_cand, max_cand, dim=0, add_mask=True)
+
+                # y_hist is a tensor of shape (n_hist, n_hist_out)
+                # vals_cand is a tensor of shape (n_cand, something)
+                
+                y_hist_padded = pad_tensor(y_hist, max_hist, dim=0, add_mask=False)
+                vals_cand_padded = pad_tensor(vals_cand, max_cand, dim=0, add_mask=False)
+                hist_mask = _make_mask((max_hist, 1), 0, y_hist.size(0), y_hist.device)
+                cand_mask = _make_mask((max_cand, 1), 0, vals_cand.size(0), vals_cand.device)
+                
                 item._padded_tensors = (x_hist_padded, y_hist_padded, x_cand_padded,
                                         vals_cand_padded, hist_mask, cand_mask)
             tocl()
@@ -649,11 +671,13 @@ class CostAwareAcquisitionDataset(
             raise ValueError(f"lambda_min must be a positive float; was {lambda_min}")
         self._log_lambda_min = math.log(lambda_min)
         
-        if lambda_max is not None:
+        if lambda_max == lambda_min:
+            lambda_max = None
+        elif lambda_max is not None:
             if not (isinstance(lambda_max, float) and lambda_max > 0):
                 raise ValueError(f"lambda_max must be a positive float; was {lambda_max}")
-            if not (lambda_min < lambda_max):
-                raise ValueError("lambda_min must be less than lambda_max")
+            if not (lambda_min <= lambda_max):
+                raise ValueError("lambda_min must be <= lambda_max")
             self._log_lambda_diff = math.log(lambda_max) - self._log_lambda_min
     
         self.lambda_min = lambda_min

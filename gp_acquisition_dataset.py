@@ -2,7 +2,7 @@ import math
 import os
 from typing import Any, List, Optional, Union
 from function_samples_dataset import GaussianProcessRandomDataset, ListMapFunctionSamplesDataset
-from acquisition_dataset import AcquisitionDataset, FunctionSamplesAcquisitionDataset
+from acquisition_dataset import AcquisitionDataset, CostAwareAcquisitionDataset, FunctionSamplesAcquisitionDataset
 from train_acquisition_function_net import train_or_test_loop
 from utils import (dict_to_fname_str, dict_to_hash, get_uniform_randint_generator,
                    get_loguniform_randint_generator,
@@ -59,6 +59,10 @@ def create_gp_acquisition_dataset(base_dataset_size,
 
         outcome_transform: Optional[OutcomeTransform]=None,
         standardize_outcomes: bool=False,
+
+        # Only used for Gittins index training
+        lambda_min:Optional[float]=None,
+        lambda_max:Optional[float]=None,
         
         # n_datapoints_kwargs
         loguniform=True, pre_offset=None,
@@ -74,7 +78,7 @@ def create_gp_acquisition_dataset(base_dataset_size,
         y_cand_indices="all",
 
         expansion_factor=1,
-        give_improvements:bool=True,
+        give_improvements:bool=False,
         
         fix_gp_samples=False, fix_acquisition_samples=False,
         device="cpu", lazy=True, cache=True,
@@ -224,6 +228,12 @@ def create_gp_acquisition_dataset(base_dataset_size,
             dataset_size_factor=expansion_factor,
             y_cand_indices=y_cand_indices,
             **extra_kwargs)
+        if not (lambda_min is None and lambda_max is None):
+            if lambda_max is not None and lambda_min is None:
+                raise ValueError(
+                    "lambda_min must be specified if lambda_max is specified.")
+            aq_dataset = CostAwareAcquisitionDataset(
+                aq_dataset, lambda_min=lambda_min, lambda_max=lambda_max)
     
     if fix_acquisition_samples:
         if not aq_dataset.data_is_fixed:
@@ -268,6 +278,10 @@ def create_train_and_test_gp_acquisition_datasets(
         model_probabilities:Optional[Any]=None,
         outcome_transform: Optional[OutcomeTransform]=None,
         standardize_outcomes:bool=False,
+
+        # Only used for Gittins index training
+        lambda_min:Optional[float]=None,
+        lambda_max:Optional[float]=None,
 
         expansion_factor:int=1,
         
@@ -315,6 +329,7 @@ def create_train_and_test_gp_acquisition_datasets(
         model_probabilities=model_probabilities,
         outcome_transform=outcome_transform,
         standardize_outcomes=standardize_outcomes,
+        lambda_min=lambda_min, lambda_max=lambda_max,
         expansion_factor=expansion_factor, loguniform=loguniform,
         pre_offset=pre_offset if loguniform else None, batch_size=batch_size,
         device=gp_gen_device, cache=cache_datasets,

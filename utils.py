@@ -1094,7 +1094,8 @@ def max_pad_tensors_batch(tensors, add_mask=False):
             mask = None
     else:
         if add_mask:
-            mask = torch.zeros(len(tensors), max_length, *tensors[0].shape[1:],
+            ones_at_end = [1] * (tensors[0].dim() - 1)
+            mask = torch.zeros(len(tensors), max_length, *ones_at_end,
                                dtype=torch.bool, device=tensors[0].device)
             for i, x in enumerate(tensors):
                 mask[i, :x.shape[0], ...] = True

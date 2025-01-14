@@ -379,11 +379,13 @@ if METHOD == 'gittins':
         if not lamda_min_given:
             # lamda_max is given but lamda_min is not given
             raise ValueError(
-                "If method=gittins and lamda_max is specified, then lamda_min must be specified")
+                "If method=gittins and lamda_max is specified, then lamda_min must be "
+                "specified (or give lamda instead)")
         if not lamda_max_given:
             # lamda_min is given but lamda_max is not given
             raise ValueError(
-                "If method=gittins and lamda_min is specified, then lamda_max must be specified")
+                "If method=gittins and lamda_min is specified, then lamda_max must be "
+                "specified (or give lamda instead)")
         VARIABLE_LAMBDA = True
 else: # METHOD = 'mse_ei' or 'policy_gradient'
     if args.initial_tau is None:
@@ -541,7 +543,7 @@ other_kwargs = dict(
         **test_dataset_config,
         
         get_train_true_gp_stats=GET_TRAIN_TRUE_GP_STATS,
-        get_test_true_gp_stats=False, #GET_TEST_TRUE_GP_STATS,
+        get_test_true_gp_stats=GET_TEST_TRUE_GP_STATS,
         cache_datasets=CACHE_DATASETS,
         lazy_train=LAZY_TRAIN,
         lazy_test=LAZY_TEST,
@@ -552,7 +554,10 @@ other_kwargs = dict(
         
         # For this particular, code, doing this works for both EI and Gittins index
         # training in all cases -- all good
-        y_cand_indices=[0]
+        y_cand_indices=[0],
+
+        lambda_min=args.lamda_min,
+        lambda_max=args.lamda_max
 )
 
 train_aq_dataset, test_aq_dataset, small_test_aq_dataset = create_train_and_test_gp_acquisition_datasets(
@@ -597,7 +602,7 @@ else:
         encoded_history_dim=args.layer_width,
 
         input_xcand_to_local_nn=True,
-        input_xcand_to_final_mlp=False,
+        input_xcand_to_final_mlp=True,
         
         activation_at_end_pointnet=True,
         layer_norm_pointnet=False,
@@ -708,7 +713,7 @@ if TRAIN:
         model, train_aq_dataset, optimizer, METHOD, EPOCHS, BATCH_SIZE,
         DEVICE, verbose=VERBOSE, n_train_printouts_per_epoch=10,
         alpha_increment=ALPHA_INCREMENT,
-        lambda_min=args.lamda_min, lambda_max=args.lamda_max,
+        # lambda_min=args.lamda_min, lambda_max=args.lamda_max,
         normalize_gi_loss=args.normalize_gi_loss,
         test_dataset=test_aq_dataset, small_test_dataset=small_test_aq_dataset,
         get_train_stats_while_training=True,
