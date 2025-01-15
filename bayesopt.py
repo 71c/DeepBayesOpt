@@ -13,10 +13,11 @@ from botorch.models.model import Model
 from botorch.models.gp_regression import SingleTaskGP
 from botorch.fit import fit_gpytorch_mll
 from botorch.sampling.pathwise import draw_kernel_feature_paths
+from botorch.models.transforms.outcome import Standardize
 from gpytorch.mlls import ExactMarginalLogLikelihood
 from dataset_with_models import RandomModelSampler
 from random_gp_function import RandomGPFunction
-from utils import convert_to_json_serializable, dict_to_hash, json_serializable_to_numpy, load_json, remove_priors, sanitize_file_name, save_json
+from utils import combine_nested_dicts, concatenate_outcome_transforms, convert_to_json_serializable, dict_to_hash, invert_outcome_transform, json_serializable_to_numpy, load_json, remove_priors, sanitize_file_name, save_json
 from json.decoder import JSONDecodeError
 from acquisition_function_net import AcquisitionFunctionNet, AcquisitionFunctionNetModel, LikelihoodFreeNetworkAcquisitionFunction
 
@@ -786,6 +787,31 @@ def get_rff_function_and_name(gp):
     return (lambda x: f(x).detach()), function_hash
 
 
+def transform_functions_and_names(functions,
+                                  function_names, function_plot_names,
+                                  outcome_transform):
+    function_names_tr = [
+        sanitize_file_name(f"{name}_{outcome_transform}")
+        for name in function_names]
+    function_plot_names_tr = [
+        f"{name} ({outcome_transform.__class__.__name__} transform)"
+        for name in function_plot_names]
+
+    # Need to make a new function for this, otherwise it doesn't work right
+    def transform_gp_realization(gp_realization):
+        def transformed_gp(x):
+            # remember it also takes optional argument Yvar and returns (Y, Yvar)
+            return outcome_transform(gp_realization(x))[0]
+        return transformed_gp
+
+    functions_tr = [
+        transform_gp_realization(gp_realization)
+        for gp_realization in functions
+    ]
+    
+    return functions_tr, function_names_tr, function_plot_names_tr
+
+
 def get_random_gp_functions(gp_sampler:RandomModelSampler,
                             seed:int,
                             n_functions:int,
@@ -820,7 +846,85 @@ def get_random_gp_functions(gp_sampler:RandomModelSampler,
             gp_realization, realization_hash = get_rff_function_and_name(gp)
             gp_realizations.append(gp_realization)
             function_names.append(f'gp_{realization_hash}')
+    
     return random_gps, gp_realizations, function_names, function_plot_names
 
 
+def generate_gp_acquisition_options(
+        acquisition_functions:dict[str, AcquisitionFunction],
+        gps, outcome_transform=None,
+        fit_map=False, fit_mle=False):
+    gp_params_options = {
+        'True GP': {'fit_params': False}
+    }
+    if fit_map:
+        gp_params_options['MAP'] = {'fit_params': True, 'mle': False}
+    if fit_mle:
+        gp_params_options['MLE'] = {'fit_params': True, 'mle': True}
 
+    kwargs_always_gp = {
+        'optimizer_class': GPAcquisitionOptimizer,
+    }
+
+    if outcome_transform is None:
+        kwargs_always_gp['optimizer_kwargs_per_function'] = [
+            {'model': gp} for gp in gps]
+        gp_options_to_combine = gp_params_options
+    else:
+        # Transform the random GPs
+        random_gps_tr = []
+        for gp in gps:
+            new_gp = copy.deepcopy(gp)
+            outcome_transform_of_gp = invert_outcome_transform(outcome_transform)
+            if hasattr(new_gp, 'outcome_transform'):
+                new_gp.outcome_transform = concatenate_outcome_transforms(
+                    outcome_transform_of_gp, new_gp.outcome_transform)
+            else:
+                new_gp.outcome_transform = outcome_transform_of_gp
+            random_gps_tr.append(new_gp)
+        
+        transform_opt = {
+            'optimizer_kwargs_per_function': [
+                {'model': gp} for gp in random_gps_tr]
+        }
+        nontransform_opt = {
+            'optimizer_kwargs_per_function': [
+                {'model': gp} for gp in gps]
+        }
+        
+        nontransformed_gps_with_standardize = []
+        for gp in gps:
+            new_gp = copy.deepcopy(gp)
+            new_gp.outcome_transform = Standardize(m=1)
+            nontransformed_gps_with_standardize.append(new_gp)
+        nontransform_opt_outcome_standardize = {
+            'optimizer_kwargs_per_function': [
+                {'model': gp} for gp in nontransformed_gps_with_standardize]
+        }
+
+        gp_options_true = {
+            'True GP params (with transform)': {**gp_params_options['True GP'], **transform_opt}
+        }
+        gp_transform_options = {
+            'true GP model with transform': transform_opt,
+            'untransformed GP model': nontransform_opt,
+            'untransformed GP model with outcome standardize': nontransform_opt_outcome_standardize
+        }
+        gp_options_untrue = combine_nested_dicts(
+            {k: v for k, v in gp_params_options.items() if k != 'True GP'},
+            gp_transform_options)
+
+        gp_options_to_combine = {**gp_options_true, **gp_options_untrue}
+
+    acquisition_function_options = {
+        name: {'acquisition_function_class': acq_func_class}
+        for name, acq_func_class in acquisition_functions.items()}
+
+    options_to_combine = [acquisition_function_options, gp_options_to_combine]
+
+    return {
+        key: {
+            **kwargs_always_gp,
+            **value
+        } for key, value in combine_nested_dicts(*options_to_combine).items()
+    }

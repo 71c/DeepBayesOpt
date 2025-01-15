@@ -323,7 +323,8 @@ FunctionSamplesDataset._apply_outcome_transform = _apply_outcome_transform
 def _transform_outcomes(self, outcome_transform: OutcomeTransform,
                         inverse_outcome_transform: Optional[OutcomeTransform]=None,
                         retain_models=True):
-    """Transform the outcomes in the dataset."""
+    """Transform the outcomes in the dataset.
+    Note: The models in the model_sampler are *not* transformed."""
     item_transform = partial(FunctionSamplesDataset._apply_outcome_transform,
                    outcome_transform=outcome_transform,
                    inverse_outcome_transform=inverse_outcome_transform,
