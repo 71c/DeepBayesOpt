@@ -5,6 +5,7 @@ import os
 import re
 import json
 import inspect
+import copy
 import math
 from typing import Any, TypeVar, Iterable, Sequence, List, Tuple, Dict, Optional, Union
 import warnings
@@ -1342,7 +1343,13 @@ class SaveableObject:
         original_init = cls.__init__
 
         def new_init(self, *args, **kwargs):
-            # Call the original __init__ method with all keyword arguments
+            if self.__class__ is cls:
+                # Copy the original args and kwargs, just in case original_init modifies
+                # them
+                original_args = copy.deepcopy(args)
+                original_kwargs = copy.deepcopy(kwargs)
+
+            # Call the original __init__ method
             original_init(self, *args, **kwargs)
 
             # We only do the introspection if we are constructing THIS exact class
@@ -1355,7 +1362,7 @@ class SaveableObject:
                 # we already ensured that all required arguments are passed
                 # because we already called the original __init__ method.
                 # Need to remember to put 'self' in the arguments.
-                bound_args = sig.bind(self, *args, **kwargs)
+                bound_args = sig.bind(self, *original_args, **original_kwargs)
                 bound_args.apply_defaults()
                 all_kwargs = bound_args.arguments
 

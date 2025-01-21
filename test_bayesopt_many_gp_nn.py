@@ -66,19 +66,30 @@ MODELS_DIR = os.path.join(script_dir, "saved_models")
 # ]
 # plots_title = "MSE with 50 candidates, layer-width 256, 6D, fixed params, no standardizations or transforms, 14 initial points, 40 iterations, 5 trial/func"
 
+
+# ## Standardize history in NN or not comparison
+# model_and_info_names = [
+#     # MSE, trained on 14-54 history and 50 candidate points, width 256, 6D, fixed params,
+#     # no dataset or NN-history outcome transforms, training size 300K; ei_max: 0.08693664313535554
+#     "model_20240720_041525_7a99c1685961e1d895428262ca983b9883f1cb5ffe47dc944b34083d0183d389",
+#     # MSE, trained on 14-54 history and 50 candidate points, width 256, 6D, fixed params,
+#     # no dataset transforms, standardized history outcomes to NN, training size 300K; ei_max: 0.08552981475318698
+#     "model_20240720_174324_a0827f9d932527b5b33f569b3f93d8eb07d42996593d533a22de6193ce386174",
+# ]
+# model_and_info_plot_names = [
+#     "NN, history outcomes not standardized", "NN, history outcomes standardized"
+# ]
+# plots_title = "Compare history standardization: MSE with 50 candidates, layer-width 256, 6D, fixed params, no transforms, 300K training size, 14 initial points, 40 iterations, 5 trial/func"
+
+
 ## Standardize history in NN or not comparison
 model_and_info_names = [
-    # MSE, trained on 14-54 history and 50 candidate points, width 256, 6D, fixed params,
-    # no dataset or NN-history outcome transforms, training size 300K; ei_max: 0.08693664313535554
-    "model_20240720_041525_7a99c1685961e1d895428262ca983b9883f1cb5ffe47dc944b34083d0183d389",
-    # MSE, trained on 14-54 history and 50 candidate points, width 256, 6D, fixed params,
-    # no dataset transforms, standardized history outcomes to NN, training size 300K; ei_max: 0.08552981475318698
-    "model_20240720_174324_a0827f9d932527b5b33f569b3f93d8eb07d42996593d533a22de6193ce386174",
+    "model_20250120_203912_7bb23bed526d86cb75b7fe1c5226518b02c3d1c11ef17362848f6a4cb6c0f72a"
 ]
 model_and_info_plot_names = [
-    "NN, history outcomes not standardized", "NN, history outcomes standardized"
+    "NN"
 ]
-plots_title = "Compare history standardization: MSE with 50 candidates, layer-width 256, 6D, fixed params, no transforms, 300K training size, 14 initial points, 40 iterations, 5 trial/func"
+plots_title = "Just a test"
 
 
 model_and_info_paths = [

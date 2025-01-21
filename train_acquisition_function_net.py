@@ -13,7 +13,7 @@ from tqdm import tqdm
 from acquisition_dataset import AcquisitionDataset
 from botorch.exceptions import UnsupportedError
 from tictoc import tic, toc
-from utils import convert_to_json_serializable, dict_to_hash, int_linspace, calculate_batch_improvement, load_json, probability_y_greater_than_gi_normal, save_json
+from utils import SaveableObject, convert_to_json_serializable, dict_to_hash, int_linspace, calculate_batch_improvement, load_json, probability_y_greater_than_gi_normal, save_json
 from datetime import datetime
 
 
@@ -180,7 +180,7 @@ def calculate_gittins_loss(pred_gi, y, lamdas, costs=None,
         normalize_c = c if known_costs else lamdas
         normalization_consts = probability_y_greater_than_gi_normal(
             cbar=normalize_c, sigma=1.0)
-        losses = losses / normalization_consts
+        losses = losses / normalization_consts.to(losses)
 
     if mask is None:
         mean_error_per_batch = losses.mean(dim=1)
@@ -1229,7 +1229,7 @@ def load_model(model_and_info_path: str):
     print(f"Loading model from {model_path}")
     
     # Load model (without weights)
-    model = AcquisitionFunctionNet.load_init(model_path)
+    model = SaveableObject.load_init(model_path)
     
     # Load best weights
     best_model_fname_json_path = os.path.join(model_path, "best_model_fname.json")
