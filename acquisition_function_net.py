@@ -442,6 +442,13 @@ class TwoPartAcquisitionFunctionNet(ParameterizedAcquisitionFunctionNet,
             x_hist, y_hist, x_cand, acqf_params=acqf_params,
             hist_mask=hist_mask, cand_mask=cand_mask)
         
+        x_hist = preprocessed['x_hist']
+        y_hist = preprocessed['y_hist']
+        x_cand = preprocessed['x_cand']
+        hist_mask = preprocessed['hist_mask']
+        cand_mask = preprocessed['cand_mask']
+        acqf_params = preprocessed['acqf_params']
+        
         if self.standardize_outcomes:
             y_hist, stdvs = standardize_y_hist(y_hist, hist_mask)
             preprocessed['y_hist'] = y_hist
