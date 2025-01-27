@@ -92,8 +92,18 @@ parser.add_argument(
 # Which AF training loss function to use
 parser.add_argument(
     '--method',
-    required=True,
     choices=METHODS
+)
+parser.add_argument(
+    '--learning_rate',
+    type=float,
+    help='Learning rate for training the model'
+)
+parser.add_argument(
+    '--batch_size',
+    type=int,
+    required=True,
+    help='Batch size for training the model'
 )
 
 # Layer width
@@ -302,20 +312,30 @@ GP_GEN_DEVICE = "cpu"
 
 
 ############################# Settings for training ############################
-# Set POLICY_GRADIENT based on the loaded model if loadin a model
+# Set METHOD based on the loaded model if loadin a model
 if LOAD_SAVED_MODEL:
     METHOD = load_json(
         os.path.join(MODEL_AND_INFO_PATH, "training_config.json")
     )['method']
 else:
+    if args.method is None:
+        raise ValueError("method should be specified if not loading a saved model")
     METHOD = args.method
 
 POLICY_GRADIENT = (METHOD == 'policy_gradient')
 
-BATCH_SIZE = 320 if METHOD == 'mse_ei' else 16 # just trying to hack it...don't worry
-LEARNING_RATE = 3e-3 if METHOD == 'gittins' else 3e-4
-EPOCHS = 200
 FIX_TRAIN_ACQUISITION_DATASET = False
+
+if TRAIN:
+    if args.learning_rate is None:
+        raise ValueError("learning_rate should be specified if training the model")
+# LEARNING_RATE = 3e-3 if METHOD == 'gittins' else 3e-4
+LEARNING_RATE = args.learning_rate
+
+# BATCH_SIZE = 320 if METHOD == 'mse_ei' else 16
+BATCH_SIZE = args.batch_size
+
+EPOCHS = 200
 
 # Only used if POLICY_GRADIENT is True
 INCLUDE_ALPHA = True

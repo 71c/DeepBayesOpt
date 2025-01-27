@@ -1,0 +1,55 @@
+name: train_acqf
+program: train_acqf.py
+method: grid
+parameters:
+  function_samples_dataset:
+    parameters:
+      dim:
+        values: [8, 16, 32]
+      kernel:
+        values: ["Matern52"]
+      lengthscale:
+        values: [0.1]
+      outcome_transform:
+        values: ['none', 'square']
+      standardize_outcomes:
+        value: false
+      train_samples_size:
+        values: [1000, 10000, 100000]
+      test_samples_size:
+        value: 5000
+  acquisition_dataset:
+    parameters:
+      expansion_factor:
+        value: 2
+      n_candidates:
+        values: [1, 5, 25]
+      min_history:
+        value: 1
+      max_history:
+        value: 400
+  architecture:
+    parameters:
+      layer_width:
+        values: [100, 250, 500]
+      standardize_nn_history_outcomes:
+        value: false
+  training:
+    parameters:
+      method:
+        values:
+        - value: gittins
+          parameters:
+            - name: normalize_gi_loss
+              values: [false, true]
+            - - lamda_min:
+                  value: 1e-4
+                lamda_max:
+                  value: 1e0
+              - lamda:
+                  values: [1.e-3, 1.e-2, 1.e-1]
+        - value: mse_ei
+      learning_rate:
+        values: [3.e-3, 3.e-4]
+      batch_size:
+        values: [16, 128]
