@@ -1,6 +1,3 @@
-name: train_acqf
-program: train_acqf.py
-method: grid
 parameters:
   function_samples_dataset:
     parameters:
@@ -32,6 +29,7 @@ parameters:
     parameters:
       layer_width:
         values: [100, 250, 500]
+        value: 250
       standardize_nn_history_outcomes:
         value: false
   training:
@@ -40,16 +38,18 @@ parameters:
         values:
         - value: gittins
           parameters:
-            - name: normalize_gi_loss
-              values: [false, true]
-            - - lamda_min:
-                  value: 1e-4
+            normalize_gi_loss:
+              values: [true, false]
+            lamda_config:
+              parameters:
+              - lamda_min:
+                  value: 1.e-4
                 lamda_max:
-                  value: 1e0
+                  value: 1.e+0
               - lamda:
                   values: [1.e-3, 1.e-2, 1.e-1]
         - value: mse_ei
       learning_rate:
         values: [3.e-3, 3.e-4]
       batch_size:
-        values: [16, 128]
+        values: [32, 128]

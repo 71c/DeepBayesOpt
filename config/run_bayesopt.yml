@@ -1,0 +1,28 @@
+method: grid
+parameters:
+  objectives:
+    parameters:
+      dim:
+        values: [8, 16, 32]
+      kernel:
+        values: ["Matern52"]
+      lengthscale:
+        values: [0.1]
+      outcome_transform:
+        values: ['none', 'square']
+      n_functions:
+        value: 16
+  n_iter:
+    value: 200
+  seed:
+    value: 12
+  n_trials_per_function:
+    value: 1
+  n_initial_samples:
+    value: 1
+  gp_af:
+    parameters:
+      af:
+        values: ['LogEI']
+      fit:
+        values: ['none', 'map', 'mle']
