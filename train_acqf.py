@@ -91,7 +91,8 @@ def refine_config(params_value: Union[dict, list[dict]],
                         if 'parameters' in value:
                             values[i]['parameters'] = refine_config(
                                 value['parameters'], experiment_config, this_params_names)
-
+                        else:
+                            values[i] = value['value']
                 tmp[param_name] = {'values': values} if len(values) > 1 else {'value': values[0]}
         return tmp
     else:
@@ -148,6 +149,57 @@ def generate_options(params_value: Union[dict, list[dict]], prefix=''):
         raise ValueError(
             f'params_value must be a dictionary or list, got {(params_value)}.')
 
+
+def get_command_line_options(options: dict):
+    options = {k.split('.')[-1]: v for k, v in options.items()}
+    expansion_factor = options['expansion_factor']
+    cmd_opts_sample_dataset = {
+        k: options.get(k)
+        for k in ['dimension', 'kernel', 'lengthscale',
+                  'outcome_transform', 'sigma', 'randomize_params']
+    }
+    cmd_opts_sample_dataset['standardize_dataset_outcomes'] = options['standardize_outcomes']
+    cmd_opts_sample_dataset['train_acquisition_size'] = options['train_samples_size'] * expansion_factor
+    cmd_opts_sample_dataset['test_acquisition_size'] = options['test_samples_size'] * expansion_factor
+
+    cmd_opts_acquisition_dataset = {
+        'expansion_factor': expansion_factor,
+        'train_n_candidates': options['n_candidates'],
+        'test_n_candidates': options['n_candidates'],
+        'min_history': options['min_history'],
+        'max_history': options['max_history']
+    }
+
+    cmd_opts_architecture = {
+        'layer_width': options['layer_width'],
+        'standardize_nn_history_outcomes': options['standardize_nn_history_outcomes'],
+    }
+
+    cmd_opts_training = {
+        k: options.get(k)
+        for k in [
+            'learning_rate', 'batch_size', 'method',
+            # method=gittins
+            'normalize_gi_loss', 'lamda_min', 'lamda_max', 'lamda',
+            # method=mse_ei
+            'learn_tau', 'initial_tau', 'softplus_batchnorm',
+            'softplus_batchnorm_momentum', 'positive_linear_at_end',
+            'gp_ei_computation'
+        ]
+    }
+
+    cmd_opts_dataset = {
+        **cmd_opts_sample_dataset, **cmd_opts_acquisition_dataset,
+        'batch_size': options.get('batch_size')
+    }
+
+    cmd_opts = {
+        **cmd_opts_sample_dataset, **cmd_opts_acquisition_dataset,
+        **cmd_opts_architecture, **cmd_opts_training
+    }
+
+    return cmd_opts_dataset, cmd_opts
+    
 
 def main():
     parser = argparse.ArgumentParser()

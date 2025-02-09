@@ -17,14 +17,21 @@ parameters:
         value: false
   function_samples_dataset:
     parameters:
-      dim:
+      dimension:
         value: 8
       kernel:
         value: Matern52
       lengthscale:
         value: 0.1
       outcome_transform:
-        value: none
+        values:
+        - null
+        - parameters:
+            sigma:
+              value: 0.8
+          value: exp
+      randomize_params:
+        value: false
       standardize_outcomes:
         value: false
       test_samples_size:

@@ -22,6 +22,8 @@ from torch import Tensor
 import gpytorch
 from gpytorch.likelihoods import GaussianLikelihood
 from gpytorch.constraints.constraints import GreaterThan
+from gpytorch.kernels import MaternKernel, ScaleKernel, RBFKernel
+from gpytorch.priors.torch_priors import GammaPrior
 from botorch.exceptions.errors import (
     BotorchTensorDimensionError,
     InputDataError,
@@ -105,6 +107,64 @@ class Unstandardize(InverseOutcomeTransform):
         new_tf.means = -new_stdvs * standardizer.means
         new_tf._is_trained = standardizer._is_trained
         return new_tf.untransform_posterior(posterior)
+
+
+class Affine(OutcomeTransform):
+    def __init__(
+        self,
+        bias: Tensor,
+        weight: Tensor,
+        outputs: Optional[list[int]] = None,
+    ) -> None:
+        if bias.dim() == 0:
+            bias = bias.unsqueeze(-1)
+        if weight.dim() == 0:
+            weight = weight.unsqueeze(-1)
+        m = bias.shape[-1]
+        if m != weight.shape[-1]:
+            raise ValueError(
+                "Both bias and weight should have the same output dimension m.")
+        batch_shape = bias.shape[:-1]
+        if batch_shape != weight.shape[:-1]:
+            raise ValueError(
+                "Both bias and weight should have the same batch shape.")
+        
+        # shape: batch_shape x 1 x m
+        means = bias.unsqueeze(-2)
+        stdvs = weight.unsqueeze(-2)
+
+        standardize = Standardize(
+            m=m, outputs=outputs, batch_shape=batch_shape)
+        standardize.means = means
+        standardize.stdvs = stdvs
+        standardize._stdvs_sq = stdvs.pow(2)
+        # put in eval mode -- no updating the means & stdvs
+        standardize.eval()
+        standardize._is_trained = torch.tensor(True)
+
+        self._transform = Unstandardize(standardize)
+    
+    def forward(
+        self, Y: Tensor, Yvar: Optional[Tensor] = None
+    ) -> Tuple[Tensor, Optional[Tensor]]:
+        return self._transform.forward(Y, Yvar)
+
+    def subset_output(self, idcs: List[int]) -> OutcomeTransform:
+        ret = object.__new__(type(self))
+        ret._transform = self._transform.subset_output(idcs)
+        return ret
+
+    def untransform(
+        self, Y: Tensor, Yvar: Optional[Tensor] = None
+    ) -> Tuple[Tensor, Optional[Tensor]]:
+        return self._transform.untransform(Y, Yvar)
+    
+    @property
+    def _is_linear(self) -> bool:
+        return True
+
+    def untransform_posterior(self, posterior: Posterior) -> Posterior:
+        return self._transform.untransform_posterior(posterior)
 
 
 class Exp(InverseOutcomeTransform):
@@ -213,6 +273,28 @@ class ChainedOutcomeTransformList(OutcomeTransform, ModuleList):
         return posterior
 
 
+def get_standardized_exp_transform(sigma: float, device=None):
+    """Returns an appropriately scaled exp transform that works as follows:
+    Given an input y ~ N(0,1),
+    -- First calculate z = exp(sigma * y)
+    -- Next, shift and scale z as z' = a + b z
+    where a and b are values, dependent on sigma,
+    such that the result has E(z') = 0 and Var(z') = 1."""
+    transform_1 = Affine(
+        bias=torch.tensor(0.0, device=device),
+        weight=torch.tensor(sigma, device=device)
+    )
+    tmp1 = 1 / math.sqrt(math.expm1(sigma**2))
+    tmp2 = math.exp(-0.5 * sigma**2) * tmp1
+    transform_3 = Affine(
+        bias=torch.tensor(-tmp1, device=device),
+        weight=torch.tensor(tmp2, device=device)
+    )
+    return ChainedOutcomeTransformList(
+        [transform_1, Exp(), transform_3]
+    )
+
+
 def _get_base_transforms(transform: OutcomeTransform):
     if isinstance(transform, ChainedOutcomeTransformList):
         ret = []
@@ -250,6 +332,74 @@ def invert_outcome_transform(transform: OutcomeTransform):
     
     # fallback
     return InverseOutcomeTransform(transform)
+
+
+def get_kernel(
+        dimension: int,
+        kernel: str,
+        add_priors: bool,
+        lengthscale: float,
+        device=None):
+    r"""Constructs a kernel for Gaussian Processes with optional priors.
+
+    Args:
+        dimension (int):
+            The number of dimensions for the kernel.
+        kernel (str):
+            The type of kernel to use. Options are 'RBF', 'Matern32', or 'Matern52'.
+        add_priors (bool):
+            If True, priors will be added to the kernel parameters.
+        lengthscale (float):
+            The lengthscale parameter for the kernel.
+        device (optional):
+            The device on which to place the tensors (e.g., 'cpu' or 'cuda').
+
+    Returns:
+        kernel: A kernel object configured with the specified parameters.
+    """
+    base_kernel_kwargs = dict(
+        ard_num_dims=dimension,
+        batch_shape=torch.Size()
+    )
+    if add_priors:
+        alpha = 3.0
+        # lengthscale == alpha / beta
+        beta = alpha / lengthscale
+        base_kernel_kwargs['lengthscale_prior'] = GammaPrior(alpha, beta)
+
+    if kernel == 'RBF':
+        base_kernel = RBFKernel(**base_kernel_kwargs)
+    else:
+        if kernel == 'Matern32':
+            nu = 1.5
+        elif kernel == 'Matern52':
+            nu = 2.5
+        else:
+            raise ValueError(f"Invalid kernel {kernel}")
+        base_kernel = MaternKernel(nu=nu, **base_kernel_kwargs)
+
+    # Set the lengthscale. Note: This automatically sets it to this vaue for
+    # all components.
+    base_kernel.lengthscale = torch.tensor(lengthscale, device=device)
+
+    scale_kernel_kwargs = dict(
+        base_kernel=base_kernel,
+        batch_shape=torch.Size()
+    )
+    if add_priors:
+        # NOTE: This is not exactly what we want if outcome_transform=exp,
+        # because in that case, the implied mean and std of the outcome value
+        # will *not* be 0 and outputscale if there is a prior on outputscale.
+        # Ideally, we would do outcome transform and then put scale kernel
+        # with scale prior rather than scale kernel with scale prior and then
+        # outcome transform, but that's too difficult to do with the current
+        # setup.
+        alpha = 3.0
+        mean = 1.0
+        scale_kernel_kwargs['outputscale_prior'] = GammaPrior(alpha, alpha / mean)
+    kernel = ScaleKernel(**scale_kernel_kwargs)
+    kernel.outputscale = torch.tensor(1.0, device=device)
+    return kernel
 
 
 def get_gp(train_X:Optional[Tensor]=None,

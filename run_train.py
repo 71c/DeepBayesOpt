@@ -1,5 +1,4 @@
 import torch
-import numpy as np
 import matplotlib.pyplot as plt
 import os
 import cProfile, pstats, io
@@ -7,10 +6,7 @@ from pstats import SortKey
 from dataset_with_models import RandomModelSampler
 from tictoc import tic, tocl
 
-
-from botorch.models.transforms.outcome import Power
-
-from gp_acquisition_dataset import create_train_and_test_gp_acquisition_datasets
+from gp_acquisition_dataset import add_gp_acquisition_dataset_args, create_train_and_test_gp_acquisition_datasets_command_helper, get_gp_acquisition_dataset_configs
 # AcquisitionFunctionNetV3, AcquisitionFunctionNetV4,
 #     AcquisitionFunctionNetDense
 from acquisition_function_net import (
@@ -24,7 +20,7 @@ from train_acquisition_function_net import (
     save_acquisition_function_net_configs,
     train_acquisition_function_net,
     train_or_test_loop)
-from utils import DEVICE, Exp, get_dimension, save_json, load_json, convert_to_json_serializable
+from utils import DEVICE, get_dimension, load_json
 from plot_utils import plot_nn_vs_gp_acquisition_function_1d_grid, plot_acquisition_function_net_training_history
 from nn_utils import count_trainable_parameters, count_parameters
 
@@ -39,7 +35,11 @@ MODELS_DIR = os.path.join(script_dir, "saved_models")
 
 # Run like, e.g.,
 
-# python run_train.py --method gittins --lamda 1e-1 --normalize_gi_loss --dimension 6 --layer_width 160 --train_acquisition_size 5000 --test_acquisition_size 1500 --no-save-model
+# python run_train.py --method gittins --batch_size 32 --lamda 1e-1 --normalize_gi_loss --dimension 6 --layer_width 160 --train_acquisition_size 5000 --test_acquisition_size 1500 --no-save-model --learning_rate 1e-3 --lengthscale 0.1 --expansion_factor 2 --kernel RBF --min_history 1 --max_history 50
+
+# python run_train.py --batch_size 32 --dimension 6 --train_acquisition_size 5000 --test_acquisition_size 1500 --no-save-model --lengthscale 0.1 --expansion_factor 2 --kernel RBF --min_history 1 --max_history 50
+
+# python run_train.py --method gittins --batch_size 32 --lamda 1e-1 --normalize_gi_loss --dimension 6 --layer_width 160 --train_acquisition_size 5000 --test_acquisition_size 1500 --no-save-model
 # python run_train.py --method gittins --lamda 1e-1 --normalize_gi_loss --dimension 6 --layer_width 256 --train_acquisition_size 100000 --test_acquisition_size 10000
 
 # python run_train.py --method mse_ei --dimension 6 --layer_width 160 --train_acquisition_size 10000 --test_acquisition_size 1000 --no-save-model
@@ -89,16 +89,21 @@ parser.add_argument(
     help='Name of the model and info directory. Must be specified if load_saved_model or load_saved_dataset_config'
 )
 
+## GP dataset settings
+add_gp_acquisition_dataset_args(parser, required=False)
+
 # Which AF training loss function to use
 parser.add_argument(
     '--method',
     choices=METHODS
 )
+# learning_rate = 3e-3 if METHOD == 'gittins' else 3e-4
 parser.add_argument(
     '--learning_rate',
     type=float,
     help='Learning rate for training the model'
 )
+# batch_size = 320 if METHOD == 'mse_ei' else 16
 parser.add_argument(
     '--batch_size',
     type=int,
@@ -111,56 +116,6 @@ parser.add_argument(
     '--layer_width', 
     type=int,
     help='The width of the NN layers. Required if load_saved_model=False'
-)
-
-# Dataset Train and Test Size
-parser.add_argument(
-    '--train_acquisition_size', 
-    type=int, 
-    help='Size of the train acqusition dataset'
-)
-parser.add_argument(
-    '--test_acquisition_size', 
-    type=int, 
-    help='Size of the test acqusition dataset (optional)'
-)
-parser.add_argument(
-    '--test_factor', 
-    type=float, 
-    help='Size of the test acqusition dataset as a proportion of train_acquisition_size (optional)'
-)
-# Dataset settings
-parser.add_argument(
-    '--train_n_candidates',
-    type=int,
-    default=15,
-    help='Number of candidate points for each item in the train dataset'
-)
-parser.add_argument(
-    '--test_n_candidates',
-    type=int,
-    default=50,
-    help='Number of candidate points for each item in the test dataset'
-)
-parser.add_argument(
-    '--randomize_params', 
-    action='store_true',
-    help='Set this to randomize the GP parameters. Default is False.'
-)
-parser.add_argument(
-    '--dimension', 
-    type=int, 
-    help='Dimension of the optimization problem'
-)
-parser.add_argument(
-    '--standardize_dataset_outcomes', 
-    action='store_true', 
-    help='Whether to standardize the outcomes of the dataset (independently for each item). Default is False'
-)
-parser.add_argument(
-    '--exponentiate_dataset_outcomes', 
-    action='store_true', 
-    help='Whether to exponentiate the outcomes of the dataset. Default is False'
 )
 
 ### Optional settings for NN architecture
@@ -289,26 +244,18 @@ if (not LOAD_SAVED_MODEL) and (args.layer_width is None):
 # Whether to fit maximum a posteriori GP for testing
 FIT_MAP_GP = False
 
-GET_TRAIN_TRUE_GP_STATS = False
-GET_TEST_TRUE_GP_STATS = True
-
 CPROFILE = False
 TIME = True
 VERBOSE = True
 
-CACHE_DATASETS = True
 
-# The following two are not important.
-LAZY_TRAIN = True
-LAZY_TEST = True
-
-# Generating the random GP realizations is faster on CPU than on GPU.
-# This is likely because the random GP realizations are generated one-by-one
-# rather than in batches since the number of points is random so it's difficult
-# to batch this. Hence we set device="cpu".
-# Also, making the padded batches (the creation of zeros, concatenating, and
-# stacking) on CPU rather than on GPU is much faster.
-GP_GEN_DEVICE = "cpu"
+############################# Settings for datasets #############################
+from gp_acquisition_dataset import (
+    GET_TRAIN_TRUE_GP_STATS,
+    GET_TEST_TRUE_GP_STATS,
+    GP_GEN_DEVICE,
+    FIX_TRAIN_ACQUISITION_DATASET
+)
 
 
 ############################# Settings for training ############################
@@ -324,16 +271,9 @@ else:
 
 POLICY_GRADIENT = (METHOD == 'policy_gradient')
 
-FIX_TRAIN_ACQUISITION_DATASET = False
-
 if TRAIN:
     if args.learning_rate is None:
         raise ValueError("learning_rate should be specified if training the model")
-# LEARNING_RATE = 3e-3 if METHOD == 'gittins' else 3e-4
-LEARNING_RATE = args.learning_rate
-
-# BATCH_SIZE = 320 if METHOD == 'mse_ei' else 16
-BATCH_SIZE = args.batch_size
 
 EPOCHS = 200
 
@@ -353,8 +293,8 @@ CUMULATIVE_DELTA = False
 
 training_config = dict(
     method=METHOD,
-    batch_size=BATCH_SIZE,
-    learning_rate=LEARNING_RATE,
+    batch_size=args.batch_size,
+    learning_rate=args.learning_rate,
     epochs=EPOCHS,
     fix_train_acquisition_dataset=FIX_TRAIN_ACQUISITION_DATASET,
     early_stopping=EARLY_STOPPING
@@ -426,97 +366,31 @@ if EARLY_STOPPING:
 
 ################################################################################
 
-
 if LOAD_SAVED_DATASET_CONFIG:
     gp_realization_config, dataset_size_config, n_points_config, \
         dataset_transform_config, model_sampler = load_configs(MODEL_AND_INFO_PATH)
-    DIMENSION = get_dimension(model_sampler.get_model(0))
+    args.dimension = get_dimension(model_sampler.get_model(0))
 else:
     if args.train_acquisition_size is None:
         raise ValueError("train_acquisition_size should be specified if not loding from dataset config")
-    if args.randomize_params is None:
-        raise ValueError("randomize_params should be specified if not loding from dataset config")
+    if args.lengthscale is None:
+        raise ValueError("lengthscale should be specified if not loding from dataset config")
+    if args.min_history is None:
+        raise ValueError("min_history should be specified if not loding from dataset config")
+    if args.max_history is None:
+        raise ValueError("max_history should be specified if not loding from dataset config")
 
     # Need the dimension to match if loading a saved model
     if LOAD_SAVED_MODEL:
         _model_sampler = RandomModelSampler.load(
             os.path.join(MODEL_AND_INFO_PATH, "model_sampler"))
-        DIMENSION = get_dimension(_model_sampler.get_model(0))
-    else:
-        if args.dimension is None:
-            raise ValueError("dimension should be specified if not loading a dataset config or saved model")
-        DIMENSION = args.dimension
-
-    ###################### GP realization characteristics ##########################
-    gp_realization_config = dict(
-        # Dimension of the optimization problem
-        dimension=DIMENSION,
-        # whether to randomize the GP parameters for training data
-        randomize_params=args.randomize_params,
-        # choose either "uniform" or "normal" (or a custom distribution)
-        xvalue_distribution="uniform",
-        observation_noise=False,
-        models=None,
-        model_probabilities=None
-    )
-
-    ################## Settings for dataset size and generation ####################
-    dataset_size_config = dict(
-        # The size of the training acquisition dataset
-        train_acquisition_size=args.train_acquisition_size,
-        # The amount that the dataset is expanded to save compute of GP realizations
-        expansion_factor=2,
-        # Whether to fix the training dataset function samples
-        # (as opposed to generating them randomly with each epoch)
-        fix_train_samples_dataset=True
-    )
-
-    ########## Set number of history and candidate points generation ###############
-    n_points_config = dict(
-        # This means whether n history points (or whether the total number of
-        # points) is log-uniform
-        # (Note: This currently ONLY can make it log-uniform if fix_n_samples=False)
-        loguniform=False,
-        # Whether to fix the number of candidate points (as opposed to randomized)
-        fix_n_candidates=True,
-        # If this is True, we fix the number of samples in each item at
-        # maximum when generating the function samples dataset -- which is more
-        # realistic (Only used if # of candidates is fixed).
-        # If this is False, then the number of samples in each item is
-        # randomized to reflect random number of history points.
-        fix_n_samples=True
-    )
-    if n_points_config['loguniform']:
-        n_points_config['pre_offset'] = 3.0
-    if n_points_config['fix_n_candidates']:
-        # If fix_n_candidates is True, then the following are used:
-        n_points_config = dict(
-            # Number of candidate points for training. For MSE EI, could just set to 1.
-            train_n_candidates=args.train_n_candidates,
-            # Number of candidate points for testing.
-            test_n_candidates=args.test_n_candidates,
-            min_history=14,
-            max_history=54,
-            **n_points_config
-        )
-    else:
-        # If fix_n_candidates is False, then the following are used:
-        n_points_config = dict(
-            min_n_candidates=2,
-            max_points=30,
-            **n_points_config
-        )
-
-    dataset_transform_config = dict(
-        # Choose an outcome transform. Can be None if no outcome transform
-        # TODO (bug): str(Power(2)) = "Power()" but we'd like it to be "Power(2)" so it
-        # can be saved uniquely. Maybe use the attributes of the class or something
-        # instead. Or alternateively, just don't save the acquisition datasets, or
-        # transform the acquisition datasets directly. I think it would be easiest to
-        # just not save the acquisition datasets anymore.
-        outcome_transform=Exp() if args.exponentiate_dataset_outcomes else None,
-        standardize_outcomes=args.standardize_dataset_outcomes
-    )
+        args.dimension = get_dimension(_model_sampler.get_model(0))
+    elif args.dimension is None:
+        raise ValueError("dimension should be specified if not loading a dataset config or saved model")
+    
+    (gp_realization_config, dataset_size_config,
+     n_points_config, dataset_transform_config) = get_gp_acquisition_dataset_configs(
+         args, device=GP_GEN_DEVICE)
 # Exp technically works, but Power does not
 # Make sure to set these appropriately depending on whether the transform
 # supports mean transform
@@ -525,89 +399,11 @@ else:
 #     GET_TEST_TRUE_GP_STATS = False
 
 
-########################### Test dataset settings ##############################
-if args.test_factor is None:
-    if args.test_acquisition_size is None:
-        raise ValueError("Either test_factor or test_acquisition_size should be specified")
-    else:
-        test_factor = args.test_acquisition_size / dataset_size_config['train_acquisition_size']
-else:
-    if args.test_acquisition_size is None:
-        test_factor = args.test_factor
-    else:
-        raise ValueError("Only one of test_factor or test_acquisition_size should be specified")
-
-test_dataset_config = dict(
-    ## How many times bigger the big test dataset is than the train dataset, > 0
-    ## test_factor=1 means same size, test_factor=0.5 means half the size, etc
-    test_factor=test_factor, # 3.0
-    ## The proportion of the test dataset that is used for evaluating the model
-    ## after each epoch, between 0 and 1
-    small_test_proportion_of_test=1.0,
-    # The following two should be kept as they are -- ALWAYS want to fix the
-    # test. As long as the acqisition dataset is fixed, then whether the
-    # function samples dataset is fixed doesn't matter.
-    fix_test_samples_dataset=False,
-    fix_test_acquisition_dataset=True,
-)
-
-
 ####################### Make the train and test datasets #######################
-dataset_kwargs = {
-    **gp_realization_config,
-    **dataset_size_config,
-    **n_points_config,
-    **dataset_transform_config}
+train_aq_dataset, test_aq_dataset, small_test_aq_dataset = create_train_and_test_gp_acquisition_datasets_command_helper(
+    args, gp_realization_config, dataset_size_config,
+        n_points_config, dataset_transform_config)
 
-other_kwargs = dict(
-        **test_dataset_config,
-        
-        get_train_true_gp_stats=GET_TRAIN_TRUE_GP_STATS,
-        get_test_true_gp_stats=GET_TEST_TRUE_GP_STATS,
-        cache_datasets=CACHE_DATASETS,
-        lazy_train=LAZY_TRAIN,
-        lazy_test=LAZY_TEST,
-        gp_gen_device=GP_GEN_DEVICE,
-        
-        batch_size=BATCH_SIZE,
-        fix_train_acquisition_dataset=FIX_TRAIN_ACQUISITION_DATASET,
-        
-        # For this particular, code, doing this works for both EI and Gittins index
-        # training in all cases -- all good
-        y_cand_indices=[0],
-
-        lambda_min=args.lamda_min,
-        lambda_max=args.lamda_max
-)
-
-train_aq_dataset, test_aq_dataset, small_test_aq_dataset = create_train_and_test_gp_acquisition_datasets(
-    **dataset_kwargs, **other_kwargs)
-
-# print("Training function samples dataset size:", len(train_dataset))
-print("Original training acquisition dataset size parameter:", dataset_size_config['train_acquisition_size'])
-print("Training acquisition dataset size:", len(train_aq_dataset),
-    "number of batches:", len(train_aq_dataset) // BATCH_SIZE, len(train_aq_dataset) % BATCH_SIZE)
-
-# print("Test function samples dataset size:", len(test_dataset))
-print("Test acquisition dataset size:", len(test_aq_dataset),
-    "number of batches:", len(test_aq_dataset) // BATCH_SIZE, len(test_aq_dataset) % BATCH_SIZE)
-if small_test_aq_dataset != test_aq_dataset:
-    print("Small test acquisition dataset size:", len(small_test_aq_dataset),
-            "number of batches:", len(small_test_aq_dataset) // BATCH_SIZE, len(small_test_aq_dataset) % BATCH_SIZE)
-
-# for item in train_aq_dataset.base_dataset:
-#     print(item.y_values.mean(), item.y_values.std(), item.y_values.shape)
-# exit()
-
-# print("Train acquisition dataset:")
-# print(train_aq_dataset)
-# print("\nTest acquisition dataset:")
-# print(test_aq_dataset)
-# if small_test_aq_dataset != test_aq_dataset:
-#     print("\nSmall test acquisition dataset:")
-#     print(small_test_aq_dataset)
-# print("\n")
-# exit()
 
 ################################### Get NN model ###############################
 
@@ -615,7 +411,7 @@ if LOAD_SAVED_MODEL:
     model = load_model(MODEL_AND_INFO_PATH).to(DEVICE)
 else:
     af_body_init_params = dict(
-        dimension=DIMENSION,
+        dimension=args.dimension,
         
         history_enc_hidden_dims=[args.layer_width, args.layer_width],
         pooling="max",
@@ -671,7 +467,7 @@ else:
             standardize_outcomes=args.standardize_nn_history_outcomes
         ).to(DEVICE)
     
-    # model = AcquisitionFunctionNetV4(DIMENSION,
+    # model = AcquisitionFunctionNetV4(args.dimension,
     #                                 history_enc_hidden_dims=[32, 32], pooling="max",
     #                 include_local_features=True,
     #                 encoded_history_dim=4, include_mean=False,
@@ -683,7 +479,7 @@ else:
     #                                 learn_alpha=LEARN_ALPHA,
     #                                 initial_alpha=INITIAL_ALPHA).to(DEVICE)
 
-    # model = AcquisitionFunctionNetV3(DIMENSION, pooling="max",
+    # model = AcquisitionFunctionNetV3(args.dimension, pooling="max",
     #                 history_enc_hidden_dims=[args.layer_width, args.layer_width],
     #                 encoded_history_dim=args.layer_width,
     #                 mean_enc_hidden_dims=[args.layer_width, args.layer_width], mean_dim=1,
@@ -694,7 +490,7 @@ else:
     #                                 learn_alpha=LEARN_ALPHA,
     #                                 initial_alpha=INITIAL_ALPHA).to(DEVICE)
 
-    # model = AcquisitionFunctionNetDense(DIMENSION, MAX_HISTORY,
+    # model = AcquisitionFunctionNetDense(args.dimension, MAX_HISTORY,
     #                                     hidden_dims=[128, 128, 64, 32],
     #                                     include_alpha=INCLUDE_ALPHA and POLICY_GRADIENT,
     #                                     learn_alpha=LEARN_ALPHA,
@@ -725,12 +521,12 @@ if TRAIN:
     else:
         model_path = None
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE,
+    optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate,
                                 #  weight_decay=1e-2
                                  )
     # optimizer = torch.optim.RMSprop(model.parameters(), lr=learning_rate)
     training_history_data = train_acquisition_function_net(
-        model, train_aq_dataset, optimizer, METHOD, EPOCHS, BATCH_SIZE,
+        model, train_aq_dataset, optimizer, METHOD, EPOCHS, args.batch_size,
         DEVICE, verbose=VERBOSE, n_train_printouts_per_epoch=10,
         alpha_increment=ALPHA_INCREMENT,
         # lambda_min=args.lamda_min, lambda_max=args.lamda_max,
@@ -779,7 +575,7 @@ if MODEL_AND_INFO_PATH is not None:
                     "Final test stats on the original test dataset")
 
         test_dataloader = test_aq_dataset.get_dataloader(
-                    batch_size=BATCH_SIZE, drop_last=False)
+                    batch_size=args.batch_size, drop_last=False)
         final_test_stats = train_or_test_loop(
                     test_dataloader, model, train=False,
                     nn_device=DEVICE, method=METHOD,
@@ -803,7 +599,7 @@ PLOT_MAP = False
 
 # TODO: Fix the below code to work with Gittins index
 
-if DIMENSION == 1:
+if args.dimension == 1:
     nrows, ncols = 5, 5
     fig, axs = plot_nn_vs_gp_acquisition_function_1d_grid(
         test_aq_dataset, model, POLICY_GRADIENT, name,
@@ -827,7 +623,7 @@ else:
     x_hist_nn, y_hist_nn, x_cand_nn, improvements_nn = item.to(DEVICE).tuple_no_model
     print(f"Number of history points: {x_hist.size(0)}")
 
-    x_cand = torch.rand(n_candidates, DIMENSION)
+    x_cand = torch.rand(n_candidates, args.dimension)
 
     aq_fn = LikelihoodFreeNetworkAcquisitionFunction.from_net(
         model, x_hist_nn, y_hist_nn, exponentiate=(METHOD == 'mse_ei'), softmax=False)

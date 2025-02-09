@@ -1,20 +1,27 @@
 parameters:
   function_samples_dataset:
     parameters:
-      dim:
+      dimension:
         values: [8, 16, 32]
       kernel:
         values: ["Matern52"]
       lengthscale:
         values: [0.1]
       outcome_transform:
-        values: ['none', 'square']
+        values:
+        - value: null
+        - value: exp
+          parameters:
+            sigma:
+              value: 0.8
       standardize_outcomes:
         value: false
       train_samples_size:
         values: [1000, 10000, 100000]
       test_samples_size:
         value: 5000
+      randomize_params:
+        values: [false, true]
   acquisition_dataset:
     parameters:
       expansion_factor:
