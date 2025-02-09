@@ -1043,7 +1043,9 @@ def save_json(data, fname, **kwargs):
     save_fname = fname + '.tmp' if already_exists else fname
     try:
         # Ensure the directory exists
-        os.makedirs(os.path.dirname(fname), exist_ok=True)
+        dirname = os.path.dirname(fname)
+        if dirname != '':
+            os.makedirs(dirname, exist_ok=True)
         
         # Write data to the (possibly temporary) file
         with open(save_fname, 'w') as json_file:
@@ -1062,6 +1064,18 @@ def save_json(data, fname, **kwargs):
 def load_json(fname, **kwargs):
     with open(fname, 'r') as json_file:
         return json.load(json_file)
+
+
+def dict_to_cmd_args(params):
+    parts = []
+    for key, value in sorted(params.items()):
+        # If the value is a boolean, only include it if True.
+        if isinstance(value, bool):
+            if value:
+                parts.append(f"--{key}")
+        elif value is not None:
+            parts.append(f"--{key} {value}")
+    return " ".join(parts)
 
 
 K = TypeVar('K')

@@ -56,6 +56,13 @@ parameters:
                   value: 1.0
                 lamda_min:
                   value: 0.0001
+              - lamda:
+                  values:
+                  - 0.001
+                  - 0.01
+                  - 0.1
             normalize_gi_loss:
-              value: true
+              values:
+              - true
+              - false
           value: gittins

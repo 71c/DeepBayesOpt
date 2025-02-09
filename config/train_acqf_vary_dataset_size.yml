@@ -1,7 +1,7 @@
 parameters:
   method:
     values: ['gittins']
-    recurse: false
+    recurse: true
   train_samples_size:
     values: all
   outcome_transform:

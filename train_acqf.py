@@ -1,7 +1,10 @@
 import argparse
+from collections import defaultdict
 import itertools
 from typing import Union
 import yaml
+
+from utils import dict_to_cmd_args, save_json
 
 
 def check_dict_has_keys(d: dict, keys: list[str], error_msg=None):
@@ -189,17 +192,45 @@ def get_command_line_options(options: dict):
     }
 
     cmd_opts_dataset = {
-        **cmd_opts_sample_dataset, **cmd_opts_acquisition_dataset,
-        'batch_size': options.get('batch_size')
+        **cmd_opts_sample_dataset, **cmd_opts_acquisition_dataset
     }
+    cmd_args_dataset = dict_to_cmd_args(cmd_opts_dataset)
+    cmd_dataset = "python gp_acquisition_dataset.py " + cmd_args_dataset
 
-    cmd_opts = {
-        **cmd_opts_sample_dataset, **cmd_opts_acquisition_dataset,
+    cmd_opts_nn = {
         **cmd_opts_architecture, **cmd_opts_training
     }
+    cmd_nn_train = " ".join(["python run_train.py",
+                             cmd_args_dataset,
+                             dict_to_cmd_args(cmd_opts_nn)])
 
-    return cmd_opts_dataset, cmd_opts
-    
+    return cmd_dataset, cmd_nn_train
+
+
+def create_dependency_structure_train_acqf(options_list):
+    dataset_command_ids = {}
+    nn_job_arrays = defaultdict(list)
+    for option_dict in options_list:
+        cmd_dataset, cmd_nn_train = get_command_line_options(option_dict)
+        if cmd_dataset in dataset_command_ids:
+            dataset_id = dataset_command_ids[cmd_dataset]
+        else:
+            dataset_id = str(len(dataset_command_ids) + 1)
+            dataset_command_ids[cmd_dataset] = dataset_id
+        nn_job_arrays[dataset_id].append(cmd_nn_train)
+    datasets_job_id = "create-datasets"
+    ret = {
+        datasets_job_id: {
+            "jobs": list(dataset_command_ids)
+        }
+    }
+    for dataset_id, job_array in nn_job_arrays.items():
+        ret[f"nn-jobs-dataset{dataset_id}"] = {
+            "jobs": job_array,
+            "dependencies": [f"{datasets_job_id}_{dataset_id}"]
+        }
+    return ret
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -249,9 +280,12 @@ def main():
         yaml.dump(refined_config, f)
 
     # Generate the options
-    options = generate_options(refined_config['parameters'])
+    options_list = generate_options(refined_config['parameters'])
     with open('config/options.yml', 'w') as f:
-        yaml.dump(options, f)
+        yaml.dump(options_list, f)
+    
+    data = create_dependency_structure_train_acqf(options_list)
+    save_json(data, "config/dependencies.json", indent=4)
 
 if __name__ == "__main__":
     main()
