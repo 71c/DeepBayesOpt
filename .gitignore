@@ -2,3 +2,4 @@ datasets/
 saved_models/
 bayesopt_results/
 plots/
+sweeps/

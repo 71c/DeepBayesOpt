@@ -595,7 +595,7 @@ def train_or_test_loop(dataloader: DataLoader,
             # Only check this when we are training the NN
             if method == 'gittins':
                 if n_out_cand != 2:
-                    raise ValueError("Gittins index method requires 2 cand-vals (y, lambda)")
+                    raise ValueError(f"Gittins index method requires 2 cand-vals (y, lambda), but got {n_out_cand} cand-vals")
             else:
                 if n_out_cand != 1:
                     raise UnsupportedError(

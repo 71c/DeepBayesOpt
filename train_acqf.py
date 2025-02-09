@@ -1,10 +1,12 @@
 import argparse
 from collections import defaultdict
 import itertools
+from datetime import datetime
 from typing import Union
 import yaml
-
+import os
 from utils import dict_to_cmd_args, save_json
+from submit_dependent_jobs import CONFIG_DIR, SWEEPS_DIR, submit_dependent_jobs
 
 
 def check_dict_has_keys(d: dict, keys: list[str], error_msg=None):
@@ -215,19 +217,24 @@ def create_dependency_structure_train_acqf(options_list):
         if cmd_dataset in dataset_command_ids:
             dataset_id = dataset_command_ids[cmd_dataset]
         else:
-            dataset_id = str(len(dataset_command_ids) + 1)
+            dataset_id = (len(dataset_command_ids) + 1)
             dataset_command_ids[cmd_dataset] = dataset_id
         nn_job_arrays[dataset_id].append(cmd_nn_train)
-    datasets_job_id = "create-datasets"
+    datasets_job_id = "datasets"
     ret = {
         datasets_job_id: {
-            "jobs": list(dataset_command_ids)
+            "commands": list(dataset_command_ids),
+            "gpu": False
         }
     }
     for dataset_id, job_array in nn_job_arrays.items():
-        ret[f"nn-jobs-dataset{dataset_id}"] = {
-            "jobs": job_array,
-            "dependencies": [f"{datasets_job_id}_{dataset_id}"]
+        ret[f"nn{dataset_id}"] = {
+            "commands": job_array,
+            "dependencies": [{
+                "job_name": datasets_job_id,
+                "index": dataset_id
+            }],
+            "gpu": True
         }
     return ret
 
@@ -246,6 +253,12 @@ def main():
         required=True,
         help='YAML file containing the experiment configuration.'
     )
+    parser.add_argument(
+        '--mail',
+        type=str,
+        help='email address to send Slurm notifications to'
+    )
+
 
     args = parser.parse_args()
 
@@ -276,16 +289,23 @@ def main():
     }
 
     # Save the refined configuration
-    with open('config/refined_config.yml', 'w') as f:
+    with open(os.path.join(CONFIG_DIR, 'refined_config.yml'), 'w') as f:
         yaml.dump(refined_config, f)
 
     # Generate the options
     options_list = generate_options(refined_config['parameters'])
-    with open('config/options.yml', 'w') as f:
+    with open(os.path.join(CONFIG_DIR, 'options.yml'), 'w') as f:
         yaml.dump(options_list, f)
     
-    data = create_dependency_structure_train_acqf(options_list)
-    save_json(data, "config/dependencies.json", indent=4)
+    jobs_spec = create_dependency_structure_train_acqf(options_list)
+    save_json(jobs_spec, os.path.join(CONFIG_DIR, "dependencies.json"), indent=4)
+
+    sweep_name = "test"
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    sweep_dir = os.path.join(SWEEPS_DIR, f"{sweep_name}_{timestamp}")
+    submit_dependent_jobs(sweep_dir=sweep_dir,
+                            jobs_spec=jobs_spec,
+                            mail=args.mail)
 
 if __name__ == "__main__":
     main()

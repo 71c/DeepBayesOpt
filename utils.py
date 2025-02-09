@@ -1066,7 +1066,8 @@ def load_json(fname, **kwargs):
         return json.load(json_file)
 
 
-def dict_to_cmd_args(params):
+def dict_to_cmd_args(params, equals=False):
+    s = "=" if equals else " "
     parts = []
     for key, value in sorted(params.items()):
         # If the value is a boolean, only include it if True.
@@ -1074,7 +1075,7 @@ def dict_to_cmd_args(params):
             if value:
                 parts.append(f"--{key}")
         elif value is not None:
-            parts.append(f"--{key} {value}")
+            parts.append(f"--{key}{s}{value}")
     return " ".join(parts)
 
 

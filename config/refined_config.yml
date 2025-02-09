@@ -24,12 +24,7 @@ parameters:
       lengthscale:
         value: 0.1
       outcome_transform:
-        values:
-        - null
-        - parameters:
-            sigma:
-              value: 0.8
-          value: exp
+        value: null
       randomize_params:
         value: false
       standardize_outcomes:
@@ -56,13 +51,6 @@ parameters:
                   value: 1.0
                 lamda_min:
                   value: 0.0001
-              - lamda:
-                  values:
-                  - 0.001
-                  - 0.01
-                  - 0.1
             normalize_gi_loss:
-              values:
-              - true
-              - false
+              value: true
           value: gittins

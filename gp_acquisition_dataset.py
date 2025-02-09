@@ -249,12 +249,14 @@ def create_gp_acquisition_dataset(base_dataset_size,
             dataset_size_factor=expansion_factor,
             y_cand_indices=y_cand_indices,
             **extra_kwargs)
-        if not (lambda_min is None and lambda_max is None):
-            if lambda_max is not None and lambda_min is None:
-                raise ValueError(
-                    "lambda_min must be specified if lambda_max is specified.")
-            aq_dataset = CostAwareAcquisitionDataset(
-                aq_dataset, lambda_min=lambda_min, lambda_max=lambda_max)
+    
+    # Add the lambdas if Gittins index
+    if not (lambda_min is None and lambda_max is None):
+        if lambda_max is not None and lambda_min is None:
+            raise ValueError(
+                "lambda_min must be specified if lambda_max is specified.")
+        aq_dataset = CostAwareAcquisitionDataset(
+            aq_dataset, lambda_min=lambda_min, lambda_max=lambda_max)
     
     if fix_acquisition_samples:
         if not aq_dataset.data_is_fixed:

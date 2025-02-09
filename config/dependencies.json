@@ -1,102 +1,46 @@
 {
-    "create-datasets": {
-        "jobs": [
+    "datasets": {
+        "commands": [
             "python gp_acquisition_dataset.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 2000 --train_n_candidates 1",
             "python gp_acquisition_dataset.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 20000 --train_n_candidates 1",
-            "python gp_acquisition_dataset.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 200000 --train_n_candidates 1",
-            "python gp_acquisition_dataset.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --outcome_transform exp --sigma 0.8 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 2000 --train_n_candidates 1",
-            "python gp_acquisition_dataset.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --outcome_transform exp --sigma 0.8 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 20000 --train_n_candidates 1",
-            "python gp_acquisition_dataset.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --outcome_transform exp --sigma 0.8 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 200000 --train_n_candidates 1"
-        ]
+            "python gp_acquisition_dataset.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 200000 --train_n_candidates 1"
+        ],
+        "gpu": false
     },
-    "nn-jobs-dataset1": {
-        "jobs": [
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 2000 --train_n_candidates 1 --batch_size 32 --lamda_max 1.0 --lamda_min 0.0001 --layer_width 250 --learning_rate 0.003 --method gittins --normalize_gi_loss",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 2000 --train_n_candidates 1 --batch_size 32 --lamda 0.001 --layer_width 250 --learning_rate 0.003 --method gittins --normalize_gi_loss",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 2000 --train_n_candidates 1 --batch_size 32 --lamda 0.01 --layer_width 250 --learning_rate 0.003 --method gittins --normalize_gi_loss",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 2000 --train_n_candidates 1 --batch_size 32 --lamda 0.1 --layer_width 250 --learning_rate 0.003 --method gittins --normalize_gi_loss",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 2000 --train_n_candidates 1 --batch_size 32 --lamda_max 1.0 --lamda_min 0.0001 --layer_width 250 --learning_rate 0.003 --method gittins",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 2000 --train_n_candidates 1 --batch_size 32 --lamda 0.001 --layer_width 250 --learning_rate 0.003 --method gittins",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 2000 --train_n_candidates 1 --batch_size 32 --lamda 0.01 --layer_width 250 --learning_rate 0.003 --method gittins",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 2000 --train_n_candidates 1 --batch_size 32 --lamda 0.1 --layer_width 250 --learning_rate 0.003 --method gittins"
+    "nn1": {
+        "commands": [
+            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 2000 --train_n_candidates 1 --batch_size 32 --lamda_max 1.0 --lamda_min 0.0001 --layer_width 250 --learning_rate 0.003 --method gittins --normalize_gi_loss"
         ],
         "dependencies": [
-            "create-datasets_1"
-        ]
+            {
+                "job_name": "datasets",
+                "index": 1
+            }
+        ],
+        "gpu": true
     },
-    "nn-jobs-dataset2": {
-        "jobs": [
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 20000 --train_n_candidates 1 --batch_size 32 --lamda_max 1.0 --lamda_min 0.0001 --layer_width 250 --learning_rate 0.003 --method gittins --normalize_gi_loss",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 20000 --train_n_candidates 1 --batch_size 32 --lamda 0.001 --layer_width 250 --learning_rate 0.003 --method gittins --normalize_gi_loss",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 20000 --train_n_candidates 1 --batch_size 32 --lamda 0.01 --layer_width 250 --learning_rate 0.003 --method gittins --normalize_gi_loss",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 20000 --train_n_candidates 1 --batch_size 32 --lamda 0.1 --layer_width 250 --learning_rate 0.003 --method gittins --normalize_gi_loss",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 20000 --train_n_candidates 1 --batch_size 32 --lamda_max 1.0 --lamda_min 0.0001 --layer_width 250 --learning_rate 0.003 --method gittins",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 20000 --train_n_candidates 1 --batch_size 32 --lamda 0.001 --layer_width 250 --learning_rate 0.003 --method gittins",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 20000 --train_n_candidates 1 --batch_size 32 --lamda 0.01 --layer_width 250 --learning_rate 0.003 --method gittins",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 20000 --train_n_candidates 1 --batch_size 32 --lamda 0.1 --layer_width 250 --learning_rate 0.003 --method gittins"
+    "nn2": {
+        "commands": [
+            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 20000 --train_n_candidates 1 --batch_size 32 --lamda_max 1.0 --lamda_min 0.0001 --layer_width 250 --learning_rate 0.003 --method gittins --normalize_gi_loss"
         ],
         "dependencies": [
-            "create-datasets_2"
-        ]
+            {
+                "job_name": "datasets",
+                "index": 2
+            }
+        ],
+        "gpu": true
     },
-    "nn-jobs-dataset3": {
-        "jobs": [
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 200000 --train_n_candidates 1 --batch_size 32 --lamda_max 1.0 --lamda_min 0.0001 --layer_width 250 --learning_rate 0.003 --method gittins --normalize_gi_loss",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 200000 --train_n_candidates 1 --batch_size 32 --lamda 0.001 --layer_width 250 --learning_rate 0.003 --method gittins --normalize_gi_loss",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 200000 --train_n_candidates 1 --batch_size 32 --lamda 0.01 --layer_width 250 --learning_rate 0.003 --method gittins --normalize_gi_loss",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 200000 --train_n_candidates 1 --batch_size 32 --lamda 0.1 --layer_width 250 --learning_rate 0.003 --method gittins --normalize_gi_loss",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 200000 --train_n_candidates 1 --batch_size 32 --lamda_max 1.0 --lamda_min 0.0001 --layer_width 250 --learning_rate 0.003 --method gittins",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 200000 --train_n_candidates 1 --batch_size 32 --lamda 0.001 --layer_width 250 --learning_rate 0.003 --method gittins",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 200000 --train_n_candidates 1 --batch_size 32 --lamda 0.01 --layer_width 250 --learning_rate 0.003 --method gittins",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 200000 --train_n_candidates 1 --batch_size 32 --lamda 0.1 --layer_width 250 --learning_rate 0.003 --method gittins"
+    "nn3": {
+        "commands": [
+            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 200000 --train_n_candidates 1 --batch_size 32 --lamda_max 1.0 --lamda_min 0.0001 --layer_width 250 --learning_rate 0.003 --method gittins --normalize_gi_loss"
         ],
         "dependencies": [
-            "create-datasets_3"
-        ]
-    },
-    "nn-jobs-dataset4": {
-        "jobs": [
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --outcome_transform exp --sigma 0.8 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 2000 --train_n_candidates 1 --batch_size 32 --lamda_max 1.0 --lamda_min 0.0001 --layer_width 250 --learning_rate 0.003 --method gittins --normalize_gi_loss",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --outcome_transform exp --sigma 0.8 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 2000 --train_n_candidates 1 --batch_size 32 --lamda 0.001 --layer_width 250 --learning_rate 0.003 --method gittins --normalize_gi_loss",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --outcome_transform exp --sigma 0.8 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 2000 --train_n_candidates 1 --batch_size 32 --lamda 0.01 --layer_width 250 --learning_rate 0.003 --method gittins --normalize_gi_loss",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --outcome_transform exp --sigma 0.8 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 2000 --train_n_candidates 1 --batch_size 32 --lamda 0.1 --layer_width 250 --learning_rate 0.003 --method gittins --normalize_gi_loss",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --outcome_transform exp --sigma 0.8 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 2000 --train_n_candidates 1 --batch_size 32 --lamda_max 1.0 --lamda_min 0.0001 --layer_width 250 --learning_rate 0.003 --method gittins",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --outcome_transform exp --sigma 0.8 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 2000 --train_n_candidates 1 --batch_size 32 --lamda 0.001 --layer_width 250 --learning_rate 0.003 --method gittins",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --outcome_transform exp --sigma 0.8 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 2000 --train_n_candidates 1 --batch_size 32 --lamda 0.01 --layer_width 250 --learning_rate 0.003 --method gittins",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --outcome_transform exp --sigma 0.8 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 2000 --train_n_candidates 1 --batch_size 32 --lamda 0.1 --layer_width 250 --learning_rate 0.003 --method gittins"
+            {
+                "job_name": "datasets",
+                "index": 3
+            }
         ],
-        "dependencies": [
-            "create-datasets_4"
-        ]
-    },
-    "nn-jobs-dataset5": {
-        "jobs": [
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --outcome_transform exp --sigma 0.8 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 20000 --train_n_candidates 1 --batch_size 32 --lamda_max 1.0 --lamda_min 0.0001 --layer_width 250 --learning_rate 0.003 --method gittins --normalize_gi_loss",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --outcome_transform exp --sigma 0.8 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 20000 --train_n_candidates 1 --batch_size 32 --lamda 0.001 --layer_width 250 --learning_rate 0.003 --method gittins --normalize_gi_loss",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --outcome_transform exp --sigma 0.8 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 20000 --train_n_candidates 1 --batch_size 32 --lamda 0.01 --layer_width 250 --learning_rate 0.003 --method gittins --normalize_gi_loss",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --outcome_transform exp --sigma 0.8 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 20000 --train_n_candidates 1 --batch_size 32 --lamda 0.1 --layer_width 250 --learning_rate 0.003 --method gittins --normalize_gi_loss",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --outcome_transform exp --sigma 0.8 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 20000 --train_n_candidates 1 --batch_size 32 --lamda_max 1.0 --lamda_min 0.0001 --layer_width 250 --learning_rate 0.003 --method gittins",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --outcome_transform exp --sigma 0.8 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 20000 --train_n_candidates 1 --batch_size 32 --lamda 0.001 --layer_width 250 --learning_rate 0.003 --method gittins",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --outcome_transform exp --sigma 0.8 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 20000 --train_n_candidates 1 --batch_size 32 --lamda 0.01 --layer_width 250 --learning_rate 0.003 --method gittins",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --outcome_transform exp --sigma 0.8 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 20000 --train_n_candidates 1 --batch_size 32 --lamda 0.1 --layer_width 250 --learning_rate 0.003 --method gittins"
-        ],
-        "dependencies": [
-            "create-datasets_5"
-        ]
-    },
-    "nn-jobs-dataset6": {
-        "jobs": [
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --outcome_transform exp --sigma 0.8 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 200000 --train_n_candidates 1 --batch_size 32 --lamda_max 1.0 --lamda_min 0.0001 --layer_width 250 --learning_rate 0.003 --method gittins --normalize_gi_loss",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --outcome_transform exp --sigma 0.8 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 200000 --train_n_candidates 1 --batch_size 32 --lamda 0.001 --layer_width 250 --learning_rate 0.003 --method gittins --normalize_gi_loss",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --outcome_transform exp --sigma 0.8 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 200000 --train_n_candidates 1 --batch_size 32 --lamda 0.01 --layer_width 250 --learning_rate 0.003 --method gittins --normalize_gi_loss",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --outcome_transform exp --sigma 0.8 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 200000 --train_n_candidates 1 --batch_size 32 --lamda 0.1 --layer_width 250 --learning_rate 0.003 --method gittins --normalize_gi_loss",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --outcome_transform exp --sigma 0.8 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 200000 --train_n_candidates 1 --batch_size 32 --lamda_max 1.0 --lamda_min 0.0001 --layer_width 250 --learning_rate 0.003 --method gittins",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --outcome_transform exp --sigma 0.8 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 200000 --train_n_candidates 1 --batch_size 32 --lamda 0.001 --layer_width 250 --learning_rate 0.003 --method gittins",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --outcome_transform exp --sigma 0.8 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 200000 --train_n_candidates 1 --batch_size 32 --lamda 0.01 --layer_width 250 --learning_rate 0.003 --method gittins",
-            "python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --outcome_transform exp --sigma 0.8 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 200000 --train_n_candidates 1 --batch_size 32 --lamda 0.1 --layer_width 250 --learning_rate 0.003 --method gittins"
-        ],
-        "dependencies": [
-            "create-datasets_6"
-        ]
+        "gpu": true
     }
 }
