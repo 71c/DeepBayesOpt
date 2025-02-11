@@ -564,7 +564,8 @@ def train_or_test_loop(dataloader: DataLoader,
 
         n_out_cand = vals_cand.size(-1)
         if not (n_out_cand == 1 or n_out_cand == 2):
-            raise ValueError("Expected either 1 or 2 output values per candidate")
+            raise ValueError("Expected either 1 or 2 output values per candidate, "
+                             f"but got {n_out_cand} output values")
 
         vals_cand_0 = vals_cand if n_out_cand == 1 else vals_cand[..., 0].unsqueeze(-1)
         if batch.give_improvements:

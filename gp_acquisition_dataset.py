@@ -1,6 +1,7 @@
 import math
 import os
 from typing import Any, List, Optional, Union
+import acquisition_dataset
 from function_samples_dataset import GaussianProcessRandomDataset, ListMapFunctionSamplesDataset
 from acquisition_dataset import AcquisitionDataset, CostAwareAcquisitionDataset, FunctionSamplesAcquisitionDataset
 from train_acquisition_function_net import train_or_test_loop
@@ -73,22 +74,23 @@ def get_n_datapoints_random_gen_variable_n_candidates(
 script_dir = os.path.dirname(os.path.abspath(__file__))
 DATASETS_DIR = os.path.join(script_dir, "datasets")
 
-def create_gp_acquisition_dataset(base_dataset_size,
+def create_gp_acquisition_dataset(
+        base_dataset_size,
         # gp_dataset_kwargs_non_datapoints
         dimension, randomize_params=False, xvalue_distribution="uniform",
         observation_noise=False, models=None, model_probabilities=None,
 
         outcome_transform: Optional[OutcomeTransform]=None,
         standardize_outcomes: bool=False,
-
-        # Only used for Gittins index training
-        lambda_min:Optional[float]=None,
-        lambda_max:Optional[float]=None,
         
         # n_datapoints_kwargs
         loguniform=True, pre_offset=None,
         min_history=None, max_history=None, n_candidates=None,
         min_n_candidates=None, max_points=None,
+
+        # Only used for Gittins index training
+        lambda_min:Optional[float]=None,
+        lambda_max:Optional[float]=None,
 
         # Whether to fix the number of samples and draw random history (rather than
         # random number of samples and use all remaining samples as history).
@@ -105,7 +107,24 @@ def create_gp_acquisition_dataset(base_dataset_size,
         device="cpu", lazy=True, cache=True,
         # For caching
         batch_size:Optional[int]=None, get_true_gp_stats:Optional[bool]=None,
-        name=""):
+        name="",
+        
+        # True: return a tuple
+        # (function_dataset_already_saved, aq_dataset_already_saved) of whether each
+        # dataset has already been cached on disk.
+        # False: works as normal.
+        check_cached=False,
+
+        # True: load the dataset if it exists on disk.
+        # False: do not load the dataset, even if it exists on disk, and return None
+        load_dataset=True
+    ):
+    if check_cached:
+        if load_dataset:
+            raise ValueError("load_dataset should be False if check_cached is True.")
+        if not cache:
+            raise ValueError("cache should be True if check_cached is True.")
+    
     if type(cache) is not bool:
         raise ValueError("cache should be a boolean.")
     if type(lazy) is not bool:
@@ -157,6 +176,8 @@ def create_gp_acquisition_dataset(base_dataset_size,
         model_probabilities=model_probabilities,
         xvalue_distribution=xvalue_distribution)
     
+    aq_dataset_already_saved = False
+    #### Define the paths and names for the datasets; load the AF dataset if it exists
     if cache:
         name_ = name + "_" if name != "" else name
 
@@ -165,15 +186,20 @@ def create_gp_acquisition_dataset(base_dataset_size,
         function_dataset_hash = dict_to_hash(gp_dataset_save_kwargs)
         base_name = f"{name_}base_size={base_dataset_size}_{function_dataset_hash}"
 
-        aq_dataset_extra_info = dict(fix_acquisition_samples=fix_acquisition_samples,
+        aq_dataset_extra_info = dict(
+            fix_acquisition_samples=fix_acquisition_samples,
             expansion_factor=expansion_factor,
             outcome_transform=outcome_transform,
             standardize_outcomes=standardize_outcomes,
             give_improvements=give_improvements,
-            fix_n_samples=fix_n_samples)
+            fix_n_samples=fix_n_samples,
+            y_cand_indices=y_cand_indices,
+            lambda_min=lambda_min,
+            lambda_max=lambda_max)
         if fix_n_samples:
-            aq_dataset_extra_info = dict(**aq_dataset_extra_info,
-                                         min_history=min_history, max_history=max_history)
+            aq_dataset_extra_info = dict(
+                **aq_dataset_extra_info,
+                min_history=min_history, max_history=max_history)
         
         # aq_dataset_extra_info_str = dict_to_fname_str(aq_dataset_extra_info)
         # Can't have everything in the file name because it's too long, would give,
@@ -185,7 +211,7 @@ def create_gp_acquisition_dataset(base_dataset_size,
 
         aq_dataset_already_saved = os.path.exists(aq_dataset_path)
         
-        if aq_dataset_already_saved:
+        if load_dataset and aq_dataset_already_saved:
             aq_dataset = AcquisitionDataset.load(aq_dataset_path)
             assert aq_dataset.data_is_fixed == fix_acquisition_samples
             # Won't just return it now because 
@@ -202,14 +228,25 @@ def create_gp_acquisition_dataset(base_dataset_size,
         
         function_dataset_name = f"{base_name}_gp_samples"
         function_dataset_path = os.path.join(DATASETS_DIR, function_dataset_name)
+    
+    #### Check whether function samples dataset already exists
+    # Variable `function_dataset_path` doesn't exist if cache==False
+    # but that's ok because "and" is lazy
+    function_dataset_already_saved = cache and os.path.exists(function_dataset_path)
 
-    if not (cache and aq_dataset_already_saved):
-        # Variable `function_dataset_path` doesn't exist if cache==False
-        # but that's ok because "and" is lazy
-        function_dataset_already_exists = cache and os.path.exists(function_dataset_path)
-        if cache and fix_gp_samples and function_dataset_already_exists:
-            function_samples_dataset = ListMapFunctionSamplesDataset.load(
-                function_dataset_path)
+    #### check_cached=True means to only check whether the datasets are already cached
+    if check_cached:
+        return function_dataset_already_saved, aq_dataset_already_saved
+
+    #### If we don't have the AF dataset saved, then we need to generate it
+    if not aq_dataset_already_saved:
+        #### Generate or load the function samples dataset
+        if cache and fix_gp_samples and function_dataset_already_saved:
+            if load_dataset:
+                function_samples_dataset = ListMapFunctionSamplesDataset.load(
+                    function_dataset_path)
+            else:
+                function_samples_dataset = None
         else:
             f = get_n_datapoints_random_gen_fixed_n_candidates if fix_n_candidates \
                 else get_n_datapoints_random_gen_variable_n_candidates
@@ -221,44 +258,51 @@ def create_gp_acquisition_dataset(base_dataset_size,
             if fix_gp_samples:
                 function_samples_dataset = function_samples_dataset.fix_samples(
                     lazy=False if cache else lazy)
-
-        if cache and fix_gp_samples and not function_dataset_already_exists:
-            os.makedirs(DATASETS_DIR, exist_ok=True)
-            print(f"Saving {function_dataset_name}")
-            function_samples_dataset.save(function_dataset_path, verbose=True)
         
-        # Make sure to transform AFTER the dataset is saved because we want to
-        # save the un-transformed values.
-        if outcome_transform is not None:
-            function_samples_dataset = function_samples_dataset.transform_outcomes(
-                outcome_transform)
-        if standardize_outcomes:
-            function_samples_dataset = function_samples_dataset.standardize_outcomes()
-
-        if fix_n_candidates:
-            extra_kwargs = dict(n_candidate_points=n_candidates)
-            if fix_n_samples:
-                extra_kwargs = dict(**extra_kwargs,
-                                    min_history=min_history, max_history=max_history)
+        if function_samples_dataset is None:
+            aq_dataset = None
         else:
-            extra_kwargs = dict(n_candidate_points="uniform",
-                                min_n_candidates=min_n_candidates)
-        aq_dataset = FunctionSamplesAcquisitionDataset(
-            function_samples_dataset, n_samples="uniform" if fix_n_samples else "all",
-            give_improvements=give_improvements,
-            dataset_size_factor=expansion_factor,
-            y_cand_indices=y_cand_indices,
-            **extra_kwargs)
-    
-    # Add the lambdas if Gittins index
-    if not (lambda_min is None and lambda_max is None):
-        if lambda_max is not None and lambda_min is None:
-            raise ValueError(
-                "lambda_min must be specified if lambda_max is specified.")
-        aq_dataset = CostAwareAcquisitionDataset(
-            aq_dataset, lambda_min=lambda_min, lambda_max=lambda_max)
-    
-    if fix_acquisition_samples:
+            #### Save the function samples dataset
+            if cache and fix_gp_samples and not function_dataset_already_saved:
+                os.makedirs(DATASETS_DIR, exist_ok=True)
+                print(f"Saving {function_dataset_name}")
+                function_samples_dataset.save(function_dataset_path, verbose=True)
+            
+            #### Transform the function samples dataset
+            # Make sure to transform AFTER the dataset is saved because we want to
+            # save the un-transformed values.
+            if outcome_transform is not None:
+                function_samples_dataset = function_samples_dataset.transform_outcomes(
+                    outcome_transform)
+            if standardize_outcomes:
+                function_samples_dataset = function_samples_dataset.standardize_outcomes()
+
+            #### Create the acquisition dataset
+            if fix_n_candidates:
+                extra_kwargs = dict(n_candidate_points=n_candidates)
+                if fix_n_samples:
+                    extra_kwargs = dict(**extra_kwargs,
+                                        min_history=min_history, max_history=max_history)
+            else:
+                extra_kwargs = dict(n_candidate_points="uniform",
+                                    min_n_candidates=min_n_candidates)
+            aq_dataset = FunctionSamplesAcquisitionDataset(
+                function_samples_dataset, n_samples="uniform" if fix_n_samples else "all",
+                give_improvements=give_improvements,
+                dataset_size_factor=expansion_factor,
+                y_cand_indices=y_cand_indices,
+                **extra_kwargs)
+
+            #### Add the lambdas if Gittins index
+            if not (lambda_min is None and lambda_max is None):
+                if lambda_max is not None and lambda_min is None:
+                    raise ValueError(
+                        "lambda_min must be specified if lambda_max is specified.")
+                aq_dataset = CostAwareAcquisitionDataset(
+                    aq_dataset, lambda_min=lambda_min, lambda_max=lambda_max)
+
+    #### Fix the AF samples and save the AF dataset
+    if aq_dataset is not None and fix_acquisition_samples:
         if not aq_dataset.data_is_fixed:
             aq_dataset = aq_dataset.fix_samples(lazy=False if cache else lazy)
         if cache:
@@ -315,7 +359,11 @@ def create_train_and_test_gp_acquisition_datasets(
         
         fix_n_samples:Optional[bool]=None,
         
-        y_cand_indices:Union[str,List[int]]="all"):
+        y_cand_indices:Union[str,List[int]]="all",
+        
+        check_cached=False,
+        load_dataset=True
+    ):
     train_samples_size = math.ceil(train_acquisition_size / expansion_factor)
 
     total_samples_dataset_size = math.ceil(train_samples_size * (1 + test_factor))
@@ -358,7 +406,8 @@ def create_train_and_test_gp_acquisition_datasets(
         device=gp_gen_device, cache=cache_datasets,
         give_improvements=False,
         fix_n_samples=fix_n_samples,
-        y_cand_indices=y_cand_indices)
+        y_cand_indices=y_cand_indices,
+        check_cached=check_cached, load_dataset=load_dataset)
 
     train_aq_dataset = create_gp_acquisition_dataset(
         train_samples_size, lazy=lazy_train,
@@ -524,10 +573,13 @@ def get_gp_acquisition_dataset_test_configs(args):
     )
 
 
-def create_train_and_test_gp_acquisition_datasets_command_helper(
+def create_train_test_gp_acq_datasets_helper(
         args,
         gp_realization_config, dataset_size_config,
-        n_points_config, dataset_transform_config):
+        n_points_config, dataset_transform_config,
+        check_cached=False,
+        load_dataset=True
+    ):
     test_dataset_config = get_gp_acquisition_dataset_test_configs(args)
     
     dataset_kwargs = {
@@ -558,7 +610,8 @@ def create_train_and_test_gp_acquisition_datasets_command_helper(
     )
 
     train_aq_dataset, test_aq_dataset, small_test_aq_dataset = create_train_and_test_gp_acquisition_datasets(
-        **dataset_kwargs, **other_kwargs)
+        **dataset_kwargs, **other_kwargs,
+        check_cached=check_cached, load_dataset=load_dataset)
 
     # print("Training function samples dataset size:", len(train_dataset))
     print("Original training acquisition dataset size parameter:", dataset_size_config['train_acquisition_size'])
@@ -572,6 +625,13 @@ def create_train_and_test_gp_acquisition_datasets_command_helper(
         print("Small test acquisition dataset size:", len(small_test_aq_dataset),
                 "number of batches:", len(small_test_aq_dataset) // args.batch_size, len(small_test_aq_dataset) % args.batch_size)
     
+    for name, dataset in [("Train acquisition dataset", train_aq_dataset),
+            ("Test acquisition dataset", test_aq_dataset),
+            ("Small test acquisition dataset", small_test_aq_dataset)]:
+        print(f"{name}:")
+        print(f"{name} type: {type(dataset)}")
+        print(f"{name} n_out_cand: {next(iter(dataset)).vals_cand.size(-1)}")
+
     return train_aq_dataset, test_aq_dataset, small_test_aq_dataset
 
     # for item in train_aq_dataset.base_dataset:
@@ -700,9 +760,10 @@ def main():
      n_points_config, dataset_transform_config) = get_gp_acquisition_dataset_configs(
          args, device=GP_GEN_DEVICE)
     
-    train_aq_dataset, test_aq_dataset, small_test_aq_dataset = create_train_and_test_gp_acquisition_datasets_command_helper(
+    train_aq_dataset, test_aq_dataset, small_test_aq_dataset = create_train_test_gp_acq_datasets_helper(
     args, gp_realization_config, dataset_size_config,
-        n_points_config, dataset_transform_config)
+        n_points_config, dataset_transform_config,
+        check_cached=False, load_dataset=False)
 
 
 if __name__ == "__main__":
