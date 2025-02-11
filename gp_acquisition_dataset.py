@@ -673,14 +673,14 @@ def create_train_test_gp_acq_datasets_helper(
     # exit()
 
 
-def add_gp_acquisition_dataset_args(parser, required:bool):
+def add_gp_acquisition_dataset_args(parser):
     #### Samples dataset settings
     ## Dataset Train and Test Size
     parser.add_argument(
         '--train_acquisition_size', 
         type=int, 
         help='Size of the train acqusition dataset',
-        required=required
+        required=True
     )
     parser.add_argument(
         '--test_acquisition_size', 
@@ -697,7 +697,7 @@ def add_gp_acquisition_dataset_args(parser, required:bool):
         '--lengthscale', 
         type=float, 
         help='Lengthscale of the GP',
-        required=required
+        required=True
     )
     parser.add_argument(
         '--kernel',
@@ -714,7 +714,7 @@ def add_gp_acquisition_dataset_args(parser, required:bool):
         '--dimension', 
         type=int, 
         help='Dimension of the optimization problem',
-        required=required
+        required=True
     )
     parser.add_argument(
         '--outcome_transform', 
@@ -757,13 +757,13 @@ def add_gp_acquisition_dataset_args(parser, required:bool):
         '--min_history',
         type=int,
         help='Minimum number of history points.',
-        required=required
+        required=True
     )
     parser.add_argument(
         '--max_history',
         type=int,
         help='Maximum number of history points.',
-        required=required
+        required=True
     )
 
 
@@ -785,7 +785,7 @@ def create_train_test_gp_acq_datasets_from_args(
 def main():
     import argparse
     parser = argparse.ArgumentParser()
-    add_gp_acquisition_dataset_args(parser, required=True)
+    add_gp_acquisition_dataset_args(parser)
     parser.add_argument(
         '--batch_size',
         type=int,

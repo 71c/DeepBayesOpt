@@ -7,6 +7,7 @@ import cProfile, pstats, io
 from pstats import SortKey
 from dataset_with_models import RandomModelSampler
 from tictoc import tic, tocl
+from datetime import datetime
 
 from gp_acquisition_dataset import add_gp_acquisition_dataset_args, create_train_test_gp_acq_datasets_helper, get_gp_acquisition_dataset_configs
 # AcquisitionFunctionNetV3, AcquisitionFunctionNetV4,
@@ -16,13 +17,14 @@ from acquisition_function_net import (
 from exact_gp_computations import calculate_EI_GP
 from train_acquisition_function_net import (
     METHODS,
+    get_latest_model_path,
     load_configs,
     load_model,
     print_stats,
     save_acquisition_function_net_configs,
     train_acquisition_function_net,
     train_or_test_loop)
-from utils import DEVICE, get_dimension, load_json
+from utils import DEVICE, get_dimension, load_json, save_json
 from plot_utils import plot_nn_vs_gp_acquisition_function_1d_grid, plot_acquisition_function_net_training_history
 from nn_utils import count_trainable_parameters, count_parameters
 
@@ -30,8 +32,11 @@ import logging
 logging.basicConfig(level=logging.WARNING)
 
 ##################### Settings for this script #################################
+MODELS_DIR_NAME = "saved_models"
+VERSION = "v1"
+
 script_dir = os.path.dirname(os.path.abspath(__file__))
-MODELS_DIR = os.path.join(script_dir, "saved_models")
+MODELS_DIR = os.path.join(script_dir, MODELS_DIR_NAME, VERSION)
 
 # Whether to fit maximum a posteriori GP for testing
 FIT_MAP_GP = False
@@ -47,6 +52,128 @@ from gp_acquisition_dataset import (
     GP_GEN_DEVICE,
     FIX_TRAIN_ACQUISITION_DATASET
 )
+
+
+def get_training_config(args):
+    training_config = dict(
+        method=args.method,
+        batch_size=args.batch_size,
+        learning_rate=args.learning_rate,
+        epochs=args.epochs,
+        fix_train_acquisition_dataset=FIX_TRAIN_ACQUISITION_DATASET,
+        early_stopping=args.early_stopping
+    )
+    if args.method == 'policy_gradient':
+        training_config = dict(
+            **training_config,
+            include_alpha=args.include_alpha,
+            learn_alpha=args.learn_alpha,
+            initial_alpha=args.initial_alpha,
+            alpha_increment=args.alpha_increment)
+    elif args.method == 'gittins':
+        training_config = dict(
+            **training_config,
+            lamda_min=args.lamda_min,
+            lamda_max=args.lamda_max,
+            normalize_gi_loss=args.normalize_gi_loss)
+    if args.early_stopping:
+        training_config = dict(
+            **training_config,
+            patience=args.patience,
+            min_delta=args.min_delta,
+            cumulative_delta=args.cumulative_delta)
+            
+    return training_config
+
+
+def get_model(args):
+    af_body_init_params = dict(
+        dimension=args.dimension,
+        
+        history_enc_hidden_dims=[args.layer_width, args.layer_width],
+        pooling="max",
+        encoded_history_dim=args.layer_width,
+
+        input_xcand_to_local_nn=True,
+        input_xcand_to_final_mlp=True,
+        
+        activation_at_end_pointnet=True,
+        layer_norm_pointnet=False,
+        dropout_pointnet=None,
+        activation_pointnet="relu",
+
+        include_best_y=False,
+        n_pointnets=1)
+    af_head_init_params = dict(
+        hidden_dims=[args.layer_width, args.layer_width],
+        activation="relu",
+        layer_norm_before_end=False,
+        layer_norm_at_end=False,
+        dropout=None,
+    )
+
+    if args.method == 'gittins':
+        model = GittinsAcquisitionFunctionNet(
+            af_class=TwoPartAcquisitionFunctionNetFixedHistoryOutputDim,
+            variable_lambda=args.lamda is None,
+            costs_in_history=False,
+            cost_is_input=False,
+            af_body_class=AcquisitionFunctionBodyPointnetV1and2,
+            af_head_class=AcquisitionFunctionNetFinalMLP,
+            af_body_init_params=af_body_init_params,
+            af_head_init_params=af_head_init_params,
+            standardize_outcomes=args.standardize_nn_history_outcomes
+        )
+    elif args.method == 'policy_gradient' or args.method == 'mse_ei':
+        af_head_init_params = dict(
+            **af_head_init_params,
+            include_alpha=args.include_alpha,
+            learn_alpha=args.learn_alpha,
+            initial_alpha=args.initial_alpha,
+            initial_beta=1.0 / args.initial_tau,
+            learn_beta=args.learn_tau,
+            softplus_batchnorm=args.softplus_batchnorm,
+            softplus_batchnorm_momentum=args.softplus_batchnorm_momentum,
+            positive_linear_at_end=args.positive_linear_at_end,
+            gp_ei_computation=args.gp_ei_computation
+        )
+        model = ExpectedImprovementAcquisitionFunctionNet(
+            af_body_class=AcquisitionFunctionBodyPointnetV1and2,
+            af_body_init_params=af_body_init_params,
+            af_head_init_params=af_head_init_params,
+            standardize_outcomes=args.standardize_nn_history_outcomes
+        )
+    
+    # model = AcquisitionFunctionNetV4(args.dimension,
+    #                                 history_enc_hidden_dims=[32, 32], pooling="max",
+    #                 include_local_features=True,
+    #                 encoded_history_dim=4, include_mean=False,
+    #                 mean_enc_hidden_dims=[32, 32], mean_dim=1,
+    #                 std_enc_hidden_dims=[32, 32], std_dim=32,
+    #                 aq_func_hidden_dims=[32, 32], layer_norm=True,
+    #                 layer_norm_at_end_mlp=False,
+    #                 include_alpha=args.include_alpha and policy_gradient_flag,
+    #                                 learn_alpha=args.learn_alpha,
+    #                                 initial_alpha=args.initial_alpha)
+
+    # model = AcquisitionFunctionNetV3(args.dimension, pooling="max",
+    #                 history_enc_hidden_dims=[args.layer_width, args.layer_width],
+    #                 encoded_history_dim=args.layer_width,
+    #                 mean_enc_hidden_dims=[args.layer_width, args.layer_width], mean_dim=1,
+    #                 std_enc_hidden_dims=[args.layer_width, args.layer_width], std_dim=16,
+    #                 aq_func_hidden_dims=[args.layer_width, args.layer_width], layer_norm=False,
+    #                 layer_norm_at_end_mlp=False, include_y=True,
+    #                 include_alpha=args.include_alpha and policy_gradient_flag,
+    #                                 learn_alpha=args.learn_alpha,
+    #                                 initial_alpha=args.initial_alpha)
+
+    # model = AcquisitionFunctionNetDense(args.dimension, MAX_HISTORY,
+    #                                     hidden_dims=[128, 128, 64, 32],
+    #                                     include_alpha=args.include_alpha and policy_gradient_flag,
+    #                                     learn_alpha=args.learn_alpha,
+    #                                     initial_alpha=args.initial_alpha)
+
+    return model
 
 
 def run_train(args):
@@ -66,31 +193,15 @@ def run_train(args):
     args.cumulative_delta = False
 
     ######################## Check the arguments ###############################
-    if args.load_saved_model or args.load_saved_dataset_config:
-        if args.model_and_info_name is None:
-            raise ValueError("model_and_info_name should be specified if load_saved_model or load_saved_dataset_config")
-        model_and_info_path = os.path.join(MODELS_DIR, args.model_and_info_name)
-    else:
-        model_and_info_path = None
-
-    if (not args.load_saved_model) and (args.layer_width is None):
-        raise ValueError("layer_width must be specified if load_saved_model=False")
-    
-    # Set method based on the loaded model if loading a model
-    if args.load_saved_model:
-        args.method = load_json(
-            os.path.join(model_and_info_path, "training_config.json")
-        )['method']
-    elif args.method is None:
-        raise ValueError("method should be specified if not loading a saved model")
-
     policy_gradient_flag = (args.method == 'policy_gradient')
     args.include_alpha = args.include_alpha and policy_gradient_flag
 
     if args.train:
         if args.learning_rate is None:
             raise ValueError("learning_rate should be specified if training the model")
-
+    else:
+        args.save_model = False
+    
     for reason, reason_desc in [(args.method != 'mse_ei', 'method != mse_ei'),
                                 (args.load_saved_model, 'load_saved_model=True')]:
         if reason:
@@ -114,7 +225,6 @@ def run_train(args):
                 raise ValueError(
                     "If method=gittins, should specify only either lamda, or both lamda_min and lamda_max")
             args.lamda_min = args.lamda # just to make it easier to pass in as parameter
-            variable_lambda = False
         else:
             if not (lamda_min_given or lamda_max_given):
                 # No lamda anything is specified
@@ -130,7 +240,6 @@ def run_train(args):
                 raise ValueError(
                     "If method=gittins and lamda_min is specified, then lamda_max must be "
                     "specified (or give lamda instead)")
-            variable_lambda = True
     else: # method = 'mse_ei' or 'policy_gradient'
         if args.initial_tau is None:
             args.initial_tau = 1.0
@@ -140,31 +249,14 @@ def run_train(args):
         if args.normalize_gi_loss:
             raise ValueError("normalize_gi_loss should be False if method != gittins")
 
-    if args.load_saved_dataset_config:
-        gp_realization_config, dataset_size_config, n_points_config, \
-            dataset_transform_config, model_sampler = load_configs(model_and_info_path)
-        args.dimension = get_dimension(model_sampler.get_model(0))
-    else:
-        if args.train_acquisition_size is None:
-            raise ValueError("train_acquisition_size should be specified if not loding from dataset config")
-        if args.lengthscale is None:
-            raise ValueError("lengthscale should be specified if not loding from dataset config")
-        if args.min_history is None:
-            raise ValueError("min_history should be specified if not loding from dataset config")
-        if args.max_history is None:
-            raise ValueError("max_history should be specified if not loding from dataset config")
+    #### Get configs
+    # AF dataset configs
+    (gp_realization_config, dataset_size_config,
+    n_points_config, dataset_transform_config) = get_gp_acquisition_dataset_configs(
+        args, device=GP_GEN_DEVICE)
+    # Training config
+    training_config = get_training_config(args)
 
-        # Need the dimension to match if loading a saved model
-        if args.load_saved_model:
-            _model_sampler = RandomModelSampler.load(
-                os.path.join(model_and_info_path, "model_sampler"))
-            args.dimension = get_dimension(_model_sampler.get_model(0))
-        elif args.dimension is None:
-            raise ValueError("dimension should be specified if not loading a dataset config or saved model")
-        
-        (gp_realization_config, dataset_size_config,
-        n_points_config, dataset_transform_config) = get_gp_acquisition_dataset_configs(
-            args, device=GP_GEN_DEVICE)
     # Exp technically works, but Power does not
     # Make sure to set these appropriately depending on whether the transform
     # supports mean transform
@@ -180,131 +272,40 @@ def run_train(args):
             n_points_config, dataset_transform_config)
 
     ################################### Get NN model ###############################
+    #### Get the untrained model
+    # This wastes some resources, but need to do it to get the model's init dict to
+    # obtain the correct path for saving the model because that is currently how the
+    # model is uniquely identified.
+    model = get_model(args)
+
+    # Save the configs for the model and training and datasets
+    model_and_info_path, models_path = save_acquisition_function_net_configs(
+        MODELS_DIR, model, training_config,
+        gp_realization_config, dataset_size_config, n_points_config,
+        dataset_transform_config, train_aq_dataset.model_sampler,
+        save=args.save_model
+    )
 
     if args.load_saved_model:
-        model = load_model(model_and_info_path).to(DEVICE)
+        model, model_path = load_model(model_and_info_path, return_model_path=True)
     else:
-        af_body_init_params = dict(
-            dimension=args.dimension,
-            
-            history_enc_hidden_dims=[args.layer_width, args.layer_width],
-            pooling="max",
-            encoded_history_dim=args.layer_width,
+        model_path = None
 
-            input_xcand_to_local_nn=True,
-            input_xcand_to_final_mlp=True,
-            
-            activation_at_end_pointnet=True,
-            layer_norm_pointnet=False,
-            dropout_pointnet=None,
-            activation_pointnet="relu",
-
-            include_best_y=False,
-            n_pointnets=1)
-        af_head_init_params = dict(
-            hidden_dims=[args.layer_width, args.layer_width],
-            activation="relu",
-            layer_norm_before_end=False,
-            layer_norm_at_end=False,
-            dropout=None,
-        )
-
-        if args.method == 'gittins':
-            model = GittinsAcquisitionFunctionNet(
-                af_class=TwoPartAcquisitionFunctionNetFixedHistoryOutputDim,
-                variable_lambda=variable_lambda,
-                costs_in_history=False,
-                cost_is_input=False,
-                af_body_class=AcquisitionFunctionBodyPointnetV1and2,
-                af_head_class=AcquisitionFunctionNetFinalMLP,
-                af_body_init_params=af_body_init_params,
-                af_head_init_params=af_head_init_params,
-                standardize_outcomes=args.standardize_nn_history_outcomes
-            ).to(DEVICE)
-        elif args.method == 'policy_gradient' or args.method == 'mse_ei':
-            af_head_init_params = dict(
-                **af_head_init_params,
-                include_alpha=args.include_alpha,
-                learn_alpha=args.learn_alpha,
-                initial_alpha=args.initial_alpha,
-                initial_beta=1.0 / args.initial_tau,
-                learn_beta=args.learn_tau,
-                softplus_batchnorm=args.softplus_batchnorm,
-                softplus_batchnorm_momentum=args.softplus_batchnorm_momentum,
-                positive_linear_at_end=args.positive_linear_at_end,
-                gp_ei_computation=args.gp_ei_computation
-            )
-            model = ExpectedImprovementAcquisitionFunctionNet(
-                af_body_class=AcquisitionFunctionBodyPointnetV1and2,
-                af_body_init_params=af_body_init_params,
-                af_head_init_params=af_head_init_params,
-                standardize_outcomes=args.standardize_nn_history_outcomes
-            ).to(DEVICE)
-        
-        # model = AcquisitionFunctionNetV4(args.dimension,
-        #                                 history_enc_hidden_dims=[32, 32], pooling="max",
-        #                 include_local_features=True,
-        #                 encoded_history_dim=4, include_mean=False,
-        #                 mean_enc_hidden_dims=[32, 32], mean_dim=1,
-        #                 std_enc_hidden_dims=[32, 32], std_dim=32,
-        #                 aq_func_hidden_dims=[32, 32], layer_norm=True,
-        #                 layer_norm_at_end_mlp=False,
-        #                 include_alpha=args.include_alpha and policy_gradient_flag,
-        #                                 learn_alpha=args.learn_alpha,
-        #                                 initial_alpha=args.initial_alpha).to(DEVICE)
-
-        # model = AcquisitionFunctionNetV3(args.dimension, pooling="max",
-        #                 history_enc_hidden_dims=[args.layer_width, args.layer_width],
-        #                 encoded_history_dim=args.layer_width,
-        #                 mean_enc_hidden_dims=[args.layer_width, args.layer_width], mean_dim=1,
-        #                 std_enc_hidden_dims=[args.layer_width, args.layer_width], std_dim=16,
-        #                 aq_func_hidden_dims=[args.layer_width, args.layer_width], layer_norm=False,
-        #                 layer_norm_at_end_mlp=False, include_y=True,
-        #                 include_alpha=args.include_alpha and policy_gradient_flag,
-        #                                 learn_alpha=args.learn_alpha,
-        #                                 initial_alpha=args.initial_alpha).to(DEVICE)
-
-        # model = AcquisitionFunctionNetDense(args.dimension, MAX_HISTORY,
-        #                                     hidden_dims=[128, 128, 64, 32],
-        #                                     include_alpha=args.include_alpha and policy_gradient_flag,
-        #                                     learn_alpha=args.learn_alpha,
-        #                                     initial_alpha=args.initial_alpha).to(DEVICE)
+    model = model.to(DEVICE)
 
     print(model)
     print("Number of trainable parameters:", count_trainable_parameters(model))
     print("Number of parameters:", count_parameters(model))
 
     ######################## Train the model #######################################
-    #### Settings for training
-    training_config = dict(
-        method=args.method,
-        batch_size=args.batch_size,
-        learning_rate=args.learning_rate,
-        epochs=args.epochs,
-        fix_train_acquisition_dataset=FIX_TRAIN_ACQUISITION_DATASET,
-        early_stopping=args.early_stopping
-    )
-    if policy_gradient_flag:
-        training_config = dict(
-            **training_config,
-            include_alpha=args.include_alpha,
-            learn_alpha=args.learn_alpha,
-            initial_alpha=args.initial_alpha,
-            alpha_increment=args.alpha_increment)
-    if args.method == 'gittins':
-        training_config = dict(
-            **training_config,
-            lamda_min=args.lamda_min,
-            lamda_max=args.lamda_max,
-            normalize_gi_loss=args.normalize_gi_loss)
-    if args.early_stopping:
-        training_config = dict(
-            **training_config,
-            patience=args.patience,
-            min_delta=args.min_delta,
-            cumulative_delta=args.cumulative_delta)
-
     if args.train:
+        if args.save_model:
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            model_name = f"model_{timestamp}"
+            model_path = os.path.join(models_path, model_name)
+        else:
+            model_path = None
+
         if CPROFILE:
             pr = cProfile.Profile()
             pr.enable()
@@ -312,16 +313,6 @@ def run_train(args):
         if TIME:
             tic("Training!")
         
-        if args.save_model:
-            # Save the configs for the model and training and datasets
-            (model_and_info_folder_name,
-            model_and_info_path, model_path) = save_acquisition_function_net_configs(
-                MODELS_DIR, model, training_config,
-                gp_realization_config, dataset_size_config, n_points_config,
-                dataset_transform_config, train_aq_dataset.model_sampler)
-        else:
-            model_path = None
-
         optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate,
                                     #  weight_decay=1e-2
                                     )
@@ -347,6 +338,10 @@ def run_train(args):
             cumulative_delta=args.cumulative_delta,
         )
 
+        if args.save_model:
+            latest_model_path = os.path.join(models_path, "latest_model.json")
+            save_json({"latest_model": model_name}, latest_model_path)
+
         if TIME:
             tocl()
 
@@ -364,16 +359,16 @@ def run_train(args):
 
         print("Done training!")
 
-
-    if model_and_info_path is not None:
-        training_history_path = os.path.join(
-            model_and_info_path, 'model', 'training_history_data.json')
+    ######################## Evaluate and plot model performance #######################
+    if model_path is not None:
+        training_history_path = os.path.join(model_path, 'training_history_data.json')
 
         if not args.train:
             training_history_data = load_json(training_history_path)
             final_test_stats_original = training_history_data['final_test_stats']
             print_stats(final_test_stats_original,
-                        "Final test stats on the original test dataset")
+                        "Final test stats on the original test dataset",
+                        args.method, args.normalize_gi_loss)
 
             test_dataloader = test_aq_dataset.get_dataloader(
                         batch_size=args.batch_size, drop_last=False)
@@ -383,15 +378,17 @@ def run_train(args):
                         verbose=False, desc=f"Compute final test stats",
                         get_true_gp_stats=GET_TEST_TRUE_GP_STATS,
                         get_map_gp_stats=False,
-                        get_basic_stats=True)
-            print_stats(final_test_stats, "Final test stats on this test dataset")
-
+                        get_basic_stats=True,
+                        alpha_increment=args.alpha_increment,
+                        normalize_gi_loss=args.normalize_gi_loss)
+            print_stats(final_test_stats,
+                        "Final test stats on this test dataset (should be same as above)",
+                        args.method, args.normalize_gi_loss)
 
         history_fig = plot_acquisition_function_net_training_history(training_history_data)
-        history_plot_path = os.path.join(model_and_info_path, 'model', 'training_history.pdf')
-        if not os.path.exists(history_plot_path) or args.load_saved_dataset_config:
+        history_plot_path = os.path.join(model_path, 'training_history.pdf')
+        if not os.path.exists(history_plot_path):
             history_fig.savefig(history_plot_path, bbox_inches='tight')
-
 
     ######################## Plot performance of model #############################
     ######################## (old useless code)
@@ -412,13 +409,14 @@ def run_train(args):
                 # of the plots
                 group_standardization=None 
             )
-            fname = f'acqusion_function_net_vs_gp_acquisition_function_1d_grid_{nrows}x{ncols}.pdf'
-            path = os.path.join(model_and_info_path, fname)
-            # Don't want to overwrite the plot if it already exists;
-            # it could have been trained on different data from the data we are
-            # evaluating it on if args.train=False.
-            if not os.path.exists(path) or args.load_saved_dataset_config:
-                fig.savefig(path, bbox_inches='tight')
+            if model_path is not None:
+                fname = f'acqusion_function_net_vs_gp_acquisition_function_1d_grid_{nrows}x{ncols}.pdf'
+                path = os.path.join(model_path, fname)
+                # Don't want to overwrite the plot if it already exists;
+                # it could have been trained on different data from the data we are
+                # evaluating it on if args.train=False.
+                if not os.path.exists(path):
+                    fig.savefig(path, bbox_inches='tight')
         else:
             it = iter(test_aq_dataset)
             item = next(it)
@@ -481,24 +479,15 @@ def main():
         action='store_true', 
         help='Whether to load a saved model. Set this flag to load the saved model.'
     )
-    parser.add_argument(
-        '--load_saved_dataset_config', 
-        action='store_true', 
-        help='Whether to load the saved dataset config specified in the model info directory. Set this flag to load the saved dataset config.'
-    )
-    parser.add_argument(
-        '--model_and_info_name', 
-        type=str, 
-        help='Name of the model and info directory. Must be specified if load_saved_model or load_saved_dataset_config'
-    )
 
     ## GP dataset settings
-    add_gp_acquisition_dataset_args(parser, required=False)
+    add_gp_acquisition_dataset_args(parser)
 
     # Which AF training loss function to use
     parser.add_argument(
         '--method',
-        choices=METHODS
+        choices=METHODS,
+        required=True,
     )
     # learning_rate = 3e-3 if method == 'gittins' else 3e-4
     parser.add_argument(
@@ -518,7 +507,8 @@ def main():
     parser.add_argument(
         '--layer_width', 
         type=int,
-        help='The width of the NN layers. Required if load_saved_model=False'
+        required=True,
+        help='The width of the NN layers.'
     )
 
     ### Optional settings for NN architecture
@@ -594,9 +584,6 @@ def main():
     )
 
     args = parser.parse_args()
-    # d = vars(args)
-    # l = argparse.Namespace(**d)
-
     run_train(args)
 
 
