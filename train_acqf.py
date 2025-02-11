@@ -211,7 +211,10 @@ def get_command_line_options(options: dict):
     return cmd_dataset, cmd_opts_dataset, cmd_nn_train, cmd_opts_nn
 
 
-def create_dependency_structure_train_acqf(options_list):
+def create_dependency_structure_train_acqf(options_list, datasets_job_id="datasets"):
+    r"""Create a command dependency structure for training acquisition function NNs.
+    Includes dataset generation commands and NN training commands.
+    Only includes dataset generation commands for datasets that are not cached."""
     dataset_commands = []
     nn_commands = []
     for option_dict in options_list:
@@ -223,6 +226,7 @@ def create_dependency_structure_train_acqf(options_list):
         
         nn_commands.append(cmd_nn_train)
     
+    # check if datasets already cached
     datasets_created = []
     for cmd_dataset, cmd_opts_dataset in dataset_commands:
         args_dataset = argparse.Namespace(**cmd_opts_dataset)
@@ -239,20 +243,27 @@ def create_dependency_structure_train_acqf(options_list):
          dataset_already_cached,
          cmd_nn_train) in zip(dataset_commands, datasets_created, nn_commands):
         if dataset_already_cached:
+            # dataset already cached; assign -1 as a dummy id
             dataset_id = -1
         else:
+            # dataset not cached
+            # Only store cmd_dataset in dataset_command_ids if dataset is not cached
             if cmd_dataset in dataset_command_ids:
+                # dataset id already assigned
                 dataset_id = dataset_command_ids[cmd_dataset]
             else:
+                # assign a new dataset id
                 dataset_id = len(dataset_command_ids) + 1
                 dataset_command_ids[cmd_dataset] = dataset_id
 
         nn_job_arrays[dataset_id].append(cmd_nn_train)
     
-    datasets_job_id = "datasets"
+    # Recall that dataset_command_ids only contains commands for datasets not cached
+    # Note that dicts are guaranteed to retain insertion order since Python 3.7
+    dataset_commands_not_cached = list(dataset_command_ids)
     ret = {
         datasets_job_id: {
-            "commands": list(dataset_command_ids),
+            "commands": dataset_commands_not_cached,
             "gpu": False
         }
     }
@@ -261,6 +272,7 @@ def create_dependency_structure_train_acqf(options_list):
             "commands": job_array,
             "gpu": True
         }
+        # Only add dependencies if the dataset is not cached
         if dataset_id != -1:
             tmp["dependencies"] = [{
                 "job_name": datasets_job_id,
@@ -289,7 +301,6 @@ def main():
         type=str,
         help='email address to send Slurm notifications to'
     )
-
 
     args = parser.parse_args()
 
@@ -334,9 +345,7 @@ def main():
     sweep_name = "test"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     sweep_dir = os.path.join(SWEEPS_DIR, f"{sweep_name}_{timestamp}")
-    submit_dependent_jobs(sweep_dir=sweep_dir,
-                            jobs_spec=jobs_spec,
-                            mail=args.mail)
+    submit_dependent_jobs(sweep_dir=sweep_dir, jobs_spec=jobs_spec, mail=args.mail)
 
 if __name__ == "__main__":
     main()

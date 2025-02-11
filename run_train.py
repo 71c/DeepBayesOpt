@@ -291,6 +291,12 @@ def run_train(args):
             learn_alpha=args.learn_alpha,
             initial_alpha=args.initial_alpha,
             alpha_increment=args.alpha_increment)
+    if args.method == 'gittins':
+        training_config = dict(
+            **training_config,
+            lamda_min=args.lamda_min,
+            lamda_max=args.lamda_max,
+            normalize_gi_loss=args.normalize_gi_loss)
     if args.early_stopping:
         training_config = dict(
             **training_config,
