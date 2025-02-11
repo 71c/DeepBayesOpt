@@ -5,6 +5,7 @@ from datetime import datetime
 from typing import Union
 import yaml
 import os
+from gp_acquisition_dataset import create_train_test_gp_acq_datasets_from_args
 from utils import dict_to_cmd_args, save_json
 from submit_dependent_jobs import CONFIG_DIR, SWEEPS_DIR, submit_dependent_jobs
 
@@ -199,27 +200,55 @@ def get_command_line_options(options: dict):
     cmd_args_dataset = dict_to_cmd_args(cmd_opts_dataset)
     cmd_dataset = "python gp_acquisition_dataset.py " + cmd_args_dataset
 
-    cmd_opts_nn = {
+    cmd_opts_nn_no_dataset = {
         **cmd_opts_architecture, **cmd_opts_training
     }
     cmd_nn_train = " ".join(["python run_train.py",
                              cmd_args_dataset,
-                             dict_to_cmd_args(cmd_opts_nn)])
+                             dict_to_cmd_args(cmd_opts_nn_no_dataset)])
 
-    return cmd_dataset, cmd_nn_train
+    cmd_opts_nn = {**cmd_opts_nn_no_dataset, **cmd_opts_dataset}
+    return cmd_dataset, cmd_opts_dataset, cmd_nn_train, cmd_opts_nn
 
 
 def create_dependency_structure_train_acqf(options_list):
+    dataset_commands = []
+    nn_commands = []
+    for option_dict in options_list:
+        (cmd_dataset, cmd_opts_dataset,
+         cmd_nn_train, cmd_opts_nn) = get_command_line_options(option_dict)
+
+        if cmd_dataset not in dataset_commands:
+            dataset_commands.append((cmd_dataset, cmd_opts_dataset))
+        
+        nn_commands.append(cmd_nn_train)
+    
+    datasets_created = []
+    for cmd_dataset, cmd_opts_dataset in dataset_commands:
+        args_dataset = argparse.Namespace(**cmd_opts_dataset)
+        whether_cached = create_train_test_gp_acq_datasets_from_args(
+            args_dataset, check_cached=True, load_dataset=False)
+        dataset_already_cached = True
+        for cached in whether_cached:
+            dataset_already_cached = dataset_already_cached and cached
+        datasets_created.append(dataset_already_cached)
+
     dataset_command_ids = {}
     nn_job_arrays = defaultdict(list)
-    for option_dict in options_list:
-        cmd_dataset, cmd_nn_train = get_command_line_options(option_dict)
-        if cmd_dataset in dataset_command_ids:
-            dataset_id = dataset_command_ids[cmd_dataset]
+    for ((cmd_dataset, cmd_opts_dataset),
+         dataset_already_cached,
+         cmd_nn_train) in zip(dataset_commands, datasets_created, nn_commands):
+        if dataset_already_cached:
+            dataset_id = -1
         else:
-            dataset_id = (len(dataset_command_ids) + 1)
-            dataset_command_ids[cmd_dataset] = dataset_id
+            if cmd_dataset in dataset_command_ids:
+                dataset_id = dataset_command_ids[cmd_dataset]
+            else:
+                dataset_id = len(dataset_command_ids) + 1
+                dataset_command_ids[cmd_dataset] = dataset_id
+
         nn_job_arrays[dataset_id].append(cmd_nn_train)
+    
     datasets_job_id = "datasets"
     ret = {
         datasets_job_id: {
@@ -228,14 +257,16 @@ def create_dependency_structure_train_acqf(options_list):
         }
     }
     for dataset_id, job_array in nn_job_arrays.items():
-        ret[f"nn{dataset_id}"] = {
+        tmp = {
             "commands": job_array,
-            "dependencies": [{
-                "job_name": datasets_job_id,
-                "index": dataset_id
-            }],
             "gpu": True
         }
+        if dataset_id != -1:
+            tmp["dependencies"] = [{
+                "job_name": datasets_job_id,
+                "index": dataset_id
+            }]
+        ret[f"nn{dataset_id}"] = tmp
     return ret
 
 

@@ -1,7 +1,6 @@
 import math
 import os
 from typing import Any, List, Optional, Union
-import acquisition_dataset
 from function_samples_dataset import GaussianProcessRandomDataset, ListMapFunctionSamplesDataset
 from acquisition_dataset import AcquisitionDataset, CostAwareAcquisitionDataset, FunctionSamplesAcquisitionDataset
 from train_acquisition_function_net import train_or_test_loop
@@ -124,7 +123,7 @@ def create_gp_acquisition_dataset(
             raise ValueError("load_dataset should be False if check_cached is True.")
         if not cache:
             raise ValueError("cache should be True if check_cached is True.")
-    
+
     if type(cache) is not bool:
         raise ValueError("cache should be a boolean.")
     if type(lazy) is not bool:
@@ -415,6 +414,9 @@ def create_train_and_test_gp_acquisition_datasets(
         fix_acquisition_samples=fix_train_acquisition_dataset,
         get_true_gp_stats=get_train_true_gp_stats,
         name="train", **common_kwargs, **train_n_points_kwargs)
+    # tuple of (function_dataset_is_cached, aq_dataset_is_cached)
+    if isinstance(train_aq_dataset, tuple):
+        train_aq_dataset = train_aq_dataset[0] or train_aq_dataset[1]
 
     test_dataset_kwargs = dict(lazy=lazy_test,
         fix_gp_samples=fix_test_samples_dataset,
@@ -434,14 +436,29 @@ def create_train_and_test_gp_acquisition_datasets(
         small_test_complement_aq_dataset = create_gp_acquisition_dataset(
             small_test_complement_size, name="small-test-complement",
             **test_dataset_kwargs)
-        print("concatenating small test acquisition dataset and complement")
-        test_aq_dataset = small_test_aq_dataset.concat(
-            small_test_complement_aq_dataset)
+        if isinstance(small_test_aq_dataset, AcquisitionDataset) and \
+            isinstance(small_test_complement_aq_dataset, AcquisitionDataset):
+            print("concatenating small test acquisition dataset and complement")
+            test_aq_dataset = small_test_aq_dataset.concat(
+                small_test_complement_aq_dataset)
+        elif isinstance(small_test_aq_dataset, tuple):
+            small_test_aq_dataset = small_test_aq_dataset[0] or small_test_aq_dataset[1]
+            test_aq_dataset = small_test_aq_dataset \
+                and (small_test_complement_aq_dataset[0] or \
+                     small_test_complement_aq_dataset[1])
+        else:
+            test_aq_dataset = None
     else:
         test_aq_dataset = create_gp_acquisition_dataset(
             test_samples_size, name="test", **test_dataset_kwargs)
-        small_test_aq_dataset, _ = test_aq_dataset.random_split(
-            [small_test_proportion_of_test, 1 - small_test_proportion_of_test])
+        if isinstance(test_aq_dataset, AcquisitionDataset):
+            small_test_aq_dataset, _ = test_aq_dataset.random_split(
+                [small_test_proportion_of_test, 1 - small_test_proportion_of_test])
+        elif isinstance(test_aq_dataset, tuple):
+            test_aq_dataset = test_aq_dataset[0] or test_aq_dataset[1]
+            small_test_aq_dataset = test_aq_dataset
+        else:
+            small_test_aq_dataset = None
     
     return train_aq_dataset, test_aq_dataset, small_test_aq_dataset
 
@@ -547,14 +564,15 @@ def get_gp_acquisition_dataset_configs(args, device=None):
 
 
 def get_gp_acquisition_dataset_test_configs(args):
-    if args.test_factor is None:
+    test_factor = getattr(args, "test_factor", None)
+    if test_factor is None:
         if args.test_acquisition_size is None:
             raise ValueError("Either test_factor or test_acquisition_size should be specified")
         else:
             test_factor = args.test_acquisition_size / args.train_acquisition_size
     else:
         if args.test_acquisition_size is None:
-            test_factor = args.test_factor
+            test_factor = test_factor
         else:
             raise ValueError("Only one of test_factor or test_acquisition_size should be specified")
 
@@ -598,7 +616,7 @@ def create_train_test_gp_acq_datasets_helper(
         lazy_test=LAZY_TEST,
         gp_gen_device=GP_GEN_DEVICE,
         
-        batch_size=args.batch_size,
+        batch_size=getattr(args, "batch_size", 64),
         fix_train_acquisition_dataset=FIX_TRAIN_ACQUISITION_DATASET,
         
         # For this particular, code, doing this works for both EI and Gittins index
@@ -613,24 +631,30 @@ def create_train_test_gp_acq_datasets_helper(
         **dataset_kwargs, **other_kwargs,
         check_cached=check_cached, load_dataset=load_dataset)
 
-    # print("Training function samples dataset size:", len(train_dataset))
-    print("Original training acquisition dataset size parameter:", dataset_size_config['train_acquisition_size'])
-    print("Training acquisition dataset size:", len(train_aq_dataset),
-        "number of batches:", len(train_aq_dataset) // args.batch_size, len(train_aq_dataset) % args.batch_size)
+    if not check_cached:
+        if train_aq_dataset is not None:
+            # print("Training function samples dataset size:", len(train_dataset))
+            print("Original training acquisition dataset size parameter:", dataset_size_config['train_acquisition_size'])
+            print("Training acquisition dataset size:", len(train_aq_dataset),
+                "number of batches:", len(train_aq_dataset) // args.batch_size, len(train_aq_dataset) % args.batch_size)
 
-    # print("Test function samples dataset size:", len(test_dataset))
-    print("Test acquisition dataset size:", len(test_aq_dataset),
-        "number of batches:", len(test_aq_dataset) // args.batch_size, len(test_aq_dataset) % args.batch_size)
-    if small_test_aq_dataset != test_aq_dataset:
-        print("Small test acquisition dataset size:", len(small_test_aq_dataset),
-                "number of batches:", len(small_test_aq_dataset) // args.batch_size, len(small_test_aq_dataset) % args.batch_size)
-    
-    for name, dataset in [("Train acquisition dataset", train_aq_dataset),
-            ("Test acquisition dataset", test_aq_dataset),
-            ("Small test acquisition dataset", small_test_aq_dataset)]:
-        print(f"{name}:")
-        print(f"{name} type: {type(dataset)}")
-        print(f"{name} n_out_cand: {next(iter(dataset)).vals_cand.size(-1)}")
+        if test_aq_dataset is not None:
+            # print("Test function samples dataset size:", len(test_dataset))
+            print("Test acquisition dataset size:", len(test_aq_dataset),
+                "number of batches:", len(test_aq_dataset) // args.batch_size, len(test_aq_dataset) % args.batch_size)
+        
+        if small_test_aq_dataset != test_aq_dataset and small_test_aq_dataset is not None:
+            print("Small test acquisition dataset size:", len(small_test_aq_dataset),
+                    "number of batches:", len(small_test_aq_dataset) // args.batch_size, len(small_test_aq_dataset) % args.batch_size)
+        
+        for name, dataset in [("Train acquisition dataset", train_aq_dataset),
+                ("Test acquisition dataset", test_aq_dataset),
+                ("Small test acquisition dataset", small_test_aq_dataset)]:
+            if dataset is None:
+                continue
+            print(f"{name}:")
+            print(f"{name} type: {type(dataset)}")
+            print(f"{name} n_out_cand: {next(iter(dataset)).vals_cand.size(-1)}")
 
     return train_aq_dataset, test_aq_dataset, small_test_aq_dataset
 
@@ -743,6 +767,21 @@ def add_gp_acquisition_dataset_args(parser, required:bool):
     )
 
 
+def create_train_test_gp_acq_datasets_from_args(
+        args, check_cached=False, load_dataset=True):
+    (gp_realization_config, dataset_size_config,
+     n_points_config, dataset_transform_config) = get_gp_acquisition_dataset_configs(
+         args, device=GP_GEN_DEVICE)
+    
+    (train_aq_dataset,
+     test_aq_dataset,
+     small_test_aq_dataset) = create_train_test_gp_acq_datasets_helper(
+    args, gp_realization_config, dataset_size_config,
+        n_points_config, dataset_transform_config,
+        check_cached=check_cached, load_dataset=load_dataset)
+    return train_aq_dataset, test_aq_dataset, small_test_aq_dataset
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser()
@@ -756,14 +795,8 @@ def main():
 
     args = parser.parse_args()
 
-    (gp_realization_config, dataset_size_config,
-     n_points_config, dataset_transform_config) = get_gp_acquisition_dataset_configs(
-         args, device=GP_GEN_DEVICE)
-    
-    train_aq_dataset, test_aq_dataset, small_test_aq_dataset = create_train_test_gp_acq_datasets_helper(
-    args, gp_realization_config, dataset_size_config,
-        n_points_config, dataset_transform_config,
-        check_cached=False, load_dataset=False)
+    create_train_test_gp_acq_datasets_from_args(
+        args, check_cached=False, load_dataset=False)
 
 
 if __name__ == "__main__":
