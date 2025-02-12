@@ -1,6 +1,5 @@
 # Run like, e.g.,
 # python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 2000 --train_n_candidates 1 --batch_size 32 --early_stopping --epochs 200 --lamda_max 1.0 --lamda_min 0.0001 --layer_width 100 --learning_rate 0.003 --method gittins --min_delta 0.0 --normalize_gi_loss --patience 5
-from arrow import get
 import torch
 import matplotlib.pyplot as plt
 import os
@@ -18,8 +17,6 @@ from acquisition_function_net import (
 from exact_gp_computations import calculate_EI_GP
 from train_acquisition_function_net import (
     METHODS,
-    get_latest_model_path,
-    load_configs,
     load_model,
     print_stats,
     save_acquisition_function_net_configs,
@@ -53,8 +50,6 @@ from gp_acquisition_dataset import (
     GP_GEN_DEVICE,
     FIX_TRAIN_ACQUISITION_DATASET
 )
-
-
 
 
 def get_training_config(args):

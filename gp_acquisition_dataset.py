@@ -403,10 +403,11 @@ def create_train_and_test_gp_acquisition_datasets(
     # train_samples_size, test_samples_size = get_lengths_from_proportions(
     #     total_samples_dataset_size, [train_proportion, test_proportion])
 
-    print(f"Small test proportion of test: {small_test_proportion_of_test:.4f}")
-    # small_test_proportion_of_test = 1 / ((1 / small_test_proportion_of_train_and_small_test - 1) * test_factor)
-    small_test_proportion_of_train_and_small_test = 1 / (1 + 1 / (small_test_proportion_of_test * test_factor))
-    print(f"Small test proportion of train + small test: {small_test_proportion_of_train_and_small_test:.4f}")
+    if not check_cached:
+        print(f"Small test proportion of test: {small_test_proportion_of_test:.4f}")
+        # small_test_proportion_of_test = 1 / ((1 / small_test_proportion_of_train_and_small_test - 1) * test_factor)
+        small_test_proportion_of_train_and_small_test = 1 / (1 + 1 / (small_test_proportion_of_test * test_factor))
+        print(f"Small test proportion of train + small test: {small_test_proportion_of_train_and_small_test:.4f}")
 
     if fix_n_candidates:
         train_n_points_kwargs = dict(min_history=min_history, max_history=max_history,
