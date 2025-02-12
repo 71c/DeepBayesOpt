@@ -5,7 +5,9 @@ from datetime import datetime
 from typing import Union
 import yaml
 import os
-from gp_acquisition_dataset import create_train_test_gp_acq_datasets_from_args
+from gp_acquisition_dataset import GP_GEN_DEVICE, create_train_test_gp_acq_datasets_from_args, get_gp_acquisition_dataset_configs
+from run_train import get_configs_and_model_and_paths, get_model
+from train_acquisition_function_net import model_is_trained
 from utils import dict_to_cmd_args, save_json
 from submit_dependent_jobs import CONFIG_DIR, SWEEPS_DIR, submit_dependent_jobs
 
@@ -44,7 +46,19 @@ def refine_config(params_value: Union[dict, list[dict]],
             this_vary_params = vary_params or param_name in experiment_config['parameters']
             if param_name in experiment_config['parameters']:
                 info = experiment_config['parameters'][param_name]
-                allowed_values = info.get('values', 'all')
+                check_dict_has_keys(
+                    info,
+                    ['values', 'value', 'recurse'],
+                    lambda kk: (f"Invalid key '{kk}' in experiment parameter "
+                                f"dictionary for parameter '{param_name}'.")
+                )
+                if 'values' in info and 'value' in info:
+                    raise ValueError(
+                        f"Cannot specify both 'values' and 'value' for parameter '{param_name}'.")
+                if 'value' in info:
+                    allowed_values = [info['value']]
+                else:
+                    allowed_values = info.get('values', 'all')
                 if info.get('recurse', False):
                     this_params_names = params_names + [param_name]
             
@@ -71,7 +85,10 @@ def refine_config(params_value: Union[dict, list[dict]],
                     
                     if param_name in experiment_config['parameters']:
                         if allowed_values != 'all':
+                            # Take the set of values in the base config
+                            # that are also in the experiment config
                             new_values = []
+                            value_names_already_have = set()
                             for value in values:
                                 if type(value) is dict:
                                     check_dict_has_keys(
@@ -80,8 +97,16 @@ def refine_config(params_value: Union[dict, list[dict]],
                                     val_name = value['value']
                                 else:
                                     val_name = value
+                                value_names_already_have.add(val_name)
                                 if val_name in allowed_values:
                                     new_values.append(value)
+                            
+                            # Now add the values from the experiment config
+                            # that are not already in the base config
+                            for value in allowed_values:
+                                if value not in value_names_already_have:
+                                    new_values.append(value)
+
                             values = new_values
                 else:
                     if 'value' in param_config:
@@ -162,7 +187,7 @@ def get_command_line_options(options: dict):
     cmd_opts_sample_dataset = {
         k: options.get(k)
         for k in ['dimension', 'kernel', 'lengthscale',
-                  'outcome_transform', 'sigma', 'randomize_params']
+                  'randomize_params', 'outcome_transform', 'sigma']
     }
     cmd_opts_sample_dataset['standardize_dataset_outcomes'] = options['standardize_outcomes']
     cmd_opts_sample_dataset['train_acquisition_size'] = options['train_samples_size'] * expansion_factor
@@ -184,7 +209,11 @@ def get_command_line_options(options: dict):
     cmd_opts_training = {
         k: options.get(k)
         for k in [
-            'learning_rate', 'batch_size', 'method',
+            'method', 'learning_rate', 'batch_size', 'epochs',
+            # early stopping
+            'early_stopping', 'patience', 'min_delta', 'cumulative_delta',
+            # method=policy_gradient
+            'include_alpha', 'learn_alpha', 'initial_alpha', 'alpha_increment',
             # method=gittins
             'normalize_gi_loss', 'lamda_min', 'lamda_max', 'lamda',
             # method=mse_ei
@@ -211,40 +240,52 @@ def get_command_line_options(options: dict):
     return cmd_dataset, cmd_opts_dataset, cmd_nn_train, cmd_opts_nn
 
 
-def create_dependency_structure_train_acqf(options_list, datasets_job_id="datasets"):
+DATASETS_JOB_ID = "datasets"
+NO_DATASET_ID = 0
+
+def create_dependency_structure_train_acqf(options_list, always_train=False):
     r"""Create a command dependency structure for training acquisition function NNs.
     Includes dataset generation commands and NN training commands.
     Only includes dataset generation commands for datasets that are not cached."""
-    dataset_commands = []
-    nn_commands = []
+    datasets_cached_dict = {}
+    dataset_command_ids = {}
+    nn_job_arrays = defaultdict(list)
     for option_dict in options_list:
         (cmd_dataset, cmd_opts_dataset,
          cmd_nn_train, cmd_opts_nn) = get_command_line_options(option_dict)
-
-        if cmd_dataset not in dataset_commands:
-            dataset_commands.append((cmd_dataset, cmd_opts_dataset))
         
-        nn_commands.append(cmd_nn_train)
-    
-    # check if datasets already cached
-    datasets_created = []
-    for cmd_dataset, cmd_opts_dataset in dataset_commands:
-        args_dataset = argparse.Namespace(**cmd_opts_dataset)
-        whether_cached = create_train_test_gp_acq_datasets_from_args(
-            args_dataset, check_cached=True, load_dataset=False)
-        dataset_already_cached = True
-        for cached in whether_cached:
-            dataset_already_cached = dataset_already_cached and cached
-        datasets_created.append(dataset_already_cached)
+        # Determine whether to train the NN
+        if always_train:
+            train_nn = True
+        else:
+            # Determine whether or not the NN is already cached
+            args_nn = argparse.Namespace(**cmd_opts_nn)
+            (af_dataset_configs, model,
+            model_and_info_path, models_path) = get_configs_and_model_and_paths(args_nn)
+            model_already_trained = model_is_trained(model_and_info_path)
+            # Train the NN iff it has not already been trained
+            train_nn = not model_already_trained
+        
+        # Skip the command(s) if the NN has already been trained
+        if not train_nn:
+            continue
 
-    dataset_command_ids = {}
-    nn_job_arrays = defaultdict(list)
-    for ((cmd_dataset, cmd_opts_dataset),
-         dataset_already_cached,
-         cmd_nn_train) in zip(dataset_commands, datasets_created, nn_commands):
+        # Determine whether or not the dataset is already cached
+        if cmd_dataset in datasets_cached_dict:
+            dataset_already_cached = datasets_cached_dict[cmd_dataset]
+        else:
+            args_dataset = argparse.Namespace(**cmd_opts_dataset)
+            whether_cached = create_train_test_gp_acq_datasets_from_args(
+                args_dataset, check_cached=True, load_dataset=False)
+            dataset_already_cached = True
+            for cached in whether_cached:
+                dataset_already_cached = dataset_already_cached and cached
+            datasets_cached_dict[cmd_dataset] = dataset_already_cached
+        
+        # Determine the dataset id
         if dataset_already_cached:
-            # dataset already cached; assign -1 as a dummy id
-            dataset_id = -1
+            # dataset already cached; assign a dummy id
+            dataset_id = NO_DATASET_ID
         else:
             # dataset not cached
             # Only store cmd_dataset in dataset_command_ids if dataset is not cached
@@ -256,13 +297,14 @@ def create_dependency_structure_train_acqf(options_list, datasets_job_id="datase
                 dataset_id = len(dataset_command_ids) + 1
                 dataset_command_ids[cmd_dataset] = dataset_id
 
+        # Add the NN command to the appropriate list corresponding to the dataset id
         nn_job_arrays[dataset_id].append(cmd_nn_train)
     
     # Recall that dataset_command_ids only contains commands for datasets not cached
     # Note that dicts are guaranteed to retain insertion order since Python 3.7
     dataset_commands_not_cached = list(dataset_command_ids)
     ret = {
-        datasets_job_id: {
+        DATASETS_JOB_ID: {
             "commands": dataset_commands_not_cached,
             "gpu": False
         }
@@ -273,9 +315,9 @@ def create_dependency_structure_train_acqf(options_list, datasets_job_id="datase
             "gpu": True
         }
         # Only add dependencies if the dataset is not cached
-        if dataset_id != -1:
+        if dataset_id != NO_DATASET_ID:
             tmp["dependencies"] = [{
-                "job_name": datasets_job_id,
+                "job_name": DATASETS_JOB_ID,
                 "index": dataset_id
             }]
         ret[f"nn{dataset_id}"] = tmp
@@ -300,6 +342,12 @@ def main():
         '--mail',
         type=str,
         help='email address to send Slurm notifications to'
+    )
+    parser.add_argument(
+        '--always_train',
+        action='store_true',
+        help=('whether to train all acquisition function NNs '
+              'regardless of whether they have already been trained')
     )
 
     args = parser.parse_args()
@@ -339,7 +387,7 @@ def main():
     with open(os.path.join(CONFIG_DIR, 'options.yml'), 'w') as f:
         yaml.dump(options_list, f)
     
-    jobs_spec = create_dependency_structure_train_acqf(options_list)
+    jobs_spec = create_dependency_structure_train_acqf(options_list, args.always_train)
     save_json(jobs_spec, os.path.join(CONFIG_DIR, "dependencies.json"), indent=4)
 
     sweep_name = "test"

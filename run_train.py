@@ -1,5 +1,5 @@
 # Run like, e.g.,
-# python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 3000 --test_n_candidates 1 --train_acquisition_size 2000 --train_n_candidates 1 --batch_size 32 --lamda_max 1.0 --lamda_min 0.0001 --layer_width 100 --learning_rate 0.003 --method gittins --normalize_gi_loss
+# python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 2000 --train_n_candidates 1 --batch_size 32 --early_stopping --epochs 200 --lamda_max 1.0 --lamda_min 0.0001 --layer_width 100 --learning_rate 0.003 --method gittins --min_delta 0.0 --normalize_gi_loss --patience 5
 import torch
 import matplotlib.pyplot as plt
 import os
@@ -24,7 +24,7 @@ from train_acquisition_function_net import (
     save_acquisition_function_net_configs,
     train_acquisition_function_net,
     train_or_test_loop)
-from utils import DEVICE, get_dimension, load_json, save_json
+from utils import DEVICE, load_json, save_json
 from plot_utils import plot_nn_vs_gp_acquisition_function_1d_grid, plot_acquisition_function_net_training_history
 from nn_utils import count_trainable_parameters, count_parameters
 
@@ -176,23 +176,46 @@ def get_model(args):
     return model
 
 
+def get_configs_and_model_and_paths(args):
+    #### Get AF dataset configs
+    (gp_realization_config, dataset_size_config,
+    n_points_config, dataset_transform_config) = get_gp_acquisition_dataset_configs(
+        args, device=GP_GEN_DEVICE)
+
+    # Exp technically works, but Power does not
+    # Make sure to set these appropriately depending on whether the transform
+    # supports mean transform
+    # if dataset_transform_config['outcome_transform'] is not None:
+    #     GET_TRAIN_TRUE_GP_STATS = False
+    #     GET_TEST_TRUE_GP_STATS = False
+
+    ################################### Get NN model ###############################
+    #### Get the untrained model
+    # This wastes some resources, but need to do it to get the model's init dict to
+    # obtain the correct path for saving the model because that is currently how the
+    # model is uniquely identified.
+    model = get_model(args)
+
+    #### Save the configs for the model and training and datasets
+    dummy_model_sampler = RandomModelSampler(
+        models=gp_realization_config["models"],
+        model_probabilities=gp_realization_config["model_probabilities"],
+        randomize_params=gp_realization_config["randomize_params"] # == args.randomize_params
+    )
+    model_and_info_path, models_path = save_acquisition_function_net_configs(
+        MODELS_DIR, model, get_training_config(args),
+        gp_realization_config, dataset_size_config, n_points_config,
+        dataset_transform_config, dummy_model_sampler,
+        save=getattr(args, "save_model", False)
+    )
+
+    return (gp_realization_config, dataset_size_config,
+    n_points_config, dataset_transform_config), model, model_and_info_path, models_path
+
+
 def run_train(args):
-    ########################## Default settings ################################ 
-    args.epochs = 200
-
-    # Only used if policy_gradient_flag is True
-    args.include_alpha = True
-    # Following 3 are only used if both policy_gradient_flag and args.include_alpha are True
-    args.learn_alpha = True
-    args.initial_alpha = 1.0
-    args.alpha_increment = None # equivalent to 0.0
-
-    args.early_stopping = True
-    args.patience = 20
-    args.min_delta = 0.0
-    args.cumulative_delta = False
-
     ######################## Check the arguments ###############################
+    # Only have include_alpha=True when method=policy_gradient
     policy_gradient_flag = (args.method == 'policy_gradient')
     args.include_alpha = args.include_alpha and policy_gradient_flag
 
@@ -249,42 +272,9 @@ def run_train(args):
         if args.normalize_gi_loss:
             raise ValueError("normalize_gi_loss should be False if method != gittins")
 
-    #### Get configs
-    # AF dataset configs
-    (gp_realization_config, dataset_size_config,
-    n_points_config, dataset_transform_config) = get_gp_acquisition_dataset_configs(
-        args, device=GP_GEN_DEVICE)
-    # Training config
-    training_config = get_training_config(args)
-
-    # Exp technically works, but Power does not
-    # Make sure to set these appropriately depending on whether the transform
-    # supports mean transform
-    # if dataset_transform_config['outcome_transform'] is not None:
-    #     GET_TRAIN_TRUE_GP_STATS = False
-    #     GET_TEST_TRUE_GP_STATS = False
-
-    ####################### Make the train and test datasets #######################
-    (train_aq_dataset,
-     test_aq_dataset,
-     small_test_aq_dataset) = create_train_test_gp_acq_datasets_helper(
-        args, gp_realization_config, dataset_size_config,
-            n_points_config, dataset_transform_config)
-
-    ################################### Get NN model ###############################
-    #### Get the untrained model
-    # This wastes some resources, but need to do it to get the model's init dict to
-    # obtain the correct path for saving the model because that is currently how the
-    # model is uniquely identified.
-    model = get_model(args)
-
-    # Save the configs for the model and training and datasets
-    model_and_info_path, models_path = save_acquisition_function_net_configs(
-        MODELS_DIR, model, training_config,
-        gp_realization_config, dataset_size_config, n_points_config,
-        dataset_transform_config, train_aq_dataset.model_sampler,
-        save=args.save_model
-    )
+    ((gp_realization_config, dataset_size_config,
+      n_points_config, dataset_transform_config),
+    model, model_and_info_path, models_path) = get_configs_and_model_and_paths(args)
 
     if args.load_saved_model:
         model, model_path = load_model(model_and_info_path, return_model_path=True)
@@ -296,6 +286,13 @@ def run_train(args):
     print(model)
     print("Number of trainable parameters:", count_trainable_parameters(model))
     print("Number of parameters:", count_parameters(model))
+
+    ####################### Make the train and test datasets #######################
+    (train_aq_dataset,
+     test_aq_dataset,
+     small_test_aq_dataset) = create_train_test_gp_acq_datasets_helper(
+        args, gp_realization_config, dataset_size_config,
+            n_points_config, dataset_transform_config)
 
     ######################## Train the model #######################################
     if args.train:
@@ -480,9 +477,24 @@ def main():
         help='Whether to load a saved model. Set this flag to load the saved model.'
     )
 
-    ## GP dataset settings
+    ################################ Dataset settings ##################################
     add_gp_acquisition_dataset_args(parser)
+    
+    ############################ NN architecture settings ##############################
+    parser.add_argument(
+        '--layer_width', 
+        type=int,
+        required=True,
+        help='The width of the NN layers.'
+    )
+    parser.add_argument(
+        '--standardize_nn_history_outcomes', 
+        action='store_true', 
+        help=('Whether to standardize the history outcomes when computing the NN '
+            'acquisition function. Default is False.')
+    )
 
+    ############################ Training settings #####################################
     # Which AF training loss function to use
     parser.add_argument(
         '--method',
@@ -502,24 +514,67 @@ def main():
         required=True,
         help='Batch size for training the model'
     )
-
-    # Layer width
     parser.add_argument(
-        '--layer_width', 
+        '--epochs',
         type=int,
-        required=True,
-        help='The width of the NN layers.'
+        help='Maximum number of epochs for training the model',
     )
-
-    ### Optional settings for NN architecture
+    ### Early stopping
     parser.add_argument(
-        '--standardize_nn_history_outcomes', 
+        '--early_stopping', 
         action='store_true', 
-        help=('Whether to standardize the history outcomes when computing the NN '
-            'acquisition function. Default is False.')
+        help=('Whether to use early stopping. Default is False.')
     )
-
-    ### Options when method=gittins
+    parser.add_argument(
+        '--patience',
+        type=int,
+        help=('Number of epochs with no improvement after which training will be stopped. '
+            'Only used if early_stopping=True.')
+    )
+    parser.add_argument(
+        '--min_delta',
+        type=float,
+        help=('Minimum change in the monitored quantity to qualify as an improvement. '
+            'Only used if early_stopping=True.')
+    )
+    parser.add_argument(
+        '--cumulative_delta',
+        action='store_true',
+        help=('Whether to use cumulative delta for early stopping. Default is False. '
+            'Only used if early_stopping=True.')
+    )
+    #### Options when method=policy_gradient
+    parser.add_argument(
+        '--include_alpha', 
+        action='store_true', 
+        help='Whether to include alpha. Only used if method=policy_gradient.'
+    )
+    parser.add_argument(
+        '--learn_alpha', 
+        action='store_true', 
+        help=('Whether to learn alpha. Default is True. Only used if '
+            'method=policy_gradient and include_alpha=true.')
+    )
+    parser.add_argument(
+        '--initial_alpha',
+        type=float,
+        help=('Initial value of alpha. Default is 1.0. Only used if '
+              'method=policy_gradient and include_alpha=true.'),
+        default=1.0
+    )
+    parser.add_argument( # default is None, equivalent to 0.0
+        '--alpha_increment',
+        type=float,
+        help=('Increment for alpha. Default is 0.0. Only used if method=policy_gradient'
+            ' and include_alpha=true.')
+    )
+    #### Options when method=gittins
+    parser.add_argument(
+        '--normalize_gi_loss', 
+        action='store_true', 
+        help=('Whether to normalize the Gittins index loss function. Default is False. '
+            'Only used if method=gittins.')
+    )
     parser.add_argument(
         '--lamda_min',
         type=float,
@@ -537,14 +592,7 @@ def main():
         type=float,
         help='Value of lambda (if using constant lambda). Only used if method=gittins.'
     )
-    parser.add_argument(
-        '--normalize_gi_loss', 
-        action='store_true', 
-        help=('Whether to normalize the Gittins index loss function. Default is False. '
-            'Only used if method=gittins.')
-    )
-
-    ### Options for NN when method=mse_ei
+    #### Options for NN when method=mse_ei
     parser.add_argument(
         '--learn_tau', 
         action='store_true',

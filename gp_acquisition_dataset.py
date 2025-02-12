@@ -674,29 +674,12 @@ def create_train_test_gp_acq_datasets_helper(
 
 
 def add_gp_acquisition_dataset_args(parser):
-    #### Samples dataset settings
-    ## Dataset Train and Test Size
-    parser.add_argument(
-        '--train_acquisition_size', 
-        type=int, 
-        help='Size of the train acqusition dataset',
-        required=True
-    )
-    parser.add_argument(
-        '--test_acquisition_size', 
-        type=int, 
-        help='Size of the test acqusition dataset (optional)'
-    )
-    parser.add_argument(
-        '--test_factor', 
-        type=float, 
-        help='Size of the test acqusition dataset as a proportion of train_acquisition_size (optional)'
-    )
+    ############################# Samples dataset settings #############################
     ## GP settings
     parser.add_argument(
-        '--lengthscale', 
-        type=float, 
-        help='Lengthscale of the GP',
+        '--dimension', 
+        type=int, 
+        help='Dimension of the optimization problem',
         required=True
     )
     parser.add_argument(
@@ -706,15 +689,15 @@ def add_gp_acquisition_dataset_args(parser):
         help='Kernel to use for the GP'
     )
     parser.add_argument(
+        '--lengthscale', 
+        type=float, 
+        help='Lengthscale of the GP',
+        required=True
+    )
+    parser.add_argument(
         '--randomize_params', 
         action='store_true',
         help='Set this to randomize the GP parameters. Default is False.',
-    )
-    parser.add_argument(
-        '--dimension', 
-        type=int, 
-        help='Dimension of the optimization problem',
-        required=True
     )
     parser.add_argument(
         '--outcome_transform', 
@@ -733,8 +716,25 @@ def add_gp_acquisition_dataset_args(parser):
         action='store_true', 
         help='Whether to standardize the outcomes of the dataset (independently for each item). Default is False'
     )
+    ## Dataset Train and Test Size
+    parser.add_argument(
+        '--train_acquisition_size', 
+        type=int, 
+        help='Size of the train acqusition dataset',
+        required=True
+    )
+    parser.add_argument(
+        '--test_acquisition_size', 
+        type=int, 
+        help='Size of the test acqusition dataset (optional)'
+    )
+    parser.add_argument(
+        '--test_factor', 
+        type=float, 
+        help='Size of the test acqusition dataset as a proportion of train_acquisition_size (optional)'
+    )
 
-    #### Acquisition dataset settings
+    ############################ Acquisition dataset settings ##########################
     parser.add_argument(
         '--expansion_factor',
         type=int,

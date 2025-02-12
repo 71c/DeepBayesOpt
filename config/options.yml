@@ -2,7 +2,7 @@
   acquisition_dataset.max_history: 400
   acquisition_dataset.min_history: 1
   acquisition_dataset.n_candidates: 1
-  architecture.layer_width: 250
+  architecture.layer_width: 100
   architecture.standardize_nn_history_outcomes: false
   function_samples_dataset.dimension: 8
   function_samples_dataset.kernel: Matern52
@@ -13,16 +13,21 @@
   function_samples_dataset.test_samples_size: 5000
   function_samples_dataset.train_samples_size: 1000
   training.batch_size: 32
+  training.cumulative_delta: false
+  training.early_stopping: true
+  training.epochs: 200
   training.lamda_config.lamda_max: 1.0
   training.lamda_config.lamda_min: 0.0001
   training.learning_rate: 0.003
   training.method: gittins
+  training.min_delta: 0.0
   training.normalize_gi_loss: true
+  training.patience: 2
 - acquisition_dataset.expansion_factor: 2
   acquisition_dataset.max_history: 400
   acquisition_dataset.min_history: 1
   acquisition_dataset.n_candidates: 1
-  architecture.layer_width: 250
+  architecture.layer_width: 100
   architecture.standardize_nn_history_outcomes: false
   function_samples_dataset.dimension: 8
   function_samples_dataset.kernel: Matern52
@@ -33,16 +38,21 @@
   function_samples_dataset.test_samples_size: 5000
   function_samples_dataset.train_samples_size: 10000
   training.batch_size: 32
+  training.cumulative_delta: false
+  training.early_stopping: true
+  training.epochs: 200
   training.lamda_config.lamda_max: 1.0
   training.lamda_config.lamda_min: 0.0001
   training.learning_rate: 0.003
   training.method: gittins
+  training.min_delta: 0.0
   training.normalize_gi_loss: true
+  training.patience: 2
 - acquisition_dataset.expansion_factor: 2
   acquisition_dataset.max_history: 400
   acquisition_dataset.min_history: 1
   acquisition_dataset.n_candidates: 1
-  architecture.layer_width: 250
+  architecture.layer_width: 100
   architecture.standardize_nn_history_outcomes: false
   function_samples_dataset.dimension: 8
   function_samples_dataset.kernel: Matern52
@@ -53,8 +63,13 @@
   function_samples_dataset.test_samples_size: 5000
   function_samples_dataset.train_samples_size: 100000
   training.batch_size: 32
+  training.cumulative_delta: false
+  training.early_stopping: true
+  training.epochs: 200
   training.lamda_config.lamda_max: 1.0
   training.lamda_config.lamda_min: 0.0001
   training.learning_rate: 0.003
   training.method: gittins
+  training.min_delta: 0.0
   training.normalize_gi_loss: true
+  training.patience: 2

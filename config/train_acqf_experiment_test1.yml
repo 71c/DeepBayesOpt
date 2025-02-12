@@ -1,0 +1,10 @@
+parameters:
+  method:
+    values: ['gittins']
+    recurse: false
+  train_samples_size:
+    values: all
+  layer_width:
+    value: 100
+  patience:
+    value: 2

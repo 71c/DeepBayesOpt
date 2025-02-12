@@ -12,7 +12,7 @@ parameters:
   architecture:
     parameters:
       layer_width:
-        value: 250
+        value: 100
       standardize_nn_history_outcomes:
         value: false
   function_samples_dataset:
@@ -40,6 +40,18 @@ parameters:
     parameters:
       batch_size:
         value: 32
+      early_stopping:
+        value:
+          parameters:
+            cumulative_delta:
+              value: false
+            min_delta:
+              value: 0.0
+            patience:
+              value: 2
+          value: true
+      epochs:
+        value: 200
       learning_rate:
         value: 0.003
       method:

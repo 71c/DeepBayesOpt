@@ -1,6 +1,8 @@
 parameters:
   method:
     values: ['gittins']
-    recurse: false
+    recurse: true
   train_samples_size:
+    values: all
+  layer_width:
     values: all

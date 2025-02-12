@@ -7,6 +7,8 @@ parameters:
         values: ["Matern52"]
       lengthscale:
         values: [0.1]
+      randomize_params:
+        values: [false, true]
       outcome_transform:
         values:
         - value: null
@@ -20,8 +22,6 @@ parameters:
         values: [1000, 10000, 100000]
       test_samples_size:
         value: 5000
-      randomize_params:
-        values: [false, true]
   acquisition_dataset:
     parameters:
       expansion_factor:
@@ -56,7 +56,33 @@ parameters:
               - lamda:
                   values: [1.e-3, 1.e-2, 1.e-1]
         - value: mse_ei
+        - value: policy_gradient
+          parameters:
+            include_alpha:
+              values:
+              - value: true
+                parameters:
+                  learn_alpha:
+                    values: [true, false]
+                  initial_alpha:
+                    value: 1.0
+                  alpha_increment:
+                    value: null
+              - value: false
       learning_rate:
         values: [3.e-3, 3.e-4]
       batch_size:
         values: [32, 128]
+      epochs:
+        value: 200
+      early_stopping:
+        values:
+        - value: true
+          parameters:
+            patience:
+              value: 20
+            min_delta:
+              value: 0.0
+            cumulative_delta:
+              value: false
+        - value: false
