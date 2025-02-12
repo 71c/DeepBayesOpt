@@ -305,15 +305,15 @@ def create_dependency_structure_train_acqf(options_list, always_train=False):
         # Add the NN command to the appropriate list corresponding to the dataset id
         nn_job_arrays[dataset_id].append(cmd_nn_train)
     
+    ret = {}
     # Recall that dataset_command_ids only contains commands for datasets not cached
     # Note that dicts are guaranteed to retain insertion order since Python 3.7
     dataset_commands_not_cached = list(dataset_command_ids)
-    ret = {
-        DATASETS_JOB_ID: {
+    if len(dataset_commands_not_cached) != 0:
+        ret[DATASETS_JOB_ID] = {
             "commands": dataset_commands_not_cached,
             "gpu": False
         }
-    }
     for dataset_id, job_array in nn_job_arrays.items():
         tmp = {
             "commands": job_array,

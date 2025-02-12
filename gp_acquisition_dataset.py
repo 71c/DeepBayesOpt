@@ -1,5 +1,7 @@
 import math
 import os
+import sys
+import traceback
 from typing import Any, List, Optional, Union
 from function_samples_dataset import GaussianProcessRandomDataset, ListMapFunctionSamplesDataset
 from acquisition_dataset import AcquisitionDataset, CostAwareAcquisitionDataset, FunctionSamplesAcquisitionDataset
@@ -201,6 +203,7 @@ def create_gp_acquisition_dataset(
         xvalue_distribution=xvalue_distribution)
     
     aq_dataset_already_saved = False
+    aq_dataset = None
     #### Define the paths and names for the datasets; load the AF dataset if it exists
     if cache:
         name_ = name + "_" if name != "" else name
@@ -236,12 +239,20 @@ def create_gp_acquisition_dataset(
         aq_dataset_already_saved = os.path.exists(aq_dataset_path)
         
         if load_dataset and aq_dataset_already_saved:
-            aq_dataset = AcquisitionDataset.load(aq_dataset_path)
-            assert aq_dataset.data_is_fixed == fix_acquisition_samples
-            # Won't just return it now because 
-            # it is possible that the dataset currently doesn't have cached
-            # data that we want to compute now.
-            # Kind of redundant because we are loading and saving again.
+            try:
+                aq_dataset = AcquisitionDataset.load(aq_dataset_path)
+            except:
+                print("Error when loading acquisition function dataset:",
+                      file=sys.stderr)
+                print(traceback.format_exc(), file=sys.stderr)
+                aq_dataset_already_saved = False
+            # aq_dataset = AcquisitionDataset.load(aq_dataset_path)
+            if aq_dataset_already_saved:
+                assert aq_dataset.data_is_fixed == fix_acquisition_samples
+                # Won't just return it now because 
+                # it is possible that the dataset currently doesn't have cached
+                # data that we want to compute now.
+                # Kind of redundant because we are loading and saving again.
         
         if fix_acquisition_samples:
             if batch_size is None or get_true_gp_stats is None:
@@ -268,12 +279,25 @@ def create_gp_acquisition_dataset(
     if not aq_dataset_already_saved:
         #### Generate or load the function samples dataset
         if cache and fix_gp_samples and function_dataset_already_saved:
-            if load_dataset:
-                function_samples_dataset = ListMapFunctionSamplesDataset.load(
-                    function_dataset_path)
+            create_function_samples_dataset = False
+            # Even if load_dataset=False, then we still want to load the function
+            # samples dataset when fix_acquisition_samples=True because in that case
+            # we want to save the acquisition dataset.
+            if load_dataset or fix_acquisition_samples:
+                try:
+                    function_samples_dataset = ListMapFunctionSamplesDataset.load(
+                        function_dataset_path)
+                except:
+                    print("Error when loading function samples dataset:",
+                          file=sys.stderr)
+                    print(traceback.format_exc(), file=sys.stderr)
+                    create_function_samples_dataset = True
             else:
                 function_samples_dataset = None
         else:
+            create_function_samples_dataset = True
+        
+        if create_function_samples_dataset:
             f = get_n_datapoints_random_gen_fixed_n_candidates if fix_n_candidates \
                 else get_n_datapoints_random_gen_variable_n_candidates
             n_datapoints_random_gen = f(**n_datapoints_kwargs)
@@ -788,8 +812,6 @@ def add_gp_acquisition_dataset_args(parser):
         required=True
     )
 
-    add_lamda_args(parser)
-
 
 def create_train_test_gp_acq_datasets_from_args(
         args, check_cached=False, load_dataset=True):
@@ -810,6 +832,7 @@ def main():
     import argparse
     parser = argparse.ArgumentParser()
     add_gp_acquisition_dataset_args(parser)
+    add_lamda_args(parser)
     parser.add_argument(
         '--batch_size',
         type=int,
