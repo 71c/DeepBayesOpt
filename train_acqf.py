@@ -5,8 +5,8 @@ from datetime import datetime
 from typing import Union
 import yaml
 import os
-from gp_acquisition_dataset import GP_GEN_DEVICE, create_train_test_gp_acq_datasets_from_args, get_gp_acquisition_dataset_configs
-from run_train import get_configs_and_model_and_paths, get_model
+from gp_acquisition_dataset import create_train_test_gp_acq_datasets_from_args
+from run_train import get_configs_and_model_and_paths
 from train_acquisition_function_net import model_is_trained
 from utils import dict_to_cmd_args, save_json
 from submit_dependent_jobs import CONFIG_DIR, SWEEPS_DIR, submit_dependent_jobs

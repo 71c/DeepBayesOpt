@@ -3,3 +3,6 @@ saved_models/
 bayesopt_results/
 plots/
 sweeps/
+config/dependencies.json
+config/refined_config.yml
+config/options.yml
