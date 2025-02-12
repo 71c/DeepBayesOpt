@@ -12,8 +12,6 @@ SWEEPS_DIR = "sweeps"
 def submit_dependent_jobs(sweep_dir: str, jobs_spec: dict, mail:Optional[str]=None):
     logs_dir = os.path.join(sweep_dir, "logs")
     config_dir = os.path.join(sweep_dir, "config")
-    os.makedirs(logs_dir, exist_ok=True)
-    os.makedirs(config_dir, exist_ok=True)
 
     job_ids = {}
 
@@ -89,7 +87,9 @@ def submit_dependent_jobs(sweep_dir: str, jobs_spec: dict, mail:Optional[str]=No
         job_ids[job_name] = job_id
         return job_id
     
-    for j_name in jobs_spec:
-        submit_job(j_name)
-    
-    save_json(job_ids, os.path.join(sweep_dir, "job_ids.json"))
+    if jobs_spec: # Don't create unnecessary directories if there are no jobs to submit
+        os.makedirs(logs_dir, exist_ok=True)
+        os.makedirs(config_dir, exist_ok=True)
+        for j_name in jobs_spec:
+            submit_job(j_name)
+        save_json(job_ids, os.path.join(sweep_dir, "job_ids.json"))
