@@ -9,9 +9,21 @@ CONFIG_DIR = "config"
 SWEEPS_DIR = "sweeps"
 
 
-def submit_dependent_jobs(sweep_dir: str, jobs_spec: dict, mail:Optional[str]=None):
+def submit_dependent_jobs(
+        sweep_dir: str,
+        jobs_spec: dict,
+        gpu_gres: str = "gpu:a100:1", # e.g. "gpu:a100:1" or "gpu:1"
+        mail:Optional[str]=None
+    ):
+    # Don't create unnecessary directories if there are no jobs to submit
+    # (i.e. if jobs_spec is empty)
+    if not jobs_spec:
+        return
+
     logs_dir = os.path.join(sweep_dir, "logs")
     config_dir = os.path.join(sweep_dir, "config")
+    os.makedirs(logs_dir, exist_ok=True)
+    os.makedirs(config_dir, exist_ok=True)
 
     job_ids = {}
 
@@ -52,8 +64,8 @@ def submit_dependent_jobs(sweep_dir: str, jobs_spec: dict, mail:Optional[str]=No
         n_commands = len(job_spec["commands"])
         sbatch_args_dict = {
             "job-name": job_name,
-            "output": f"{logs_dir}/{job_name}_%j.out",
-            "error": f"{logs_dir}/{job_name}_%j.err",
+            "output": os.path.join(logs_dir, f"{job_name}_%j.out"),
+            "error": os.path.join(logs_dir, f"{job_name}_%j.err"),
             "requeue": True,
             "array": f"1-{n_commands}",
             "mem": "40gb" # server memory requested (per node)
@@ -63,8 +75,7 @@ def submit_dependent_jobs(sweep_dir: str, jobs_spec: dict, mail:Optional[str]=No
             sbatch_args_dict['mail-user'] = mail
         if job_spec["gpu"]:
             sbatch_args_dict['partition'] = 'gpu'
-            sbatch_args_dict['gres'] = 'gpu:a100:1'
-            # sbatch_args_dict['gres'] = 'gpu:1'
+            sbatch_args_dict['gres'] = gpu_gres
         else:
             sbatch_args_dict['partition'] = 'frazier'
         if dependency_job_ids:
@@ -87,9 +98,6 @@ def submit_dependent_jobs(sweep_dir: str, jobs_spec: dict, mail:Optional[str]=No
         job_ids[job_name] = job_id
         return job_id
     
-    if jobs_spec: # Don't create unnecessary directories if there are no jobs to submit
-        os.makedirs(logs_dir, exist_ok=True)
-        os.makedirs(config_dir, exist_ok=True)
-        for j_name in jobs_spec:
-            submit_job(j_name)
-        save_json(job_ids, os.path.join(sweep_dir, "job_ids.json"))
+    for j_name in jobs_spec:
+        submit_job(j_name)
+    save_json(job_ids, os.path.join(sweep_dir, "job_ids.json"))

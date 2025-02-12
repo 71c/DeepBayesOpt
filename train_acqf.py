@@ -344,15 +344,24 @@ def main():
         help='YAML file containing the experiment configuration.'
     )
     parser.add_argument(
+        '--gpu_gres',
+        type=str,
+        help=('GPU resource specification for Slurm. e.g., "gpu:a100:1" or "gpu:1". '
+              'Default is "gpu:a100:1".'),
+        default="gpu:a100:1"
+    )
+    parser.add_argument(
         '--mail',
         type=str,
-        help='email address to send Slurm notifications to'
+        help=('email address to send Slurm notifications to. '
+              'If not specified, no notifications are sent.')
     )
     parser.add_argument(
         '--always_train',
         action='store_true',
-        help=('whether to train all acquisition function NNs '
-              'regardless of whether they have already been trained')
+        help=('If this flag is set, train all acquisition function NNs regardless of '
+              'whether they have already been trained. Default is to only train '
+              'acquisition function NNs that have not already been trained.')
     )
 
     args = parser.parse_args()
@@ -398,7 +407,12 @@ def main():
     sweep_name = "test"
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     sweep_dir = os.path.join(SWEEPS_DIR, f"{sweep_name}_{timestamp}")
-    submit_dependent_jobs(sweep_dir=sweep_dir, jobs_spec=jobs_spec, mail=args.mail)
+    submit_dependent_jobs(
+        sweep_dir=sweep_dir,
+        jobs_spec=jobs_spec,
+        gpu_gres=args.gpu_gres,
+        mail=args.mail
+    )
 
 if __name__ == "__main__":
     main()
