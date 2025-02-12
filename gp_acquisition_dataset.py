@@ -33,6 +33,33 @@ GP_GEN_DEVICE = "cpu"
 FIX_TRAIN_ACQUISITION_DATASET = False
 
 
+def add_lamda_args(parser):
+    parser.add_argument(
+        '--lamda_min',
+        type=float,
+        help=('Minimum value of lambda (if using variable lambda). '
+            'Only used if method=gittins.')
+    )
+    parser.add_argument(
+        '--lamda_max',
+        type=float,
+        help=('Maximum value of lambda (if using variable lambda). '
+            'Only used if method=gittins.')
+    )
+    parser.add_argument(
+        '--lamda',
+        type=float,
+        help='Value of lambda (if using constant lambda). Only used if method=gittins.'
+    )
+
+
+def get_lamda_min_max(args):
+    lamda = getattr(args, 'lamda', None)
+    lamda_min = lamda if lamda is not None else args.lamda_min
+    lamda_max = getattr(args, 'lamda_max', None)
+    return lamda_min, lamda_max
+
+
 def get_n_datapoints_random_gen_fixed_n_candidates(
         loguniform=True, pre_offset=None,
         min_history=1, max_history=8, n_candidates=50):
@@ -108,9 +135,7 @@ def create_gp_acquisition_dataset(
         batch_size:Optional[int]=None, get_true_gp_stats:Optional[bool]=None,
         name="",
         
-        # True: return a tuple
-        # (function_dataset_already_saved, aq_dataset_already_saved) of whether each
-        # dataset has already been cached on disk.
+        # True: return a bool indicating whether the dataset has already been cached.
         # False: works as normal.
         check_cached=False,
 
@@ -235,7 +260,9 @@ def create_gp_acquisition_dataset(
 
     #### check_cached=True means to only check whether the datasets are already cached
     if check_cached:
-        return function_dataset_already_saved, aq_dataset_already_saved
+        if fix_acquisition_samples:
+            return aq_dataset_already_saved
+        return function_dataset_already_saved or aq_dataset_already_saved
 
     #### If we don't have the AF dataset saved, then we need to generate it
     if not aq_dataset_already_saved:
@@ -414,9 +441,6 @@ def create_train_and_test_gp_acquisition_datasets(
         fix_acquisition_samples=fix_train_acquisition_dataset,
         get_true_gp_stats=get_train_true_gp_stats,
         name="train", **common_kwargs, **train_n_points_kwargs)
-    # tuple of (function_dataset_is_cached, aq_dataset_is_cached)
-    if isinstance(train_aq_dataset, tuple):
-        train_aq_dataset = train_aq_dataset[0] or train_aq_dataset[1]
 
     test_dataset_kwargs = dict(lazy=lazy_test,
         fix_gp_samples=fix_test_samples_dataset,
@@ -441,11 +465,8 @@ def create_train_and_test_gp_acquisition_datasets(
             print("concatenating small test acquisition dataset and complement")
             test_aq_dataset = small_test_aq_dataset.concat(
                 small_test_complement_aq_dataset)
-        elif isinstance(small_test_aq_dataset, tuple):
-            small_test_aq_dataset = small_test_aq_dataset[0] or small_test_aq_dataset[1]
-            test_aq_dataset = small_test_aq_dataset \
-                and (small_test_complement_aq_dataset[0] or \
-                     small_test_complement_aq_dataset[1])
+        elif isinstance(small_test_aq_dataset, bool):
+            test_aq_dataset = small_test_aq_dataset and small_test_complement_aq_dataset
         else:
             test_aq_dataset = None
     else:
@@ -454,8 +475,7 @@ def create_train_and_test_gp_acquisition_datasets(
         if isinstance(test_aq_dataset, AcquisitionDataset):
             small_test_aq_dataset, _ = test_aq_dataset.random_split(
                 [small_test_proportion_of_test, 1 - small_test_proportion_of_test])
-        elif isinstance(test_aq_dataset, tuple):
-            test_aq_dataset = test_aq_dataset[0] or test_aq_dataset[1]
+        elif isinstance(test_aq_dataset, bool):
             small_test_aq_dataset = test_aq_dataset
         else:
             small_test_aq_dataset = None
@@ -606,6 +626,7 @@ def create_train_test_gp_acq_datasets_helper(
         **n_points_config,
         **dataset_transform_config}
 
+    lamda_min, lamda_max = get_lamda_min_max(args)
     other_kwargs = dict(
         **test_dataset_config,
         
@@ -623,8 +644,8 @@ def create_train_test_gp_acq_datasets_helper(
         # training in all cases -- all good
         y_cand_indices=[0],
 
-        lambda_min=getattr(args, 'lamda_min', None),
-        lambda_max=getattr(args, 'lamda_max', None),
+        lambda_min=lamda_min,
+        lambda_max=lamda_max
     )
 
     train_aq_dataset, test_aq_dataset, small_test_aq_dataset = create_train_and_test_gp_acquisition_datasets(
@@ -765,6 +786,8 @@ def add_gp_acquisition_dataset_args(parser):
         help='Maximum number of history points.',
         required=True
     )
+
+    add_lamda_args(parser)
 
 
 def create_train_test_gp_acq_datasets_from_args(

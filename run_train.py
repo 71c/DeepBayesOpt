@@ -1,5 +1,6 @@
 # Run like, e.g.,
 # python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 2000 --train_n_candidates 1 --batch_size 32 --early_stopping --epochs 200 --lamda_max 1.0 --lamda_min 0.0001 --layer_width 100 --learning_rate 0.003 --method gittins --min_delta 0.0 --normalize_gi_loss --patience 5
+from arrow import get
 import torch
 import matplotlib.pyplot as plt
 import os
@@ -9,7 +10,7 @@ from dataset_with_models import RandomModelSampler
 from tictoc import tic, tocl
 from datetime import datetime
 
-from gp_acquisition_dataset import add_gp_acquisition_dataset_args, create_train_test_gp_acq_datasets_helper, get_gp_acquisition_dataset_configs
+from gp_acquisition_dataset import add_gp_acquisition_dataset_args, add_lamda_args, create_train_test_gp_acq_datasets_helper, get_gp_acquisition_dataset_configs, get_lamda_min_max
 # AcquisitionFunctionNetV3, AcquisitionFunctionNetV4,
 #     AcquisitionFunctionNetDense
 from acquisition_function_net import (
@@ -54,11 +55,13 @@ from gp_acquisition_dataset import (
 )
 
 
+
+
 def get_training_config(args):
     training_config = dict(
         method=args.method,
-        batch_size=args.batch_size,
         learning_rate=args.learning_rate,
+        batch_size=args.batch_size,
         epochs=args.epochs,
         fix_train_acquisition_dataset=FIX_TRAIN_ACQUISITION_DATASET,
         early_stopping=args.early_stopping
@@ -71,11 +74,23 @@ def get_training_config(args):
             initial_alpha=args.initial_alpha,
             alpha_increment=args.alpha_increment)
     elif args.method == 'gittins':
+        lamda_min, lamda_max = get_lamda_min_max(args)
         training_config = dict(
             **training_config,
-            lamda_min=args.lamda_min,
-            lamda_max=args.lamda_max,
+            lamda_min=lamda_min,
+            lamda_max=lamda_max,
             normalize_gi_loss=args.normalize_gi_loss)
+    elif args.method == 'mse_ei':
+        initial_tau = getattr(args, "initial_tau", None)
+        initial_tau = 1.0 if initial_tau is None else initial_tau
+        training_config = dict(
+            **training_config,
+            learn_tau=args.learn_tau,
+            initial_tau=initial_tau,
+            softplus_batchnorm=args.softplus_batchnorm,
+            softplus_batchnorm_momentum=args.softplus_batchnorm_momentum,
+            positive_linear_at_end=args.positive_linear_at_end,
+            gp_ei_computation=args.gp_ei_computation)
     if args.early_stopping:
         training_config = dict(
             **training_config,
@@ -125,12 +140,14 @@ def get_model(args):
             standardize_outcomes=args.standardize_nn_history_outcomes
         )
     elif args.method == 'policy_gradient' or args.method == 'mse_ei':
+        initial_tau = getattr(args, "initial_tau", None)
+        initial_tau = 1.0 if initial_tau is None else initial_tau
         af_head_init_params = dict(
             **af_head_init_params,
             include_alpha=args.include_alpha,
             learn_alpha=args.learn_alpha,
             initial_alpha=args.initial_alpha,
-            initial_beta=1.0 / args.initial_tau,
+            initial_beta=1.0 / initial_tau,
             learn_beta=args.learn_tau,
             softplus_batchnorm=args.softplus_batchnorm,
             softplus_batchnorm_momentum=args.softplus_batchnorm_momentum,
@@ -217,16 +234,18 @@ def run_train(args):
     ######################## Check the arguments ###############################
     # Only have include_alpha=True when method=policy_gradient
     policy_gradient_flag = (args.method == 'policy_gradient')
-    args.include_alpha = args.include_alpha and policy_gradient_flag
+    if not policy_gradient_flag and args.include_alpha:
+        raise ValueError("include_alpha should be True only if method=policy_gradient")
 
     if args.train:
         if args.learning_rate is None:
             raise ValueError("learning_rate should be specified if training the model")
+        if args.epochs is None:
+            raise ValueError("epochs should be specified if training the model")
     else:
         args.save_model = False
     
-    for reason, reason_desc in [(args.method != 'mse_ei', 'method != mse_ei'),
-                                (args.load_saved_model, 'load_saved_model=True')]:
+    for reason, reason_desc in [(args.method != 'mse_ei', 'method != mse_ei')]:
         if reason:
             if args.learn_tau:
                 raise ValueError(f"learn_tau should be False if {reason_desc}")
@@ -247,7 +266,6 @@ def run_train(args):
             if lamda_min_given or lamda_max_given:
                 raise ValueError(
                     "If method=gittins, should specify only either lamda, or both lamda_min and lamda_max")
-            args.lamda_min = args.lamda # just to make it easier to pass in as parameter
         else:
             if not (lamda_min_given or lamda_max_given):
                 # No lamda anything is specified
@@ -318,7 +336,6 @@ def run_train(args):
             model, train_aq_dataset, optimizer, args.method, args.epochs, args.batch_size,
             DEVICE, verbose=VERBOSE, n_train_printouts_per_epoch=10,
             alpha_increment=args.alpha_increment,
-            # lambda_min=args.lamda_min, lambda_max=args.lamda_max,
             normalize_gi_loss=args.normalize_gi_loss,
             test_dataset=test_aq_dataset, small_test_dataset=small_test_aq_dataset,
             get_train_stats_while_training=True,
@@ -501,13 +518,11 @@ def main():
         choices=METHODS,
         required=True,
     )
-    # learning_rate = 3e-3 if method == 'gittins' else 3e-4
     parser.add_argument(
         '--learning_rate',
         type=float,
         help='Learning rate for training the model'
     )
-    # batch_size = 320 if method == 'mse_ei' else 16
     parser.add_argument(
         '--batch_size',
         type=int,
@@ -575,23 +590,7 @@ def main():
         help=('Whether to normalize the Gittins index loss function. Default is False. '
             'Only used if method=gittins.')
     )
-    parser.add_argument(
-        '--lamda_min',
-        type=float,
-        help=('Minimum value of lambda (if using variable lambda). '
-            'Only used if method=gittins.')
-    )
-    parser.add_argument(
-        '--lamda_max',
-        type=float,
-        help=('Maximum value of lambda (if using variable lambda). '
-            'Only used if method=gittins.')
-    )
-    parser.add_argument(
-        '--lamda',
-        type=float,
-        help='Value of lambda (if using constant lambda). Only used if method=gittins.'
-    )
+    add_lamda_args(parser)
     #### Options for NN when method=mse_ei
     parser.add_argument(
         '--learn_tau', 

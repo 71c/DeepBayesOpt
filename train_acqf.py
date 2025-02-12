@@ -197,8 +197,13 @@ def get_command_line_options(options: dict):
         'expansion_factor': expansion_factor,
         'train_n_candidates': options['n_candidates'],
         'test_n_candidates': options['n_candidates'],
-        'min_history': options['min_history'],
-        'max_history': options['max_history']
+        **{
+            k: options.get(k)
+            for k in [
+                'min_history', 'max_history',
+                'lamda_min', 'lamda_max', 'lamda'
+            ]
+        }
     }
 
     cmd_opts_architecture = {
