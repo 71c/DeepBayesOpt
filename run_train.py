@@ -486,16 +486,18 @@ def main():
     )
 
     ################################ Dataset settings ##################################
-    add_gp_acquisition_dataset_args(parser)
+    dataset_group = parser.add_argument_group("Dataset")
+    add_gp_acquisition_dataset_args(dataset_group)
     
     ############################ NN architecture settings ##############################
-    parser.add_argument(
+    nn_architecture_group = parser.add_argument_group("NN Architecture")
+    nn_architecture_group.add_argument(
         '--layer_width', 
         type=int,
         required=True,
         help='The width of the NN layers.'
     )
-    parser.add_argument(
+    nn_architecture_group.add_argument(
         '--standardize_nn_history_outcomes', 
         action='store_true', 
         help=('Whether to standardize the history outcomes when computing the NN '
@@ -503,118 +505,119 @@ def main():
     )
 
     ############################ Training settings #####################################
+    training_group = parser.add_argument_group("Training")
     # Which AF training loss function to use
-    parser.add_argument(
+    training_group.add_argument(
         '--method',
         choices=METHODS,
         required=True,
     )
-    parser.add_argument(
+    training_group.add_argument(
         '--learning_rate',
         type=float,
         help='Learning rate for training the model'
     )
-    parser.add_argument(
+    training_group.add_argument(
         '--batch_size',
         type=int,
         required=True,
         help='Batch size for training the model'
     )
-    parser.add_argument(
+    training_group.add_argument(
         '--epochs',
         type=int,
         help='Maximum number of epochs for training the model',
     )
     ### Early stopping
-    parser.add_argument(
+    training_group.add_argument(
         '--early_stopping', 
         action='store_true', 
         help=('Whether to use early stopping. Default is False.')
     )
-    parser.add_argument(
+    training_group.add_argument(
         '--patience',
         type=int,
         help=('Number of epochs with no improvement after which training will be stopped. '
             'Only used if early_stopping=True.')
     )
-    parser.add_argument(
+    training_group.add_argument(
         '--min_delta',
         type=float,
         help=('Minimum change in the monitored quantity to qualify as an improvement. '
             'Only used if early_stopping=True.')
     )
-    parser.add_argument(
+    training_group.add_argument(
         '--cumulative_delta',
         action='store_true',
         help=('Whether to use cumulative delta for early stopping. Default is False. '
             'Only used if early_stopping=True.')
     )
     #### Options when method=policy_gradient
-    parser.add_argument(
+    training_group.add_argument(
         '--include_alpha', 
         action='store_true', 
         help='Whether to include alpha. Only used if method=policy_gradient.'
     )
-    parser.add_argument(
+    training_group.add_argument(
         '--learn_alpha', 
         action='store_true', 
         help=('Whether to learn alpha. Default is True. Only used if '
             'method=policy_gradient and include_alpha=true.')
     )
-    parser.add_argument(
+    training_group.add_argument(
         '--initial_alpha',
         type=float,
         help=('Initial value of alpha. Default is 1.0. Only used if '
               'method=policy_gradient and include_alpha=true.'),
         default=1.0
     )
-    parser.add_argument( # default is None, equivalent to 0.0
+    training_group.add_argument( # default is None, equivalent to 0.0
         '--alpha_increment',
         type=float,
         help=('Increment for alpha. Default is 0.0. Only used if method=policy_gradient'
             ' and include_alpha=true.')
     )
     #### Options when method=gittins
-    parser.add_argument(
+    training_group.add_argument(
         '--normalize_gi_loss', 
         action='store_true', 
         help=('Whether to normalize the Gittins index loss function. Default is False. '
             'Only used if method=gittins.')
     )
-    add_lamda_args(parser)
+    add_lamda_args(training_group)
     #### Options for NN when method=mse_ei
-    parser.add_argument(
+    training_group.add_argument(
         '--learn_tau', 
         action='store_true',
         help=('Set this flag to enable learning of tau=1/beta which is the parameter for softplus'
             ' applied at the end of the MSE acquisition function. Default is False. '
             'Only used if method=mse_ei.')
     )
-    parser.add_argument(
+    training_group.add_argument(
         '--initial_tau',
         type=float,
         help='Initial value of tau. Default is 1.0. Only used if method=mse_ei.'
     )
-    parser.add_argument(
+    training_group.add_argument(
         '--softplus_batchnorm',
         action='store_true',
         help=('Set this flag to apply positive-batchnorm after softplus in the MSE acquisition function. '
             'Default is False. Only used if method=mse_ei.')
     )
-    parser.add_argument(
+    training_group.add_argument(
         '--softplus_batchnorm_momentum',
         type=float,
         default=0.1,
         help=('Momentum for the batchnorm after softplus in the MSE acquisition function. Default is 0.1. '
             'Only used if method=mse_ei.')
     )
-    parser.add_argument(
+    training_group.add_argument(
         '--positive_linear_at_end',
         action='store_true',
         help=('Set this flag to apply positive linear at end technique. Default is False. '
             'Only used if method=mse_ei.')
     )
-    parser.add_argument(
+    training_group.add_argument(
         '--gp_ei_computation',
         action='store_true',
         help=('Set this flag to apply gp_ei_computation at end technique. Default is False. '

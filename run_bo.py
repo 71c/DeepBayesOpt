@@ -1,14 +1,28 @@
+import os
 import torch
 from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprovement
+from botorch.utils.sampling import draw_sobol_samples
 import argparse
-from bayesopt import GPAcquisitionOptimizer, get_rff_function_and_name, outcome_transform_function
+from bayesopt import GPAcquisitionOptimizer, NNAcquisitionOptimizer, OptimizationResultsSingleMethod, get_rff_function_and_name, outcome_transform_function
 from dataset_with_models import RandomModelSampler
 from gp_acquisition_dataset import GP_GEN_DEVICE, add_gp_args, get_gp_model_from_args_no_outcome_transform, get_outcome_transform
+from train_acquisition_function_net import load_model
 from utils import add_outcome_transform, dict_to_fname_str
+
+
+script_dir = os.path.dirname(os.path.abspath(__file__))
+RESULTS_DIR = os.path.join(script_dir, 'bayesopt_results')
 
 
 GP_AF_NAME_PREFIX = "gp_af"
 OBJECTIVE_NAME_PREFIX = "objective"
+
+
+GP_AF_DICT = {
+    'LogEI': LogExpectedImprovement,
+    'EI': ExpectedImprovement,
+    'gittins': 12 # TODO
+}
 
 
 def get_arg_names(p):
@@ -68,7 +82,7 @@ def get_bo_loop_args_parser():
     #### Option 2: policy is to use a GP-based AF
     gp_af_group.add_argument(
         f"--{GP_AF_NAME_PREFIX}",
-        choices=["LogEI", "gittins"],
+        choices=list(GP_AF_DICT),
         help="If using a GP-based AF, the AF to use"
     )
     add_gp_args(gp_af_group, "GP-based AF", name_prefix=GP_AF_NAME_PREFIX,
@@ -108,24 +122,19 @@ def run_bo(objective_args, bo_policy_args, gp_af_args):
     objective_gp = objective_gp_sampler.sample(deepcopy=False).eval()
     # Get random GP draw
     objective_fn, realization_hash = get_rff_function_and_name(objective_gp)
-    function_name = f'gp_{realization_hash}'
+    objective_name = f'gp_{realization_hash}'
     # Apply outcome transform to the objective function
     objective_octf, objective_octf_args = get_outcome_transform(
         argparse.Namespace(**objective_args), device=GP_GEN_DEVICE)
     if objective_octf is not None:
         octf_str = dict_to_fname_str(objective_octf_args)
-        function_name = f'{function_name}_{octf_str}'
+        objective_name = f'{objective_name}_{octf_str}'
         objective_fn = outcome_transform_function(objective_fn, objective_octf)
 
     ############################# Determine the BO policy ##############################
     nn_model_name = bo_policy_args['nn_model_name']
     if nn_model_name is None: # Using a GP AF
-        gp_af = gp_af_args[GP_AF_NAME_PREFIX]
         fit = gp_af_args['fit']
-
-        if gp_af is None:
-            raise ValueError("If not using a NN AF, must specify gp_af")
-        
         #### Determine the GP model to be used for the AF
         if fit == "exact":
             ## Determine af_gp_model from the GP used for the objective
@@ -133,7 +142,7 @@ def run_bo(objective_args, bo_policy_args, gp_af_args):
                 if not (k == "fit" or k == GP_AF_NAME_PREFIX):
                     if v is not None:
                         raise ValueError(f"Cannot specify {GP_AF_NAME_PREFIX}_{k} "
-                                         "if using exact GP model AF")
+                                         f"if {GP_AF_NAME_PREFIX}_fit=exact")
             af_gp_model = objective_gp
             af_octf = objective_octf
         else:
@@ -166,18 +175,67 @@ def run_bo(objective_args, bo_policy_args, gp_af_args):
         if af_octf is not None:
             add_outcome_transform(af_gp_model, af_octf)
 
-        # TODO: Fix this
+        # TODO: Make this work for Gittins index
+        gp_af = gp_af_args[GP_AF_NAME_PREFIX]
+        if gp_af is None:
+            raise ValueError("If not using a NN AF, must specify gp_af")
         af_options = dict(
             optimizer_class=GPAcquisitionOptimizer,
             optimizer_kwargs_per_function=[{'model': af_gp_model}],
-            acquisition_function_class=LogExpectedImprovement,
+            acquisition_function_class=GP_AF_DICT[gp_af],
             fit_params=fit in {'map', 'mle'}
         )
+
+        results_name = f"dimension={dimension}, GP AF={gp_af}, fit={fit}"
     else: # Using a NN AF
-        # TODO
+        for k, v in gp_af_args.items():
+            if v is not None:
+                raise ValueError(
+                    f"Cannot specify {GP_AF_NAME_PREFIX}_{k} if using a NN AF")
+        
+        nn_model = load_model(nn_model_name)
+
+        # TODO (maybe):
+        # need to provide exponentiate=False or exponentiate=True here (?)
+        # TODO: Make this work for Gittins index
+        af_options = dict(
+            optimizer_class=NNAcquisitionOptimizer,
+            model=nn_model,
+            nn_model_name=nn_model_name
+        )
+
+        results_name = f"dimension={dimension}, NN={nn_model_name}"
+
+    bounds = torch.stack([torch.zeros(dimension), torch.ones(dimension)])
+
+    bo_seed = bo_policy_args['bo_seed']
+
+    # Construct initial sobol points
+    torch.manual_seed(bo_seed)
+    init_x = draw_sobol_samples(
+        bounds=bounds,
+        n=1, # Number of BO loops to do
+        q=bo_policy_args['n_initial_samples'] # Number of sobol points
+    )
+    # One seed per BO loop. Here, we have n=1 BO loops, so need just 1 seed.
+    seeds = [bo_seed]
+
+    optimization_results = OptimizationResultsSingleMethod(
+        objectives=[objective_fn],
+        initial_points=init_x,
+        n_iter=bo_policy_args['n_iter'],
+        seeds=seeds,
+        objective_names=[objective_name],
+        save_dir=RESULTS_DIR,
+        results_name=results_name, # results_name is only used to print stuff out
+        dim=dimension, bounds=bounds, maximize=True,
+        **af_options
+    )
+
+    # Perform the optimization. Don't do anything with the results here
+    for func_name, func_result in optimization_results:
+        # There should be just one loop through this since there is just one function
         pass
-    
-    # TODO: Finish this
 
 
 def main():
@@ -209,9 +267,12 @@ def main():
 # bo_policy_args={'n_iter': 30, 'n_initial_samples': 1, 'bo_seed': 12, 'nn_model_name': None}
 # gp_af_args={'gp_af': None, 'kernel': 'Matern52', 'lengthscale': None, 'outcome_transform': None, 'sigma': None, 'fit': None}
 
-    
+
+# LogEI; Objective function is same as GP used for AF, manual specification
+# python run_bo.py --objective_dimension 8 --objective_gp_seed 123 --objective_kernel Matern52 --objective_lengthscale 0.1 --n_iter 30 --n_initial_samples 4 --bo_seed 99 --gp_af LogEI --gp_af_kernel Matern52 --gp_af_lengthscale 0.1
+
+# LogEI; Objective function is same as GP used for AF, automatic specification
+# python run_bo.py --objective_dimension 8 --objective_gp_seed 123 --objective_kernel Matern52 --objective_lengthscale 0.1 --n_iter 30 --n_initial_samples 4 --bo_seed 99 --gp_af LogEI --gp_af_fit exact
 
 if __name__ == "__main__":
-    # Example test command:
-    # python run_bo.py --objective_dimension 8 --objective_gp_seed 103 --objective_lengthscale 0.1 --n_iter 30 --n_initial_samples 1 --bo_seed 12 --objective_kernel RBF --gp_af LogEI --gp_af_kernel RBF --gp_af_lengthscale 0.1
     main()
