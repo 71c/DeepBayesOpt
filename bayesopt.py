@@ -17,7 +17,7 @@ from botorch.models.transforms.outcome import Standardize
 from gpytorch.mlls import ExactMarginalLogLikelihood
 from dataset_with_models import RandomModelSampler
 from random_gp_function import RandomGPFunction
-from utils import combine_nested_dicts, concatenate_outcome_transforms, convert_to_json_serializable, dict_to_hash, invert_outcome_transform, json_serializable_to_numpy, load_json, remove_priors, sanitize_file_name, save_json
+from utils import add_outcome_transform, combine_nested_dicts, concatenate_outcome_transforms, convert_to_json_serializable, dict_to_hash, invert_outcome_transform, json_serializable_to_numpy, load_json, remove_priors, sanitize_file_name, save_json
 from json.decoder import JSONDecodeError
 from acquisition_function_net import AcquisitionFunctionNet, AcquisitionFunctionNetModel, LikelihoodFreeNetworkAcquisitionFunction
 
@@ -776,15 +776,24 @@ def plot_optimization_trajectories(ax, data, label):
         ax.plot(x, data[i], label=label_i)
 
 
-def get_rff_function_and_name(gp):
-    gp_copy = copy.deepcopy(gp)
+def get_rff_function_and_name(gp, deepcopy=True):
+    if deepcopy:
+        gp = copy.deepcopy(gp)
     # Remove priors so that the name of the model doesn't depend on the priors.
     # The priors are not used in the function anyway.
-    remove_priors(gp_copy)
+    remove_priors(gp)
     f = draw_kernel_feature_paths(
-        gp_copy, sample_shape=torch.Size(), num_features=4096)
+        gp, sample_shape=torch.Size(), num_features=4096)
     function_hash = dict_to_hash(convert_to_json_serializable(f.state_dict()))
     return (lambda x: f(x).detach()), function_hash
+
+
+def outcome_transform_function(objective_fn, outcome_transform):
+    # Need to make a new function for this, otherwise it doesn't work right
+    def transformed_gp(x):
+        # remember it also takes optional argument Yvar and returns (Y, Yvar)
+        return outcome_transform(objective_fn(x))[0]
+    return transformed_gp
 
 
 def transform_functions_and_names(functions,
@@ -797,16 +806,9 @@ def transform_functions_and_names(functions,
         f"{name} ({outcome_transform.__class__.__name__} transform)"
         for name in function_plot_names]
 
-    # Need to make a new function for this, otherwise it doesn't work right
-    def transform_gp_realization(gp_realization):
-        def transformed_gp(x):
-            # remember it also takes optional argument Yvar and returns (Y, Yvar)
-            return outcome_transform(gp_realization(x))[0]
-        return transformed_gp
-
     functions_tr = [
-        transform_gp_realization(gp_realization)
-        for gp_realization in functions
+        outcome_transform_function(fn, outcome_transform)
+        for fn in functions
     ]
     
     return functions_tr, function_names_tr, function_plot_names_tr
@@ -875,12 +877,7 @@ def generate_gp_acquisition_options(
         random_gps_tr = []
         for gp in gps:
             new_gp = copy.deepcopy(gp)
-            outcome_transform_of_gp = invert_outcome_transform(outcome_transform)
-            if hasattr(new_gp, 'outcome_transform'):
-                new_gp.outcome_transform = concatenate_outcome_transforms(
-                    outcome_transform_of_gp, new_gp.outcome_transform)
-            else:
-                new_gp.outcome_transform = outcome_transform_of_gp
+            add_outcome_transform(new_gp, outcome_transform)
             random_gps_tr.append(new_gp)
         
         transform_opt = {

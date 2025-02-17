@@ -334,6 +334,16 @@ def invert_outcome_transform(transform: OutcomeTransform):
     return InverseOutcomeTransform(transform)
 
 
+def add_outcome_transform(gp, octf):
+    octf_of_gp = invert_outcome_transform(octf)
+    if hasattr(gp, 'outcome_transform'):
+        gp.outcome_transform = concatenate_outcome_transforms(
+            octf_of_gp, gp.outcome_transform)
+    else:
+        gp.outcome_transform = octf_of_gp
+    return gp # Could alternatively return None; either would work
+
+
 def get_kernel(
         dimension: int,
         kernel: str,

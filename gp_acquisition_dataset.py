@@ -508,32 +508,79 @@ def create_train_and_test_gp_acquisition_datasets(
     return train_aq_dataset, test_aq_dataset, small_test_aq_dataset
 
 
-def get_gp_acquisition_dataset_configs(args, device=None):
-    ###################### GP realization characteristics ##########################
-    # Get the kernel
+def get_gp_model_from_args_no_outcome_transform(
+        dimension: int,
+        kernel: str,
+        lengthscale: float,
+        add_priors: bool,
+        device=None):
     kernel = get_kernel(
-        dimension=args.dimension, kernel=args.kernel,
-        add_priors=args.randomize_params, lengthscale=args.lengthscale,
-        device=device)
-    # Get the outcome transform
-    if args.outcome_transform == 'exp':
-        if args.sigma is None:
+        dimension=dimension,
+        kernel=kernel,
+        add_priors=add_priors,
+        lengthscale=lengthscale,
+        device=device
+    )
+    return get_gp(dimension=dimension, observation_noise=False,
+                  covar_module=kernel, device=device)
+
+
+# def get_gp_model_from_args_no_outcome_transform(
+#         args,
+#         dimension:Optional[int]=None,
+#         randomize_params:Optional[bool]=None,
+#         name_prefix="",
+#         device=None):
+#     if name_prefix:
+#         name_prefix = f"{name_prefix}_"
+#     if dimension is None:
+#         dimension = getattr(args, f"{name_prefix}dimension")
+#     if randomize_params is None:
+#         randomize_params = getattr(args, f"{name_prefix}randomize_params")
+#     kernel = get_kernel(
+#         dimension=dimension,
+#         kernel=getattr(args, f"{name_prefix}kernel"),
+#         add_priors=randomize_params,
+#         lengthscale=getattr(args, f"{name_prefix}lengthscale"),
+#         device=device
+#     )
+#     return get_gp(dimension=dimension, observation_noise=False,
+#                   covar_module=kernel, device=device)
+
+
+def get_outcome_transform(args, device=None):
+    octf = getattr(args, 'outcome_transform', None)
+    sigma = getattr(args, 'sigma', None)
+    if octf == 'exp':
+        if sigma is None:
             raise ValueError("sigma should be specified if outcome_transform=exp")
-        if args.sigma <= 0:
+        if sigma <= 0:
             raise ValueError("sigma should be positive if outcome_transform=exp")
-        outcome_transform = get_standardized_exp_transform(
-            args.sigma, device=device)
-    elif args.outcome_transform is None:
-        if args.sigma is not None:
+        outcome_transform = get_standardized_exp_transform(sigma, device=device)
+        outcome_transform_args = {'outcome_transform': octf, 'sigma': sigma}
+    elif octf is None:
+        if sigma is not None:
             raise ValueError("sigma should not be specified if outcome_transform is None")
         outcome_transform = None
+        outcome_transform_args = None
     else:
-        raise ValueError(f"Invalid outcome_transform: {args.outcome_transform}")
+        raise ValueError(f"Invalid outcome_transform: {octf}")
+    return outcome_transform, outcome_transform_args
 
+
+def get_gp_acquisition_dataset_configs(args, device=None):
+    ###################### GP realization characteristics ##########################
     models = [
-        get_gp(dimension=args.dimension, observation_noise=False,
-               covar_module=kernel, device=device)
+        get_gp_model_from_args_no_outcome_transform(
+            dimension=args.dimension,
+            kernel=args.kernel,
+            lengthscale=args.lengthscale,
+            add_priors=args.randomize_params,
+            device=device
+        )
     ]
+    outcome_transform, outcome_transform_args = get_outcome_transform(
+        args, device=device)
 
     gp_realization_config = dict(
         # Dimension of the optimization problem
@@ -719,6 +766,45 @@ def create_train_test_gp_acq_datasets_helper(
     # exit()
 
 
+def add_gp_args(parser, thing_gp_used_for: str,
+                name_prefix="", required=False,
+                add_randomize_params=False):
+    if name_prefix:
+        name_prefix = f"{name_prefix}_"
+    parser.add_argument(
+        f'--{name_prefix}kernel',
+        choices=['RBF', 'Matern32', 'Matern52'],
+        help=f'Kernel to use for the GP for the {thing_gp_used_for}',
+        required=required
+    )
+    parser.add_argument(
+        f'--{name_prefix}lengthscale', 
+        type=float, 
+        help=f'Lengthscale of the GP for the {thing_gp_used_for}',
+        required=required
+    )
+    parser.add_argument(
+        f'--{name_prefix}outcome_transform', 
+        choices=['exp'], 
+        help=f'Outcome transform to apply to the GP for the {thing_gp_used_for}. '
+        'E.g., if outcome_transform=exp, then all the y values of the GP are '
+        'exponented. If unspecified, then no outcome transform is applied.'
+    )
+    parser.add_argument(
+        f'--{name_prefix}sigma',
+        type=float,
+        help=f'Value of sigma for exp outcome transform of the GP for the '
+        f'{thing_gp_used_for}. Only used if {name_prefix}outcome_transform=exp.'
+    )
+    if add_randomize_params:
+        parser.add_argument(
+            f'--{name_prefix}randomize_params', 
+            action='store_true',
+            help='Set this to randomize the parameters of the GP for the '
+                f'{thing_gp_used_for}. Default is False.'
+        )
+
+
 def add_gp_acquisition_dataset_args(parser):
     ############################# Samples dataset settings #############################
     ## GP settings
@@ -728,35 +814,7 @@ def add_gp_acquisition_dataset_args(parser):
         help='Dimension of the optimization problem',
         required=True
     )
-    parser.add_argument(
-        '--kernel',
-        choices=['RBF', 'Matern32', 'Matern52'],
-        default='Matern52',
-        help='Kernel to use for the GP'
-    )
-    parser.add_argument(
-        '--lengthscale', 
-        type=float, 
-        help='Lengthscale of the GP',
-        required=True
-    )
-    parser.add_argument(
-        '--randomize_params', 
-        action='store_true',
-        help='Set this to randomize the GP parameters. Default is False.',
-    )
-    parser.add_argument(
-        '--outcome_transform', 
-        choices=['exp'], 
-        help='Outcome transform to apply to the dataset. E.g., if outcome_transform=exp, '
-        'then all the y values of a GP are exponented to get the dataset. If unspecified, '
-        'then no outcome transform is applied.'
-    )
-    parser.add_argument(
-        '--sigma',
-        type=float,
-        help='Value of sigma. Only used if outcome_transform=exp.'
-    )
+    add_gp_args(parser, "dataset", required=True, add_randomize_params=True)
     parser.add_argument(
         '--standardize_dataset_outcomes', 
         action='store_true', 

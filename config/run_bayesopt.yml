@@ -16,8 +16,9 @@ parameters:
           parameters:
             sigma:
               value: 0.8
-      n_functions:
-        value: 16
+      seed:
+        min: 0
+        max: 15
   n_iter:
     value: 200
   seed:
@@ -31,4 +32,4 @@ parameters:
       af:
         values: ['LogEI']
       fit:
-        values: ['none', 'map', 'mle']
+        values: [null, 'map', 'mle']

@@ -84,29 +84,26 @@ MODELS_DIR = os.path.join(script_dir, "saved_models")
 
 ## Standardize history in NN or not comparison
 model_and_info_names = [
-    "model_20250120_203912_7bb23bed526d86cb75b7fe1c5226518b02c3d1c11ef17362848f6a4cb6c0f72a"
+    "v1/model_588a669bcb9adcef51580f532b8c10b82b0733a28ebd885095ec8763a5085a91"
 ]
 model_and_info_plot_names = [
     "NN"
 ]
 plots_title = "Just a test"
 
-
-model_and_info_paths = [
-    os.path.join(MODELS_DIR, model_and_info_name)
+nn_models = [
+    load_model(model_and_info_name).to(DEVICE)
     for model_and_info_name in model_and_info_names
 ]
 
-nn_models = [
-    load_model(model_and_info_path).to(DEVICE)
-    for model_and_info_path in model_and_info_paths
-]
+configs = [load_configs(model_and_info_name)
+           for model_and_info_name in model_and_info_names]
+
+gp_realization_configs, dataset_size_configs, n_points_configs, \
+        dataset_transform_configs, gp_samplers, training_configs = zip(*configs)
 
 methods = [
-    load_json(
-        os.path.join(model_and_info_path, "training_config.json")
-    )["method"]
-    for model_and_info_path in model_and_info_paths
+    training_config["method"] for training_config in training_configs
 ]
 
 method_descriptions = {
@@ -121,8 +118,9 @@ model_and_info_plot_names = [
 ]
 
 # Assume that all the configs are the same
-gp_realization_config, dataset_size_config, n_points_config, \
-        dataset_transform_config, gp_sampler = load_configs(model_and_info_paths[0])
+gp_realization_config = gp_realization_configs[0]
+dataset_transform_config = dataset_transform_configs[0]
+gp_sampler = gp_samplers[0]
 
 dimensions = set()
 if 'dimension' in gp_realization_config:

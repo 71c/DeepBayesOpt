@@ -16,6 +16,12 @@ from tictoc import tic, toc
 from utils import SaveableObject, convert_to_json_serializable, dict_to_hash, int_linspace, calculate_batch_improvement, load_json, probability_y_greater_than_gi_normal, save_json
 
 
+MODELS_DIR_NAME = "saved_models"
+VERSION = "v1"
+script_dir = os.path.dirname(os.path.abspath(__file__))
+MODELS_DIR = os.path.join(script_dir, MODELS_DIR_NAME)
+
+
 METHODS = ['mse_ei', 'policy_gradient', 'gittins']
 METHODS_STR = ', '.join(f"'{x}'" for x in METHODS)
 
@@ -1161,7 +1167,6 @@ def get_test_during_after_training(
 MODELS_SUBDIR = "models"
 
 def save_acquisition_function_net_configs(
-        models_directory: str,
         model: AcquisitionFunctionNet,
         training_config: dict[str, Any],
         gp_realization_config: dict[str, Any],
@@ -1191,8 +1196,8 @@ def save_acquisition_function_net_configs(
         'model_sampler': model_sampler_json
     }
     all_info_hash = dict_to_hash(all_info_json)
-    model_and_info_folder_name = f"model_{all_info_hash}"
-    model_and_info_path = os.path.join(models_directory, model_and_info_folder_name)
+    model_and_info_folder_name = os.path.join(VERSION, f"model_{all_info_hash}")
+    model_and_info_path = os.path.join(MODELS_DIR, model_and_info_folder_name)
     models_path = os.path.join(model_and_info_path, MODELS_SUBDIR)
 
     already_saved = os.path.isdir(model_and_info_path)
@@ -1228,10 +1233,11 @@ def save_acquisition_function_net_configs(
             torch.save(outcome_transform,
                     os.path.join(model_and_info_path, "outcome_transform.pt"))
     
-    return model_and_info_path, models_path
+    return model_and_info_folder_name, models_path
 
 
-def get_latest_model_path(model_and_info_path):
+def get_latest_model_path(model_and_info_folder_name):
+    model_and_info_path = os.path.join(MODELS_DIR, model_and_info_folder_name)
     already_saved = os.path.isdir(model_and_info_path)
     if not already_saved:
         raise FileNotFoundError(f"Models path {model_and_info_path} does not exist")
@@ -1247,7 +1253,8 @@ def get_latest_model_path(model_and_info_path):
     return model_path
 
 
-def model_is_trained(model_and_info_path: str):
+def model_is_trained(model_and_info_folder_name: str):
+    model_and_info_path = os.path.join(MODELS_DIR, model_and_info_folder_name)
     try:
         model_path = get_latest_model_path(model_and_info_path)
         return True
@@ -1255,7 +1262,8 @@ def model_is_trained(model_and_info_path: str):
         return False
 
 
-def load_model(model_and_info_path: str, return_model_path=False):
+def load_model(model_and_info_folder_name: str, return_model_path=False):
+    model_and_info_path = os.path.join(MODELS_DIR, model_and_info_folder_name)
     model_path = get_latest_model_path(model_and_info_path)
 
     print(f"Loading model from {model_path}")
@@ -1279,7 +1287,8 @@ def load_model(model_and_info_path: str, return_model_path=False):
     return model
 
 
-def load_configs(model_and_info_path: str):
+def load_configs(model_and_info_folder_name: str):
+    model_and_info_path = os.path.join(MODELS_DIR, model_and_info_folder_name)
     gp_realization_config = load_json(
         os.path.join(model_and_info_path, "gp_realization_config.json"))
     model_sampler = RandomModelSampler.load(
@@ -1299,5 +1308,8 @@ def load_configs(model_and_info_path: str):
         dataset_transform_config['outcome_transform'] = torch.load(
             os.path.join(model_and_info_path, "outcome_transform.pt"))
     
+    training_config = load_json(
+        os.path.join(model_and_info_path, "training_config.json"))
+    
     return gp_realization_config, dataset_size_config, n_points_config, \
-        dataset_transform_config, model_sampler
+        dataset_transform_config, model_sampler, training_config

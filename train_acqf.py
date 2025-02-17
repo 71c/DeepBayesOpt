@@ -266,8 +266,8 @@ def create_dependency_structure_train_acqf(options_list, always_train=False):
             # Determine whether or not the NN is already cached
             args_nn = argparse.Namespace(**cmd_opts_nn)
             (af_dataset_configs, model,
-            model_and_info_path, models_path) = get_configs_and_model_and_paths(args_nn)
-            model_already_trained = model_is_trained(model_and_info_path)
+            model_and_info_name, models_path) = get_configs_and_model_and_paths(args_nn)
+            model_already_trained = model_is_trained(model_and_info_name)
             # Train the NN iff it has not already been trained
             train_nn = not model_already_trained
         

@@ -30,12 +30,6 @@ import logging
 logging.basicConfig(level=logging.WARNING)
 
 ##################### Settings for this script #################################
-MODELS_DIR_NAME = "saved_models"
-VERSION = "v1"
-
-script_dir = os.path.dirname(os.path.abspath(__file__))
-MODELS_DIR = os.path.join(script_dir, MODELS_DIR_NAME, VERSION)
-
 # Whether to fit maximum a posteriori GP for testing
 FIT_MAP_GP = False
 
@@ -214,15 +208,16 @@ def get_configs_and_model_and_paths(args):
         model_probabilities=gp_realization_config["model_probabilities"],
         randomize_params=gp_realization_config["randomize_params"] # == args.randomize_params
     )
-    model_and_info_path, models_path = save_acquisition_function_net_configs(
-        MODELS_DIR, model, get_training_config(args),
+    model_and_info_folder_name, models_path = save_acquisition_function_net_configs(
+        model, get_training_config(args),
         gp_realization_config, dataset_size_config, n_points_config,
         dataset_transform_config, dummy_model_sampler,
         save=getattr(args, "save_model", False)
     )
 
-    return (gp_realization_config, dataset_size_config,
-    n_points_config, dataset_transform_config), model, model_and_info_path, models_path
+    return ((gp_realization_config, dataset_size_config,
+    n_points_config, dataset_transform_config),
+    model, model_and_info_folder_name, models_path)
 
 
 def run_train(args):
@@ -287,10 +282,11 @@ def run_train(args):
 
     ((gp_realization_config, dataset_size_config,
       n_points_config, dataset_transform_config),
-    model, model_and_info_path, models_path) = get_configs_and_model_and_paths(args)
+    model, model_and_info_folder_name, models_path) = get_configs_and_model_and_paths(args)
 
     if args.load_saved_model:
-        model, model_path = load_model(model_and_info_path, return_model_path=True)
+        model, model_path = load_model(
+            model_and_info_folder_name, return_model_path=True)
     else:
         model_path = None
 
