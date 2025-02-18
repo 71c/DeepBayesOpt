@@ -121,11 +121,14 @@ def run_bo(objective_args, bo_policy_args, gp_af_args):
     # Get (potentially) random GP parameters
     objective_gp = objective_gp_sampler.sample(deepcopy=False).eval()
     # Get random GP draw
-    objective_fn, realization_hash = get_rff_function_and_name(objective_gp)
+    objective_fn, realization_hash = get_rff_function_and_name(
+        objective_gp, dimension=dimension)
     objective_name = f'gp_{realization_hash}'
     # Apply outcome transform to the objective function
     objective_octf, objective_octf_args = get_outcome_transform(
-        argparse.Namespace(**objective_args), device=GP_GEN_DEVICE)
+        argparse.Namespace(**objective_args),
+        name_prefix=OBJECTIVE_NAME_PREFIX,
+        device=GP_GEN_DEVICE)
     if objective_octf is not None:
         octf_str = dict_to_fname_str(objective_octf_args)
         objective_name = f'{objective_name}_{octf_str}'
@@ -169,7 +172,9 @@ def run_bo(objective_args, bo_policy_args, gp_af_args):
                 device=GP_GEN_DEVICE
             )
             af_octf, af_octf_args = get_outcome_transform(
-                argparse.Namespace(**gp_af_args), device=GP_GEN_DEVICE)
+                argparse.Namespace(**gp_af_args),
+                name_prefix=GP_AF_NAME_PREFIX,
+                device=GP_GEN_DEVICE)
         
         #### Apply outcome transform to the AF GP model
         if af_octf is not None:
@@ -273,6 +278,8 @@ def main():
 
 # LogEI; Objective function is same as GP used for AF, automatic specification
 # python run_bo.py --objective_dimension 8 --objective_gp_seed 123 --objective_kernel Matern52 --objective_lengthscale 0.1 --n_iter 30 --n_initial_samples 4 --bo_seed 99 --gp_af LogEI --gp_af_fit exact
+
+# python run_bo.py --objective_dimension 8 --objective_gp_seed 123 --objective_kernel Matern52 --objective_lengthscale 0.1 --n_iter 30 --n_initial_samples 4 --bo_seed 99 --gp_af LogEI --gp_af_fit exact --objective_outcome_transform exp --objective_sigma 0.7
 
 if __name__ == "__main__":
     main()

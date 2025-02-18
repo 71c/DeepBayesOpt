@@ -57,7 +57,7 @@ if torch.cuda.is_available():
     print("Current device name:", torch.cuda.get_device_name(current_device))
 
 
-class InverseOutcomeTransform(OutcomeTransform):
+class _InverseOutcomeTransform(OutcomeTransform):
     def __init__(self, transform: OutcomeTransform):
         super().__init__()
         if not isinstance(transform, OutcomeTransform):
@@ -81,7 +81,7 @@ class InverseOutcomeTransform(OutcomeTransform):
     def _is_linear(self) -> bool:
         return self._original_transform._is_linear
 
-class Unstandardize(InverseOutcomeTransform):
+class _Unstandardize(_InverseOutcomeTransform):
     def __init__(self, standardizer: Standardize):
         super().__init__(standardizer)
 
@@ -116,6 +116,7 @@ class Affine(OutcomeTransform):
         weight: Tensor,
         outputs: Optional[list[int]] = None,
     ) -> None:
+        super().__init__()
         if bias.dim() == 0:
             bias = bias.unsqueeze(-1)
         if weight.dim() == 0:
@@ -142,7 +143,7 @@ class Affine(OutcomeTransform):
         standardize.eval()
         standardize._is_trained = torch.tensor(True)
 
-        self._transform = Unstandardize(standardize)
+        self._transform = _Unstandardize(standardize)
     
     def forward(
         self, Y: Tensor, Yvar: Optional[Tensor] = None
@@ -151,6 +152,7 @@ class Affine(OutcomeTransform):
 
     def subset_output(self, idcs: List[int]) -> OutcomeTransform:
         ret = object.__new__(type(self))
+        super(type(self), ret).__init__() # do the super().__init__() as in __init__
         ret._transform = self._transform.subset_output(idcs)
         return ret
 
@@ -166,8 +168,14 @@ class Affine(OutcomeTransform):
     def untransform_posterior(self, posterior: Posterior) -> Posterior:
         return self._transform.untransform_posterior(posterior)
 
+    def _invert(self):
+        ret = object.__new__(type(self))
+        super(type(self), ret).__init__() # do the super().__init__() as in __init__
+        ret._transform = self._transform._original_transform
+        return ret
 
-class Exp(InverseOutcomeTransform):
+
+class Exp(_InverseOutcomeTransform):
     def __init__(self, outputs: Optional[List[int]] = None) -> None:
         super().__init__(Log(outputs))
     
@@ -176,7 +184,7 @@ class Exp(InverseOutcomeTransform):
         if not isinstance(log, Log):
             raise ValueError("log must be a Log instance")
         x = cls.__new__(cls)
-        InverseOutcomeTransform.__init__(x, log)
+        _InverseOutcomeTransform.__init__(x, log)
         return x
     
     # Could also implement untransform_posterior but it would be some work.
@@ -315,12 +323,15 @@ def invert_outcome_transform(transform: OutcomeTransform):
             invert_outcome_transform(tf) for tf in reversed(transform)
         ])
     
-    if isinstance(transform, InverseOutcomeTransform):
-        # This handles Unstandardize and Exp automatically
+    if isinstance(transform, _InverseOutcomeTransform):
+        # This handles _Unstandardize and Exp automatically
         return transform._original_transform
     
     if isinstance(transform, Standardize):
-        return Unstandardize(transform)
+        return _Unstandardize(transform)
+    
+    if isinstance(transform, Affine):
+        return transform._invert()
     
     if isinstance(transform, Log):
         return Exp.from_log(transform)
@@ -331,7 +342,7 @@ def invert_outcome_transform(transform: OutcomeTransform):
         return ret
     
     # fallback
-    return InverseOutcomeTransform(transform)
+    return _InverseOutcomeTransform(transform)
 
 
 def add_outcome_transform(gp, octf):

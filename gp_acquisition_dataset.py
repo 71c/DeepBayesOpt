@@ -525,42 +525,23 @@ def get_gp_model_from_args_no_outcome_transform(
                   covar_module=kernel, device=device)
 
 
-# def get_gp_model_from_args_no_outcome_transform(
-#         args,
-#         dimension:Optional[int]=None,
-#         randomize_params:Optional[bool]=None,
-#         name_prefix="",
-#         device=None):
-#     if name_prefix:
-#         name_prefix = f"{name_prefix}_"
-#     if dimension is None:
-#         dimension = getattr(args, f"{name_prefix}dimension")
-#     if randomize_params is None:
-#         randomize_params = getattr(args, f"{name_prefix}randomize_params")
-#     kernel = get_kernel(
-#         dimension=dimension,
-#         kernel=getattr(args, f"{name_prefix}kernel"),
-#         add_priors=randomize_params,
-#         lengthscale=getattr(args, f"{name_prefix}lengthscale"),
-#         device=device
-#     )
-#     return get_gp(dimension=dimension, observation_noise=False,
-#                   covar_module=kernel, device=device)
-
-
-def get_outcome_transform(args, device=None):
+def get_outcome_transform(args, name_prefix="", device=None):
+    if name_prefix:
+        name_prefix = f"{name_prefix}_"
     octf = getattr(args, 'outcome_transform', None)
     sigma = getattr(args, 'sigma', None)
+    octf_name = f'{name_prefix}outcome_transform'
+    sigma_name = f'{name_prefix}sigma'
     if octf == 'exp':
         if sigma is None:
-            raise ValueError("sigma should be specified if outcome_transform=exp")
+            raise ValueError(f"{sigma_name} should be specified if {octf_name}=exp")
         if sigma <= 0:
-            raise ValueError("sigma should be positive if outcome_transform=exp")
+            raise ValueError(f"{sigma_name} should be positive if {octf_name}=exp")
         outcome_transform = get_standardized_exp_transform(sigma, device=device)
         outcome_transform_args = {'outcome_transform': octf, 'sigma': sigma}
     elif octf is None:
         if sigma is not None:
-            raise ValueError("sigma should not be specified if outcome_transform is None")
+            raise ValueError(f"{sigma_name} should not be specified if {octf_name}=None")
         outcome_transform = None
         outcome_transform_args = None
     else:

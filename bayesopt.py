@@ -70,13 +70,19 @@ class BayesianOptimizer(ABC):
     def optimize(self, n_iter: int):
         for i in range(n_iter):
             new_x = self.get_new_point()
+
+            # Get to shape n x d (where n=1 here)
             if new_x.dim() == 1:
                 new_x = new_x.unsqueeze(0)
             else:
                 assert new_x.dim() == 2
             
             new_y = self.objective(new_x)
-            assert new_y.dim() == 1
+
+            # Make sure new_y has shape n x m
+            assert new_y.dim() == 2
+            assert new_y.size(0) == new_x.size(0) # n = n (# of data points)
+            assert new_y.size(1) == self.y.size(1) # m = m (output dimension)
 
             self.x = torch.cat([self.x, new_x])
             self.y = torch.cat([self.y, new_y])
@@ -229,7 +235,8 @@ class GPAcquisitionOptimizer(ModelAcquisitionOptimizer):
         if self.fit_params:
             self.model.train()
         
-        self.model.set_train_data_with_transforms(self.x, self.y.unsqueeze(-1), strict=False, train=self.fit_params)
+        self.model.set_train_data_with_transforms(
+            self.x, self.y, strict=False, train=self.fit_params)
         
         if self.fit_params:
             mll = ExactMarginalLogLikelihood(self.model.likelihood, self.model)
@@ -776,7 +783,7 @@ def plot_optimization_trajectories(ax, data, label):
         ax.plot(x, data[i], label=label_i)
 
 
-def get_rff_function_and_name(gp, deepcopy=True):
+def get_rff_function_and_name(gp, deepcopy=True, dimension=None):
     if deepcopy:
         gp = copy.deepcopy(gp)
     # Remove priors so that the name of the model doesn't depend on the priors.
@@ -785,7 +792,22 @@ def get_rff_function_and_name(gp, deepcopy=True):
     f = draw_kernel_feature_paths(
         gp, sample_shape=torch.Size(), num_features=4096)
     function_hash = dict_to_hash(convert_to_json_serializable(f.state_dict()))
-    return (lambda x: f(x).detach()), function_hash
+
+    def func(x):
+        if x.dim() == 2:
+            # n x d (n_datapoints x dimension)
+            if dimension is not None and x.size(1) != dimension:
+                raise ValueError(
+                    f"Incorrect input {x.shape}: dimension does not match {dimension}")
+        else:
+            raise ValueError(
+                f"Incorrect input {x.shape}: should be of shape n x {dimension}")
+        out = f(x).detach()
+        assert out.dim() == 1 and out.size(0) == x.size(0)
+        out = out.unsqueeze(-1) # get to shape n x m where m=1 (m = number of outputs)
+        return out
+
+    return func, function_hash
 
 
 def outcome_transform_function(objective_fn, outcome_transform):
