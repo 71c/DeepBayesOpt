@@ -937,22 +937,23 @@ def sanitize_file_name(file_name: str) -> str:
 
     return sanitized_name
 
-def _to_str(x) -> str:
+def _to_str(x, include_space=False) -> str:
+    sep = ', ' if include_space else ','
     if type(x) is dict:
-        return '(' + ','.join(
+        return '(' + sep.join(
             key + '=' + _to_str(value)
             for key, value in sorted(x.items())
         ) + ')'
     if type(x) is list:
-        return '[' + ','.join(map(_to_str, x)) + ']'
+        return '[' + sep.join(map(_to_str, x)) + ']'
     if type(x) is str:
         return x
     return repr(x)
 
-def dict_to_str(d: Dict[str, Any]) -> str:
+def dict_to_str(d: Dict[str, Any], include_space=False) -> str:
     if type(d) is not dict:
         raise ValueError("d must be a dictionary")
-    return _to_str(d)[1:-1]
+    return _to_str(d, include_space=include_space)[1:-1]
 
 def dict_to_fname_str(d: Dict[str, Any]) -> str:
     return sanitize_file_name(dict_to_str(d))

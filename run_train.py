@@ -1,5 +1,7 @@
 # Run like, e.g.,
 # python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 2000 --train_n_candidates 1 --batch_size 32 --early_stopping --epochs 200 --lamda_max 1.0 --lamda_min 0.0001 --layer_width 100 --learning_rate 0.003 --method gittins --min_delta 0.0 --normalize_gi_loss --patience 5
+
+# python run_train.py --dimension 8 --expansion_factor 1 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 1000 --test_n_candidates 1 --train_acquisition_size 1000 --train_n_candidates 1 --batch_size 32 --early_stopping --epochs 200 --layer_width 100 --learning_rate 0.003 --method gittins --min_delta 0.0 --normalize_gi_loss --patience 5 --lamda 0.001
 import torch
 import matplotlib.pyplot as plt
 import os

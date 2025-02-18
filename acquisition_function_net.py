@@ -1213,8 +1213,6 @@ class ExpectedImprovementAcquisitionFunctionNet(AcquisitionFunctionNet):
         return self.base_model.af_head.transform
 
 
-# TODO: Fix the below code to make sure it works with Gittins index
-
 class AcquisitionFunctionNetModel(Model):
     """In this case, the model is the acquisition function network itself.
     So it's kind of silly to have this intermediate between the NN and the
