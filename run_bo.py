@@ -279,7 +279,13 @@ def main():
 # LogEI; Objective function is same as GP used for AF, automatic specification
 # python run_bo.py --objective_dimension 8 --objective_gp_seed 123 --objective_kernel Matern52 --objective_lengthscale 0.1 --n_iter 30 --n_initial_samples 4 --bo_seed 99 --gp_af LogEI --gp_af_fit exact
 
-# python run_bo.py --objective_dimension 8 --objective_gp_seed 123 --objective_kernel Matern52 --objective_lengthscale 0.1 --n_iter 30 --n_initial_samples 4 --bo_seed 99 --gp_af LogEI --gp_af_fit exact --objective_outcome_transform exp --objective_sigma 0.7
+#### EXAMPLE:
+## The following is a simple cheap test command for testing mse_ei method:
+# python run_train.py --dimension 8 --kernel Matern52  --lengthscale 0.1 --train_acquisition_size 2000 --test_acquisition_size 2000 --train_n_candidates 1 --test_n_candidates 1 --min_history 1 --max_history 60 --layer_width 100 --method mse_ei --learning_rate 0.003 --batch_size 32 --epochs 10
+# ====> Saves to v1/model_3b38669d7f277ceeee1f1430dcebf064b5ee3801cef748b39122bed623ce29cc
+## Next, run the BO on it:
+# python run_bo.py --objective_dimension 8 --objective_gp_seed 123 --objective_kernel Matern52 --objective_lengthscale 0.1 --n_iter 30 --n_initial_samples 4 --bo_seed 99 --nn_model_name v1/model_3b38669d7f277ceeee1f1430dcebf064b5ee3801cef748b39122bed623ce29cc
+
 
 if __name__ == "__main__":
     main()

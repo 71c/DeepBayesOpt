@@ -309,6 +309,7 @@ def run_train(args):
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             model_name = f"model_{timestamp}"
             model_path = os.path.join(models_path, model_name)
+            print(f"Saving NN to {model_and_info_folder_name}")
         else:
             model_path = None
 
@@ -317,7 +318,7 @@ def run_train(args):
             pr.enable()
         
         if TIME:
-            tic("Training!")
+            tic("Training")
         
         optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate,
                                     #  weight_decay=1e-2
@@ -346,6 +347,7 @@ def run_train(args):
         if args.save_model:
             latest_model_path = os.path.join(models_path, "latest_model.json")
             save_json({"latest_model": model_name}, latest_model_path)
+            print(f"Saved best weights to {model_and_info_folder_name}")
 
         if TIME:
             tocl()
@@ -362,7 +364,8 @@ def run_train(args):
             ps = pstats.Stats(pr, stream=s).sort_stats(SortKey.CUMULATIVE)
             ps.print_stats()
 
-        print("Done training!")
+        if not TIME:
+            print("Done training")
 
     ######################## Evaluate and plot model performance #######################
     if model_path is not None:
@@ -486,11 +489,11 @@ def main():
     )
 
     ################################ Dataset settings ##################################
-    dataset_group = parser.add_argument_group("Dataset")
+    dataset_group = parser.add_argument_group("Dataset options")
     add_gp_acquisition_dataset_args(dataset_group)
     
     ############################ NN architecture settings ##############################
-    nn_architecture_group = parser.add_argument_group("NN Architecture")
+    nn_architecture_group = parser.add_argument_group("NN Architecture options")
     nn_architecture_group.add_argument(
         '--layer_width', 
         type=int,
@@ -505,7 +508,7 @@ def main():
     )
 
     ############################ Training settings #####################################
-    training_group = parser.add_argument_group("Training")
+    training_group = parser.add_argument_group("Training options")
     # Which AF training loss function to use
     training_group.add_argument(
         '--method',
@@ -552,72 +555,81 @@ def main():
         help=('Whether to use cumulative delta for early stopping. Default is False. '
             'Only used if early_stopping=True.')
     )
+
     #### Options when method=policy_gradient
-    training_group.add_argument(
+    policy_gradient_group = parser.add_argument_group(
+        "Training options when method=policy_gradient")
+    policy_gradient_group.add_argument(
         '--include_alpha', 
         action='store_true', 
         help='Whether to include alpha. Only used if method=policy_gradient.'
     )
-    training_group.add_argument(
+    policy_gradient_group.add_argument(
         '--learn_alpha', 
         action='store_true', 
         help=('Whether to learn alpha. Default is True. Only used if '
             'method=policy_gradient and include_alpha=true.')
     )
-    training_group.add_argument(
+    policy_gradient_group.add_argument(
         '--initial_alpha',
         type=float,
         help=('Initial value of alpha. Default is 1.0. Only used if '
               'method=policy_gradient and include_alpha=true.'),
         default=1.0
     )
-    training_group.add_argument( # default is None, equivalent to 0.0
+    policy_gradient_group.add_argument( # default is None, equivalent to 0.0
         '--alpha_increment',
         type=float,
         help=('Increment for alpha. Default is 0.0. Only used if method=policy_gradient'
             ' and include_alpha=true.')
     )
+
     #### Options when method=gittins
-    training_group.add_argument(
+    gittins_group = parser.add_argument_group(
+        "Training options when method=gittins")
+    gittins_group.add_argument(
         '--normalize_gi_loss', 
         action='store_true', 
         help=('Whether to normalize the Gittins index loss function. Default is False. '
             'Only used if method=gittins.')
     )
-    add_lamda_args(training_group)
+    add_lamda_args(gittins_group)
+
     #### Options for NN when method=mse_ei
-    training_group.add_argument(
+    mse_ei_group = parser.add_argument_group(
+        "Training options when method=mse_ei")
+    mse_ei_group.add_argument(
         '--learn_tau', 
         action='store_true',
         help=('Set this flag to enable learning of tau=1/beta which is the parameter for softplus'
             ' applied at the end of the MSE acquisition function. Default is False. '
             'Only used if method=mse_ei.')
     )
-    training_group.add_argument(
+    mse_ei_group.add_argument(
         '--initial_tau',
         type=float,
         help='Initial value of tau. Default is 1.0. Only used if method=mse_ei.'
     )
-    training_group.add_argument(
+    mse_ei_group.add_argument(
         '--softplus_batchnorm',
         action='store_true',
         help=('Set this flag to apply positive-batchnorm after softplus in the MSE acquisition function. '
             'Default is False. Only used if method=mse_ei.')
     )
-    training_group.add_argument(
+    mse_ei_group.add_argument(
         '--softplus_batchnorm_momentum',
         type=float,
         default=0.1,
         help=('Momentum for the batchnorm after softplus in the MSE acquisition function. Default is 0.1. '
             'Only used if method=mse_ei.')
     )
-    training_group.add_argument(
+    mse_ei_group.add_argument(
         '--positive_linear_at_end',
         action='store_true',
         help=('Set this flag to apply positive linear at end technique. Default is False. '
             'Only used if method=mse_ei.')
     )
-    training_group.add_argument(
+    mse_ei_group.add_argument(
         '--gp_ei_computation',
         action='store_true',
         help=('Set this flag to apply gp_ei_computation at end technique. Default is False. '
