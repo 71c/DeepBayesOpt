@@ -19,7 +19,7 @@ from train_acquisition_function_net import (
     METHODS,
     load_model,
     print_stats,
-    save_acquisition_function_net_configs,
+    save_af_net_configs,
     train_acquisition_function_net,
     train_or_test_loop)
 from utils import DEVICE, load_json, save_json
@@ -184,8 +184,7 @@ def get_model(args):
 
 def get_configs_and_model_and_paths(args):
     #### Get AF dataset configs
-    (gp_realization_config, dataset_size_config,
-    n_points_config, dataset_transform_config) = get_gp_acquisition_dataset_configs(
+    gp_af_dataset_configs = get_gp_acquisition_dataset_configs(
         args, device=GP_GEN_DEVICE)
 
     # Exp technically works, but Power does not
@@ -203,21 +202,14 @@ def get_configs_and_model_and_paths(args):
     model = get_model(args)
 
     #### Save the configs for the model and training and datasets
-    dummy_model_sampler = RandomModelSampler(
-        models=gp_realization_config["models"],
-        model_probabilities=gp_realization_config["model_probabilities"],
-        randomize_params=gp_realization_config["randomize_params"] # == args.randomize_params
-    )
-    model_and_info_folder_name, models_path = save_acquisition_function_net_configs(
-        model, get_training_config(args),
-        gp_realization_config, dataset_size_config, n_points_config,
-        dataset_transform_config, dummy_model_sampler,
+    model_and_info_folder_name, models_path = save_af_net_configs(
+        model,
+        training_config=get_training_config(args),
+        af_dataset_config=gp_af_dataset_configs,
         save=getattr(args, "save_model", False)
     )
 
-    return ((gp_realization_config, dataset_size_config,
-    n_points_config, dataset_transform_config),
-    model, model_and_info_folder_name, models_path)
+    return gp_af_dataset_configs, model, model_and_info_folder_name, models_path
 
 
 def run_train(args):
@@ -280,9 +272,8 @@ def run_train(args):
         if args.normalize_gi_loss:
             raise ValueError("normalize_gi_loss should be False if method != gittins")
 
-    ((gp_realization_config, dataset_size_config,
-      n_points_config, dataset_transform_config),
-    model, model_and_info_folder_name, models_path) = get_configs_and_model_and_paths(args)
+    (af_dataset_configs, model,
+     model_and_info_folder_name, models_path) = get_configs_and_model_and_paths(args)
 
     if args.load_saved_model:
         model, model_path = load_model(
@@ -297,11 +288,9 @@ def run_train(args):
     print("Number of parameters:", count_parameters(model))
 
     ####################### Make the train and test datasets #######################
-    (train_aq_dataset,
-     test_aq_dataset,
+    (train_aq_dataset, test_aq_dataset,
      small_test_aq_dataset) = create_train_test_gp_acq_datasets_helper(
-        args, gp_realization_config, dataset_size_config,
-            n_points_config, dataset_transform_config)
+         args, af_dataset_configs)
 
     ######################## Train the model #######################################
     if args.train:

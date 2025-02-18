@@ -2,7 +2,9 @@ import os
 import torch
 from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprovement
 from botorch.utils.sampling import draw_sobol_samples
+from botorch.exceptions import UnsupportedError
 import argparse
+from acquisition_function_net import GittinsAcquisitionFunctionNet
 from bayesopt import GPAcquisitionOptimizer, NNAcquisitionOptimizer, OptimizationResultsSingleMethod, get_rff_function_and_name, outcome_transform_function
 from dataset_with_models import RandomModelSampler
 from gp_acquisition_dataset import GP_GEN_DEVICE, add_gp_args, get_gp_model_from_args_no_outcome_transform, get_outcome_transform
@@ -184,8 +186,10 @@ def run_bo(objective_args, bo_policy_args, gp_af_args):
         gp_af = gp_af_args[GP_AF_NAME_PREFIX]
         if gp_af is None:
             raise ValueError("If not using a NN AF, must specify gp_af")
+
+        optimizer_class = GPAcquisitionOptimizer
+        
         af_options = dict(
-            optimizer_class=GPAcquisitionOptimizer,
             optimizer_kwargs_per_function=[{'model': af_gp_model}],
             acquisition_function_class=GP_AF_DICT[gp_af],
             fit_params=fit in {'map', 'mle'}
@@ -200,11 +204,22 @@ def run_bo(objective_args, bo_policy_args, gp_af_args):
         
         nn_model = load_model(nn_model_name)
 
+        if isinstance(nn_model, GittinsAcquisitionFunctionNet):
+            if nn_model.costs_in_history:
+                raise UnsupportedError("nn_model.costs_in_history=True is currently not"
+                                       " supported for Gittins index optimization")
+            if nn_model.cost_is_input:
+                raise UnsupportedError("nn_model.cost_is_input=True is currently not"
+                                       " supported for Gittins index optimization")
+            
+            # if nn_
+
+        optimizer_class = NNAcquisitionOptimizer
+
         # TODO (maybe):
         # need to provide exponentiate=False or exponentiate=True here (?)
         # TODO: Make this work for Gittins index
         af_options = dict(
-            optimizer_class=NNAcquisitionOptimizer,
             model=nn_model,
             nn_model_name=nn_model_name
         )
@@ -230,6 +245,7 @@ def run_bo(objective_args, bo_policy_args, gp_af_args):
         initial_points=init_x,
         n_iter=bo_policy_args['n_iter'],
         seeds=seeds,
+        optimizer_class=optimizer_class,
         objective_names=[objective_name],
         save_dir=RESULTS_DIR,
         results_name=results_name, # results_name is only used to print stuff out

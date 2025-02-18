@@ -411,7 +411,10 @@ def train_or_test_loop(dataloader: DataLoader,
                        alpha_increment:Optional[float]=None,
                        
                        # Only used when method="gittins" and train=True
-                       normalize_gi_loss:bool=False):
+                       normalize_gi_loss:bool=False,
+                       
+                       # Whether to return None if there is nothing to compute
+                       return_none=False):
     if not isinstance(dataloader, DataLoader):
         raise ValueError("dataloader must be a torch DataLoader")
     
@@ -544,15 +547,19 @@ def train_or_test_loop(dataloader: DataLoader,
     if nn_model is not None:
         nn_batch_stats_list = []
     
-    # If we are not computing any stats, then don't actually need to go through
-    # the dataset. This probably won't happen in practice though because we
-    # always will be evaluating the NN. Also make verbose=False in this case.
     if not (compute_true_gp_stats or compute_map_gp_stats or
             compute_basic_stats or nn_model is not None):
+        if return_none:
+            return None
+        # If we are not computing any stats, then don't actually need to go through
+        # the dataset. Also make verbose=False in this case.
         it = []
         verbose = False
-
-    it = dataloader
+        do_nothing = True
+    else:
+        it = dataloader
+        do_nothing = False
+    
     if verbose:
         if train and n_train_printouts is not None:
             print(desc)
@@ -777,7 +784,8 @@ def train_or_test_loop(dataloader: DataLoader,
                     improvements=improvements, return_loss=False,
                     name="map_gp_ei", reduction="sum")
             map_gp_stats_list.append(map_gp_batch_stats)
-    assert dataset_length == len(dataset)
+    if not do_nothing:
+        assert dataset_length == len(dataset)
 
     if verbose:
         toc(desc)
@@ -1166,15 +1174,23 @@ def get_test_during_after_training(
 
 MODELS_SUBDIR = "models"
 
-def save_acquisition_function_net_configs(
+def save_af_net_configs(
         model: AcquisitionFunctionNet,
         training_config: dict[str, Any],
-        gp_realization_config: dict[str, Any],
-        dataset_size_config: dict[str, Any],
-        n_points_config: dict[str, Any],
-        dataset_transform_config: dict[str, Any],
-        model_sampler: RandomModelSampler,
-        save:bool=True):
+        af_dataset_config: dict[str, dict[str, Any]],
+        save:bool=True
+    ):
+    gp_realization_config = af_dataset_config["gp_realization_config"]
+    dataset_size_config = af_dataset_config["dataset_size_config"]
+    n_points_config = af_dataset_config["n_points_config"]
+    dataset_transform_config = af_dataset_config["dataset_transform_config"]
+
+    model_sampler = RandomModelSampler(
+        models=gp_realization_config["models"],
+        model_probabilities=gp_realization_config["model_probabilities"],
+        randomize_params=gp_realization_config["randomize_params"]
+    )
+
     gp_realization_config_json = convert_to_json_serializable(gp_realization_config)
     dataset_transform_config_json = convert_to_json_serializable(dataset_transform_config)
     model_sampler_json = convert_to_json_serializable({
@@ -1248,7 +1264,8 @@ def get_latest_model_path(model_and_info_folder_name):
     try:
         latest_model_name = load_json(latest_model_path)["latest_model"]
     except FileNotFoundError:
-        raise FileNotFoundError(f"Latest model path {latest_model_path} does not exist. i.e., no models have been fully trained yet.")
+        raise FileNotFoundError(f"Latest model path {latest_model_path} does not exist."
+                                " i.e., no models have been fully trained yet.")
     model_path = os.path.join(models_path, latest_model_name)
     return model_path
 
@@ -1311,5 +1328,11 @@ def load_configs(model_and_info_folder_name: str):
     training_config = load_json(
         os.path.join(model_and_info_path, "training_config.json"))
     
-    return gp_realization_config, dataset_size_config, n_points_config, \
-        dataset_transform_config, model_sampler, training_config
+    return {
+        "gp_realization_config": gp_realization_config,
+        "dataset_size_config": dataset_size_config,
+        "n_points_config": n_points_config,
+        "dataset_transform_config": dataset_transform_config,
+        "model_sampler": model_sampler,
+        "training_config": training_config
+    }

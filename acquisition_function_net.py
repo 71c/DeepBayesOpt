@@ -1,4 +1,5 @@
 import inspect
+import math
 from typing import List, Optional, Sequence, Tuple, Type, Union
 
 from numpy import isin
@@ -11,7 +12,8 @@ from botorch.exceptions import UnsupportedError
 from botorch.utils.transforms import t_batch_mode_transform, match_batch_shape
 from abc import ABC, abstractmethod
 from utils import safe_issubclass, to_device, standardize_y_hist, SaveableObject
-from nn_utils import Dense, MultiLayerPointNet, PointNetLayer, SoftmaxOrSoftplusLayer, check_xy_dims, expand_dim
+from nn_utils import (Dense, MultiLayerPointNet, PointNetLayer,
+                      SoftmaxOrSoftplusLayer, check_xy_dims, expand_dim)
 
 import logging
 
@@ -110,8 +112,10 @@ class AcquisitionFunctionNet(nn.Module, ABC, SaveableObject):
         cand_mask = to_device(cand_mask, nn_device)
 
         y_hist = check_xy_dims(x_hist, y_hist, "x_hist", "y_hist")
-        hist_mask = check_xy_dims(x_hist, hist_mask, "x_hist", "hist_mask", expected_y_dim=1)
-        cand_mask = check_xy_dims(x_cand, cand_mask, "x_cand", "cand_mask", expected_y_dim=1)
+        hist_mask = check_xy_dims(x_hist, hist_mask,
+                                  "x_hist", "hist_mask", expected_y_dim=1)
+        cand_mask = check_xy_dims(x_cand, cand_mask,
+                                  "x_cand", "cand_mask", expected_y_dim=1)
 
         return dict(
             x_hist=x_hist,
@@ -559,9 +563,12 @@ class AcquisitionFunctionNetFinalMLP(AcquisitionFunctionHead):
             # This doesn't handle mask correctly; TODO
             # (only if I'll even end up using this which I probably won't)
             if cand_mask is not None:
-                raise NotImplementedError("layer_norm_at_end doesn't handle mask correctly.")
+                raise NotImplementedError(
+                    "layer_norm_at_end doesn't handle mask correctly.")
             if acquisition_values.dim() > 2:
-                acquisition_values = (acquisition_values - torch.mean(acquisition_values, dim=(-3, -2), keepdim=True)) / torch.std(acquisition_values, dim=(-3, -2), keepdim=True)
+                mean = torch.mean(acquisition_values, dim=(-3, -2), keepdim=True)
+                std = torch.std(acquisition_values, dim=(-3, -2), keepdim=True)
+                acquisition_values = (acquisition_values - mean) / std
         
         acquisition_values = self._transform_acquisition_values(
             acquisition_values, x_hist, y_hist, x_cand,
@@ -706,7 +713,8 @@ class AcquisitionFunctionNetFinalMLPSoftmaxExponentiate(AcquisitionFunctionNetFi
 
         acquisition_values = self.transform(
             acquisition_values, mask=cand_mask,
-            exponentiate=exponentiate and not (self.positive_linear_at_end or self.gp_ei_computation),
+            exponentiate=exponentiate and not (
+                self.positive_linear_at_end or self.gp_ei_computation),
             softmax=softmax
         )
         
@@ -830,7 +838,8 @@ class AcquisitionFunctionBodyPointnetV1and2(AcquisitionFunctionBodyFixedHistoryO
         assert isinstance(n_pointnets, int) and n_pointnets >= 1
 
         if not (input_xcand_to_local_nn or input_xcand_to_final_mlp):
-            raise ValueError("At least one of input_xcand_to_local_nn and input_xcand_to_final_mlp must be True.")
+            raise ValueError("At least one of input_xcand_to_local_nn and "
+                             "input_xcand_to_final_mlp must be True.")
         self.input_xcand_to_local_nn = input_xcand_to_local_nn
         self.input_xcand_to_final_mlp = input_xcand_to_final_mlp
 
@@ -898,8 +907,10 @@ class AcquisitionFunctionBodyPointnetV1and2(AcquisitionFunctionBodyFixedHistoryO
             raise ValueError("acqf_params should not be provided if n_acqf_params=0.")
 
         if self.input_xcand_to_local_nn: # V2
-            # xy_hist_and_cand shape: (*, n_cand, n_hist, dimension+n_acqf_params+dimension+n_hist_out)
-            xy_hist, xy_hist_and_cand, mask = _get_xy_hist_and_cand(x_hist, y_hist, x_cand, hist_mask)
+            # xy_hist_and_cand shape:
+            # (*, n_cand, n_hist, dimension+n_acqf_params+dimension+n_hist_out)
+            xy_hist, xy_hist_and_cand, mask = _get_xy_hist_and_cand(
+                x_hist, y_hist, x_cand, hist_mask)
             # shape (*, n_cand, encoded_history_dim)
             out = self.pointnet(xy_hist_and_cand, mask=mask, keepdim=False)
             logger.debug(f"out.shape: {out.shape}")
@@ -925,13 +936,30 @@ class AcquisitionFunctionBodyPointnetV1and2(AcquisitionFunctionBodyFixedHistoryO
 def safe_log(x):
     if x is None:
         return None
+    if isinstance(x, float):
+        return math.log(x) if x > 0.0 else 0.0
     return torch.where(x > 0, torch.log(x), torch.zeros_like(x))
 
 
 class GittinsAcquisitionFunctionNet(AcquisitionFunctionNet):
-    def __init__(self, af_class,
+    r"""Gittins index acquisition function neural net.
+    
+    Attributes:
+        output_dim (int):
+            The output dimension of the acquisition function.
+        variable_lambda (bool):
+            Whether to use a variable lambda that is input to the NN.
+        costs_in_history (bool):
+            Whether the past costs are in the history.
+        cost_is_input (bool):
+            Whether the cost of a candidate is an input to the NN
+            (in this case we can know the cost before evaluation).
+    """
+    def __init__(self,
+                 af_class,
                  variable_lambda:bool,
-                 costs_in_history:bool, cost_is_input:bool,
+                 costs_in_history:bool,
+                 cost_is_input:bool,
                  assume_y_independent_cost:bool=False,
                  **init_kwargs):
         r"""Initialize the GittinsAcquisitionFunctionNet class.
@@ -956,10 +984,6 @@ class GittinsAcquisitionFunctionNet(AcquisitionFunctionNet):
             **init_kwargs:
                 Arguments to pass to the acquisition function class __init__
                 except for the dimension argument.
-        
-        Attributes:
-            output_dim (int):
-                The output dimension of the acquisition function.
         
         `costs_in_history` and `cost_is_input` can be chosen based on the following
         rules, if `heterogeneous_costs` tells whether costs are heterogeneous and
@@ -1027,7 +1051,7 @@ class GittinsAcquisitionFunctionNet(AcquisitionFunctionNet):
 
     def forward(self,
                 x_hist:Tensor, y_hist:Tensor, x_cand:Tensor,
-                lambda_cand:Optional[Tensor]=None,
+                lambda_cand:Optional[Union[Tensor, float]]=None,
                 cost_hist:Optional[Tensor]=None,
                 cost_cand:Optional[Tensor]=None,
                 hist_mask:Optional[Tensor]=None, cand_mask:Optional[Tensor]=None,
@@ -1040,9 +1064,10 @@ class GittinsAcquisitionFunctionNet(AcquisitionFunctionNet):
                 A `batch_shape x n_hist x 1` tensor of training observations.
             x_cand (torch.Tensor):
                 Candidate input tensor with shape `batch_shape x n_cand x d`.
-            lambda_cand (torch.Tensor, optional):
-                A `batch_shape x n_cand` or `batch_shape x n_cand x 1` tensor of lambda
-                values for the candidate points.
+            lambda_cand (torch.Tensor or float, optional):
+                Either a `batch_shape x n_cand` or `batch_shape x n_cand x 1` tensor
+                of lambda values for the candidate points, or a float which means the
+                same value of lambda should be used for all candidate points.
             cost_hist (torch.Tensor, optional):
                 A `batch_shape x n_hist` or `batch_shape x n_hist x 1` tensor of costs
                 for the history points.
@@ -1070,24 +1095,31 @@ class GittinsAcquisitionFunctionNet(AcquisitionFunctionNet):
         if self.costs_in_history:
             if cost_hist is None:
                 raise ValueError("cost_hist must be specified if costs_in_history=True")
-            cost_hist = check_xy_dims(x_hist, cost_hist, "x_hist", "cost_hist", expected_y_dim=1)
+            cost_hist = check_xy_dims(x_hist, cost_hist,
+                                      "x_hist", "cost_hist", expected_y_dim=1)
             if not is_log:
                 cost_hist = safe_log(cost_hist)
             y_hist = torch.cat((y_hist, cost_hist), dim=-1)
         elif cost_hist is not None:
-            raise ValueError("cost_hist should not be specified if costs_in_history=False")
+            raise ValueError(
+                "cost_hist should not be specified if costs_in_history=False")
 
         ## Make sure the lambda and cost are specified or not as expected
         if self.variable_lambda:
             if lambda_cand is None:
-                raise ValueError("lambda_cand must be specified if variable_lambda=True")
-            lambda_cand = check_xy_dims(x_cand, lambda_cand, "x_cand", "lambda_cand", expected_y_dim=1)
+                raise ValueError(
+                    "lambda_cand must be specified if variable_lambda=True")
+            if not isinstance(lambda_cand, float): # should be a Tensor
+                lambda_cand = check_xy_dims(x_cand, lambda_cand,
+                                            "x_cand", "lambda_cand", expected_y_dim=1)
         elif lambda_cand is not None:
-            raise ValueError("lambda_cand should not be specified if variable_lambda=False")
+            raise ValueError(
+                "lambda_cand should not be specified if variable_lambda=False")
         if self.cost_is_input:
             if cost_cand is None:
                 raise ValueError("cost_cand must be specified if cost_is_input=True")
-            cost_cand = check_xy_dims(x_cand, cost_cand, "x_cand", "cost_cand", expected_y_dim=1)
+            cost_cand = check_xy_dims(x_cand, cost_cand,
+                                      "x_cand", "cost_cand", expected_y_dim=1)
         elif cost_cand is not None:
             raise ValueError("cost_cand should not be specified if cost_is_input=False")
         
@@ -1107,6 +1139,12 @@ class GittinsAcquisitionFunctionNet(AcquisitionFunctionNet):
             else:
                 log_lambda_cand = safe_log(lambda_cand)
                 log_cost_cand = safe_log(cost_cand)
+            
+            if isinstance(log_lambda_cand, float):
+                log_lambda_cand = torch.full(
+                    list(x_cand.shape[:-1]) + [1],
+                    log_lambda_cand,
+                    dtype=x_cand.dtype, layout=x_cand.layout, device=x_cand.device)
 
             # Set the necessary acqf_params
             if self.variable_lambda and self.cost_is_input:
@@ -1127,8 +1165,10 @@ class GittinsAcquisitionFunctionNet(AcquisitionFunctionNet):
 
 
 class ExpectedImprovementAcquisitionFunctionNet(AcquisitionFunctionNet):
-    def __init__(self, af_body_class,
-                 af_body_init_params:dict,
+    def __init__(
+            self,
+            af_body_class,
+            af_body_init_params:dict,
             af_head_init_params:dict,
             standardize_outcomes=False):
         super().__init__()
@@ -1180,7 +1220,8 @@ class AcquisitionFunctionNetModel(Model):
     So it's kind of silly to have this intermediate between the NN and the
     acquisition function, but it's necessary for the BoTorch API."""
     
-    def __init__(self, model: AcquisitionFunctionNet,
+    def __init__(self,
+                 model: AcquisitionFunctionNet,
                  train_X: Optional[Tensor]=None,
                  train_Y: Optional[Tensor]=None):
         """
@@ -1215,7 +1256,8 @@ class AcquisitionFunctionNetModel(Model):
             raise ValueError("Both train_X and train_Y must be provided or neither.")
     
     def posterior(self, *args, **kwargs):
-        raise UnsupportedError("AcquisitionFunctionNetModel does not support posterior inference.")
+        raise UnsupportedError(
+            "AcquisitionFunctionNetModel does not support posterior inference.")
     
     @property
     def num_outputs(self) -> int:
@@ -1223,7 +1265,8 @@ class AcquisitionFunctionNetModel(Model):
         return 1 # Only supporting 1 output (for now at least)
     
     def subset_output(self, idcs: Sequence[int]):
-        raise UnsupportedError("AcquisitionFunctionNetModel does not support output subsetting.")
+        raise UnsupportedError(
+            "AcquisitionFunctionNetModel does not support output subsetting.")
 
     def condition_on_observations(self, X: Tensor, Y: Tensor) -> Model:
         """This doesn't have the original utility from GPyTorch --
@@ -1277,12 +1320,14 @@ class LikelihoodFreeNetworkAcquisitionFunction(AcquisitionFunction):
         """
         Args:
             model: The acquisition function network model.
+            **kwargs: Any keyword arguments to pass to the AF's `forward` method.
         """
         super().__init__(model=model) # sets self.model = model
         self.kwargs = kwargs
     
     @classmethod
-    def from_net(cls, model: AcquisitionFunctionNet,
+    def from_net(cls,
+                 model: AcquisitionFunctionNet,
                  train_X: Optional[Tensor]=None,
                  train_Y: Optional[Tensor]=None,
                  **kwargs) -> "LikelihoodFreeNetworkAcquisitionFunction":

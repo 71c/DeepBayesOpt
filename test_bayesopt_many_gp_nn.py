@@ -99,11 +99,8 @@ nn_models = [
 configs = [load_configs(model_and_info_name)
            for model_and_info_name in model_and_info_names]
 
-gp_realization_configs, dataset_size_configs, n_points_configs, \
-        dataset_transform_configs, gp_samplers, training_configs = zip(*configs)
-
 methods = [
-    training_config["method"] for training_config in training_configs
+    config["training_config"]["method"] for config in configs
 ]
 
 method_descriptions = {
@@ -118,9 +115,9 @@ model_and_info_plot_names = [
 ]
 
 # Assume that all the configs are the same
-gp_realization_config = gp_realization_configs[0]
-dataset_transform_config = dataset_transform_configs[0]
-gp_sampler = gp_samplers[0]
+gp_realization_config = configs[0]["gp_realization_config"]
+dataset_transform_config = configs[0]["dataset_transform_config"]
+gp_sampler = configs[0]["gp_sampler"]
 
 dimensions = set()
 if 'dimension' in gp_realization_config:

@@ -246,13 +246,12 @@ def create_gp_acquisition_dataset(
                       file=sys.stderr)
                 print(traceback.format_exc(), file=sys.stderr)
                 aq_dataset_already_saved = False
-            # aq_dataset = AcquisitionDataset.load(aq_dataset_path)
             if aq_dataset_already_saved:
                 assert aq_dataset.data_is_fixed == fix_acquisition_samples
                 # Won't just return it now because 
                 # it is possible that the dataset currently doesn't have cached
                 # data that we want to compute now.
-                # Kind of redundant because we are loading and saving again.
+                # If so, we compute the cached data and save the dataset again.
         
         if fix_acquisition_samples:
             if batch_size is None or get_true_gp_stats is None:
@@ -359,11 +358,14 @@ def create_gp_acquisition_dataset(
             dataloader = aq_dataset.get_dataloader(
                 batch_size=batch_size, drop_last=False)
             desc = f"Getting{' ' if name != '' else ''}{name} dataset stats to cache"
-            train_or_test_loop(dataloader, verbose=True, desc=desc,
-                               get_true_gp_stats=get_true_gp_stats)
-            os.makedirs(DATASETS_DIR, exist_ok=True)
-            print(f"Saving {aq_dataset_name}")
-            aq_dataset.save(aq_dataset_path, verbose=True)
+            # result==None iff all the requested dataset stats are already cached
+            result = train_or_test_loop(dataloader, verbose=True, desc=desc,
+                                        get_true_gp_stats=get_true_gp_stats,
+                                        return_none=True)
+            if not (aq_dataset_already_saved and result is None):
+                os.makedirs(DATASETS_DIR, exist_ok=True)
+                print(f"Saving AF dataset: {aq_dataset_name}")
+                aq_dataset.save(aq_dataset_path, verbose=True)
     
     return aq_dataset
 
@@ -633,7 +635,12 @@ def get_gp_acquisition_dataset_configs(args, device=None):
         standardize_outcomes=args.standardize_dataset_outcomes
     )
 
-    return gp_realization_config, dataset_size_config, n_points_config, dataset_transform_config
+    return {
+        "gp_realization_config": gp_realization_config,
+        "dataset_size_config": dataset_size_config,
+        "n_points_config": n_points_config,
+        "dataset_transform_config": dataset_transform_config
+    }
 
 
 def get_gp_acquisition_dataset_test_configs(args):
@@ -666,18 +673,18 @@ def get_gp_acquisition_dataset_test_configs(args):
 
 def create_train_test_gp_acq_datasets_helper(
         args,
-        gp_realization_config, dataset_size_config,
-        n_points_config, dataset_transform_config,
+        gp_af_dataset_configs,
         check_cached=False,
         load_dataset=True
     ):
     test_dataset_config = get_gp_acquisition_dataset_test_configs(args)
     
     dataset_kwargs = {
-        **gp_realization_config,
-        **dataset_size_config,
-        **n_points_config,
-        **dataset_transform_config}
+        **gp_af_dataset_configs["gp_realization_config"],
+        **gp_af_dataset_configs["dataset_size_config"],
+        **gp_af_dataset_configs["n_points_config"],
+        **gp_af_dataset_configs["dataset_transform_config"]
+    }
 
     lamda_min, lamda_max = get_lamda_min_max(args)
     other_kwargs = dict(
@@ -701,25 +708,30 @@ def create_train_test_gp_acq_datasets_helper(
         lambda_max=lamda_max
     )
 
-    train_aq_dataset, test_aq_dataset, small_test_aq_dataset = create_train_and_test_gp_acquisition_datasets(
+    (train_aq_dataset, test_aq_dataset,
+     small_test_aq_dataset) = create_train_and_test_gp_acquisition_datasets(
         **dataset_kwargs, **other_kwargs,
         check_cached=check_cached, load_dataset=load_dataset)
 
     if not check_cached:
         if train_aq_dataset is not None:
             # print("Training function samples dataset size:", len(train_dataset))
-            print("Original training acquisition dataset size parameter:", dataset_size_config['train_acquisition_size'])
+            print("Original training acquisition dataset size parameter:",
+                  gp_af_dataset_configs["dataset_size_config"]["train_acquisition_size"])
             print("Training acquisition dataset size:", len(train_aq_dataset),
-                "number of batches:", len(train_aq_dataset) // args.batch_size, len(train_aq_dataset) % args.batch_size)
+                "number of batches:", len(train_aq_dataset) // args.batch_size,
+                len(train_aq_dataset) % args.batch_size)
 
         if test_aq_dataset is not None:
             # print("Test function samples dataset size:", len(test_dataset))
             print("Test acquisition dataset size:", len(test_aq_dataset),
-                "number of batches:", len(test_aq_dataset) // args.batch_size, len(test_aq_dataset) % args.batch_size)
+                "number of batches:", len(test_aq_dataset) // args.batch_size,
+                len(test_aq_dataset) % args.batch_size)
         
         if small_test_aq_dataset != test_aq_dataset and small_test_aq_dataset is not None:
             print("Small test acquisition dataset size:", len(small_test_aq_dataset),
-                    "number of batches:", len(small_test_aq_dataset) // args.batch_size, len(small_test_aq_dataset) % args.batch_size)
+                    "number of batches:", len(small_test_aq_dataset) // args.batch_size,
+                    len(small_test_aq_dataset) % args.batch_size)
         
         for name, dataset in [("Train acquisition dataset", train_aq_dataset),
                 ("Test acquisition dataset", test_aq_dataset),
@@ -854,16 +866,13 @@ def add_gp_acquisition_dataset_args(parser):
 
 def create_train_test_gp_acq_datasets_from_args(
         args, check_cached=False, load_dataset=True):
-    (gp_realization_config, dataset_size_config,
-     n_points_config, dataset_transform_config) = get_gp_acquisition_dataset_configs(
+    gp_af_dataset_configs = get_gp_acquisition_dataset_configs(
          args, device=GP_GEN_DEVICE)
-    
     (train_aq_dataset,
      test_aq_dataset,
      small_test_aq_dataset) = create_train_test_gp_acq_datasets_helper(
-    args, gp_realization_config, dataset_size_config,
-        n_points_config, dataset_transform_config,
-        check_cached=check_cached, load_dataset=load_dataset)
+         args, gp_af_dataset_configs,
+         check_cached=check_cached, load_dataset=load_dataset)
     return train_aq_dataset, test_aq_dataset, small_test_aq_dataset
 
 
