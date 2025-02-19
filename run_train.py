@@ -15,7 +15,7 @@ from gp_acquisition_dataset import add_gp_acquisition_dataset_args, add_lamda_ar
 # AcquisitionFunctionNetV3, AcquisitionFunctionNetV4,
 #     AcquisitionFunctionNetDense
 from acquisition_function_net import (
-    AcquisitionFunctionBodyPointnetV1and2, AcquisitionFunctionNet, AcquisitionFunctionNetFinalMLP, AcquisitionFunctionNetFinalMLPSoftmaxExponentiate, ExpectedImprovementAcquisitionFunctionNet, GittinsAcquisitionFunctionNet, LikelihoodFreeNetworkAcquisitionFunction, TwoPartAcquisitionFunctionNetFixedHistoryOutputDim)
+    AcquisitionFunctionBodyPointnetV1and2, AcquisitionFunctionNet, AcquisitionFunctionNetFinalMLP, AcquisitionFunctionNetFinalMLPSoftmaxExponentiate, ExpectedImprovementAcquisitionFunctionNet, GittinsAcquisitionFunctionNet, AcquisitionFunctionNetAcquisitionFunction, TwoPartAcquisitionFunctionNetFixedHistoryOutputDim)
 from exact_gp_computations import calculate_EI_GP
 from train_acquisition_function_net import (
     METHODS,
@@ -425,7 +425,7 @@ def run_train(args):
 
             x_cand = torch.rand(n_candidates, args.dimension)
 
-            aq_fn = LikelihoodFreeNetworkAcquisitionFunction.from_net(
+            aq_fn = AcquisitionFunctionNetAcquisitionFunction.from_net(
             model, x_hist_nn, y_hist_nn, exponentiate=(args.method == 'mse_ei'), softmax=False)
             ei_nn = aq_fn(x_cand.to(DEVICE).unsqueeze(1))
 

@@ -1213,6 +1213,11 @@ class ExpectedImprovementAcquisitionFunctionNet(AcquisitionFunctionNet):
         return self.base_model.af_head.transform
 
 
+""""The following two classes, AcquisitionFunctionNetModel and
+AcquisitionFunctionNetAcquisitionFunction, define the Model and AcquisitionFunction
+classes that are necessary to be defined so that the AcquisitionFunctionNet can be used
+in the BoTorch API to run Bayesian optimization loops."""
+
 class AcquisitionFunctionNetModel(Model):
     """In this case, the model is the acquisition function network itself.
     So it's kind of silly to have this intermediate between the NN and the
@@ -1255,7 +1260,7 @@ class AcquisitionFunctionNetModel(Model):
     
     def posterior(self, *args, **kwargs):
         raise UnsupportedError(
-            "AcquisitionFunctionNetModel does not support posterior inference.")
+            f"{self.__class__.__name__} does not support posterior inference.")
     
     @property
     def num_outputs(self) -> int:
@@ -1264,7 +1269,7 @@ class AcquisitionFunctionNetModel(Model):
     
     def subset_output(self, idcs: Sequence[int]):
         raise UnsupportedError(
-            "AcquisitionFunctionNetModel does not support output subsetting.")
+            f"{self.__class__.__name__} does not support output subsetting.")
 
     def condition_on_observations(self, X: Tensor, Y: Tensor) -> Model:
         """This doesn't have the original utility from GPyTorch --
@@ -1279,7 +1284,7 @@ class AcquisitionFunctionNetModel(Model):
             Y = match_batch_shape(Y, self.train_Y)
             new_X = torch.cat(self.train_X, X, dim=-2)
             new_Y = torch.cat(self.train_Y, Y, dim=-2)
-        return AcquisitionFunctionNetModel(self.model, new_X, new_Y)
+        return self.__class__(self.model, new_X, new_Y)
 
     def forward(self, X: Tensor, **kwargs) -> Tensor:
         """Forward pass of the acquisition function network.
@@ -1306,14 +1311,15 @@ class AcquisitionFunctionNetModel(Model):
         # else:
         #     X = match_batch_shape(X, train_X)
 
-        logger.debug(f"In AcquisitionFunctionNetModel.forward, X.shape = {X.shape}")
+        logger.debug(f"In {self.__class__.__name__}.forward, X.shape = {X.shape}")
 
         ret = self.model(self.train_X, self.train_Y, X, **kwargs)
         assert ret.shape[:-1] == X.shape[:-1]
         return ret
 
 
-class LikelihoodFreeNetworkAcquisitionFunction(AcquisitionFunction):
+class AcquisitionFunctionNetAcquisitionFunction(AcquisitionFunction):
+    r"""Acquisition function for a neural network model, used for BoTorch API."""
     def __init__(self, model: AcquisitionFunctionNetModel, **kwargs):
         """
         Args:
@@ -1328,7 +1334,7 @@ class LikelihoodFreeNetworkAcquisitionFunction(AcquisitionFunction):
                  model: AcquisitionFunctionNet,
                  train_X: Optional[Tensor]=None,
                  train_Y: Optional[Tensor]=None,
-                 **kwargs) -> "LikelihoodFreeNetworkAcquisitionFunction":
+                 **kwargs) -> "AcquisitionFunctionNetAcquisitionFunction":
         return cls(AcquisitionFunctionNetModel(model, train_X, train_Y), **kwargs)
     
     # They all do this
@@ -1346,7 +1352,7 @@ class LikelihoodFreeNetworkAcquisitionFunction(AcquisitionFunction):
             A `(b)`-dim Tensor of acquisition function values at the given
             design points `X`.
         """
-        logger.debug(f"In LikelihoodFreeNetworkAcquisitionFunction.forward, X.shape = {X.shape}")
+        logger.debug(f"In {self.__class__.__name__}.forward, X.shape = {X.shape}")
         assert X.size(-2) == 1 # Guaranteed by t_batch_mode_transform
         X = X.squeeze(-2) # Make shape (b) x d
 
@@ -1359,4 +1365,5 @@ class LikelihoodFreeNetworkAcquisitionFunction(AcquisitionFunction):
         return output
 
     def set_X_pending(self, X_pending: Optional[Tensor] = None) -> None:
-        raise UnsupportedError("AcquisitionFunctionNetModel does not support pending points.")
+        raise UnsupportedError(
+            f"{self.__class__.__name__} does not support pending points.")

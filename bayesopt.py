@@ -19,7 +19,7 @@ from dataset_with_models import RandomModelSampler
 from random_gp_function import RandomGPFunction
 from utils import add_outcome_transform, combine_nested_dicts, concatenate_outcome_transforms, convert_to_json_serializable, dict_to_hash, invert_outcome_transform, json_serializable_to_numpy, load_json, remove_priors, sanitize_file_name, save_json
 from json.decoder import JSONDecodeError
-from acquisition_function_net import AcquisitionFunctionNet, AcquisitionFunctionNetModel, LikelihoodFreeNetworkAcquisitionFunction
+from acquisition_function_net import AcquisitionFunctionNet, AcquisitionFunctionNetModel, AcquisitionFunctionNetAcquisitionFunction
 
 
 class BayesianOptimizer(ABC):
@@ -189,7 +189,7 @@ class NNAcquisitionOptimizer(ModelAcquisitionOptimizer):
                  bounds: Optional[Tensor]=None,
                  **acqf_kwargs):
         super().__init__(dim, maximize, initial_points, objective, 
-                         LikelihoodFreeNetworkAcquisitionFunction, bounds,
+                         AcquisitionFunctionNetAcquisitionFunction, bounds,
                          **acqf_kwargs)
         self.model = model
     
@@ -801,7 +801,8 @@ def get_rff_function_and_name(gp, deepcopy=True, dimension=None):
                     f"Incorrect input {x.shape}: dimension does not match {dimension}")
         else:
             raise ValueError(
-                f"Incorrect input {x.shape}: should be of shape n x {dimension}")
+                f"Incorrect input {x.shape}: should be of shape n x "
+                + (f"{dimension}" if dimension is not None else "d"))
         out = f(x).detach()
         assert out.dim() == 1 and out.size(0) == x.size(0)
         out = out.unsqueeze(-1) # get to shape n x m where m=1 (m = number of outputs)

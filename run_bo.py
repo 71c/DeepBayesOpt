@@ -94,16 +94,19 @@ def get_bo_loop_args_parser():
         choices=list(GP_AF_DICT),
         help="If using a GP-based AF, the AF to use"
     )
-    add_gp_args(gp_af_group, "GP-based AF", name_prefix=GP_AF_NAME_PREFIX,
-                required=False, add_randomize_params=False)
     gp_af_group.add_argument(
         f"--{GP_AF_NAME_PREFIX}_fit",
         choices=["map", "mle", "exact"],
         help="If using a GP-based AF, the method of fitting the GP. "
             "map for maximum a posteriori, mle for maximum likelihood, "
             "exact for using the true GP parameters. "
-            "If unspecified, no GP fitting is used."
+            "If unspecified, no GP fitting is used. "
+            f"If {GP_AF_NAME_PREFIX}_fit=exact, then the arguments under "
+            f"'GP-based AF' besides {GP_AF_NAME_PREFIX} and {GP_AF_NAME_PREFIX}_fit "
+            f"should not be specified."
     )
+    add_gp_args(gp_af_group, "GP-based AF", name_prefix=GP_AF_NAME_PREFIX,
+                required=False, add_randomize_params=False)
 
     return parser, objective_function_group, bo_policy_group, gp_af_group
 

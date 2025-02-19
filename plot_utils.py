@@ -6,7 +6,7 @@ import torch
 from torch import Tensor
 import torch.distributions as dist
 from acquisition_dataset import AcquisitionDataset
-from acquisition_function_net import AcquisitionFunctionNet, LikelihoodFreeNetworkAcquisitionFunction
+from acquisition_function_net import AcquisitionFunctionNet, AcquisitionFunctionNetAcquisitionFunction
 from exact_gp_computations import calculate_EI_GP
 
 
@@ -143,7 +143,7 @@ def plot_nn_vs_gp_acquisition_function_1d_grid(
             
             # Compute NN acquisition function
             x_hist_nn, y_hist_nn, x_cand_nn, vals_cand_nn = item.to(nn_device).tuple_no_model
-            aq_fn = LikelihoodFreeNetworkAcquisitionFunction.from_net(
+            aq_fn = AcquisitionFunctionNetAcquisitionFunction.from_net(
                 nn_model, x_hist_nn, y_hist_nn, exponentiate=not policy_gradient, softmax=False)
             ei_nn = aq_fn(x_cand_nn.unsqueeze(1)).cpu()
             arrs_and_labels_to_plot.append((ei_nn, "NN"))
