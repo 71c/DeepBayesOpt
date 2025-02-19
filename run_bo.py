@@ -263,8 +263,9 @@ def run_bo(objective_args, bo_policy_args, gp_af_args):
                 if lamda is not None:
                     if lamda != lamda_min:
                         raise ValueError(
-                            f"lamda should be {lamda_min=} if using a Gittins index "
-                            "NN AF architecture that has variable_lambda=False")
+                            f"lamda should be lamda={lamda_min} if using this Gittins "
+                            "index NN AF architecture that has variable_lambda=False, "
+                            f"but got lamda={lamda}")
                 else:
                     lamda = lamda_min
             

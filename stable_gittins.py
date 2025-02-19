@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 # Copyright (c) 2024 Qian Xie
-# Available at: https://github.com/QianJaneXie/PandoraBayesOpt/
+# Taken from: https://github.com/QianJaneXie/PandoraBayesOpt/
 
 from typing import Callable, Optional, Union
 import torch
