@@ -1558,8 +1558,8 @@ def _default_json_SaveableObject(o):
     raise TypeError(msg)
 
 class SaveableObject:
-    r"""A base class for objects that can be saved and loaded with their initialization 
-    parameters.
+    r"""An abstract base class for objects that can be saved and loaded with their
+    initialization parameters.
 
     This class enables automatic serialization and deserialization of subclasses by 
     tracking their __init__ arguments. When a subclass is instantiated, its 
@@ -1603,13 +1603,19 @@ class SaveableObject:
             "class_name": f"{self.__module__}.{self.__class__.__name__}",
             "kwargs": self._init_kwargs
         }
+    
+    def __new__(cls, *args, **kwargs):
+        # Make sure that SaveableObject is not constructed directly
+        if cls is SaveableObject:
+            raise TypeError("SaveableObject is an abstract class and cannot be "
+                            "instantiated directly.")
+        return super().__new__(cls, *args, **kwargs)
 
     def __init_subclass__(cls, **kwargs):
+        # must check specifically cls.__dict__
+        init_is_defined = '__init__' in cls.__dict__
+
         # Preserve the original __init__ method.
-        if '__init__' not in cls.__dict__: # must check specifically cls.__dict__
-            raise AttributeError(
-                f"{cls.__name__}, a subclass of SaveableObject, must have an "
-                "explicitly defined __init__ method")
         original_init = cls.__init__
 
         def new_init(self, *args, **kwargs):
@@ -1622,9 +1628,19 @@ class SaveableObject:
             # Call the original __init__ method
             original_init(self, *args, **kwargs)
 
-            # We only do the introspection if we are constructing THIS exact class
+            # If we are constructing THIS exact class
             # (and not a subclass further down the hierarchy)
             if self.__class__ is cls:
+                # Must check only *when __init__ is called*, not when the class is
+                # defined, because the class could be an abstract class.
+                # Also, only check this if we are calling the same __init__ as the
+                # __init__ defined directly in the object that is being constructed,
+                # not a superclass' __init__.
+                if not init_is_defined:
+                    raise AttributeError(
+                        f"{cls.__name__}, a subclass of SaveableObject, must have an "
+                        "explicitly defined __init__ method for it to be constructed.")
+
                 # Convert args to kwargs
                 sig = inspect.signature(original_init)
                 
