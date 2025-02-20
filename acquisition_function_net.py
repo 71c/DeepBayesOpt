@@ -2,7 +2,6 @@ import inspect
 import math
 from typing import List, Optional, Sequence, Tuple, Type, Union
 
-from numpy import isin
 import torch
 from torch import nn
 from torch import Tensor
@@ -136,7 +135,7 @@ class ParameterizedAcquisitionFunctionNet(AcquisitionFunctionNet):
             The output dimension of the acquisition function.
         n_acqf_params (int):
             a non-negative integer representing the number of scalar variable paramters
-            that can be passed in to the acquisition funciton.
+            that can be passed in to the acquisition function.
             Required parameter in __init__.
     """
     def __init_subclass__(cls, **kwargs):
@@ -148,7 +147,7 @@ class ParameterizedAcquisitionFunctionNet(AcquisitionFunctionNet):
     @abstractmethod
     def n_acqf_params(self) -> int:
         r"""`n_acqf_params`: a non-negative integer representing the number of scalar
-        variable paramters that can be passed in to the acquisition funciton. """
+        variable paramters that can be passed in to the acquisition function. """
         pass  # pragma: no cover
 
     @abstractmethod
@@ -254,7 +253,7 @@ class AcquisitionFunctionBody(nn.Module, ABC, SaveableObject):
             The input dimension (dimension of the features).
         n_acqf_params (int):
             The number of scalar variable paramters that can be passed in to the
-            acquisition funciton. Required parameter in __init__."""
+            acquisition function. Required parameter in __init__."""
     @abstractmethod
     def forward(self, x_hist:Tensor, y_hist:Tensor, x_cand:Tensor,
                 acqf_params:Optional[Tensor]=None,
@@ -301,7 +300,7 @@ class AcquisitionFunctionBody(nn.Module, ABC, SaveableObject):
     @abstractmethod
     def n_acqf_params(self) -> int:
         r"""`n_acqf_params`: a non-negative integer representing the number of scalar
-        variable paramters that can be passed in to the acquisition funciton. """
+        variable paramters that can be passed in to the acquisition function."""
         pass  # pragma: no cover
 
 
@@ -314,7 +313,7 @@ class AcquisitionFunctionBodyFixedHistoryOutputDim(AcquisitionFunctionBody):
             The input dimension (dimension of the features).
         n_acqf_params (int):
             The number of scalar variable paramters that can be passed in to the
-            acquisition funciton. Required parameter in __init__.
+            acquisition function. Required parameter in __init__.
         n_hist_out (int):
             The number of outputs in the history. Required parameter in __init__.
     """

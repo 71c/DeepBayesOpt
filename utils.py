@@ -1,4 +1,4 @@
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 import hashlib
 import itertools
 import os
@@ -27,7 +27,6 @@ from gpytorch.priors.torch_priors import GammaPrior
 from botorch.exceptions.errors import (
     BotorchTensorDimensionError,
     InputDataError,
-    UnsupportedError,
 )
 from botorch.exceptions.warnings import (
     _get_single_precision_warning,
@@ -440,7 +439,8 @@ def get_gp(train_X:Optional[Tensor]=None,
     if train_X is None and train_Y is None:
         has_data = False
         if dimension is None:
-            raise ValueError("dimension should be specified if train_X, train_Y are not specified")
+            raise ValueError(
+                "dimension should be specified if train_X, train_Y are not specified")
         # SingleTaskGP doesn't support initializing with no data.
         # So initialize it like this.
         train_X = torch.zeros(2, dimension, device=device)
@@ -454,7 +454,8 @@ def get_gp(train_X:Optional[Tensor]=None,
     elif train_X is not None and train_Y is not None:
         has_data = True
         if dimension is not None:
-            raise ValueError("dimension should not be specified if train_X, train_Y are specified")
+            raise ValueError(
+                "dimension should not be specified if train_X, train_Y are specified")
     else:
         raise ValueError("Either train_X and train_Y, or neither, should be specified")
 
@@ -580,7 +581,8 @@ def _set_train_data_with_transforms_GPyTorchModel(self,
         self._validate_tensor_args(X=proposed_X, Y=proposed_Y)
 
     self._set_train_data_with_X_transform(X, Y, strict, train)
-GPyTorchModel.set_train_data_with_transforms = _set_train_data_with_transforms_GPyTorchModel
+GPyTorchModel.set_train_data_with_transforms = \
+    _set_train_data_with_transforms_GPyTorchModel
 
 
 def _set_train_data_with_transforms_BatchedMultiOutputGPyTorchModel(self,
@@ -662,7 +664,8 @@ def _set_train_data_with_transforms_BatchedMultiOutputGPyTorchModel(self,
                 InputDataWarning,
                 stacklevel=3,  # Warn at model constructor call.
             )
-BatchedMultiOutputGPyTorchModel.set_train_data_with_transforms = _set_train_data_with_transforms_BatchedMultiOutputGPyTorchModel
+BatchedMultiOutputGPyTorchModel.set_train_data_with_transforms = \
+    _set_train_data_with_transforms_BatchedMultiOutputGPyTorchModel
 ################################################################################
 def _condition_on_observations_with_transforms(
         self, X: Tensor, Y: Tensor, **kwargs: Any) -> Model:
@@ -680,10 +683,11 @@ def _condition_on_observations_with_transforms(
         # Certainly not ideal but it should get the job done.
         # It doesn't really matter though if you're not gonna go back to
         # train mode...I'm not sure why BoTorch has this things.
-        fantasy_model._original_train_inputs = fantasy_model.input_transform.untransform(
-            fantasy_model.train_inputs[0])
+        fantasy_model._original_train_inputs = \
+            fantasy_model.input_transform.untransform(fantasy_model.train_inputs[0])
     return fantasy_model
-Model.condition_on_observations_with_transforms = _condition_on_observations_with_transforms
+Model.condition_on_observations_with_transforms = \
+    _condition_on_observations_with_transforms
 
 
 from botorch.sampling.pathwise.utils import get_train_inputs
@@ -733,7 +737,8 @@ def remove_priors(module: gpytorch.module.Module) -> list:
     add_priors."""
     named_priors_tuple_list = []
     for name, parent_module, prior, closure, inv_closure in module.named_priors():
-        named_priors_tuple_list.append((name, parent_module, prior, closure, inv_closure))
+        named_priors_tuple_list.append(
+            (name, parent_module, prior, closure, inv_closure))
         prior_variable_name = name.rsplit('.', 1)[-1]
         delattr(parent_module, prior_variable_name)
         del parent_module._priors[prior_variable_name]
@@ -760,16 +765,20 @@ def add_priors(named_priors_tuple_list: List[Tuple]):
 def calculate_batch_improvement(y_hist_batch: torch.Tensor, y_cand_batch: Tensor, 
                                 hist_mask: Optional[Tensor] = None, 
                                 cand_mask: Optional[Tensor] = None):
-    """
-    Calculate the improvement values for a batch of y_hist and y_cand tensors with optional masking.
+    """Calculate the improvement values for a batch of y_hist and y_cand tensors with
+    optional masking.
     
     Args:
-        y_hist_batch (Tensor): Tensor of shape (batch_size, max_n_hist, 1) containing historical y values.
-        y_cand_batch (Tensor): Tensor of shape (batch_size, max_n_cand, 1) containing candidate y values.
-        hist_mask (Optional[Tensor]): Boolean tensor of shape (batch_size, max_n_hist, 1) indicating valid y values.
-            If None, all values in y_hist_batch are considered valid.
-        cand_mask (Optional[Tensor]): Boolean tensor of shape (batch_size, max_n_cand, 1) indicating valid y values.
-            If None, all values in y_cand_batch are considered valid.
+        y_hist_batch (Tensor):
+            Tensor of shape (batch_size, max_n_hist, 1) containing historical y values.
+        y_cand_batch (Tensor):
+            Tensor of shape (batch_size, max_n_cand, 1) containing candidate y values.
+        hist_mask (Optional[Tensor]):
+            Boolean tensor of shape (batch_size, max_n_hist, 1) indicating valid y
+            values. If None, all values in y_hist_batch are considered valid.
+        cand_mask (Optional[Tensor]):
+            Boolean tensor of shape (batch_size, max_n_cand, 1) indicating valid y
+            values. If None, all values in y_cand_batch are considered valid.
     
     Returns:
         Tensor: Tensor of improvement values with the same shape as y_cand_batch.
@@ -782,7 +791,8 @@ def calculate_batch_improvement(y_hist_batch: torch.Tensor, y_cand_batch: Tensor
         y_hist_batch_masked = y_hist_batch.masked_fill(~hist_mask, float('-inf'))
         best_f_batch = y_hist_batch_masked.amax(dim=1, keepdim=True)
     
-    improvement_values_batch = torch.nn.functional.relu(y_cand_batch - best_f_batch, inplace=True)
+    improvement_values_batch = torch.nn.functional.relu(y_cand_batch - best_f_batch,
+                                                        inplace=True)
     
     # Ensure padding with zeros where there were invalid (masked) values
     if cand_mask is not None:
@@ -829,7 +839,8 @@ def standardize_y_hist(y_hist, hist_mask):
             # (0 - 0)^2 = 0 so this is also mask with zeros, good.
             squared_differences = torch.nn.functional.mse_loss(
                     y_hist, means_expanded, reduction='none')
-            denominators = (n_hists - 1.0).where(n_hists == 1.0, torch.full_like(n_hists, 1.0))
+            denominators = (n_hists - 1.0).where(n_hists == 1.0,
+                                                 torch.full_like(n_hists, 1.0))
             variances = squared_differences.sum(dim=-2, keepdim=True) / denominators
             variances = variances.where(n_hists == 1.0, torch.full_like(variances, 1.0))
             stdvs = torch.sqrt(variances)
@@ -857,7 +868,8 @@ def get_uniform_randint_generator(min_val, max_val):
 
 
 def loguniform_randint(min_val, max_val, size=1, pre_offset=0.0, offset=0):
-    if not (isinstance(min_val, int) and isinstance(max_val, int) and isinstance(offset, int)):
+    if not (isinstance(min_val, int)
+            and isinstance(max_val, int) and isinstance(offset, int)):
         raise ValueError("min_val, max_val, and offset must be integers")
     if not (1 <= min_val <= max_val):
         raise ValueError("min_val must be between 1 and max_val")
@@ -874,7 +886,8 @@ def loguniform_randint(min_val, max_val, size=1, pre_offset=0.0, offset=0):
 
 
 def get_loguniform_randint_generator(min_val, max_val, pre_offset=0.0, offset=0):
-    return partial(loguniform_randint, min_val, max_val, pre_offset=pre_offset, offset=offset)
+    return partial(loguniform_randint, min_val, max_val,
+                   pre_offset=pre_offset, offset=offset)
 
 
 def _int_linspace_naive(start, stop, num):
@@ -1018,7 +1031,8 @@ def convert_to_json_serializable(data,
         return data
     if isinstance(data, gpytorch.Module):
         if hash_gpytorch_modules:
-            return hash_gpytorch_module(data, include_priors, hash_include_str, hash_str)
+            return hash_gpytorch_module(
+                data, include_priors, hash_include_str, hash_str)
         else:
             if not include_priors:
                 named_priors_tuple_list = remove_priors(data)
@@ -1080,7 +1094,7 @@ def save_json(data, fname, **kwargs):
         if os.path.exists(save_fname):
             # Remove the written file if an error occurs
             os.remove(save_fname)
-        raise RuntimeError("Error saving json!") from e
+        raise e
 
 
 def load_json(fname, **kwargs):
@@ -1410,7 +1424,8 @@ class SizedInfiniteIterableMixin(SizedIterableMixin):
     def __next__(self):
         if self._len_or_inf() == math.inf:
             return self._next()
-        raise TypeError(f"Cannot call __next__ on a finitely sized {type(self)}. Use iter() first.")
+        raise TypeError(
+            f"Cannot call __next__ on a finitely sized {type(self)}. Use iter() first.")
 
 
 class FirstNIterable(Iterable):
@@ -1470,27 +1485,28 @@ def len_or_inf(x):
             return math.inf
         except TypeError:
             raise TypeError(
-                f"Object of type {type(x).__name__} is not iterable so it has no length")
+                f"Object of type {type(x).__name__} is not iterable so has no length")
 
 
 def iterable_is_finite(x):
     return len_or_inf(x) != math.inf
 
 
-def resize_iterable(it, new_length: Optional[int] = None):
-    original_length = len_or_inf(it)
+def resize_iterable(it, new_len: Optional[int] = None):
+    original_len = len_or_inf(it)
 
-    if new_length is not None:
-        if not isinstance(new_length, int) or new_length <= 0:
-            raise ValueError("new_length should be a positive integer")
-        if new_length != original_length:
+    if new_len is not None:
+        if not isinstance(new_len, int) or new_len <= 0:
+            raise ValueError("new_len should be a positive integer")
+        if new_len != original_len:
             # Weaker condition than `if isinstance(it, SizedInfiniteIterableMixin):`
             if callable(getattr(it, "copy_with_new_size", None)):
-                it = it.copy_with_new_size(new_length)
+                it = it.copy_with_new_size(new_len)
             else:
-                if new_length > original_length:
-                    raise ValueError(f"{new_length=} should be <= len(it)={original_length} if it is not a SizedInfiniteIterableMixin")
-                it = FirstNIterable(it, new_length)
+                if new_len > original_len:
+                    raise ValueError(f"{new_len=} should be <= len(it)={original_len} "
+                                     "if it is not a SizedInfiniteIterableMixin")
+                it = FirstNIterable(it, new_len)
 
     return it
 
@@ -1502,31 +1518,98 @@ def safe_issubclass(obj, parent):
 
 
 # Dictionary to keep track of subclasses of SaveableObject
-CLASSES = {}
+_CLASSES = {}
+
+def _info_dict_to_instance(info_dict) -> 'SaveableObject':
+    """Creates an instance of a class from a dictionary containing its class name
+    and arguments."""
+    if set(info_dict.keys()) != {"class_name", "kwargs"}:
+        raise ValueError("info_dict should have keys 'class_name' and 'kwargs'")
+    
+    class_name = info_dict["class_name"]
+    try:
+        model_class = _CLASSES[class_name]
+    except KeyError:
+        raise RuntimeError(f"Subclass {class_name} of SaveableObject does not exist")
+    
+    kwargs = info_dict["kwargs"]
+    if not isinstance(kwargs, dict):
+        raise TypeError("'kwargs' should be a dictionary")
+    for k, v in kwargs.items():
+        if type(v) is str and v in _CLASSES:
+            kwargs[k] = _CLASSES[v]
+        elif isinstance(v, dict) and set(v.keys()) == {"class_name", "kwargs"}:
+            kwargs[k] = _info_dict_to_instance(v)
+    
+    return model_class(**kwargs)
+
+def _default_json_SaveableObject(o):
+    if o.__class__ is type:
+        the_type = o.__name__
+        tmp = f"the type {the_type}"
+    else:
+        the_type = o.__class__.__name__
+        tmp = f"of type {the_type}"
+    msg = "Unable to save the file because one of the values is not JSON " \
+        "serializable. Only JSON serializable values and SaveableObject " \
+        "subclasses and instances are supported to be saved by SaveableObject. " \
+        f"If you need to save this object ({tmp}), consider making {the_type} " \
+        "a subclass of SaveableObject."
+    raise TypeError(msg)
 
 class SaveableObject:
+    r"""A base class for objects that can be saved and loaded with their initialization 
+    parameters.
+
+    This class enables automatic serialization and deserialization of subclasses by 
+    tracking their __init__ arguments. When a subclass is instantiated, its 
+    constructor arguments are introspected and stored, allowing the object to be 
+    reconstructed from saved data. Supports instances of `SaveableObject`
+    as well as subclasses of `SaveableObject` as arguments to __init__.
+
+    All subclasses must explicitly define an `__init__` method. Furthermore, subclass
+    constructors must not use `*args` (variadic positional arguments).
+    """
     @classmethod
     def load_init(cls, folder: str) -> 'SaveableObject':
+        r"""Loads an instance from a JSON file.
+        Args:
+            folder (str): The directory containing the JSON file.
+        Returns:
+            SaveableObject: The loaded instance.
+        """
         if cls is not SaveableObject:
-            raise UnsupportedError("This method is only supported for the base class.")
+            raise ValueError("This method is only supported for the base class. Instead"
+                             f" of calling {cls.__name__}.load_init, "
+                             f"call SaveableObject.load_init")
         try:
-            info_dict = load_json(os.path.join(folder, "model_init.json"))
+            info_dict = load_json(os.path.join(folder, "init.json"))
         except (FileNotFoundError, json.decoder.JSONDecodeError) as e:
-            raise RuntimeError("Could not load model") from e
-        return cls._info_dict_to_instance(info_dict)
+            raise RuntimeError("Could not load SaveableObject instance") from e
+        return _info_dict_to_instance(info_dict)
     
     def save_init(self, folder: str):
+        r"""Saves initialization parameters to a JSON file.
+        Args:
+            folder (str): The directory to save the JSON file.
+        """
         os.makedirs(folder, exist_ok=True)
-        save_json(self.get_info_dict(), os.path.join(folder, "model_init.json"))
-    
+        save_json(self.get_info_dict(), os.path.join(folder, "init.json"),
+                  default=_default_json_SaveableObject)
+
     def get_info_dict(self) -> dict[str, Union[str, dict[str, Any]]]:
+        r"""Returns a dictionary representation of initialization parameters."""
         return {
-            "class_name": self.__class__.__name__,
+            "class_name": f"{self.__module__}.{self.__class__.__name__}",
             "kwargs": self._init_kwargs
         }
 
     def __init_subclass__(cls, **kwargs):
-        # Preserve the original __init__ method
+        # Preserve the original __init__ method.
+        if '__init__' not in cls.__dict__: # must check specifically cls.__dict__
+            raise AttributeError(
+                f"{cls.__name__}, a subclass of SaveableObject, must have an "
+                "explicitly defined __init__ method")
         original_init = cls.__init__
 
         def new_init(self, *args, **kwargs):
@@ -1556,13 +1639,18 @@ class SaveableObject:
                 # Detect VAR_KEYWORD parameters (i.e. **kwargs) and flatten them
                 # to fix the problem that all_kwargs = {..., 'kwargs': {...}}
                 # arises due to apply_defaults when there's ** kind of parameters.
-                for param_name, param in sig.parameters.items():
-                    if param.kind == param.VAR_KEYWORD and param_name in all_kwargs:
-                        # all_kwargs[param_name] is the dict that ended up in **whatever
-                        var_kw_dict = all_kwargs.pop(param_name)  # remove it from top-level
-                        # Flatten all items inside that dict:
-                        for k, v in var_kw_dict.items():
-                            all_kwargs[k] = v
+                # Also, make sure that there are no *args type of parameters
+                # because we don't support that (makes it too complicated).
+                for p_name, param in sig.parameters.items():
+                    if param.kind == param.VAR_KEYWORD:
+                        if p_name in all_kwargs:
+                            # all_kwargs[p_name] is the dict that ended up in **whatever
+                            var_kw_dict = all_kwargs.pop(p_name) # remove from top-level
+                            # Flatten all items inside that dict:
+                            all_kwargs.update(var_kw_dict)
+                    elif param.kind == param.VAR_POSITIONAL:
+                        raise ValueError(
+                            "SaveableObject does not support *args in __init__")
 
                 # Remove 'self' from the kwargs
                 all_kwargs.pop('self', None)
@@ -1571,7 +1659,7 @@ class SaveableObject:
                     # If there are any subclasses of SaveableObject in the
                     # kwargs, replace them with their name
                     if safe_issubclass(v, SaveableObject):
-                        all_kwargs[k] = v.__name__
+                        all_kwargs[k] = f"{v.__module__}.{v.__name__}"
                     # If there are any instances of SaveableObject in the
                     # kwargs, replace them with their info_dict
                     elif isinstance(v, SaveableObject):
@@ -1582,78 +1670,11 @@ class SaveableObject:
         # Replace the __init__ method with the new one
         cls.__init__ = new_init
 
-        # Register the class in the CLASSES dictionary
-        CLASSES[cls.__name__] = cls
+        # Register the class in the _CLASSES dictionary
+        _CLASSES[f"{cls.__module__}.{cls.__name__}"] = cls
 
         # Call the original __init_subclass__ method
         super().__init_subclass__(**kwargs)
-    
-    @classmethod
-    def _info_dict_to_instance(cls, info_dict) -> 'SaveableObject':
-        if cls is not SaveableObject:
-            raise UnsupportedError("This method is only supported for the base class.")
-        
-        if set(info_dict.keys()) != {"class_name", "kwargs"}:
-            raise ValueError("info_dict should have keys 'class_name' and 'kwargs'")
-        
-        class_name = info_dict["class_name"]
-        try:
-            model_class = CLASSES[class_name]
-        except KeyError:
-            raise RuntimeError(f"Subclass {class_name} of {cls.__name__} does not exist")
-        
-        kwargs = info_dict["kwargs"]
-        for k, v in kwargs.items():
-            if type(v) is str and v in CLASSES:
-                kwargs[k] = CLASSES[v]
-            elif isinstance(v, dict) and set(v.keys()) == {"class_name", "kwargs"}:
-                kwargs[k] = cls._info_dict_to_instance(v)
-        
-        return model_class(**kwargs)
-
-
-# CLASSES = {}
-
-# # Define the new __init_subclass__ method
-# def _init_subclass(cls, **kwargs):
-#     # Preserve the original __init__ method
-#     original_init = cls.__init__
-    
-#     # Define the new __init__ method
-#     def new_init(self, *args, **kwargs):
-#         original_init(self, *args, **kwargs)
-#         if cls is self.__class__:
-#             self._init_args = args
-#             self._init_kwargs = kwargs
-    
-#     # Replace the __init__ method with the new one
-#     cls.__init__ = new_init
-
-#     CLASSES[cls.__name__] = cls
-    
-#     # Call the original __init_subclass__ method
-#     super(torch.nn.Module, cls).__init_subclass__(**kwargs)
-
-# # Override the __init_subclass__ method of torch.nn.Module
-# torch.nn.Module.__init_subclass__ = _init_subclass
-
-# def save_model(model: torch.nn.Module, folder: str):
-#     model_info = {
-#         "class_name": model.__class__.__name__,
-#         "args": model._init_args,
-#         "kwargs": model._init_kwargs
-#     }
-#     os.makedirs(folder, exist_ok=True)
-#     save_json(model_info, os.path.join(folder, "model_info.json"))
-#     torch.save(model.state_dict(), os.path.join(folder, "model.pth"))
-
-# def load_model(folder: str):
-#     model_info = load_json(os.path.join(folder, "model_info.json"))
-#     model_class = CLASSES[model_info["class_name"]]
-#     model = model_class(*model_info["args"], **model_info["kwargs"])
-#     model.load_state_dict(torch.load(os.path.join(folder, "model.pth")))
-#     return model
-
 
 
 # Based on
@@ -1667,7 +1688,8 @@ def get_param_value(module, name):
         else:
             return get_param_value(submodule, name)
     elif not hasattr(module, name):
-        raise AttributeError("Unknown parameter {p} for {c}".format(p=name, c=module.__class__.__name__))
+        raise AttributeError(
+            "Unknown parameter {p} for {c}".format(p=name, c=module.__class__.__name__))
     elif name not in module._parameters and name not in module._buffers:
         return getattr(module, name)
     else:
@@ -1724,7 +1746,8 @@ def ei_helper_inverse(v: Tensor) -> Tensor:
     def fprime(x):
         return Phi_numpy(x) / ei_helper_numpy(x)
     def fprime2(x):
-        return (phi_numpy(x) * ei_helper_numpy(x) - Phi_numpy(x)**2) / ei_helper_numpy(x)**2
+        return (
+            phi_numpy(x) * ei_helper_numpy(x) - Phi_numpy(x)**2) / ei_helper_numpy(x)**2
 
     x0 = _approx_ei_helper_inverse(v).numpy()
     result = newton(f, x0, fprime=fprime, fprime2=fprime2, tol=1e-10, maxiter=50)
