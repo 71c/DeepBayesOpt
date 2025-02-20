@@ -1,4 +1,4 @@
-from abc import abstractmethod
+from abc import abstractmethod, ABC
 import hashlib
 import itertools
 import os
@@ -8,6 +8,9 @@ import inspect
 import copy
 import math
 from typing import Any, TypeVar, Iterable, Sequence, List, Tuple, Dict, Optional, Union
+# Python 3.11+: can do "from typing import Self"
+# Before Python 3.11: need to do the following:
+from typing_extensions import Self
 import warnings
 from functools import partial, lru_cache
 
@@ -1351,9 +1354,9 @@ def get_lengths_from_proportions_or_lengths(
 
 
 class SizedIterableMixin(Iterable):
-    """A mixin class that provides functionality 'len()' for iterable objects.
-    All subclasses should implement __iter__ because this class inherits from
-    Iterable.
+    """An abstract mixin class that provides functionality 'len()' for iterable objects.
+    All subclasses should implement `__iter__` because this class inherits from
+    the abstract base class `Iterable`.
 
     Attributes:
         _size (int or inf): The size of the iterable object.
@@ -1379,7 +1382,7 @@ class SizedIterableMixin(Iterable):
 
 
 class SizedInfiniteIterableMixin(SizedIterableMixin):
-    """A mixin class that provides functionality for creating iterable objects
+    """An abstract mixin class that provides functionality for creating iterable objects
     with a specified size. If the size is inf, the object is considered to be
     infinite and so calling iter() then you can call next() indefinitely wihout
     any StopIteration exception.
@@ -1518,9 +1521,9 @@ def safe_issubclass(obj, parent):
 
 
 # Dictionary to keep track of subclasses of SaveableObject
-_CLASSES = {}
+_CLASSES: dict[str, type] = {}
 
-def _info_dict_to_instance(info_dict) -> 'SaveableObject':
+def _info_dict_to_instance(info_dict) -> tuple[type, dict]:
     """Creates an instance of a class from a dictionary containing its class name
     and arguments."""
     if set(info_dict.keys()) != {"class_name", "kwargs"}:
@@ -1528,7 +1531,7 @@ def _info_dict_to_instance(info_dict) -> 'SaveableObject':
     
     class_name = info_dict["class_name"]
     try:
-        model_class = _CLASSES[class_name]
+        loaded_cls = _CLASSES[class_name]
     except KeyError:
         raise RuntimeError(f"Subclass {class_name} of SaveableObject does not exist")
     
@@ -1539,9 +1542,9 @@ def _info_dict_to_instance(info_dict) -> 'SaveableObject':
         if type(v) is str and v in _CLASSES:
             kwargs[k] = _CLASSES[v]
         elif isinstance(v, dict) and set(v.keys()) == {"class_name", "kwargs"}:
-            kwargs[k] = _info_dict_to_instance(v)
-    
-    return model_class(**kwargs)
+            v_cls, v_kwargs = _info_dict_to_instance(v)
+            kwargs[k] = v_cls(**v_kwargs)
+    return loaded_cls, kwargs
 
 def _default_json_SaveableObject(o):
     if o.__class__ is type:
@@ -1557,7 +1560,10 @@ def _default_json_SaveableObject(o):
         "a subclass of SaveableObject."
     raise TypeError(msg)
 
-class SaveableObject:
+def _get_class_name(c: type):
+    return f"{c.__module__}.{c.__name__}"
+
+class SaveableObject(ABC):
     r"""An abstract base class for objects that can be saved and loaded with their
     initialization parameters.
 
@@ -1567,27 +1573,68 @@ class SaveableObject:
     reconstructed from saved data. Supports instances of `SaveableObject`
     as well as subclasses of `SaveableObject` as arguments to __init__.
 
-    All subclasses must explicitly define an `__init__` method. Furthermore, subclass
-    constructors must not use `*args` (variadic positional arguments).
+    Subclass __init__ must not use `*args` (variadic positional arguments).
+    
+    Subclasses should subclass `SaveableObject` with `SaveableObject` as the last
+    one, i.e., as in,
+    ```class C(A, B, SaveableObject)
+    ```
+    
+    *Note:* although internally, SaveableObject has an abstract method __init__, this is
+    NOT for purpose of an interface/contract: since SaveableObject automatically assigns
+    an explicit __init__ method whenever a new subclass is created, subclasses are NOT
+    required to implement __init__.
+    Rather, the purpose of this abstract __init__ method is to have at least one
+    @abstractmethod in the abstract base class SaveableObject so that SaveableObject is
+    prevented from being instantiated directly.
     """
     @classmethod
-    def load_init(cls, folder: str) -> 'SaveableObject':
+    def load_init(cls, folder: str) -> Self:
         r"""Loads an instance from a JSON file.
+
+        This method reads the JSON file 'init.json' from the specified folder,
+        reconstructs the initialization parameters stored therein, and returns a new
+        instance of the appropriate class.
+
+        Usage:
+        - To load any `SaveableObject` instance using the base class:
+                ```instance = SaveableObject.load_init("/path/to/folder")
+                ```
+        - To load an instance of a specific subclass `MySubClass`:
+                ```instance = MySubClass.load_init("/path/to/folder")
+                ```
+        In the latter case, ensure that the JSON file contains data for a `MySubClass`
+        instance; otherwise, a TypeError will be raised.
+
         Args:
-            folder (str): The directory containing the JSON file.
+            folder (str): The directory containing the 'init.json' file.
+
         Returns:
-            SaveableObject: The loaded instance.
+            The loaded instance.
+
+        Raises:
+            RuntimeError:
+                If the JSON file could not be loaded (e.g., file not found,
+                JSON decoding error, or Unicode decode error).
+            TypeError:
+                If the JSON file contains an instance of a different class than
+                expected.
         """
-        if cls is not SaveableObject:
-            raise ValueError("This method is only supported for the base class. Instead"
-                             f" of calling {cls.__name__}.load_init, "
-                             f"call SaveableObject.load_init")
         try:
             info_dict = load_json(os.path.join(folder, "init.json"))
-        except (FileNotFoundError, json.decoder.JSONDecodeError) as e:
-            raise RuntimeError("Could not load SaveableObject instance") from e
-        return _info_dict_to_instance(info_dict)
-    
+        except (FileNotFoundError,
+                json.decoder.JSONDecodeError, UnicodeDecodeError) as e:
+            raise RuntimeError(f"Could not load {cls.__name__} instance") from e
+        typ, kwargs = _info_dict_to_instance(info_dict)
+        if cls is not SaveableObject and cls is not typ:
+            raise TypeError(
+                f"Trying to load a {cls.__name__} instance but the JSON file "
+                f"contains a {typ.__name__} instance. Instead of calling "
+                f"{cls.__name__}.load_init, call SaveableObject.load_init "
+                f" or {typ.__name__}.load_init"
+            )
+        return typ(**kwargs)
+
     def save_init(self, folder: str):
         r"""Saves initialization parameters to a JSON file.
         Args:
@@ -1600,47 +1647,38 @@ class SaveableObject:
     def get_info_dict(self) -> dict[str, Union[str, dict[str, Any]]]:
         r"""Returns a dictionary representation of initialization parameters."""
         return {
-            "class_name": f"{self.__module__}.{self.__class__.__name__}",
+            "class_name": _get_class_name(self.__class__),
             "kwargs": self._init_kwargs
         }
-    
-    def __new__(cls, *args, **kwargs):
-        # Make sure that SaveableObject is not constructed directly
-        if cls is SaveableObject:
-            raise TypeError("SaveableObject is an abstract class and cannot be "
-                            "instantiated directly.")
-        return super().__new__(cls, *args, **kwargs)
+
+    @abstractmethod
+    def __init__(self, *args, **kwargs):
+        # Default __init__ for SaveableObject that does nothing.
+        # Prevents SaveableObject from being instantiated directly.
+        # Although this is an abstractmethod, subclasses do NOT need to
+        # implement __init__.
+        pass
 
     def __init_subclass__(cls, **kwargs):
-        # must check specifically cls.__dict__
-        init_is_defined = '__init__' in cls.__dict__
-
         # Preserve the original __init__ method.
         original_init = cls.__init__
 
         def new_init(self, *args, **kwargs):
-            if self.__class__ is cls:
+            # If we are constructing THIS exact class (and not a subclass further down
+            # the hierarchy). i.e., check if if we are calling the same __init__ as the
+            # __init__ defined directly in the object that is being constructed,
+            # not a superclass' __init__.
+            is_same_class = self.__class__ is cls
+
+            if is_same_class:
                 # Copy the original args and kwargs, just in case original_init modifies
                 # them
                 original_args = copy.deepcopy(args)
                 original_kwargs = copy.deepcopy(kwargs)
 
-            # Call the original __init__ method
-            original_init(self, *args, **kwargs)
+            original_init(self, *args, **kwargs) # Call the original __init__ method
 
-            # If we are constructing THIS exact class
-            # (and not a subclass further down the hierarchy)
-            if self.__class__ is cls:
-                # Must check only *when __init__ is called*, not when the class is
-                # defined, because the class could be an abstract class.
-                # Also, only check this if we are calling the same __init__ as the
-                # __init__ defined directly in the object that is being constructed,
-                # not a superclass' __init__.
-                if not init_is_defined:
-                    raise AttributeError(
-                        f"{cls.__name__}, a subclass of SaveableObject, must have an "
-                        "explicitly defined __init__ method for it to be constructed.")
-
+            if is_same_class:
                 # Convert args to kwargs
                 sig = inspect.signature(original_init)
                 
@@ -1665,8 +1703,12 @@ class SaveableObject:
                             # Flatten all items inside that dict:
                             all_kwargs.update(var_kw_dict)
                     elif param.kind == param.VAR_POSITIONAL:
-                        raise ValueError(
-                            "SaveableObject does not support *args in __init__")
+                        value = all_kwargs[p_name]
+                        assert type(value) is tuple
+                        if len(value) > 0:
+                            raise ValueError(
+                                "SaveableObject does not support *args in __init__")
+                        all_kwargs.pop(p_name)
 
                 # Remove 'self' from the kwargs
                 all_kwargs.pop('self', None)
@@ -1675,7 +1717,7 @@ class SaveableObject:
                     # If there are any subclasses of SaveableObject in the
                     # kwargs, replace them with their name
                     if safe_issubclass(v, SaveableObject):
-                        all_kwargs[k] = f"{v.__module__}.{v.__name__}"
+                        all_kwargs[k] = _get_class_name(v)
                     # If there are any instances of SaveableObject in the
                     # kwargs, replace them with their info_dict
                     elif isinstance(v, SaveableObject):
@@ -1687,7 +1729,7 @@ class SaveableObject:
         cls.__init__ = new_init
 
         # Register the class in the _CLASSES dictionary
-        _CLASSES[f"{cls.__module__}.{cls.__name__}"] = cls
+        _CLASSES[_get_class_name(cls)] = cls
 
         # Call the original __init_subclass__ method
         super().__init_subclass__(**kwargs)

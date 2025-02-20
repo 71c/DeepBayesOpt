@@ -1287,7 +1287,7 @@ def load_model(model_and_info_folder_name: str, return_model_path=False):
     
     # Load model (without weights)
     models_path = os.path.join(model_and_info_path, MODELS_SUBDIR)
-    model = SaveableObject.load_init(models_path)
+    model = AcquisitionFunctionNet.load_init(models_path)
     
     # Load best weights
     best_model_fname_json_path = os.path.join(model_path, "best_model_fname.json")
