@@ -34,18 +34,18 @@ def submit_dependent_jobs(
         job_spec = jobs_spec[job_name]
         # Submit all the parent jobs if we haven't already,
         # and get their job ids
-        dependencies = job_spec.get("dependencies", [])
+        prerequisites = job_spec.get("prerequisites", [])
         dependency_job_ids = []
-        for dependency in dependencies:
-            d_job_name = dependency["job_name"]
+        for prerequisite in prerequisites:
+            d_job_name = prerequisite["job_name"]
             if d_job_name not in jobs_spec:
                 raise ValueError(
                     f"invalid format -- job id {d_job_name} is not in jobs_spec")
             
             dependency_job_id = submit_job(d_job_name)
             
-            if "index" in dependency:
-                d_index = dependency["index"]
+            if "index" in prerequisite:
+                d_index = prerequisite["index"]
                 n_jobs_dependency = len(jobs_spec[d_job_name]["commands"])
                 if not (1 <= d_index <= n_jobs_dependency):
                     raise ValueError(
@@ -82,7 +82,7 @@ def submit_dependent_jobs(
             dependency_flag = 'afterok:' + ':'.join(dependency_job_ids)
             sbatch_args_dict['dependency'] = dependency_flag
         
-        sbatch_args = dict_to_cmd_args(sbatch_args_dict, equals=True).split(" ")
+        sbatch_args = dict_to_cmd_args(sbatch_args_dict, equals=True)
         args = ["sbatch"] + sbatch_args + ["job_array.sub", commands_list_fpath]
         print(" ".join(args))
         result = subprocess.run(

@@ -9,7 +9,7 @@ from botorch.models.model import Model
 from botorch.acquisition.acquisition import AcquisitionFunction
 from botorch.exceptions import UnsupportedError
 from botorch.utils.transforms import t_batch_mode_transform, match_batch_shape
-from abc import ABC, abstractmethod
+from abc import abstractmethod
 from utils import safe_issubclass, to_device, standardize_y_hist, SaveableObject
 from nn_utils import (Dense, MultiLayerPointNet, PointNetLayer,
                       SoftmaxOrSoftplusLayer, check_xy_dims, expand_dim)
@@ -52,7 +52,7 @@ def check_class_for_init_params(cls, base_class_name:str, *required_params):
             )
 
 
-class AcquisitionFunctionNet(nn.Module, ABC, SaveableObject):
+class AcquisitionFunctionNet(nn.Module, SaveableObject):
     """Neural network model for the acquisition function in NN-based
     likelihood-free Bayesian optimization.
 
@@ -242,7 +242,7 @@ class AcquisitionFunctionNetGivenOutputDim(AcquisitionFunctionNet):
         super().__init_subclass__(**kwargs)
 
 
-class AcquisitionFunctionBody(nn.Module, ABC, SaveableObject):
+class AcquisitionFunctionBody(nn.Module, SaveableObject):
     r"""This abstract class represents the computation of some features based on
     history and candidates, e.g. using PointNet or transformer neural process,
     which is then to be fed into probably some MLP to compute the acquisition function
@@ -329,7 +329,7 @@ class AcquisitionFunctionBodyFixedHistoryOutputDim(AcquisitionFunctionBody):
         pass  # pragma: no cover
 
 
-class AcquisitionFunctionHead(nn.Module, ABC, SaveableObject):
+class AcquisitionFunctionHead(nn.Module, SaveableObject):
     r"""AcquisitionFunctionHead is an abstract base class for defining the head of an
     acquisition function network. It ensures that any subclass implements the required
     properties and methods for input and output dimensions, as well as the forward

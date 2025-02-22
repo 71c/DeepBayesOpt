@@ -1,5 +1,7 @@
+from functools import cache
 import math
 import os
+import sys
 import torch
 from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprovement
 from botorch.utils.sampling import draw_sobol_samples
@@ -10,8 +12,8 @@ from bayesopt import GPAcquisitionOptimizer, NNAcquisitionOptimizer, Optimizatio
 from dataset_with_models import RandomModelSampler
 from gp_acquisition_dataset import GP_GEN_DEVICE, add_gp_args, get_gp_model_from_args_no_outcome_transform, get_outcome_transform
 from stable_gittins import StableGittinsIndex
-from train_acquisition_function_net import load_configs, load_model
-from utils import add_outcome_transform, dict_to_fname_str, dict_to_str
+from train_acquisition_function_net import load_configs, load_model, model_is_trained
+from utils import add_outcome_transform, dict_to_cmd_args, dict_to_fname_str, dict_to_str
 
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -33,6 +35,22 @@ def get_arg_names(p):
     return [action.dest for action in p._group_actions if action.dest != "help"]
 
 
+def add_bo_loop_args(parser):
+    parser.add_argument(
+        '--n_iter',
+        type=int,
+        help='Number of iterations of BO to perform',
+        required=True
+    )
+    parser.add_argument(
+        '--n_initial_samples',
+        type=int,
+        help='Number of initial sobol points to sample at before using the AF',
+        required=True
+    )
+
+
+@cache
 def get_bo_loop_args_parser():
     parser = argparse.ArgumentParser()
     ################## Objective function (can only be a GP for now) ###################
@@ -55,18 +73,7 @@ def get_bo_loop_args_parser():
 
     ###################################### BO Policy ###################################
     bo_policy_group = parser.add_argument_group("BO policy")
-    bo_policy_group.add_argument(
-        '--n_iter',
-        type=int,
-        help='Number of iterations of BO to perform',
-        required=True
-    )
-    bo_policy_group.add_argument(
-        '--n_initial_samples',
-        type=int,
-        help='Number of initial sobol points to sample at before using the AF',
-        required=True
-    )
+    add_bo_loop_args(bo_policy_group)
     bo_policy_group.add_argument(
         '--bo_seed',
         type=int,
@@ -108,13 +115,27 @@ def get_bo_loop_args_parser():
     add_gp_args(gp_af_group, "GP-based AF", name_prefix=GP_AF_NAME_PREFIX,
                 required=False, add_randomize_params=False)
 
-    return parser, objective_function_group, bo_policy_group, gp_af_group
+    return {
+        'parser': parser,
+        'objective_function_group': objective_function_group,
+        'bo_policy_group': bo_policy_group,
+        'gp_af_group': gp_af_group
+    }
 
 
-def run_bo(objective_args, bo_policy_args, gp_af_args):
-    ######################### Determine the objective function #########################
-    dimension = objective_args['dimension']
+# Cache the objective function things.
+# This greatly speeds up the script bo_experiments_gp.py
+# that generates the commands for the BO loops.
+# Otherwise, it takes too long to run get_rff_function_and_name many times.
+_cached_objective_things = {}
+def _get_gp_objective_things(objective_args):
+    objective_args_str = dict_to_str(objective_args)
+    if objective_args_str in _cached_objective_things:
+        return _cached_objective_things[objective_args_str]
+    
     objective_randomize_params = objective_args['randomize_params']
+    dimension = objective_args['dimension']
+
     # Get GP model sampler
     objective_gp_base_model = get_gp_model_from_args_no_outcome_transform(
         dimension=dimension,
@@ -131,7 +152,7 @@ def run_bo(objective_args, bo_policy_args, gp_af_args):
     objective_gp_seed = objective_args['gp_seed']
     torch.manual_seed(objective_gp_seed)
     # Get (potentially) random GP parameters
-    objective_gp = objective_gp_sampler.sample(deepcopy=False).eval()
+    objective_gp = objective_gp_sampler.sample(deepcopy=True).eval()
     # Get random GP draw
     objective_fn, realization_hash = get_rff_function_and_name(
         objective_gp, dimension=dimension)
@@ -145,9 +166,18 @@ def run_bo(objective_args, bo_policy_args, gp_af_args):
         octf_str = dict_to_fname_str(objective_octf_args)
         objective_name = f'{objective_name}_{octf_str}'
         objective_fn = outcome_transform_function(objective_fn, objective_octf)
+    
+    ret = (objective_gp, objective_octf, objective_fn, objective_name)
+    _cached_objective_things[objective_args_str] = ret
+    return ret
 
+
+def run_bo(objective_args, bo_policy_args, gp_af_args):
+    (objective_gp, objective_octf,
+     objective_fn, objective_name) = _get_gp_objective_things(objective_args)
+    dimension = objective_args['dimension']
     ############################# Determine the BO policy ##############################
-    nn_model_name = bo_policy_args['nn_model_name']
+    nn_model_name = bo_policy_args.get('nn_model_name')
     
     lamda = bo_policy_args['lamda']
     if lamda is not None and lamda <= 0:
@@ -156,7 +186,7 @@ def run_bo(objective_args, bo_policy_args, gp_af_args):
     results_print_data = {'dimension': dimension}
 
     if nn_model_name is None: # Using a GP AF
-        fit = gp_af_args['fit']
+        fit = gp_af_args.get('fit')
         #### Determine the GP model to be used for the AF
         if fit == "exact":
             ## Determine af_gp_model from the GP used for the objective
@@ -228,6 +258,9 @@ def run_bo(objective_args, bo_policy_args, gp_af_args):
                 raise ValueError(
                     f"Cannot specify {GP_AF_NAME_PREFIX}_{k} if using a NN AF")
         
+        if not model_is_trained(nn_model_name):
+            return None
+        
         nn_model = load_model(nn_model_name)
 
         # TODO (maybe): provide exponentiate=False or exponentiate=True here
@@ -276,7 +309,8 @@ def run_bo(objective_args, bo_policy_args, gp_af_args):
             results_print_data['variable_lambda'] = nn_model.variable_lambda
         else:
             if lamda is not None:
-                raise ValueError("Cannot specify lamda if not using Gittins index NN AF")
+                raise ValueError(
+                    "Cannot specify lamda if not using Gittins index NN AF")
 
         optimizer_class = NNAcquisitionOptimizer
 
@@ -296,7 +330,7 @@ def run_bo(objective_args, bo_policy_args, gp_af_args):
     # One seed per BO loop. Here, we have n=1 BO loops, so need just 1 seed.
     seeds = [bo_seed]
 
-    optimization_results = OptimizationResultsSingleMethod(
+    return OptimizationResultsSingleMethod(
         objectives=[objective_fn],
         initial_points=init_x,
         n_iter=bo_policy_args['n_iter'],
@@ -309,41 +343,66 @@ def run_bo(objective_args, bo_policy_args, gp_af_args):
         **af_options
     )
 
-    # Perform the optimization. Don't do anything with the results here
-    for func_name, func_result in optimization_results:
-        # There should be just one loop through this since there is just one function
-        pass
+
+def bo_loop_dicts_to_cmd_args_list(
+        objective_args: dict, bo_policy_args: dict, gp_af_args: dict):
+    objective_args_ = {
+        f'{OBJECTIVE_NAME_PREFIX}_{k}': v for k, v in objective_args.items()
+    }
+    gp_af_args_ = {
+        (k if k == GP_AF_NAME_PREFIX else f'{GP_AF_NAME_PREFIX}_{k}'): v
+        for k, v in gp_af_args.items()
+    }
+    all_args = {**objective_args_, **bo_policy_args, **gp_af_args_}
+    cmd_args_list = dict_to_cmd_args(all_args)
+    
+    # Just validate that the given args are correctly specified
+    # (at least as much as the checks done by the parser)
+    parser_info = get_bo_loop_args_parser()
+    args = parser_info['parser'].parse_args(cmd_args_list)
+
+    return cmd_args_list
 
 
 def main():
-    parser, objective_function_group, bo_policy_group, gp_af_group = get_bo_loop_args_parser()
-    args = parser.parse_args()
+    parser_info = get_bo_loop_args_parser()
+    args = parser_info['parser'].parse_args()
 
     objective_args = {
         k[len(OBJECTIVE_NAME_PREFIX)+1:]: getattr(args, k)
-        for k in get_arg_names(objective_function_group)
+        for k in get_arg_names(parser_info['objective_function_group'])
     }
 
     bo_policy_args = {
         k: getattr(args, k)
-        for k in get_arg_names(bo_policy_group)
+        for k in get_arg_names(parser_info['bo_policy_group'])
     }
 
     gp_af_args = {
         (k if k == GP_AF_NAME_PREFIX
          else k[len(GP_AF_NAME_PREFIX)+1:]): getattr(args, k)
-        for k in get_arg_names(gp_af_group)
+        for k in get_arg_names(parser_info['gp_af_group'])
     }
 
-    run_bo(objective_args, bo_policy_args, gp_af_args)
+    optimization_results = run_bo(
+        objective_args, bo_policy_args, gp_af_args)
+
+    if optimization_results is None:
+        raise ValueError("NN model not trained")
+    
+    # Perform the optimization. Don't do anything with the results here
+    for func_name, func_result in optimization_results:
+        # There should be just one loop through this since there is just one function
+        pass
 
     # print(f"{objective_args=}")
     # print(f"{bo_policy_args=}")
     # print(f"{gp_af_args=}")
-#     objective_args={'dimension': 8, 'gp_seed': 103, 'kernel': 'Matern52', 'lengthscale': 0.1, 'outcome_transform': None, 'sigma': None, 'randomize_params': False}
-# bo_policy_args={'n_iter': 30, 'n_initial_samples': 1, 'bo_seed': 12, 'nn_model_name': None}
-# gp_af_args={'gp_af': None, 'kernel': 'Matern52', 'lengthscale': None, 'outcome_transform': None, 'sigma': None, 'fit': None}
-
+"""
+objective_args={'dimension': 8, 'gp_seed': 123, 'kernel': 'Matern52', 'lengthscale': 0.1, 'outcome_transform': None, 'sigma': None, 'randomize_params': False}
+bo_policy_args={'n_iter': 30, 'n_initial_samples': 4, 'bo_seed': 99, 'lamda': 0.01, 'nn_model_name': None}
+gp_af_args={'gp_af': 'gittins', 'fit': 'exact', 'kernel': None, 'lengthscale': None, 'outcome_transform': None, 'sigma': None}
+"""
 
 # LogEI; Objective function is same as GP used for AF, manual specification
 # python run_bo.py --objective_dimension 8 --objective_gp_seed 123 --objective_kernel Matern52 --objective_lengthscale 0.1 --n_iter 30 --n_initial_samples 4 --bo_seed 99 --gp_af LogEI --gp_af_kernel Matern52 --gp_af_lengthscale 0.1
@@ -358,9 +417,9 @@ def main():
 #### EXAMPLE:
 ## The following is a simple cheap test command for testing mse_ei method:
 # python run_train.py --dimension 8 --kernel Matern52  --lengthscale 0.1 --train_acquisition_size 2000 --test_acquisition_size 2000 --train_n_candidates 1 --test_n_candidates 1 --min_history 1 --max_history 60 --layer_width 100 --method mse_ei --learning_rate 0.003 --batch_size 32 --epochs 10
-# ====> Saves to v1/model_3b38669d7f277ceeee1f1430dcebf064b5ee3801cef748b39122bed623ce29cc
+# ====> Saves to v1/model_c9176a1cdf11da57e5d4801812f27622efbb9f182d3d459c7904dba4010cab87
 ## Next, run the BO on it:
-# python run_bo.py --objective_dimension 8 --objective_gp_seed 123 --objective_kernel Matern52 --objective_lengthscale 0.1 --n_iter 30 --n_initial_samples 4 --bo_seed 99 --nn_model_name v1/model_3b38669d7f277ceeee1f1430dcebf064b5ee3801cef748b39122bed623ce29cc
+# python run_bo.py --objective_dimension 8 --objective_gp_seed 123 --objective_kernel Matern52 --objective_lengthscale 0.1 --n_iter 30 --n_initial_samples 4 --bo_seed 99 --nn_model_name v1/model_c9176a1cdf11da57e5d4801812f27622efbb9f182d3d459c7904dba4010cab87
 
 # python run_bo.py --objective_dimension 8 --objective_gp_seed 123 --objective_kernel Matern52 --objective_lengthscale 0.1 --n_iter 30 --n_initial_samples 4 --bo_seed 99 --nn_model_name v1/model_6c038ea3a2ae01627595a1ab371a4e0a86411772f33141db9d212bb77d4207d7
 

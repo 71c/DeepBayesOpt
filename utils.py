@@ -1105,8 +1105,7 @@ def load_json(fname, **kwargs):
         return json.load(json_file)
 
 
-def dict_to_cmd_args(params, equals=False):
-    s = "=" if equals else " "
+def dict_to_cmd_args(params, equals=False) -> list[str]:
     parts = []
     for key, value in sorted(params.items()):
         # If the value is a boolean, only include it if True.
@@ -1114,8 +1113,12 @@ def dict_to_cmd_args(params, equals=False):
             if value:
                 parts.append(f"--{key}")
         elif value is not None:
-            parts.append(f"--{key}{s}{value}")
-    return " ".join(parts)
+            if equals:
+                parts.append(f"--{key}={value}")
+            else:
+                parts.append(f"--{key}")
+                parts.append(str(value))
+    return parts
 
 
 K = TypeVar('K')
@@ -1626,12 +1629,12 @@ class SaveableObject(ABC):
                 json.decoder.JSONDecodeError, UnicodeDecodeError) as e:
             raise RuntimeError(f"Could not load {cls.__name__} instance") from e
         typ, kwargs = _info_dict_to_instance(info_dict)
-        if cls is not SaveableObject and cls is not typ:
+        if not issubclass(typ, cls):
             raise TypeError(
                 f"Trying to load a {cls.__name__} instance but the JSON file "
                 f"contains a {typ.__name__} instance. Instead of calling "
-                f"{cls.__name__}.load_init, call SaveableObject.load_init "
-                f" or {typ.__name__}.load_init"
+                f"{cls.__name__}.load_init, you could call "
+                f"SaveableObject.load_init or {typ.__name__}.load_init"
             )
         return typ(**kwargs)
 

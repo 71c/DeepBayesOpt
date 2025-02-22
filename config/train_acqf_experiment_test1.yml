@@ -1,6 +1,6 @@
 parameters:
   method:
-    values: ['gittins']
+    values: ['gittins', 'mse_ei']
     recurse: false
   train_samples_size:
     values: all

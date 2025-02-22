@@ -2,14 +2,16 @@
 # python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 2000 --train_n_candidates 1 --batch_size 32 --early_stopping --epochs 200 --lamda_max 1.0 --lamda_min 0.0001 --layer_width 100 --learning_rate 0.003 --method gittins --min_delta 0.0 --normalize_gi_loss --patience 5
 
 # python run_train.py --dimension 8 --expansion_factor 1 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 1000 --test_n_candidates 1 --train_acquisition_size 1000 --train_n_candidates 1 --batch_size 32 --early_stopping --epochs 200 --layer_width 100 --learning_rate 0.003 --method gittins --min_delta 0.0 --normalize_gi_loss --patience 5 --lamda 0.001
+import argparse
+from functools import cache
 import torch
 import matplotlib.pyplot as plt
 import os
 import cProfile, pstats, io
-from pstats import SortKey
 from dataset_with_models import RandomModelSampler
 from tictoc import tic, tocl
 from datetime import datetime
+import argparse
 
 from gp_acquisition_dataset import add_gp_acquisition_dataset_args, add_lamda_args, create_train_test_gp_acq_datasets_helper, get_gp_acquisition_dataset_configs, get_lamda_min_max
 # AcquisitionFunctionNetV3, AcquisitionFunctionNetV4,
@@ -48,7 +50,7 @@ from gp_acquisition_dataset import (
 )
 
 
-def get_training_config(args):
+def get_training_config(args: argparse.Namespace):
     training_config = dict(
         method=args.method,
         learning_rate=args.learning_rate,
@@ -92,7 +94,7 @@ def get_training_config(args):
     return training_config
 
 
-def get_model(args):
+def get_model(args: argparse.Namespace):
     af_body_init_params = dict(
         dimension=args.dimension,
         
@@ -184,7 +186,7 @@ def get_model(args):
     return model
 
 
-def get_configs_and_model_and_paths(args):
+def get_configs_and_model_and_paths(args: argparse.Namespace):
     #### Get AF dataset configs
     gp_af_dataset_configs = get_gp_acquisition_dataset_configs(
         args, device=GP_GEN_DEVICE)
@@ -214,7 +216,7 @@ def get_configs_and_model_and_paths(args):
     return gp_af_dataset_configs, model, model_and_info_folder_name, models_path
 
 
-def run_train(args):
+def run_train(args: argparse.Namespace):
     ######################## Check the arguments ###############################
     # Only have include_alpha=True when method=policy_gradient
     policy_gradient_flag = (args.method == 'policy_gradient')
@@ -347,13 +349,13 @@ def run_train(args):
             pr.disable()
             
             # s = io.StringIO()
-            # ps = pstats.Stats(pr, stream=s).sort_stats(SortKey.CUMULATIVE)
+            # ps = pstats.Stats(pr, stream=s).sort_stats(pstats.SortKey.CUMULATIVE)
             # ps.print_stats()
             # print(s.getvalue())
 
-            s = open('stats_output.txt', 'w')
-            ps = pstats.Stats(pr, stream=s).sort_stats(SortKey.CUMULATIVE)
-            ps.print_stats()
+            with open('stats_output.txt', 'w') as s:
+                ps = pstats.Stats(pr, stream=s).sort_stats(pstats.SortKey.CUMULATIVE)
+                ps.print_stats()
 
         if not TIME:
             print("Done training")
@@ -456,8 +458,8 @@ def run_train(args):
         plt.show()
 
 
-def main():
-    import argparse
+@cache
+def get_run_train_parser():
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
@@ -627,6 +629,11 @@ def main():
             'Only used if method=mse_ei.')
     )
 
+    return parser
+
+
+def main():
+    parser = get_run_train_parser()
     args = parser.parse_args()
     run_train(args)
 

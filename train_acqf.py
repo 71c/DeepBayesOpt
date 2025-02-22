@@ -2,11 +2,11 @@ import argparse
 from collections import defaultdict
 import itertools
 from datetime import datetime
-from typing import Union
+from typing import Any, Optional, Union
 import yaml
 import os
 from gp_acquisition_dataset import create_train_test_gp_acq_datasets_from_args
-from run_train import get_configs_and_model_and_paths
+from run_train import get_configs_and_model_and_paths, get_run_train_parser
 from train_acquisition_function_net import model_is_trained
 from utils import dict_to_cmd_args, save_json
 from submit_dependent_jobs import CONFIG_DIR, SWEEPS_DIR, submit_dependent_jobs
@@ -181,7 +181,9 @@ def generate_options(params_value: Union[dict, list[dict]], prefix=''):
             f'params_value must be a dictionary or list, got {(params_value)}.')
 
 
-def get_command_line_options(options: dict):
+def get_command_line_options(options: dict[str, Any]):
+    # TODO: In the future, could do this more automatically rather than hard-coding
+    # everything.
     options = {k.split('.')[-1]: v for k, v in options.items()}
     expansion_factor = options['expansion_factor']
     cmd_opts_sample_dataset = {
@@ -232,80 +234,136 @@ def get_command_line_options(options: dict):
         **cmd_opts_sample_dataset, **cmd_opts_acquisition_dataset
     }
     cmd_args_dataset = dict_to_cmd_args(cmd_opts_dataset)
-    cmd_dataset = "python gp_acquisition_dataset.py " + cmd_args_dataset
+    cmd_dataset = "python gp_acquisition_dataset.py " + " ".join(cmd_args_dataset)
 
     cmd_opts_nn_no_dataset = {
         **cmd_opts_architecture, **cmd_opts_training
     }
     cmd_nn_train = " ".join(["python run_train.py",
-                             cmd_args_dataset,
-                             dict_to_cmd_args(cmd_opts_nn_no_dataset)])
+                             *cmd_args_dataset,
+                             *dict_to_cmd_args(cmd_opts_nn_no_dataset)])
 
     cmd_opts_nn = {**cmd_opts_nn_no_dataset, **cmd_opts_dataset}
     return cmd_dataset, cmd_opts_dataset, cmd_nn_train, cmd_opts_nn
 
 
 DATASETS_JOB_ID = "datasets"
-NO_DATASET_ID = 0
+NO_DATASET_ID = "nn0"
+NO_NN_ID = "dep-nn"
 
-def create_dependency_structure_train_acqf(options_list, always_train=False):
+def create_dependency_structure_train_acqf(
+        options_list:list[dict[str, Any]],
+        dependents_list:Optional[list[list[str]]]=None,
+        always_train=False):
     r"""Create a command dependency structure for training acquisition function NNs.
     Includes dataset generation commands and NN training commands.
     Only includes dataset generation commands for datasets that are not cached."""
+    if dependents_list is None:
+        dependents_list = [[] for _ in options_list]
+    else:
+        if len(dependents_list) != len(options_list):
+            raise ValueError(
+                "Length of dependents_list must match length of options_list.")
+
     datasets_cached_dict = {}
     dataset_command_ids = {}
-    nn_job_arrays = defaultdict(list)
-    for option_dict in options_list:
+    ret = {}
+
+    run_train_parser = get_run_train_parser()
+    
+    for options, depdendent_commands in zip(options_list, dependents_list):
         (cmd_dataset, cmd_opts_dataset,
-         cmd_nn_train, cmd_opts_nn) = get_command_line_options(option_dict)
+         cmd_nn_train, cmd_opts_nn) = get_command_line_options(options)
         
         # Determine whether to train the NN
         if always_train:
             train_nn = True
         else:
             # Determine whether or not the NN is already cached
-            args_nn = argparse.Namespace(**cmd_opts_nn)
+            cmd_args_list_nn = dict_to_cmd_args({**cmd_opts_nn, 'no-save-model': True})
+            args_nn = run_train_parser.parse_args(cmd_args_list_nn)
             (af_dataset_configs, model,
             model_and_info_name, models_path) = get_configs_and_model_and_paths(args_nn)
+            
             model_already_trained = model_is_trained(model_and_info_name)
             # Train the NN iff it has not already been trained
             train_nn = not model_already_trained
         
-        # Skip the command(s) if the NN has already been trained
-        if not train_nn:
-            continue
-
-        # Determine whether or not the dataset is already cached
-        if cmd_dataset in datasets_cached_dict:
-            dataset_already_cached = datasets_cached_dict[cmd_dataset]
-        else:
-            args_dataset = argparse.Namespace(**cmd_opts_dataset)
-            whether_cached = create_train_test_gp_acq_datasets_from_args(
-                args_dataset, check_cached=True, load_dataset=False)
-            dataset_already_cached = True
-            for cached in whether_cached:
-                dataset_already_cached = dataset_already_cached and cached
-            datasets_cached_dict[cmd_dataset] = dataset_already_cached
-        
-        # Determine the dataset id
-        if dataset_already_cached:
-            # dataset already cached; assign a dummy id
-            dataset_id = NO_DATASET_ID
-        else:
-            # dataset not cached
-            # Only store cmd_dataset in dataset_command_ids if dataset is not cached
-            if cmd_dataset in dataset_command_ids:
-                # dataset id already assigned
-                dataset_id = dataset_command_ids[cmd_dataset]
+        if train_nn:
+            # Determine whether or not the dataset is already cached
+            if cmd_dataset in datasets_cached_dict:
+                dataset_already_cached = datasets_cached_dict[cmd_dataset]
             else:
-                # assign a new dataset id
-                dataset_id = len(dataset_command_ids) + 1
-                dataset_command_ids[cmd_dataset] = dataset_id
+                args_dataset = argparse.Namespace(**cmd_opts_dataset)
+                whether_cached = create_train_test_gp_acq_datasets_from_args(
+                    args_dataset, check_cached=True, load_dataset=False)
+                dataset_already_cached = True
+                for cached in whether_cached:
+                    dataset_already_cached = dataset_already_cached and cached
+                datasets_cached_dict[cmd_dataset] = dataset_already_cached
+            
+            # Determine the dataset id
+            if dataset_already_cached:
+                # dataset already cached; assign special id
+                dataset_id = NO_DATASET_ID
+            else:
+                # dataset not cached
+                # Only store cmd_dataset in dataset_command_ids if dataset is not cached
+                if cmd_dataset in dataset_command_ids:
+                    # dataset id already assigned
+                    dataset_id = dataset_command_ids[cmd_dataset]
+                else:
+                    # assign a new dataset id
+                    dataset_id = f"nn{len(dataset_command_ids) + 1}"
+                    dataset_command_ids[cmd_dataset] = dataset_id
 
-        # Add the NN command to the appropriate list corresponding to the dataset id
-        nn_job_arrays[dataset_id].append(cmd_nn_train)
-    
-    ret = {}
+            # Create the job array of NN training commands that are dependent on the
+            # dataset generation command
+            if dataset_id not in ret:
+                tmp = {
+                    "commands": [],
+                    "gpu": True
+                }
+                # Only add prerequisites if the dataset is not cached
+                if dataset_id != NO_DATASET_ID:
+                    tmp["prerequisites"] = [{
+                        "job_name": DATASETS_JOB_ID,
+                        "index": dataset_id
+                    }]
+
+                ret[dataset_id] = tmp
+
+            # Add the NN command to the appropriate list corresponding to the dataset id
+            commands = ret[dataset_id]["commands"]
+            commands.append(cmd_nn_train)
+
+            # Add commands that are dependent on the NN training command
+            if len(depdendent_commands) > 0:
+                nn_train_cmd_index = len(commands)
+                dependent_jobs_name = f"dep-{dataset_id}-{nn_train_cmd_index}"
+                ret[dependent_jobs_name] = {
+                    "commands": depdendent_commands,
+                    "prerequisites": [{
+                        "job_name": dataset_id,
+                        "index": nn_train_cmd_index
+                    }],
+                    "gpu": True
+                }
+        else:
+            # Do not add the NN train command
+
+            # Add the commands that are dependent on the NN training command
+            # (but the NN was already trained so they are not dependent on anything)
+            if len(depdendent_commands) > 0:
+                if NO_NN_ID not in ret:
+                    ret[NO_NN_ID] = {
+                        "commands": [],
+                        "gpu": True
+                    }
+                for cmd in depdendent_commands:
+                    ret[NO_NN_ID]["commands"].append(cmd)
+
+    #### Add the dataset generation commands
     # Recall that dataset_command_ids only contains commands for datasets not cached
     # Note that dicts are guaranteed to retain insertion order since Python 3.7
     dataset_commands_not_cached = list(dataset_command_ids)
@@ -314,47 +372,45 @@ def create_dependency_structure_train_acqf(options_list, always_train=False):
             "commands": dataset_commands_not_cached,
             "gpu": False
         }
-    for dataset_id, job_array in nn_job_arrays.items():
-        tmp = {
-            "commands": job_array,
-            "gpu": True
-        }
-        # Only add dependencies if the dataset is not cached
-        if dataset_id != NO_DATASET_ID:
-            tmp["dependencies"] = [{
-                "job_name": DATASETS_JOB_ID,
-                "index": dataset_id
-            }]
-        ret[f"nn{dataset_id}"] = tmp
+
     return ret
 
 
-def main():
-    parser = argparse.ArgumentParser()
+def add_slurm_args(parser):
     parser.add_argument(
-        '--base_config',
+        '--sweep_name',
         type=str,
-        required=True,
-        help='YAML file containing the base configuration for the experiment.'
-    )
-    parser.add_argument(
-        '--experiment_config',
-        type=str,
-        required=True,
-        help='YAML file containing the experiment configuration.'
+        default='test',
+        help='Name of the sweep.'
     )
     parser.add_argument(
         '--gpu_gres',
         type=str,
-        help=('GPU resource specification for Slurm. e.g., "gpu:a100:1" or "gpu:1". '
-              'Default is "gpu:a100:1".'),
+        help='GPU resource specification for Slurm. e.g., "gpu:a100:1" or "gpu:1". '
+              'Default is "gpu:a100:1".',
         default="gpu:a100:1"
     )
     parser.add_argument(
         '--mail',
         type=str,
-        help=('email address to send Slurm notifications to. '
-              'If not specified, no notifications are sent.')
+        help='email address to send Slurm notifications to. '
+              'If not specified, no notifications are sent.'
+    )
+
+
+def add_train_acqf_args(parser):
+    parser.add_argument(
+        '--base_config',
+        type=str,
+        required=True,
+        help='YAML file containing the base configuration for the NN acqf experiment.'
+    )
+    parser.add_argument(
+        '--experiment_config',
+        type=str,
+        required=True,
+        help='YAML file containing the specific experiment configuration '
+             'for the NN acqf experiment.'
     )
     parser.add_argument(
         '--always_train',
@@ -364,8 +420,8 @@ def main():
               'acquisition function NNs that have not already been trained.')
     )
 
-    args = parser.parse_args()
 
+def get_train_acqf_options_list(args: argparse.Namespace):
     # Load the base configuration
     with open(args.base_config, 'r') as f:
         base_config = yaml.safe_load(f)
@@ -401,18 +457,34 @@ def main():
     with open(os.path.join(CONFIG_DIR, 'options.yml'), 'w') as f:
         yaml.dump(options_list, f)
     
-    jobs_spec = create_dependency_structure_train_acqf(options_list, args.always_train)
-    save_json(jobs_spec, os.path.join(CONFIG_DIR, "dependencies.json"), indent=4)
+    return options_list
 
-    sweep_name = "test"
+
+def submit_jobs_sweep_from_args(jobs_spec, args):
+    save_json(jobs_spec, os.path.join(CONFIG_DIR, "dependencies.json"), indent=4)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    sweep_dir = os.path.join(SWEEPS_DIR, f"{sweep_name}_{timestamp}")
+    sweep_dir = os.path.join(SWEEPS_DIR, f"{args.sweep_name}_{timestamp}")
     submit_dependent_jobs(
         sweep_dir=sweep_dir,
         jobs_spec=jobs_spec,
         gpu_gres=args.gpu_gres,
         mail=args.mail
     )
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    add_train_acqf_args(parser)
+    add_slurm_args(parser)
+
+    args = parser.parse_args()
+
+    options_list = get_train_acqf_options_list(args)
+    
+    jobs_spec = create_dependency_structure_train_acqf(
+        options_list, always_train=args.always_train)
+    submit_jobs_sweep_from_args(jobs_spec, args)
+
 
 if __name__ == "__main__":
     main()

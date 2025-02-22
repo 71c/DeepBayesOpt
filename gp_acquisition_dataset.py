@@ -1,3 +1,5 @@
+import argparse
+from functools import cache, lru_cache
 import math
 import os
 import sys
@@ -55,7 +57,7 @@ def add_lamda_args(parser):
     )
 
 
-def get_lamda_min_max(args):
+def get_lamda_min_max(args: argparse.Namespace):
     lamda = getattr(args, 'lamda', None)
     lamda_min = lamda if lamda is not None else args.lamda_min
     lamda_max = getattr(args, 'lamda_max', None)
@@ -527,7 +529,7 @@ def get_gp_model_from_args_no_outcome_transform(
                   covar_module=kernel, device=device)
 
 
-def get_outcome_transform(args, name_prefix="", device=None):
+def get_outcome_transform(args: argparse.Namespace, name_prefix="", device=None):
     if name_prefix:
         name_prefix = f"{name_prefix}_"
     octf = getattr(args, 'outcome_transform', None)
@@ -551,7 +553,7 @@ def get_outcome_transform(args, name_prefix="", device=None):
     return outcome_transform, outcome_transform_args
 
 
-def get_gp_acquisition_dataset_configs(args, device=None):
+def get_gp_acquisition_dataset_configs(args: argparse.Namespace, device=None):
     ###################### GP realization characteristics ##########################
     models = [
         get_gp_model_from_args_no_outcome_transform(
@@ -643,7 +645,7 @@ def get_gp_acquisition_dataset_configs(args, device=None):
     }
 
 
-def get_gp_acquisition_dataset_test_configs(args):
+def get_gp_acquisition_dataset_test_configs(args: argparse.Namespace):
     test_factor = getattr(args, "test_factor", None)
     if test_factor is None:
         if args.test_acquisition_size is None:
@@ -672,7 +674,7 @@ def get_gp_acquisition_dataset_test_configs(args):
 
 
 def create_train_test_gp_acq_datasets_helper(
-        args,
+        args: argparse.Namespace,
         gp_af_dataset_configs,
         check_cached=False,
         load_dataset=True

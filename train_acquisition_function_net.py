@@ -1222,6 +1222,7 @@ def save_af_net_configs(
     if save and not already_saved:
         os.makedirs(model_and_info_path, exist_ok=False)
 
+        raise RuntimeError("TEST")
         print(f"Saving model and configs to {model_and_info_folder_name}")
 
         # Save model config

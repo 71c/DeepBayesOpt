@@ -401,7 +401,8 @@ class OptimizationResultsSingleMethod:
 
         return self._cached_results[func_name]
 
-    def _get_cached_trial_result(self, func_index: int, trial_index: int):
+    def _get_cached_trial_result(self, func_index: int, trial_index: int,
+                                 return_result: bool=True):
         if self.save_dir is None:
             return None
         func_name = self.objective_names[func_index]
@@ -416,7 +417,11 @@ class OptimizationResultsSingleMethod:
         trial_config_str = self.trial_configs_str[trial_index]
         if trial_config_str not in trials_dict:
             return None
-        return json_serializable_to_numpy(trials_dict[trial_config_str])
+        
+        if return_result:
+            return json_serializable_to_numpy(trials_dict[trial_config_str])
+        else:
+            return True
     
     def _get_trial_result(self, func_index: int, trial_index: int):
         trial_result = None
@@ -475,6 +480,21 @@ class OptimizationResultsSingleMethod:
     
     def add_pbar(self, pbar):
         self.pbar = pbar
+    
+    def n_opts_to_run(self):
+        ret = 0
+        for func_index in range(self.n_functions):
+            trial_indices_not_cached_func = self._trial_indices_not_cached[func_index]
+            for trial_index in trial_indices_not_cached_func:
+                if self.save_dir is None:
+                    is_cached = False
+                else:
+                    result = self._get_cached_trial_result(
+                        func_index, trial_index, return_result=False)
+                    is_cached = result is not None
+                if not is_cached:
+                    ret += 1
+        return ret
 
     def __iter__(self):
         n_funcs_to_optimize = self.n_funcs_to_optimize

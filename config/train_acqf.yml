@@ -1,21 +1,23 @@
 parameters:
   function_samples_dataset:
     parameters:
-      dimension:
-        values: [8, 16, 32]
-      kernel:
-        values: ["Matern52"]
-      lengthscale:
-        values: [0.1]
-      randomize_params:
-        values: [false, true]
-      outcome_transform:
-        values:
-        - value: null
-        - value: exp
-          parameters:
-            sigma:
-              value: 0.8
+      gp:
+        parameters:
+          dimension:
+            values: [8, 16, 32]
+          kernel:
+            values: ["Matern52"]
+          lengthscale:
+            values: [0.1]
+          outcome_transform:
+            values:
+            - value: null
+            - value: exp
+              parameters:
+                sigma:
+                  value: 0.8
+          randomize_params:
+            values: [false, true]
       standardize_outcomes:
         value: false
       train_samples_size:
