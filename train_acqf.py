@@ -216,7 +216,7 @@ def get_command_line_options(options: dict[str, Any]):
     cmd_opts_training = {
         k: options.get(k)
         for k in [
-            'method', 'learning_rate', 'batch_size', 'epochs',
+            'method', 'learning_rate', 'batch_size', 'epochs', 'use_maxei',
             # early stopping
             'early_stopping', 'patience', 'min_delta', 'cumulative_delta',
             # method=policy_gradient
@@ -248,7 +248,7 @@ def get_command_line_options(options: dict[str, Any]):
 
 
 DATASETS_JOB_ID = "datasets"
-NO_DATASET_ID = "nn0"
+NO_DATASET_ID = 0
 NO_NN_ID = "dep-nn"
 
 def create_dependency_structure_train_acqf(
@@ -314,12 +314,14 @@ def create_dependency_structure_train_acqf(
                     dataset_id = dataset_command_ids[cmd_dataset]
                 else:
                     # assign a new dataset id
-                    dataset_id = f"nn{len(dataset_command_ids) + 1}"
+                    dataset_id = len(dataset_command_ids) + 1 
                     dataset_command_ids[cmd_dataset] = dataset_id
-
+            
+            nn_list_id = f"nn{dataset_id}"
+            
             # Create the job array of NN training commands that are dependent on the
             # dataset generation command
-            if dataset_id not in ret:
+            if nn_list_id not in ret:
                 tmp = {
                     "commands": [],
                     "gpu": True
@@ -331,23 +333,24 @@ def create_dependency_structure_train_acqf(
                         "index": dataset_id
                     }]
 
-                ret[dataset_id] = tmp
+                ret[nn_list_id] = tmp
 
             # Add the NN command to the appropriate list corresponding to the dataset id
-            commands = ret[dataset_id]["commands"]
+            commands = ret[nn_list_id]["commands"]
             commands.append(cmd_nn_train)
 
             # Add commands that are dependent on the NN training command
             if len(depdendent_commands) > 0:
                 nn_train_cmd_index = len(commands)
-                dependent_jobs_name = f"dep-{dataset_id}-{nn_train_cmd_index}"
+                dependent_jobs_name = f"nn{dataset_id}-{nn_train_cmd_index}"
                 ret[dependent_jobs_name] = {
                     "commands": depdendent_commands,
                     "prerequisites": [{
-                        "job_name": dataset_id,
+                        "job_name": nn_list_id,
                         "index": nn_train_cmd_index
                     }],
-                    "gpu": True
+                    "gpu": True,
+                    "gpu_gres": "gpu:1"
                 }
         else:
             # Do not add the NN train command
@@ -358,7 +361,8 @@ def create_dependency_structure_train_acqf(
                 if NO_NN_ID not in ret:
                     ret[NO_NN_ID] = {
                         "commands": [],
-                        "gpu": True
+                        "gpu": True,
+                        "gpu_gres": "gpu:1"
                     }
                 for cmd in depdendent_commands:
                     ret[NO_NN_ID]["commands"].append(cmd)
@@ -468,6 +472,7 @@ def submit_jobs_sweep_from_args(jobs_spec, args):
     submit_dependent_jobs(
         sweep_dir=sweep_dir,
         jobs_spec=jobs_spec,
+        args=args,
         gpu_gres=args.gpu_gres,
         mail=args.mail
     )

@@ -1,10 +1,12 @@
 parameters:
   method:
     values: ['gittins', 'mse_ei']
-    recurse: false
+    recurse: true
   train_samples_size:
     values: all
   layer_width:
-    value: 100
+    values: all
+  dimension:
+    values: all
   patience:
-    value: 2
+    value: 20

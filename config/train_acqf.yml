@@ -33,7 +33,7 @@ parameters:
       min_history:
         value: 1
       max_history:
-        value: 400
+        value: 100
   architecture:
     parameters:
       layer_width:
@@ -77,6 +77,8 @@ parameters:
         values: [32, 128]
       epochs:
         value: 200
+      use_maxei:
+        values: [false, true]
       early_stopping:
         values:
         - value: true

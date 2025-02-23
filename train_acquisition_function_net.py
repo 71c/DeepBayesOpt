@@ -257,7 +257,7 @@ def compute_acquisition_output_batch_stats(
 
     if improvements is not None:
         ret[name+"maxei"] = compute_maxei(output_detached, improvements,
-                                            cand_mask, reduction)
+                                          cand_mask, reduction)
 
     return ret
 
@@ -913,7 +913,9 @@ def train_acquisition_function_net(
         early_stopping:bool=True,
         patience:int=10,
         min_delta:float=0.0,
-        cumulative_delta:bool=False
+        cumulative_delta:bool=False,
+
+        use_maxei=False
     ):
     if not (isinstance(n_epochs, int) and n_epochs >= 1):
         raise ValueError("n_epochs must be a positive integer")
@@ -976,8 +978,21 @@ def train_acquisition_function_net(
     if early_stopping:
         early_stopper = EarlyStopper(patience, min_delta, cumulative_delta)
 
+    if use_maxei:
+        stat_name = "maxei"
+        negate = False
+    elif method == "policy_gradient":
+        stat_name = "ei_softmax"
+        negate = False
+    elif method == "mse_ei":
+        stat_name = "mse"
+        negate = True
+    elif method == "gittins":
+        stat_name = "gittins_loss" + ("_normalized" if normalize_gi_loss else "")
+        negate = True
     training_history_data = {
-        'stats_epochs': []
+        'stats_epochs': [],
+        'stat_name': stat_name
     }
 
     for t in range(n_epochs):
@@ -1050,11 +1065,13 @@ def train_acquisition_function_net(
         # We would usually only do these if test_during_training=True,
         # but why not cover all cases.
         if test_during_training:
-            cur_score = test_stats["maxei"]
+            cur_score = test_stats[stat_name]
         elif get_train_stats_after_training:
-            cur_score = train_stats["after_training"]["maxei"]
+            cur_score = train_stats["after_training"][stat_name]
         else:
-            cur_score = train_nn_stats_while_training["maxei"]
+            cur_score = train_nn_stats_while_training[stat_name]
+        if negate:
+            cur_score = -cur_score
         
         # If the best score increased, then update that and maybe save
         if best_score is None or cur_score > best_score:

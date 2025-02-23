@@ -1,6 +1,7 @@
 from typing import Optional
 import subprocess
 import os
+import argparse
 
 from utils import dict_to_cmd_args, save_json
 
@@ -12,8 +13,9 @@ SWEEPS_DIR = "sweeps"
 def submit_dependent_jobs(
         sweep_dir: str,
         jobs_spec: dict,
+        args: argparse.Namespace,
         gpu_gres: str = "gpu:a100:1", # e.g. "gpu:a100:1" or "gpu:1"
-        mail:Optional[str]=None
+        mail:Optional[str]=None,
     ):
     # Don't create unnecessary directories if there are no jobs to submit
     # (i.e. if jobs_spec is empty)
@@ -24,6 +26,7 @@ def submit_dependent_jobs(
     config_dir = os.path.join(sweep_dir, "config")
     os.makedirs(logs_dir, exist_ok=True)
     os.makedirs(config_dir, exist_ok=True)
+    save_json(vars(args), os.path.join(sweep_dir, "args.json"))
 
     job_ids = {}
 
@@ -68,16 +71,18 @@ def submit_dependent_jobs(
             "error": os.path.join(logs_dir, f"{job_name}_%j.err"),
             "requeue": True,
             "array": f"1-{n_commands}",
-            "mem": "40gb" # server memory requested (per node)
+            # "mem": "40gb" # server memory requested (per node)
         }
         if mail is not None:
             sbatch_args_dict['mail-type'] = 'ALL'
             sbatch_args_dict['mail-user'] = mail
         if job_spec["gpu"]:
             sbatch_args_dict['partition'] = 'gpu'
-            sbatch_args_dict['gres'] = gpu_gres
+            sbatch_args_dict['gres'] = job_spec.get("gpu_gres", gpu_gres)
+            sbatch_args_dict['mem'] = "20gb"
         else:
             sbatch_args_dict['partition'] = 'frazier'
+            sbatch_args_dict['mem'] = '4gb'
         if dependency_job_ids:
             dependency_flag = 'afterok:' + ':'.join(dependency_job_ids)
             sbatch_args_dict['dependency'] = dependency_flag

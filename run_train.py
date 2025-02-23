@@ -57,7 +57,8 @@ def get_training_config(args: argparse.Namespace):
         batch_size=args.batch_size,
         epochs=args.epochs,
         fix_train_acquisition_dataset=FIX_TRAIN_ACQUISITION_DATASET,
-        early_stopping=args.early_stopping
+        early_stopping=args.early_stopping,
+        use_maxei=args.use_maxei
     )
     if args.method == 'policy_gradient':
         training_config = dict(
@@ -335,6 +336,7 @@ def run_train(args: argparse.Namespace):
             patience=args.patience,
             min_delta=args.min_delta,
             cumulative_delta=args.cumulative_delta,
+            use_maxei=args.use_maxei
         )
 
         if args.save_model:
@@ -547,6 +549,13 @@ def get_run_train_parser():
         action='store_true',
         help=('Whether to use cumulative delta for early stopping. Default is False. '
             'Only used if early_stopping=True.')
+    )
+    training_group.add_argument(
+        '--use_maxei',
+        action='store_true',
+        help='Use --use_maxei to use the "max ei" statistic as the evaluation metric '
+        'on the test dataset. Otherwise, the evaluation metric is the same as the loss '
+        'function used to train the NN.'
     )
 
     #### Options when method=policy_gradient

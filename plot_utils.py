@@ -185,18 +185,19 @@ def plot_nn_vs_gp_acquisition_function_1d_grid(
 
 def plot_acquisition_function_net_training_history(training_history_data):
     stats_epochs = training_history_data['stats_epochs']
-    train_ei_max = [epoch['train']['after_training']['maxei'] for epoch in stats_epochs]
-    test_ei_max = [epoch['test']['maxei'] for epoch in stats_epochs]
+    stat_name = training_history_data['stat_name']
+    train_ei_max = [epoch['train']['after_training'][stat_name] for epoch in stats_epochs]
+    test_ei_max = [epoch['test'][stat_name] for epoch in stats_epochs]
 
     epochs = np.arange(1, len(train_ei_max) + 1)
 
     fig = plt.figure(figsize=(10, 5))
     ax = fig.add_subplot(111)
-    ax.plot(epochs, train_ei_max, label='Train EI Max', marker='o')
-    ax.plot(epochs, test_ei_max, label='Test EI Max', marker='x')
+    ax.plot(epochs, train_ei_max, label=f'Train {stat_name}', marker='o')
+    ax.plot(epochs, test_ei_max, label=f'Test {stat_name}', marker='x')
     ax.set_xlabel('Epochs')
-    ax.set_ylabel('EI Max')
-    ax.set_title('Train and Test EI Max Over Epochs')
+    ax.set_ylabel(stat_name)
+    ax.set_title(f'Train and Test {stat_name} Over Epochs')
     ax.legend()
     ax.grid(True)
 
