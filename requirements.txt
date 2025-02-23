@@ -1,0 +1,56 @@
+botorch==0.11.1
+Brotli @ file:///croot/brotli-split_1714483155106/work
+certifi @ file:///croot/certifi_1738623731865/work/certifi
+charset-normalizer @ file:///tmp/build/80754af9/charset-normalizer_1630003229654/work
+colorama @ file:///home/conda/feedstock_root/build_artifacts/colorama_1666700638685/work
+contourpy @ file:///work/perseverance-python-buildout/croot/contourpy_1701756524386/work
+cycler @ file:///tmp/build/80754af9/cycler_1637851556182/work
+filelock @ file:///home/conda/feedstock_root/build_artifacts/filelock_1718834593950/work
+fonttools @ file:///croot/fonttools_1713551344105/work
+fsspec @ file:///home/conda/feedstock_root/build_artifacts/fsspec_1717498510112/work
+gpytorch==1.11
+idna @ file:///croot/idna_1714398848350/work
+jaxtyping==0.2.9
+Jinja2 @ file:///home/conda/feedstock_root/build_artifacts/jinja2_1715127149914/work
+joblib @ file:///home/conda/feedstock_root/build_artifacts/joblib_1714665484399/work
+kiwisolver @ file:///work/perseverance-python-buildout/croot/kiwisolver_1698847502605/work
+linear-operator==0.5.1
+MarkupSafe @ file:///work/perseverance-python-buildout/croot/markupsafe_1707342994941/work
+matplotlib @ file:///croot/matplotlib-suite_1713336378214/work
+mkl-fft @ file:///work/perseverance-python-buildout/croot/mkl_fft_1698845673361/work
+mkl-random @ file:///work/perseverance-python-buildout/croot/mkl_random_1698845720894/work
+mkl-service==2.4.0
+mpmath @ file:///home/conda/feedstock_root/build_artifacts/mpmath_1678228039184/work
+multipledispatch==0.6.0
+networkx @ file:///home/conda/feedstock_root/build_artifacts/networkx_1712540363324/work
+numpy==1.26.4
+opt-einsum @ file:///home/conda/feedstock_root/build_artifacts/opt_einsum_1696448916724/work
+packaging @ file:///croot/packaging_1710807400464/work
+pillow @ file:///croot/pillow_1714398848491/work
+ply @ file:///work/perseverance-python-buildout/croot/ply_1698846188635/work
+pyparsing @ file:///work/perseverance-python-buildout/croot/pyparsing_1698847881454/work
+PyQt5==5.15.10
+PyQt5-sip @ file:///work/perseverance-python-buildout/croot/pyqt-split_1698847927472/work/pyqt_sip
+pyro-api @ file:///home/conda/feedstock_root/build_artifacts/pyro-api_1614940619870/work
+pyro-ppl @ file:///home/conda/feedstock_root/build_artifacts/pyro-ppl_1717374836897/work
+PySocks @ file:///work/perseverance-python-buildout/croot/pysocks_1698845478203/work
+python-dateutil @ file:///croot/python-dateutil_1716495738603/work
+PyYAML @ file:///work/perseverance-python-buildout/croot/pyyaml_1698849903511/work
+requests @ file:///croot/requests_1716902831423/work
+scikit-learn @ file:///croot/scikit-learn_1714164736727/work
+scipy @ file:///croot/scipy_1717521478074/work/dist/scipy-1.13.1-cp312-cp312-linux_x86_64.whl#sha256=a60c1bdf983ee297b25e41830d00cc2af50f00bcb47e55578703fef1594ec56e
+setuptools==69.5.1
+sip @ file:///work/perseverance-python-buildout/croot/sip_1698846977033/work
+six @ file:///home/conda/feedstock_root/build_artifacts/six_1620240208055/work
+sympy @ file:///home/conda/feedstock_root/build_artifacts/sympy_1718625546171/work
+threadpoolctl @ file:///home/conda/feedstock_root/build_artifacts/threadpoolctl_1714400101435/work
+torch==2.3.1
+torchaudio==2.3.1
+torchvision==0.18.1
+tornado @ file:///croot/tornado_1718740109488/work
+tqdm @ file:///home/conda/feedstock_root/build_artifacts/tqdm_1714854870413/work
+typeguard @ file:///home/conda/feedstock_root/build_artifacts/typeguard_1658932097418/work
+typing_extensions @ file:///home/conda/feedstock_root/build_artifacts/typing_extensions_1717802530399/work
+unicodedata2 @ file:///croot/unicodedata2_1713212950228/work
+urllib3 @ file:///croot/urllib3_1715635851070/work
+wheel==0.43.0
