@@ -12,10 +12,9 @@ CPROFILE = False
 
 
 def generate_bo_commands(
-        seeds, objective_args, bo_policy_args, gp_af_args) -> list[str]:
+        seeds: list[int], objective_args, bo_policy_args, gp_af_args) -> list[str]:
     new_bo_commands = []
-    for s in seeds:
-        seed = s.item()
+    for seed in seeds:
         objective_args_ = {**objective_args, 'gp_seed': seed}
         bo_policy_args_ = {**bo_policy_args, 'bo_seed': seed}
         cmd_args_list = bo_loop_dicts_to_cmd_args_list(
@@ -67,7 +66,7 @@ def main():
     # Set seed again for reproducibility
     torch.manual_seed(args.seed)
     # Set a seed for each round of GP function draw + BO loop
-    seeds = torch.randint(0, 2**63-1, (args.n_gp_draws,), dtype=torch.int64)
+    seeds = torch.randint(0, 2**63-1, (args.n_gp_draws,), dtype=torch.int64).tolist()
 
     gp_options_dict = {}
     nn_bo_loop_commands_list = []
@@ -79,7 +78,6 @@ def main():
             k.split('.')[-1]: v for k, v in options.items()
             if k.startswith("function_samples_dataset.gp.")
         }
-        # cmd_args_gp = dict_to_cmd_args(gp_options)
 
         gp_options_str = dict_to_str(gp_options)
 
