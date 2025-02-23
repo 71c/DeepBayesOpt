@@ -398,7 +398,7 @@ def add_slurm_args(parser):
     )
 
 
-def add_train_acqf_args(parser):
+def add_train_acqf_args(parser, train=True):
     parser.add_argument(
         '--base_config',
         type=str,
@@ -412,13 +412,14 @@ def add_train_acqf_args(parser):
         help='YAML file containing the specific experiment configuration '
              'for the NN acqf experiment.'
     )
-    parser.add_argument(
-        '--always_train',
-        action='store_true',
-        help=('If this flag is set, train all acquisition function NNs regardless of '
-              'whether they have already been trained. Default is to only train '
-              'acquisition function NNs that have not already been trained.')
-    )
+    if train:
+        parser.add_argument(
+            '--always_train',
+            action='store_true',
+            help=('If this flag is set, train all acquisition function NNs regardless of '
+                'whether they have already been trained. Default is to only train '
+                'acquisition function NNs that have not already been trained.')
+        )
 
 
 def get_train_acqf_options_list(args: argparse.Namespace):
@@ -474,7 +475,7 @@ def submit_jobs_sweep_from_args(jobs_spec, args):
 
 def main():
     parser = argparse.ArgumentParser()
-    add_train_acqf_args(parser)
+    add_train_acqf_args(parser, train=True)
     add_slurm_args(parser)
 
     args = parser.parse_args()
