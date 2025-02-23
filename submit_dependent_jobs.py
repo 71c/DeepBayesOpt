@@ -27,6 +27,7 @@ def submit_dependent_jobs(
     os.makedirs(logs_dir, exist_ok=True)
     os.makedirs(config_dir, exist_ok=True)
     save_json(vars(args), os.path.join(sweep_dir, "args.json"))
+    save_json(jobs_spec, os.path.join(sweep_dir, "dependencies.json"), indent=4)
 
     job_ids = {}
 
