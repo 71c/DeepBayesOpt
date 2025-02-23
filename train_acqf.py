@@ -466,7 +466,6 @@ def get_train_acqf_options_list(args: argparse.Namespace):
 
 
 def submit_jobs_sweep_from_args(jobs_spec, args):
-    save_json(jobs_spec, os.path.join(CONFIG_DIR, "dependencies.json"), indent=4)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     sweep_dir = os.path.join(SWEEPS_DIR, f"{args.sweep_name}_{timestamp}")
     submit_dependent_jobs(
@@ -489,6 +488,7 @@ def main():
     
     jobs_spec = create_dependency_structure_train_acqf(
         options_list, always_train=args.always_train)
+    save_json(jobs_spec, os.path.join(CONFIG_DIR, "dependencies.json"), indent=4)
     submit_jobs_sweep_from_args(jobs_spec, args)
 
 

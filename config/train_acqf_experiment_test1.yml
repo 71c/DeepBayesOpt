@@ -5,7 +5,7 @@ parameters:
   train_samples_size:
     values: all
   layer_width:
-    values: all
+    values: [500]
   dimension:
     values: all
   patience:

@@ -1,10 +1,12 @@
 import argparse
 import math
+import os
+from submit_dependent_jobs import CONFIG_DIR
 import torch
 from run_bo import GP_AF_DICT, add_bo_loop_args, bo_loop_dicts_to_cmd_args_list, get_arg_names, run_bo
 from run_train import get_configs_and_model_and_paths, get_run_train_parser
 from train_acqf import add_slurm_args, add_train_acqf_args, create_dependency_structure_train_acqf, get_command_line_options, get_train_acqf_options_list, submit_jobs_sweep_from_args
-from utils import dict_to_cmd_args, dict_to_str
+from utils import dict_to_cmd_args, dict_to_str, save_json
 import cProfile, pstats
 
 
@@ -209,6 +211,7 @@ def main():
     jobs_spec, bo_configs = get_gp_bo_jobs_spec_and_configs_from_args(
         args, bo_loop_group)
 
+    save_json(jobs_spec, os.path.join(CONFIG_DIR, "dependencies.json"), indent=4)
     submit_jobs_sweep_from_args(jobs_spec, args)
 
 
