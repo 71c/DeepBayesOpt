@@ -145,8 +145,9 @@ def mse_loss(pred_improvements, improvements, mask=None, reduction="mean"):
     return mse_per_batch.sum()
 
 
+GI_NORMALIZATIONS = ["normal"]
 def calculate_gittins_loss(pred_gi, y, lamdas, costs=None,
-                           normalize=False, known_costs=True,
+                           normalize=None, known_costs=True,
                            mask=None, reduction="mean"):
     """Calculate the Gittins index loss.
 
@@ -159,8 +160,8 @@ def calculate_gittins_loss(pred_gi, y, lamdas, costs=None,
             The lambda values. Shape (batch_size, n_cand), or a scalar tensor
         costs (Tensor or None):
             The costs tensor, shape (batch_size, n_cand)
-        normalize (bool):
-            Whether to normalize the loss function as proposed
+        normalize (str or None):
+            How to normalize the loss function as proposed
         known_costs (bool):
             Whether the costs `costs` are known
             (only applicable if normalize=True and costs != None)
@@ -181,11 +182,13 @@ def calculate_gittins_loss(pred_gi, y, lamdas, costs=None,
     c = lamdas if costs is None else lamdas * costs
     losses = 0.5 * c**2 + c * (pred_gi - y) + 0.5 * F.relu(y - pred_gi)**2
 
-    if normalize:
+    if normalize == "normal":
         normalize_c = c if known_costs else lamdas
         normalization_consts = probability_y_greater_than_gi_normal(
             cbar=normalize_c, sigma=1.0)
         losses = losses / normalization_consts.to(losses)
+    elif normalize is not None:
+        raise ValueError(f"normalize must be one of {GI_NORMALIZATIONS} or None")
 
     if mask is None:
         mean_error_per_batch = losses.mean(dim=1)
@@ -245,12 +248,12 @@ def compute_acquisition_output_batch_stats(
         if normalize is None and return_loss:
             raise ValueError(
                 "normalize must be specified for method='gittins' if return_loss=True")
-        normalizes = [False, True] if normalize is None else [normalize]
+        normalizes = [None] + GI_NORMALIZATIONS if normalize is None else [normalize]
         for nrmlz in normalizes:
             gittins_loss = calculate_gittins_loss(
                 output if return_loss else output_detached, y_cand, lambdas,
                 costs=None, normalize=nrmlz, mask=cand_mask, reduction=reduction)
-            nam = name + "gittins_loss" + ("_normalized" if nrmlz else "")
+            nam = name + "gittins_loss" + (f"_normalized_{nrmlz}" if nrmlz else "")
             ret[nam] = gittins_loss.item()
             if return_loss:
                 ret["loss"] = gittins_loss
@@ -295,7 +298,7 @@ def print_stat_summary(
     print_things(direct_things_to_print, prefix="  ")
 
 
-def print_stats(stats:dict, dataset_name, method, normalize_gi_loss=False):
+def print_stats(stats:dict, dataset_name, method, gi_loss_normalization=None):
     print(f'{dataset_name}:\nExpected 1-step improvement:')
 
     things_to_print = [
@@ -323,7 +326,7 @@ def print_stats(stats:dict, dataset_name, method, normalize_gi_loss=False):
             inverse_ratio=True, sqrt_ratio=True, ratio_name='RMSE Ratio')
     elif method == 'gittins':
         print('Gittins index loss:')
-        tmp = '_normalized' if normalize_gi_loss else ''
+        tmp = f'_normalized_{gi_loss_normalization}' if gi_loss_normalization is not None else ''
         things_to_print = [
             ('gittins_loss' + tmp, 'NN', True),
             ('true_gp_gi_gittins_loss' + tmp, 'True GP GI', False)
@@ -336,7 +339,7 @@ def print_stats(stats:dict, dataset_name, method, normalize_gi_loss=False):
 def print_train_batch_stats(nn_batch_stats, nn_model, method,
                             batch_index, n_batches,
                             reduction="mean", batch_size=None,
-                            normalize_gi_loss=False):
+                            gi_loss_normalization=None):
     if reduction == "mean":
         assert batch_size is None
     elif reduction == "sum":
@@ -358,7 +361,9 @@ def print_train_batch_stats(nn_batch_stats, nn_model, method,
     elif method == 'gittins':
         prefix = "Gittins index loss"
         loss_value = nn_batch_stats[
-            "gittins_loss" + ("_normalized" if normalize_gi_loss else "")]
+            "gittins_loss" + (
+                f'_normalized_{gi_loss_normalization}' \
+                    if gi_loss_normalization is not None else '')]
     else:
         raise UnsupportedError(f"method '{method}' is not supported")
     if isinstance(nn_model, ExpectedImprovementAcquisitionFunctionNet):
@@ -411,7 +416,7 @@ def train_or_test_loop(dataloader: DataLoader,
                        alpha_increment:Optional[float]=None,
                        
                        # Only used when method="gittins" and train=True
-                       normalize_gi_loss:bool=False,
+                       gi_loss_normalization:Optional[str]=None,
                        
                        # Whether to return None if there is nothing to compute
                        return_none=False):
@@ -474,9 +479,6 @@ def train_or_test_loop(dataloader: DataLoader,
             if nn_model.cost_is_input:
                 raise UnsupportedError("nn_model.cost_is_input=True is currently not"
                                        " supported for method='gittins'")
-
-            if not isinstance(normalize_gi_loss, bool):
-                raise ValueError("normalize_gi_loss must be a boolean")
             nnei = False
         elif method == 'policy_gradient' or method == 'mse_ei':
             if not isinstance(nn_model, ExpectedImprovementAcquisitionFunctionNet):
@@ -655,7 +657,8 @@ def train_or_test_loop(dataloader: DataLoader,
                 nn_batch_stats = compute_acquisition_output_batch_stats(
                     nn_output, cand_mask_nn, method,
                     improvements=improvements_nn,
-                    y_cand=y_cand_nn, lambdas=lambdas_nn, normalize=normalize_gi_loss,
+                    y_cand=y_cand_nn, lambdas=lambdas_nn,
+                    normalize=gi_loss_normalization,
                     return_loss=train, reduction="sum")
                 # print("NN", nn_batch_stats)
                 # print("(DEBUG) Mean EI NN:", nn_output.mean())
@@ -677,7 +680,7 @@ def train_or_test_loop(dataloader: DataLoader,
                                                 n_training_batches,
                                                 reduction="sum",
                                                 batch_size=this_batch_size,
-                                                normalize_gi_loss=normalize_gi_loss)
+                                                gi_loss_normalization=gi_loss_normalization)
                         
                         # # Debug code
                         # if method == 'mse_ei':
@@ -730,7 +733,7 @@ def train_or_test_loop(dataloader: DataLoader,
                         hist_mask=hist_mask, cand_mask=cand_mask,
                         is_log=False
                     )
-                    # normalize=None here means normalize both True and False
+                    # normalize=None here means normalize all options
                     true_gp_batch_stats_gi = compute_acquisition_output_batch_stats(
                         gi_values_true_model, cand_mask, method='gittins',
                         improvements=improvements,
@@ -893,7 +896,7 @@ def train_acquisition_function_net(
         alpha_increment:Optional[float]=None,
         
         # Only used when method="gittins" and train=True
-        normalize_gi_loss:bool=False,
+        gi_loss_normalization:Optional[str]=None,
         
         test_dataset: Optional[AcquisitionDataset]=None,
         small_test_dataset:Optional[AcquisitionDataset]=None,
@@ -988,7 +991,9 @@ def train_acquisition_function_net(
         stat_name = "mse"
         negate = True
     elif method == "gittins":
-        stat_name = "gittins_loss" + ("_normalized" if normalize_gi_loss else "")
+        stat_name = "gittins_loss" + \
+            (f"_normalized_{gi_loss_normalization}" \
+             if gi_loss_normalization is not None else "")
         negate = True
     training_history_data = {
         'stats_epochs': [],
@@ -1014,7 +1019,7 @@ def train_acquisition_function_net(
             n_train_printouts=n_train_printouts_per_epoch,
             optimizer=optimizer,
             alpha_increment=alpha_increment,
-            normalize_gi_loss=normalize_gi_loss,
+            gi_loss_normalization=gi_loss_normalization,
             get_true_gp_stats=get_train_true_gp_stats,
             get_map_gp_stats=get_train_map_gp_stats,
             get_basic_stats=True)
@@ -1027,14 +1032,14 @@ def train_acquisition_function_net(
             train_stats['while_training'] = train_nn_stats_while_training
             if verbose:
                 print_stats({**train_stats['while_training'], **non_nn_train_stats},
-                            "Train stats while training", method, normalize_gi_loss)
+                            "Train stats while training", method, gi_loss_normalization)
 
         if get_train_stats_after_training:
             train_stats['after_training'] = train_or_test_loop(
                 train_dataloader, nn_model, train=False,
                 nn_device=nn_device, method=method,
                 verbose=verbose, desc=f"Epoch {t+1} compute train stats",
-                normalize_gi_loss=normalize_gi_loss,
+                gi_loss_normalization=gi_loss_normalization,
                 # Don't need to compute non-NN stats because already computed them
                 # while training, and we ensured that the train dataset is fixed for this epoch.
                 get_true_gp_stats=False,
@@ -1042,7 +1047,7 @@ def train_acquisition_function_net(
                 get_basic_stats=False)
             if verbose:
                 print_stats({**train_stats['after_training'], **non_nn_train_stats},
-                            "Train stats after training", method, normalize_gi_loss)
+                            "Train stats after training", method, gi_loss_normalization)
         
         epoch_stats = {'train': train_stats}
 
@@ -1051,13 +1056,13 @@ def train_acquisition_function_net(
                 small_test_dataloader, nn_model, train=False,
                 nn_device=nn_device, method=method,
                 verbose=verbose, desc=f"Epoch {t+1} compute test stats",
-                normalize_gi_loss=normalize_gi_loss,
+                gi_loss_normalization=gi_loss_normalization,
                 get_true_gp_stats=get_test_true_gp_stats,
                 get_map_gp_stats=get_test_map_gp_stats,
                 get_basic_stats=True)
             epoch_stats['test'] = test_stats
             if verbose:
-                print_stats(test_stats, "Test stats", method, normalize_gi_loss)
+                print_stats(test_stats, "Test stats", method, gi_loss_normalization)
         
         training_history_data['stats_epochs'].append(epoch_stats)
 
@@ -1134,13 +1139,14 @@ def train_acquisition_function_net(
                 test_dataloader, nn_model, train=False,
                 nn_device=nn_device, method=method,
                 verbose=verbose, desc=f"Compute final test stats",
-                normalize_gi_loss=normalize_gi_loss,
+                gi_loss_normalization=gi_loss_normalization,
                 get_true_gp_stats=get_test_true_gp_stats_after_training,
                 get_map_gp_stats=get_test_map_gp_stats,
                 get_basic_stats=True)
         training_history_data['final_test_stats'] = final_test_stats
         if verbose:
-            print_stats(final_test_stats, "Final test stats", method, normalize_gi_loss)
+            print_stats(final_test_stats, "Final test stats",
+                        method, gi_loss_normalization)
     
     if save_dir is not None:
         save_json(training_history_data, training_history_path, indent=4)
@@ -1197,18 +1203,18 @@ def save_af_net_configs(
         af_dataset_config: dict[str, dict[str, Any]],
         save:bool=True
     ):
-    gp_realization_config = af_dataset_config["gp_realization_config"]
-    dataset_size_config = af_dataset_config["dataset_size_config"]
+    function_samples_config = af_dataset_config["function_samples_config"]
+    acquisition_dataset_config = af_dataset_config["acquisition_dataset_config"]
     n_points_config = af_dataset_config["n_points_config"]
     dataset_transform_config = af_dataset_config["dataset_transform_config"]
 
     model_sampler = RandomModelSampler(
-        models=gp_realization_config["models"],
-        model_probabilities=gp_realization_config["model_probabilities"],
-        randomize_params=gp_realization_config["randomize_params"]
+        models=function_samples_config["models"],
+        model_probabilities=function_samples_config["model_probabilities"],
+        randomize_params=function_samples_config["randomize_params"]
     )
 
-    gp_realization_config_json = convert_to_json_serializable(gp_realization_config)
+    function_samples_config_json = convert_to_json_serializable(function_samples_config)
     dataset_transform_config_json = convert_to_json_serializable(dataset_transform_config)
     model_sampler_json = convert_to_json_serializable({
             '_models': model_sampler._models,
@@ -1222,8 +1228,8 @@ def save_af_net_configs(
     all_info_json = {
         'model': model.get_info_dict(),
         'training_config': training_config,
-        'gp_realization_config': gp_realization_config_json,
-        'dataset_size_config': dataset_size_config,
+        'function_samples_config': function_samples_config_json,
+        'acquisition_dataset_config': acquisition_dataset_config,
         'n_points_config': n_points_config,
         'dataset_transform_config': dataset_transform_config_json,
         'model_sampler': model_sampler_json
@@ -1249,10 +1255,10 @@ def save_af_net_configs(
                 os.path.join(model_and_info_path, "training_config.json"))
 
         # Save GP dataset config
-        save_json(gp_realization_config_json,
-                os.path.join(model_and_info_path, "gp_realization_config.json"))
-        save_json(dataset_size_config,
-                os.path.join(model_and_info_path, "dataset_size_config.json"))
+        save_json(function_samples_config_json,
+                os.path.join(model_and_info_path, "function_samples_config.json"))
+        save_json(acquisition_dataset_config,
+                os.path.join(model_and_info_path, "acquisition_dataset_config.json"))
         save_json(n_points_config,
                 os.path.join(model_and_info_path, "n_points_config.json"))
         model_sampler.save(
@@ -1323,16 +1329,16 @@ def load_model(model_and_info_folder_name: str, return_model_path=False):
 
 def load_configs(model_and_info_folder_name: str):
     model_and_info_path = os.path.join(MODELS_DIR, model_and_info_folder_name)
-    gp_realization_config = load_json(
-        os.path.join(model_and_info_path, "gp_realization_config.json"))
+    function_samples_config = load_json(
+        os.path.join(model_and_info_path, "function_samples_config.json"))
     model_sampler = RandomModelSampler.load(
         os.path.join(model_and_info_path, "model_sampler"))
-    if gp_realization_config['models'] is not None:
-        gp_realization_config['models'] = model_sampler.initial_models
-        gp_realization_config['model_probabilities'] = model_sampler.model_probabilities
-        assert model_sampler.randomize_params == gp_realization_config['randomize_params']
-    dataset_size_config = load_json(
-        os.path.join(model_and_info_path, "dataset_size_config.json"))
+    if function_samples_config['models'] is not None:
+        function_samples_config['models'] = model_sampler.initial_models
+        function_samples_config['model_probabilities'] = model_sampler.model_probabilities
+        assert model_sampler.randomize_params == function_samples_config['randomize_params']
+    acquisition_dataset_config = load_json(
+        os.path.join(model_and_info_path, "acquisition_dataset_config.json"))
     n_points_config = load_json(
         os.path.join(model_and_info_path, "n_points_config.json"))
     
@@ -1346,8 +1352,8 @@ def load_configs(model_and_info_folder_name: str):
         os.path.join(model_and_info_path, "training_config.json"))
     
     return {
-        "gp_realization_config": gp_realization_config,
-        "dataset_size_config": dataset_size_config,
+        "function_samples_config": function_samples_config,
+        "acquisition_dataset_config": acquisition_dataset_config,
         "n_points_config": n_points_config,
         "dataset_transform_config": dataset_transform_config,
         "model_sampler": model_sampler,

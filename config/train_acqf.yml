@@ -26,7 +26,11 @@ parameters:
         value: 5000
   acquisition_dataset:
     parameters:
-      expansion_factor:
+      train_acquisition_size:
+        value: 5000
+      replacement:
+        values: [true, false]
+      test_expansion_factor:
         value: 2
       n_candidates:
         values: [1, 5, 25]
@@ -47,8 +51,8 @@ parameters:
         values:
         - value: gittins
           parameters:
-            normalize_gi_loss:
-              values: [true, false]
+            gi_loss_normalization:
+              values: ["normal", null]
             lamda_config:
               parameters:
               - lamda_min:

@@ -416,7 +416,7 @@ gp_af_args={'gp_af': 'gittins', 'fit': 'exact', 'kernel': None, 'lengthscale': N
 
 #### EXAMPLE:
 ## The following is a simple cheap test command for testing mse_ei method:
-# python run_train.py --dimension 8 --kernel Matern52  --lengthscale 0.1 --train_acquisition_size 2000 --test_acquisition_size 2000 --train_n_candidates 1 --test_n_candidates 1 --min_history 1 --max_history 60 --layer_width 100 --method mse_ei --learning_rate 0.003 --batch_size 32 --epochs 10
+# python run_train.py --dimension 8 --kernel Matern52  --lengthscale 0.1 --train_samples_size 2000 --train_acquisition_size 2000 --test_samples_size 2000 --train_n_candidates 1 --test_n_candidates 1 --min_history 1 --max_history 60 --layer_width 100 --method mse_ei --learning_rate 0.003 --batch_size 32 --epochs 10
 # ====> Saves to v1/model_c9176a1cdf11da57e5d4801812f27622efbb9f182d3d459c7904dba4010cab87
 ## Next, run the BO on it:
 # python run_bo.py --objective_dimension 8 --objective_gp_seed 123 --objective_kernel Matern52 --objective_lengthscale 0.1 --n_iter 30 --n_initial_samples 4 --bo_seed 99 --nn_model_name v1/model_c9176a1cdf11da57e5d4801812f27622efbb9f182d3d459c7904dba4010cab87
@@ -424,7 +424,7 @@ gp_af_args={'gp_af': 'gittins', 'fit': 'exact', 'kernel': None, 'lengthscale': N
 # python run_bo.py --objective_dimension 8 --objective_gp_seed 123 --objective_kernel Matern52 --objective_lengthscale 0.1 --n_iter 30 --n_initial_samples 4 --bo_seed 99 --nn_model_name v1/model_6c038ea3a2ae01627595a1ab371a4e0a86411772f33141db9d212bb77d4207d7
 
 ## Gittins index, variable lambda:
-# python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 2000 --train_n_candidates 1 --batch_size 32 --early_stopping --epochs 200 --layer_width 100 --learning_rate 0.003 --method gittins --min_delta 0.0 --normalize_gi_loss --patience 5 --lamda_min 0.001 --lamda_max 1.0
+# python run_train.py --dimension 8 --test_expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_samples_size 10000 --test_n_candidates 1 --train_samples_size 2000 --train_acquisition_size 2000 --train_n_candidates 1 --batch_size 32 --early_stopping --epochs 200 --layer_width 100 --learning_rate 0.003 --method gittins --min_delta 0.0 --gi_loss_normalization normal --patience 5 --lamda_min 0.001 --lamda_max 1.0
 # ===> Saves to v1/model_6388a4fee84e6df0aaea3a018ca0c78caf1667930402fc521e50c77f43d2579d
 # python run_bo.py --objective_dimension 8 --objective_gp_seed 123 --objective_kernel Matern52 --objective_lengthscale 0.1 --n_iter 30 --n_initial_samples 4 --bo_seed 99 --nn_model_name v1/model_6388a4fee84e6df0aaea3a018ca0c78caf1667930402fc521e50c77f43d2579d --lamda 0.01
 

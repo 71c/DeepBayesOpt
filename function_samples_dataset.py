@@ -14,10 +14,10 @@ from gpytorch.constraints.constraints import GreaterThan
 import math
 
 from dataset_with_models import TupleWithModel, create_classes, RandomModelSampler
-from utils import (SizedInfiniteIterableMixin, SizedIterableMixin,
+from utils import (FirstNIterable, SizedInfiniteIterableMixin, SizedIterableMixin,
                    get_lengths_from_proportions, iterable_is_finite,
                    invert_outcome_transform, concatenate_outcome_transforms,
-                   get_gp)
+                   get_gp, len_or_inf, resize_iterable)
 
 
 class FunctionSamplesItem(TupleWithModel):
@@ -618,33 +618,38 @@ class GaussianProcessRandomDataset(
         return FunctionSamplesItem(x_values, y_values, model)
 
 
-class RepeatedFunctionSamplesIterableDataset(
+class ResizedFunctionSamplesIterableDataset(
     FunctionSamplesDataset, IterableDataset, SizedIterableMixin):
-    """An iterable-style dataset that repeats the samples from another
-    iterable-style dataset a specified number of times.
-    With each iter(), there are different random samples from the base dataset
-    which are repeated in a random order."""
-    def __init__(self, base_dataset: FunctionSamplesDataset, size_factor: int):
+    """An iterable-style dataset that resizes another
+    iterable-style dataset.
+    With each iter(), there are different random samples from the base dataset."""
+    def __init__(self,
+                 base_dataset: FunctionSamplesDataset,
+                 new_size: int,
+                 repeat_samples: bool=False):
         """
         Args:
             base_dataset (IterableDataset and FunctionSamplesDataset):
                 A finite-sized iterable FunctionSamplesDataset
                 from which to generate samples.
-            size_factor (int): The number of times to repeat the samples.
+            new_size (int): The new size of the dataset.
+            repeat_samples (bool): Whether to repeat samples from the base
+                dataset in a random order to fill the new dataset size
+                each time iter() is called.
         """
         if not (isinstance(base_dataset, FunctionSamplesDataset) and
                 isinstance(base_dataset, IterableDataset)):
             raise TypeError("base_dataset should be an instance of "
                             "both FunctionSamplesDataset and IterableDataset.")
-        if not iterable_is_finite(base_dataset):
-            raise ValueError(
-                "base_dataset for a RepeatedFunctionSamplesIterableDataset "
-                "should be a finite-sized IterableDataset")
-        if not isinstance(size_factor, int) or size_factor <= 0:
-            raise ValueError("size_factor should be a positive integer")
+        if not isinstance(new_size, int) or new_size <= 0:
+            raise ValueError("new_size should be a positive integer")
         
         self.base_dataset = base_dataset
-        self.size_factor = size_factor
+        self._size = new_size # Required by SizedIterableMixin; len(self) == new_size
+        self.repeat_samples = repeat_samples
+
+        if new_size <= len_or_inf(base_dataset):
+            self._iterable = resize_iterable(base_dataset, new_size)
     
     def save(self, dir_name: str, verbose:bool=True):
         raise NotImplementedError(
@@ -658,19 +663,26 @@ class RepeatedFunctionSamplesIterableDataset(
         return self.base_dataset.data_is_loaded()
     
     def _init_params(self):
-        return (self.base_dataset, self.size_factor), dict()
-    
-    @property
-    def _size(self):
-        # Required by SizedIterableMixin
-        return len(self.base_dataset) * self.size_factor
+        return (self.base_dataset, self.new_size), dict(
+            repeat_samples=self.repeat_samples)
     
     def __iter__(self):
-        this_iter_base = LazyMapFunctionSamplesDataset(self.base_dataset)
-        sampler = torch.utils.data.RandomSampler(
-            this_iter_base, replacement=False, num_samples=len(self))
-        this_iter = DataLoader(this_iter_base, batch_size=None, sampler=sampler)
-        return iter(this_iter)
+        base_dataset_size = len_or_inf(self.base_dataset)
+        if len(self) <= base_dataset_size:
+            return iter(self._iterable)
+        else:
+            if self.repeat_samples:
+                this_iter_base = LazyMapFunctionSamplesDataset(self.base_dataset)
+                sampler = torch.utils.data.RandomSampler(
+                    this_iter_base, replacement=False, num_samples=len(self))
+                this_iter = DataLoader(this_iter_base, batch_size=None, sampler=sampler)
+                return iter(this_iter)
+            else:
+                for _ in range(len(self) // base_dataset_size):
+                    yield from self.base_dataset
+                remaining = len(self) % base_dataset_size
+                if remaining > 0:
+                    yield from FirstNIterable(self.base_dataset, remaining)
     
     def has_models(self):
         return self.base_dataset.has_models
@@ -694,5 +706,5 @@ class RepeatedFunctionSamplesIterableDataset(
                 pass
 
         return [
-            type(self)(split_dataset, self.size_factor)
+            type(self)(split_dataset, self._size, self.repeat_samples)
             for split_dataset in self.base_dataset.random_split(lengths)]

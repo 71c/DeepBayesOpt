@@ -1,14 +1,11 @@
 # Run like, e.g.,
-# python run_train.py --dimension 8 --expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 10000 --test_n_candidates 1 --train_acquisition_size 2000 --train_n_candidates 1 --batch_size 32 --early_stopping --epochs 200 --lamda_max 1.0 --lamda_min 0.0001 --layer_width 100 --learning_rate 0.003 --method gittins --min_delta 0.0 --normalize_gi_loss --patience 5
-
-# python run_train.py --dimension 8 --expansion_factor 1 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_acquisition_size 1000 --test_n_candidates 1 --train_acquisition_size 1000 --train_n_candidates 1 --batch_size 32 --early_stopping --epochs 200 --layer_width 100 --learning_rate 0.003 --method gittins --min_delta 0.0 --normalize_gi_loss --patience 5 --lamda 0.001
+# python run_train.py --dimension 8 --test_expansion_factor 1 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_samples_size 5000 --test_n_candidates 1 --train_samples_size 10000 --train_acquisition_size 2000 --train_n_candidates 1 --batch_size 32 --early_stopping --epochs 200 --layer_width 100 --learning_rate 0.0003 --method gittins --min_delta 0.0 --gi_loss_normalization normal --patience 5 --lamda 0.001 --replacement
 import argparse
 from functools import cache
 import torch
 import matplotlib.pyplot as plt
 import os
-import cProfile, pstats, io
-from dataset_with_models import RandomModelSampler
+import cProfile, pstats
 from tictoc import tic, tocl
 from datetime import datetime
 import argparse
@@ -20,6 +17,7 @@ from acquisition_function_net import (
     AcquisitionFunctionBodyPointnetV1and2, AcquisitionFunctionNet, AcquisitionFunctionNetFinalMLP, AcquisitionFunctionNetFinalMLPSoftmaxExponentiate, ExpectedImprovementAcquisitionFunctionNet, GittinsAcquisitionFunctionNet, AcquisitionFunctionNetAcquisitionFunction, TwoPartAcquisitionFunctionNetFixedHistoryOutputDim)
 from exact_gp_computations import calculate_EI_GP
 from train_acquisition_function_net import (
+    GI_NORMALIZATIONS,
     METHODS,
     load_model,
     print_stats,
@@ -73,7 +71,7 @@ def get_training_config(args: argparse.Namespace):
             **training_config,
             lamda_min=lamda_min,
             lamda_max=lamda_max,
-            normalize_gi_loss=args.normalize_gi_loss)
+            gi_loss_normalization=args.gi_loss_normalization)
     elif args.method == 'mse_ei':
         initial_tau = getattr(args, "initial_tau", None)
         initial_tau = 1.0 if initial_tau is None else initial_tau
@@ -274,8 +272,8 @@ def run_train(args: argparse.Namespace):
         if lamda_given or lamda_min_given or lamda_max_given:
             raise ValueError(
                 "If method != gittins, then lamda, lamda_min, and lamda_max should not be specified")
-        if args.normalize_gi_loss:
-            raise ValueError("normalize_gi_loss should be False if method != gittins")
+        if args.gi_loss_normalization:
+            raise ValueError("gi_loss_normalization should be None if method != gittins")
 
     (af_dataset_configs, model,
      model_and_info_folder_name, models_path) = get_configs_and_model_and_paths(args)
@@ -322,7 +320,7 @@ def run_train(args: argparse.Namespace):
             model, train_aq_dataset, optimizer, args.method, args.epochs, args.batch_size,
             DEVICE, verbose=VERBOSE, n_train_printouts_per_epoch=10,
             alpha_increment=args.alpha_increment,
-            normalize_gi_loss=args.normalize_gi_loss,
+            gi_loss_normalization=args.gi_loss_normalization,
             test_dataset=test_aq_dataset, small_test_dataset=small_test_aq_dataset,
             get_train_stats_while_training=True,
             get_train_stats_after_training=True,
@@ -371,7 +369,7 @@ def run_train(args: argparse.Namespace):
             final_test_stats_original = training_history_data['final_test_stats']
             print_stats(final_test_stats_original,
                         "Final test stats on the original test dataset",
-                        args.method, args.normalize_gi_loss)
+                        args.method, args.gi_loss_normalization)
 
             test_dataloader = test_aq_dataset.get_dataloader(
                         batch_size=args.batch_size, drop_last=False)
@@ -383,10 +381,10 @@ def run_train(args: argparse.Namespace):
                         get_map_gp_stats=False,
                         get_basic_stats=True,
                         alpha_increment=args.alpha_increment,
-                        normalize_gi_loss=args.normalize_gi_loss)
+                        gi_loss_normalization=args.gi_loss_normalization)
             print_stats(final_test_stats,
                         "Final test stats on this test dataset (should be same as above)",
-                        args.method, args.normalize_gi_loss)
+                        args.method, args.gi_loss_normalization)
 
         history_fig = plot_acquisition_function_net_training_history(training_history_data)
         history_plot_path = os.path.join(model_path, 'training_history.pdf')
@@ -590,10 +588,10 @@ def get_run_train_parser():
     gittins_group = parser.add_argument_group(
         "Training options when method=gittins")
     gittins_group.add_argument(
-        '--normalize_gi_loss', 
-        action='store_true', 
-        help=('Whether to normalize the Gittins index loss function. Default is False. '
-            'Only used if method=gittins.')
+        '--gi_loss_normalization', 
+        choices=GI_NORMALIZATIONS,
+        help=('Normalization of the Gittins index loss function. to use. '
+            'Default is to not use any. Only used if method=gittins.')
     )
     add_lamda_args(gittins_group)
 

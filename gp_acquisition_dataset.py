@@ -105,7 +105,8 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 DATASETS_DIR = os.path.join(script_dir, "datasets")
 
 def create_gp_acquisition_dataset(
-        base_dataset_size,
+        samples_size:int,
+        acquisition_size:int,
         # gp_dataset_kwargs_non_datapoints
         dimension, randomize_params=False, xvalue_distribution="uniform",
         observation_noise=False, models=None, model_probabilities=None,
@@ -130,7 +131,6 @@ def create_gp_acquisition_dataset(
 
         y_cand_indices="all",
 
-        expansion_factor=1,
         give_improvements:bool=False,
         
         fix_gp_samples=False, fix_acquisition_samples=False,
@@ -138,6 +138,8 @@ def create_gp_acquisition_dataset(
         # For caching
         batch_size:Optional[int]=None, get_true_gp_stats:Optional[bool]=None,
         name="",
+
+        replacement=False,
         
         # True: return a bool indicating whether the dataset has already been cached.
         # False: works as normal.
@@ -213,11 +215,11 @@ def create_gp_acquisition_dataset(
         gp_dataset_save_kwargs = dict(
             **n_datapoints_kwargs, **gp_dataset_kwargs_non_datapoints)
         function_dataset_hash = dict_to_hash(gp_dataset_save_kwargs)
-        base_name = f"{name_}base_size={base_dataset_size}_{function_dataset_hash}"
+        base_name = f"{name_}base_size={samples_size}_{function_dataset_hash}"
 
         aq_dataset_extra_info = dict(
             fix_acquisition_samples=fix_acquisition_samples,
-            expansion_factor=expansion_factor,
+            acquisition_size=acquisition_size,
             outcome_transform=outcome_transform,
             standardize_outcomes=standardize_outcomes,
             give_improvements=give_improvements,
@@ -303,7 +305,7 @@ def create_gp_acquisition_dataset(
                 else get_n_datapoints_random_gen_variable_n_candidates
             n_datapoints_random_gen = f(**n_datapoints_kwargs)
             function_samples_dataset = GaussianProcessRandomDataset(
-                dataset_size=base_dataset_size,
+                dataset_size=samples_size,
                 n_datapoints_random_gen=n_datapoints_random_gen,
                 device=device, **gp_dataset_kwargs_non_datapoints)
             if fix_gp_samples:
@@ -332,15 +334,18 @@ def create_gp_acquisition_dataset(
             if fix_n_candidates:
                 extra_kwargs = dict(n_candidate_points=n_candidates)
                 if fix_n_samples:
-                    extra_kwargs = dict(**extra_kwargs,
-                                        min_history=min_history, max_history=max_history)
+                    extra_kwargs = dict(
+                        **extra_kwargs,
+                        min_history=min_history, max_history=max_history)
             else:
                 extra_kwargs = dict(n_candidate_points="uniform",
                                     min_n_candidates=min_n_candidates)
             aq_dataset = FunctionSamplesAcquisitionDataset(
-                function_samples_dataset, n_samples="uniform" if fix_n_samples else "all",
+                function_samples_dataset,
+                n_samples="uniform" if fix_n_samples else "all",
                 give_improvements=give_improvements,
-                dataset_size_factor=expansion_factor,
+                acquisition_size=acquisition_size,
+                replacement=replacement,
                 y_cand_indices=y_cand_indices,
                 **extra_kwargs)
 
@@ -373,10 +378,11 @@ def create_gp_acquisition_dataset(
 
 
 def create_train_and_test_gp_acquisition_datasets(
+        train_samples_size:int,
         train_acquisition_size:int,
         fix_train_samples_dataset:bool,
 
-        test_factor:float,
+        test_samples_size:int,
         small_test_proportion_of_test:float,
         fix_test_samples_dataset:bool,
         fix_test_acquisition_dataset:bool,
@@ -392,6 +398,7 @@ def create_train_and_test_gp_acquisition_datasets(
         fix_train_acquisition_dataset:bool,
 
         dimension:int,
+        replacement:bool=False,
         randomize_params:bool=False,
         xvalue_distribution: Union[Distribution,str]="uniform",
         observation_noise:bool=False,
@@ -404,7 +411,7 @@ def create_train_and_test_gp_acquisition_datasets(
         lambda_min:Optional[float]=None,
         lambda_max:Optional[float]=None,
 
-        expansion_factor:int=1,
+        test_expansion_factor:int=1,
         
         loguniform:bool=True, pre_offset:Optional[float]=None, fix_n_candidates:bool=True,
         train_n_candidates:Optional[int]=None, test_n_candidates:Optional[int]=None,
@@ -418,21 +425,9 @@ def create_train_and_test_gp_acquisition_datasets(
         check_cached=False,
         load_dataset=True
     ):
-    train_samples_size = math.ceil(train_acquisition_size / expansion_factor)
-
-    total_samples_dataset_size = math.ceil(train_samples_size * (1 + test_factor))
-
-    ### Calculate test size
-    test_samples_size = total_samples_dataset_size - train_samples_size
-    ## Could alternatively calculate test size like this if going by
-    ## proportions of an original dataset:
-    # test_proportion = test_factor / (1 + test_factor)
-    # train_proportion = 1 - test_proportion
-    # train_samples_size, test_samples_size = get_lengths_from_proportions(
-    #     total_samples_dataset_size, [train_proportion, test_proportion])
-
     if not check_cached:
         print(f"Small test proportion of test: {small_test_proportion_of_test:.4f}")
+        test_factor = (test_samples_size * test_expansion_factor) / train_acquisition_size
         # small_test_proportion_of_test = 1 / ((1 / small_test_proportion_of_train_and_small_test - 1) * test_factor)
         small_test_proportion_of_train_and_small_test = 1 / (1 + 1 / (small_test_proportion_of_test * test_factor))
         print(f"Small test proportion of train + small test: {small_test_proportion_of_train_and_small_test:.4f}")
@@ -456,20 +451,24 @@ def create_train_and_test_gp_acquisition_datasets(
         outcome_transform=outcome_transform,
         standardize_outcomes=standardize_outcomes,
         lambda_min=lambda_min, lambda_max=lambda_max,
-        expansion_factor=expansion_factor, loguniform=loguniform,
+        loguniform=loguniform,
         pre_offset=pre_offset if loguniform else None, batch_size=batch_size,
         device=gp_gen_device, cache=cache_datasets,
         give_improvements=False,
         fix_n_samples=fix_n_samples,
         y_cand_indices=y_cand_indices,
-        check_cached=check_cached, load_dataset=load_dataset)
+        replacement=replacement,
+        check_cached=check_cached,
+        load_dataset=load_dataset)
 
     train_aq_dataset = create_gp_acquisition_dataset(
         train_samples_size, lazy=lazy_train,
         fix_gp_samples=fix_train_samples_dataset,
         fix_acquisition_samples=fix_train_acquisition_dataset,
         get_true_gp_stats=get_train_true_gp_stats,
-        name="train", **common_kwargs, **train_n_points_kwargs)
+        name="train",
+        acquisition_size=train_acquisition_size,
+        **common_kwargs, **train_n_points_kwargs)
 
     test_dataset_kwargs = dict(lazy=lazy_test,
         fix_gp_samples=fix_test_samples_dataset,
@@ -485,9 +484,12 @@ def create_train_and_test_gp_acquisition_datasets(
             and fix_test_acquisition_dataset and cache_datasets:
         print("Making small test acquisition dataset and complement")
         small_test_aq_dataset = create_gp_acquisition_dataset(
-            small_test_size, name="small-test", **test_dataset_kwargs)
+            small_test_size, name="small-test",
+            acquisition_size=small_test_size * test_expansion_factor,
+            **test_dataset_kwargs)
         small_test_complement_aq_dataset = create_gp_acquisition_dataset(
             small_test_complement_size, name="small-test-complement",
+            acquisition_size=small_test_complement_size * test_expansion_factor,
             **test_dataset_kwargs)
         if isinstance(small_test_aq_dataset, AcquisitionDataset) and \
             isinstance(small_test_complement_aq_dataset, AcquisitionDataset):
@@ -500,7 +502,9 @@ def create_train_and_test_gp_acquisition_datasets(
             test_aq_dataset = None
     else:
         test_aq_dataset = create_gp_acquisition_dataset(
-            test_samples_size, name="test", **test_dataset_kwargs)
+            test_samples_size, name="test",
+            acquisition_size=test_samples_size * test_expansion_factor,
+            **test_dataset_kwargs)
         if isinstance(test_aq_dataset, AcquisitionDataset):
             small_test_aq_dataset, _ = test_aq_dataset.random_split(
                 [small_test_proportion_of_test, 1 - small_test_proportion_of_test])
@@ -567,7 +571,8 @@ def get_gp_acquisition_dataset_configs(args: argparse.Namespace, device=None):
     outcome_transform, outcome_transform_args = get_outcome_transform(
         args, device=device)
 
-    gp_realization_config = dict(
+    function_samples_config = dict(
+        #### GP settings
         # Dimension of the optimization problem
         dimension=args.dimension,
         # whether to randomize the GP parameters for training data
@@ -576,19 +581,32 @@ def get_gp_acquisition_dataset_configs(args: argparse.Namespace, device=None):
         xvalue_distribution="uniform",
         observation_noise=False,
         models=models,
-        model_probabilities=None
+        model_probabilities=None,
+
+        #### Dataset size
+        train_samples_size=args.train_samples_size,
+        test_samples_size=args.test_samples_size,
     )
 
-    ################## Settings for dataset size and generation ####################
-    dataset_size_config = dict(
-        # The size of the training acquisition dataset
+    acquisition_dataset_config = dict(
         train_acquisition_size=args.train_acquisition_size,
-        # The amount that the dataset is expanded to save compute of GP realizations
-        expansion_factor=args.expansion_factor,
+        test_expansion_factor=args.test_expansion_factor,
         # Whether to fix the training dataset function samples
         # (as opposed to generating them randomly with each epoch)
-        fix_train_samples_dataset=True
+        fix_train_samples_dataset=True,
+
+        small_test_proportion_of_test=1.0,
+
+        replacement=args.replacement,
+        
+        # The following two should be kept as they are -- ALWAYS want to fix the
+        # test. As long as the acqisition dataset is fixed, then whether the
+        # function samples dataset is fixed doesn't matter.
+        fix_test_samples_dataset=False,
+        fix_test_acquisition_dataset=True,
     )
+    if not acquisition_dataset_config['fix_train_samples_dataset']:
+        acquisition_dataset_config['replacement'] = False
 
     ########## Set number of history and candidate points generation ###############
     n_points_config = dict(
@@ -638,39 +656,11 @@ def get_gp_acquisition_dataset_configs(args: argparse.Namespace, device=None):
     )
 
     return {
-        "gp_realization_config": gp_realization_config,
-        "dataset_size_config": dataset_size_config,
+        "function_samples_config": function_samples_config,
+        "acquisition_dataset_config": acquisition_dataset_config,
         "n_points_config": n_points_config,
         "dataset_transform_config": dataset_transform_config
     }
-
-
-def get_gp_acquisition_dataset_test_configs(args: argparse.Namespace):
-    test_factor = getattr(args, "test_factor", None)
-    if test_factor is None:
-        if args.test_acquisition_size is None:
-            raise ValueError("Either test_factor or test_acquisition_size should be specified")
-        else:
-            test_factor = args.test_acquisition_size / args.train_acquisition_size
-    else:
-        if args.test_acquisition_size is None:
-            test_factor = test_factor
-        else:
-            raise ValueError("Only one of test_factor or test_acquisition_size should be specified")
-
-    return dict(
-        ## How many times bigger the big test dataset is than the train dataset, > 0
-        ## test_factor=1 means same size, test_factor=0.5 means half the size, etc
-        test_factor=test_factor, # 3.0
-        ## The proportion of the test dataset that is used for evaluating the model
-        ## after each epoch, between 0 and 1
-        small_test_proportion_of_test=1.0,
-        # The following two should be kept as they are -- ALWAYS want to fix the
-        # test. As long as the acqisition dataset is fixed, then whether the
-        # function samples dataset is fixed doesn't matter.
-        fix_test_samples_dataset=False,
-        fix_test_acquisition_dataset=True,
-    )
 
 
 def create_train_test_gp_acq_datasets_helper(
@@ -679,19 +669,15 @@ def create_train_test_gp_acq_datasets_helper(
         check_cached=False,
         load_dataset=True
     ):
-    test_dataset_config = get_gp_acquisition_dataset_test_configs(args)
-    
     dataset_kwargs = {
-        **gp_af_dataset_configs["gp_realization_config"],
-        **gp_af_dataset_configs["dataset_size_config"],
+        **gp_af_dataset_configs["function_samples_config"],
+        **gp_af_dataset_configs["acquisition_dataset_config"],
         **gp_af_dataset_configs["n_points_config"],
         **gp_af_dataset_configs["dataset_transform_config"]
     }
 
     lamda_min, lamda_max = get_lamda_min_max(args)
-    other_kwargs = dict(
-        **test_dataset_config,
-        
+    other_kwargs = dict(        
         get_train_true_gp_stats=GET_TRAIN_TRUE_GP_STATS,
         get_test_true_gp_stats=GET_TEST_TRUE_GP_STATS,
         cache_datasets=CACHE_DATASETS,
@@ -719,7 +705,7 @@ def create_train_test_gp_acq_datasets_helper(
         if train_aq_dataset is not None:
             # print("Training function samples dataset size:", len(train_dataset))
             print("Original training acquisition dataset size parameter:",
-                  gp_af_dataset_configs["dataset_size_config"]["train_acquisition_size"])
+                  gp_af_dataset_configs["acquisition_dataset_config"]["train_acquisition_size"])
             print("Training acquisition dataset size:", len(train_aq_dataset),
                 "number of batches:", len(train_aq_dataset) // args.batch_size,
                 len(train_aq_dataset) % args.batch_size)
@@ -817,28 +803,35 @@ def add_gp_acquisition_dataset_args(parser):
     )
     ## Dataset Train and Test Size
     parser.add_argument(
-        '--train_acquisition_size', 
+        '--train_samples_size', 
         type=int, 
-        help='Size of the train acqusition dataset',
+        help='Size of the train samples dataset',
         required=True
     )
     parser.add_argument(
-        '--test_acquisition_size', 
+        '--test_samples_size',
         type=int, 
-        help='Size of the test acqusition dataset (optional)'
-    )
-    parser.add_argument(
-        '--test_factor', 
-        type=float, 
-        help='Size of the test acqusition dataset as a proportion of train_acquisition_size (optional)'
+        help='Size of the test samples dataset',
+        required=True
     )
 
     ############################ Acquisition dataset settings ##########################
     parser.add_argument(
-        '--expansion_factor',
+        '--train_acquisition_size', 
+        type=int, 
+        help='Size of the train acqusition dataset that is based on the train samples dataset',
+        required=True
+    )
+    parser.add_argument(
+        '--test_expansion_factor',
         type=int,
         default=1,
-        help='The amount that the dataset is expanded to save compute of GP realizations'
+        help='The factor that the test dataset samples is expanded to get the test acquisition dataset'
+    )
+    parser.add_argument(
+        '--replacement',
+        action='store_true',
+        help='Whether to sample with replacement for the acquisition dataset. Default is False.'
     )
     parser.add_argument(
         '--train_n_candidates',

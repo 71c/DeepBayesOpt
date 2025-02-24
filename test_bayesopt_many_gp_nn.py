@@ -115,13 +115,13 @@ model_and_info_plot_names = [
 ]
 
 # Assume that all the configs are the same
-gp_realization_config = configs[0]["gp_realization_config"]
+function_samples_config = configs[0]["function_samples_config"]
 dataset_transform_config = configs[0]["dataset_transform_config"]
 gp_sampler = configs[0]["gp_sampler"]
 
 dimensions = set()
-if 'dimension' in gp_realization_config:
-    dimensions.add(gp_realization_config['dimension'])
+if 'dimension' in function_samples_config:
+    dimensions.add(function_samples_config['dimension'])
 if hasattr(nn_models[0], 'dimension'):
     dimensions.add(nn_models[0].dimension)
 dimensions.add(get_dimension(gp_sampler.get_model(0)))
@@ -145,7 +145,7 @@ opt_config = {
 }
 config = {
     'dim': dim,
-    'observation_noise': gp_realization_config['observation_noise'],
+    'observation_noise': function_samples_config['observation_noise'],
     'randomize_params': gp_sampler.randomize_params,
     'model_and_info_names': model_and_info_names,
     'outcome_transform': dataset_transform_config['outcome_transform'],

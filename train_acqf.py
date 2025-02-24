@@ -185,18 +185,18 @@ def get_command_line_options(options: dict[str, Any]):
     # TODO: In the future, could do this more automatically rather than hard-coding
     # everything.
     options = {k.split('.')[-1]: v for k, v in options.items()}
-    expansion_factor = options['expansion_factor']
     cmd_opts_sample_dataset = {
         k: options.get(k)
         for k in ['dimension', 'kernel', 'lengthscale',
-                  'randomize_params', 'outcome_transform', 'sigma']
+                  'randomize_params', 'outcome_transform', 'sigma',
+                  'train_samples_size', 'test_samples_size']
     }
     cmd_opts_sample_dataset['standardize_dataset_outcomes'] = options['standardize_outcomes']
-    cmd_opts_sample_dataset['train_acquisition_size'] = options['train_samples_size'] * expansion_factor
-    cmd_opts_sample_dataset['test_acquisition_size'] = options['test_samples_size'] * expansion_factor
 
     cmd_opts_acquisition_dataset = {
-        'expansion_factor': expansion_factor,
+        'train_acquisition_size': options['train_acquisition_size'],
+        'test_expansion_factor': options['test_expansion_factor'],
+        'replacement': options['replacement'],
         'train_n_candidates': options['n_candidates'],
         'test_n_candidates': options['n_candidates'],
         **{
@@ -222,7 +222,7 @@ def get_command_line_options(options: dict[str, Any]):
             # method=policy_gradient
             'include_alpha', 'learn_alpha', 'initial_alpha', 'alpha_increment',
             # method=gittins
-            'normalize_gi_loss', 'lamda_min', 'lamda_max', 'lamda',
+            'gi_loss_normalization', 'lamda_min', 'lamda_max', 'lamda',
             # method=mse_ei
             'learn_tau', 'initial_tau', 'softplus_batchnorm',
             'softplus_batchnorm_momentum', 'positive_linear_at_end',

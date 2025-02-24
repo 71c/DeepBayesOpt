@@ -1,13 +1,12 @@
 from functools import partial
 import os
-from re import L
 import torch
 from botorch.models.gp_regression import SingleTaskGP
 
 from torch.utils.data import IterableDataset, DataLoader
 
 from dataset_with_models import ModelsWithParamsList, TupleWithModel, create_classes
-from function_samples_dataset import FunctionSamplesDataset, GaussianProcessRandomDataset, RepeatedFunctionSamplesIterableDataset, FunctionSamplesItem
+from function_samples_dataset import FunctionSamplesDataset, GaussianProcessRandomDataset, ResizedFunctionSamplesIterableDataset, FunctionSamplesItem
 
 from utils import resize_iterable, uniform_randint, get_uniform_randint_generator, max_pad_tensors_batch, pad_tensor
 from utils import SizedIterableMixin, len_or_inf, save_json, load_json
@@ -285,7 +284,8 @@ class FunctionSamplesAcquisitionDataset(
                  n_samples:str="all", give_improvements:bool=True,
                  min_n_candidates=2,
                  min_history=1, max_history=None,
-                 dataset_size_factor:Optional[int]=None,
+                 acquisition_size:Optional[int]=None,
+                 replacement=False,
                  y_cand_indices:Union[str,Sequence[int]]="all"):
         r"""
         Args:
@@ -400,12 +400,12 @@ class FunctionSamplesAcquisitionDataset(
 
         # Need to save these so that we can copy in random_split
         self.base_dataset = dataset
-        self.dataset_size_factor = dataset_size_factor
+        self.acquisition_size = acquisition_size
+        self.replacement = replacement
 
-        if dataset_size_factor is None:
-            dataset_size_factor = 1
-        elif not isinstance(dataset_size_factor, int) or dataset_size_factor <= 0:
-            raise ValueError(f"dataset_size_factor should be a positive integer, but got {dataset_size_factor=}")
+        if acquisition_size is not None:
+            if not isinstance(acquisition_size, int) or acquisition_size <= 0:
+                raise ValueError(f"acquisition_size should be a positive integer, but got {acquisition_size=}")
         
         if y_cand_indices == "all":
             self._y_cand_indices = "all"
@@ -427,11 +427,11 @@ class FunctionSamplesAcquisitionDataset(
             # However, can't check that it doesn't have __getitem__ because it
             # could be that it does have it but it's not implemented.
 
-            if dataset_size_factor == 1:
+            if acquisition_size is None:
                 self._data_iterable = dataset
             else:
-                self._data_iterable = RepeatedFunctionSamplesIterableDataset(
-                    dataset, dataset_size_factor)
+                self._data_iterable = ResizedFunctionSamplesIterableDataset(
+                    dataset, acquisition_size, repeat_samples=True)
             
             self._size = len_or_inf(self._data_iterable)
 
@@ -444,16 +444,19 @@ class FunctionSamplesAcquisitionDataset(
             base_dataset_size = len(dataset)
             if not isinstance(base_dataset_size, int) or base_dataset_size <= 0:
                 raise ValueError(f"len(dataset) should be a positive integer, but got len(dataset)={base_dataset_size}")
-            if dataset_size_factor == 1:
+            if acquisition_size is None:
                 self._size = base_dataset_size
-                self._data_iterable = DataLoader(
-                    dataset, batch_size=None, shuffle=True)
             else:
-                self._size = dataset_size_factor * base_dataset_size
-                self._data_iterable = DataLoader(
-                    dataset, batch_size=None,
-                    sampler=torch.utils.data.RandomSampler(
-                        dataset, replacement=False, num_samples=self._size))
+                self._size = acquisition_size
+            self._data_iterable = DataLoader(
+                dataset,
+                batch_size=None,
+                sampler=torch.utils.data.RandomSampler(
+                    dataset,
+                    replacement=replacement,
+                    num_samples=self._size
+                )
+            )
     
     def _init_params(self):
         return (self.base_dataset,), dict(
@@ -463,7 +466,8 @@ class FunctionSamplesAcquisitionDataset(
             min_n_candidates=self.min_n_candidates,
             min_history=self.min_history,
             max_history=self.max_history,
-            dataset_size_factor=self.dataset_size_factor,
+            acquisition_size=self.acquisition_size,
+            replacement=self.replacement,
             y_cand_indices=self._y_cand_indices
         )
 
