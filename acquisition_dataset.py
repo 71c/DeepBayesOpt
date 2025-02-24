@@ -6,12 +6,15 @@ from botorch.models.gp_regression import SingleTaskGP
 from torch.utils.data import IterableDataset, DataLoader
 
 from dataset_with_models import ModelsWithParamsList, TupleWithModel, create_classes
-from function_samples_dataset import FunctionSamplesDataset, GaussianProcessRandomDataset, ResizedFunctionSamplesIterableDataset, FunctionSamplesItem
+from function_samples_dataset import (
+    FunctionSamplesDataset, GaussianProcessRandomDataset,
+    ResizedFunctionSamplesIterableDataset, FunctionSamplesItem)
 
-from utils import resize_iterable, uniform_randint, get_uniform_randint_generator, max_pad_tensors_batch, pad_tensor
+from utils import (get_lengths_from_proportions, iterable_is_finite, uniform_randint,
+                   get_uniform_randint_generator, max_pad_tensors_batch, pad_tensor)
 from utils import SizedIterableMixin, len_or_inf, save_json, load_json
 
-from typing import Optional, List, Tuple, Union
+from typing import Optional, List, Union
 from collections.abc import Sequence
 
 import warnings
@@ -23,9 +26,6 @@ from tictoc import tic, tocl
 torch.set_default_dtype(torch.double)
 
 
-# TODO: Could make it so that acqf_params are in here too
-# so that GI lambda values can be stored and costant for the test dataset,
-# but it's not absolutely necessary
 class AcquisitionDatasetModelItem(TupleWithModel):
     """
     x_hist shape: `n_hist x d`
@@ -104,14 +104,16 @@ class AcquisitionDatasetBatch(TupleWithModel):
 
 
 @staticmethod
-def _collate_train_acquisition_function_samples(samples_list, has_models, cached_pads=False):
+def _collate_train_acquisition_function_samples(
+    samples_list, has_models, cached_pads=False):
     give_improvements = samples_list[0].give_improvements
     for x in samples_list:
         if not isinstance(x, AcquisitionDatasetModelItem):
-            raise TypeError("All items in samples_list should be AcquisitionDatasetModelItem")
+            raise TypeError(
+                "All items in samples_list should be AcquisitionDatasetModelItem")
         if x.give_improvements != give_improvements:
-            raise ValueError(
-                "All items in samples_list should have the same value for give_improvements")
+            raise ValueError("All items in samples_list should have the same value for "
+                             "give_improvements")
         if x.has_model != has_models:
             raise ValueError(
                 "All items in samples_list should have the same value for has_models " \
@@ -217,7 +219,8 @@ def _get_dataloader(self, batch_size=32, shuffle=None,
         shuffle = True  # Default to shuffle=True for map-style datasets
 
     if 'collate_fn' in kwargs:
-        raise ValueError("collate_fn should not be specified in get_dataloader; we do it for you")
+        raise ValueError(
+            "collate_fn should not be specified in get_dataloader; we do it for you")
 
     self._has_cached_pads = getattr(self, '_has_cached_pads', False)
     if self._has_cached_pads or cache_pads:
@@ -239,12 +242,13 @@ def _get_dataloader(self, batch_size=32, shuffle=None,
                 # vals_cand is a tensor of shape (n_cand, something)
                 
                 y_hist_padded = pad_tensor(y_hist, max_hist, dim=0, add_mask=False)
-                vals_cand_padded = pad_tensor(vals_cand, max_cand, dim=0, add_mask=False)
+                vals_cand_pad = pad_tensor(vals_cand, max_cand, dim=0, add_mask=False)
                 hist_mask = _make_mask((max_hist, 1), 0, y_hist.size(0), y_hist.device)
-                cand_mask = _make_mask((max_cand, 1), 0, vals_cand.size(0), vals_cand.device)
+                cand_mask = _make_mask(
+                    (max_cand, 1), 0, vals_cand.size(0), vals_cand.device)
                 
                 item._padded_tensors = (x_hist_padded, y_hist_padded, x_cand_padded,
-                                        vals_cand_padded, hist_mask, cand_mask)
+                                        vals_cand_pad, hist_mask, cand_mask)
             tocl()
             self._has_cached_pads = True
 
@@ -256,7 +260,8 @@ def _get_dataloader(self, batch_size=32, shuffle=None,
                         collate_fn=collate_fn, **kwargs)
 
 
-AcquisitionDataset._collate_train_acquisition_function_samples = _collate_train_acquisition_function_samples
+AcquisitionDataset._collate_train_acquisition_function_samples \
+    = _collate_train_acquisition_function_samples
 AcquisitionDataset.get_dataloader = _get_dataloader
 
 
@@ -293,24 +298,24 @@ class FunctionSamplesAcquisitionDataset(
                 The base dataset from which to generate training data for
                 acquisition functions.
             
-            n_candidate_points (default: 1): The number of candidate points
-                to generate for each training example.
+            n_candidate_points (default: 1):
+                The number of candidate points to generate for each training example.
                 Can be:
                     - A positive integer, in which case the number of candidate
-                        points is fixed to that value.
+                    points is fixed to that value.
                     - A tuple of two positive integers (min, max), in which case
-                        the number of candidate points is chosen uniformly at
-                        random from min to max.
+                    the number of candidate points is chosen uniformly at
+                    random from min to max.
                     - A string "uniform", in which case the number of candidate
-                        points is chosen uniformly at random from
-                        `[min_n_candidates...n_samples-1]`.
+                    points is chosen uniformly at random from
+                    `[min_n_candidates...n_samples-1]`.
                     - A string "binomial", in which case the number of candidate
-                        points is chosen from a binomial distribution with
-                        parameters n_samples and 0.5, conditioned on being
-                        between `min_n_candidates` and n_samples-1.
+                    points is chosen from a binomial distribution with
+                    parameters n_samples and 0.5, conditioned on being
+                    between `min_n_candidates` and n_samples-1.
 
-            n_samples (str; default: "all"): The number of samples to use from
-                the dataset each iteration.
+            n_samples (str; default: "all"):
+                The number of samples to use from the dataset each iteration.
                 - If "all", all samples are used.
                 - If "uniform", a uniform random number of samples is used each
                 iteration. Specifically,
@@ -324,26 +329,26 @@ class FunctionSamplesAcquisitionDataset(
                     n_samples is chosen uniformly in
                     [n_candidate_points+min_history...n].
             
-            give_improvements (bool): Whether to generate improvement values as
-                targets instead of raw y-values of the candidate points.
+            give_improvements (bool):
+                Whether to generate improvement values as targets instead of raw
+                y-values of the candidate points.
             
-            min_n_candidates (int): The minimum number of candidate points for
-                every iteration. Only used if n_candidate_points is "uniform" or
-                "binomial"; ignored otherwise.
+            min_n_candidates (int):
+                The minimum number of candidate points for every iteration. Only used
+                if n_candidate_points is "uniform" or "binomial"; ignored otherwise.
             
-            min_history (int): The minimum number of history points (default: 1).
+            min_history (int):
+                The minimum number of history points (default: 1).
 
-            max_history (int): The maximum number of history points (default: None).
+            max_history (int):
+                The maximum number of history points (default: None).
             
-            dataset_size_factor (Optional[int]): If the base dataset is a
-                map-style dataset
-                (i.e. a ListMapFunctionSamplesDataset or MapFunctionSamplesSubset),
-                this parameter specifies the expansion factor for the dataset
-                size. The dataset size is determined by the size of the base
-                dataset multiplied by this factor. Default is 1.
-                If the base dataset is an iterable-style dataset
-                (i.e. GaussianProcessRandomDataset), then this
-                parameter should not be specified.
+            acquisition_size (int or None):
+                The size of the acquisition dataset. If None, the size is the same
+                as the base dataset.
+            
+            replacement (bool):
+                Whether to sample with replacement from the dataset. Default is False.
             
             y_cand_indices (Union[str, Sequence[int]], default: "all"):
                 Which indices of the y values to include from the dataset as the
@@ -353,12 +358,15 @@ class FunctionSamplesAcquisitionDataset(
         # whether to generate `n_candidates` first or not
         self._gen_n_candidates_first = True
         if isinstance(n_candidate_points, str):
-            if not (n_candidate_points == "uniform" or n_candidate_points == "binomial"):
-                raise ValueError(f"Invalid value for n_candidate_points: {n_candidate_points}")
+            if not (
+                n_candidate_points == "uniform" or n_candidate_points == "binomial"):
+                raise ValueError(
+                    f"Invalid value for n_candidate_points: {n_candidate_points}")
             self._gen_n_candidates_first = False
         elif isinstance(n_candidate_points, int):
             if n_candidate_points <= 0:
-                raise ValueError(f"n_candidate_points should be positive, but got n_candidate_points={n_candidate_points}")
+                raise ValueError("n_candidate_points should be positive, "
+                                 f"but got n_candidate_points={n_candidate_points}")
             self._gen_n_candidates = lambda: n_candidate_points
         else: # n_candidate_points is a tuple (or list) of two integers
             try:
@@ -366,10 +374,16 @@ class FunctionSamplesAcquisitionDataset(
                         isinstance(n_candidate_points[0], int) and
                         isinstance(n_candidate_points[1], int) and
                         1 <= n_candidate_points[0] <= n_candidate_points[1]):
-                    raise ValueError(f"n_candidate_points should be a positive integer or a tuple of two integers, but got n_candidate_points={n_candidate_points}")
-                self._gen_n_candidates = get_uniform_randint_generator(*n_candidate_points)
+                    raise ValueError(
+                        "n_candidate_points should be a positive integer or a tuple of "
+                        "two integers, but got "
+                        f"n_candidate_points={n_candidate_points}")
+                self._gen_n_candidates = \
+                    get_uniform_randint_generator(*n_candidate_points)
             except TypeError:
-                raise ValueError(f"n_candidate_points should be a string, positive integer, tuple of two integers, but got n_candidate_points={n_candidate_points}")
+                raise ValueError("n_candidate_points should be a string, positive "
+                                 "integer, tuple of two integers, "
+                                 f"but got n_candidate_points={n_candidate_points}")
         self.n_candidate_points = n_candidate_points
 
         if n_samples == "all":
@@ -380,33 +394,44 @@ class FunctionSamplesAcquisitionDataset(
             raise ValueError(f"Invalid value for n_samples: {n_samples}")
         
         if not isinstance(min_n_candidates, int) or min_n_candidates <= 0:
-            raise ValueError(f"min_n_candidates should be a positive integer, but got min_n_candidates={min_n_candidates}")
+            raise ValueError("min_n_candidates should be a positive integer, but "
+                             f"got min_n_candidates={min_n_candidates}")
         self.min_n_candidates = min_n_candidates
 
         if not isinstance(min_history, int) or min_history <= 0:
-            raise ValueError(f"min_history should be a positive integer, but got min_history={min_history}")
+            raise ValueError("min_history should be a positive integer, but got "
+                             f"min_history={min_history}")
         self.min_history = min_history
 
-        if not ((isinstance(max_history, int) and max_history > 0) or max_history is None):
-            raise ValueError(f"max_history should be a positive integer or None, but got max_history={max_history}")
+        if not (
+            (isinstance(max_history, int) and max_history > 0) or max_history is None):
+            raise ValueError("max_history should be a positive integer or None, "
+                             f"but got max_history={max_history}")
         self.max_history = max_history
         
         if not isinstance(give_improvements, bool):
-            raise TypeError(f"give_improvements should be a boolean value, but got give_improvements={give_improvements}")
+            raise TypeError("give_improvements should be a boolean value, "
+                            f"but got give_improvements={give_improvements}")
         self.give_improvements = give_improvements
 
         if not isinstance(dataset, FunctionSamplesDataset):
-            raise TypeError(f"dataset should be an instance of FunctionSamplesDataset, but got {dataset=}")
+            raise TypeError("dataset should be an instance of "
+                            f"FunctionSamplesDataset, but got {dataset=}")
+        
+        if not isinstance(replacement, bool):
+            raise TypeError("replacement should be a boolean value, "
+                            f"but got replacement={replacement}")
+
+        if acquisition_size is not None:
+            if not isinstance(acquisition_size, int) or acquisition_size <= 0:
+                raise ValueError("acquisition_size should be a positive integer, "
+                                 f"but got {acquisition_size=}")
 
         # Need to save these so that we can copy in random_split
         self.base_dataset = dataset
         self.acquisition_size = acquisition_size
         self.replacement = replacement
 
-        if acquisition_size is not None:
-            if not isinstance(acquisition_size, int) or acquisition_size <= 0:
-                raise ValueError(f"acquisition_size should be a positive integer, but got {acquisition_size=}")
-        
         if y_cand_indices == "all":
             self._y_cand_indices = "all"
         elif isinstance(y_cand_indices, Sequence):
@@ -435,15 +460,20 @@ class FunctionSamplesAcquisitionDataset(
             
             self._size = len_or_inf(self._data_iterable)
 
-            if n_samples == "uniform" and isinstance(dataset, GaussianProcessRandomDataset):
-                warnings.warn("n_samples='uniform' for GaussianProcessRandomDataset is supported but wasteful. Consider using n_samples='all' and setting n_datapoints_random_gen in the dataset instead.")
+            if n_samples == "uniform" and \
+                isinstance(dataset, GaussianProcessRandomDataset):
+                warnings.warn(
+                    "n_samples='uniform' for GaussianProcessRandomDataset is "
+                    "supported but wasteful. Consider using n_samples='all' "
+                    "and setting n_datapoints_random_gen in the dataset instead.")
         else: # e.g. ListMapFunctionSamplesDataset
             # Then it should be a map-style dataset and have __getitem__.
             assert callable(getattr(dataset, "__getitem__", None))
 
             base_dataset_size = len(dataset)
             if not isinstance(base_dataset_size, int) or base_dataset_size <= 0:
-                raise ValueError(f"len(dataset) should be a positive integer, but got len(dataset)={base_dataset_size}")
+                raise ValueError("len(dataset) should be a positive integer, "
+                                 f"but got len(dataset)={base_dataset_size}")
             if acquisition_size is None:
                 self._size = base_dataset_size
             else:
@@ -500,28 +530,15 @@ class FunctionSamplesAcquisitionDataset(
     @property
     def _model_sampler(self):
         if not hasattr(self.base_dataset, "_model_sampler"):
-            raise RuntimeError(f"The base dataset of this {self.__class__.__name__} is a {self.base_dataset.__class__.__name__} "
+            raise RuntimeError(f"The base dataset of this {self.__class__.__name__} is "
+                               f"a {self.base_dataset.__class__.__name__} "
                                " which does not have the _model_sampler attribute")
         return self.base_dataset._model_sampler
 
     # __len__ is implemented by SizedIterableMixin
-    
-    def copy_with_expanded_size(self, size_factor: int) -> "FunctionSamplesAcquisitionDataset":
-        """Creates a copy of the dataset with an expanded size.
 
-        Args:
-            size_factor (int):
-                The factor by which to expand the size of the dataset.
-
-        Returns:
-            FunctionSamplesAcquisitionDataset:
-                A new instance of the dataset with the expanded size.
-        """
-        args, kwargs = self._init_params()
-        kwargs['dataset_size_factor'] = size_factor
-        return type(self)(*args, **kwargs)
-
-    def copy_with_new_size(self, size: Optional[int] = None) -> "FunctionSamplesAcquisitionDataset":
+    def copy_with_new_size(
+            self, size: Optional[int] = None) -> "FunctionSamplesAcquisitionDataset":
         """Creates a copy of the dataset with a new size.
         If the base dataset has the `copy_with_new_size` method then it is used
         to create a copy of the base dataset with the specified size.
@@ -530,25 +547,20 @@ class FunctionSamplesAcquisitionDataset(
         size.
 
         Args:
-            size (int or None): the new size of the dataset. If None, the size
-                is not changed.
+            size (int or None):
+                the new size of the dataset. If None, the size is not changed.
 
         Returns:
             FunctionSamplesAcquisitionDataset:
                 A new instance of the dataset with the specified size.
         """
-        if self._dataset_is_iterable_style:
-            return type(self)(
-                resize_iterable(self.base_dataset, size),
-                self.n_candidate_points,
-                self.n_samples, self.give_improvements, self.min_n_candidates)
-        else:
-            if size is None:
-                size = len(self.base_dataset)
-            if not isinstance(size, int) or size <= 0:
-                raise ValueError("size should be a positive integer or None")
-            size_factor = math.ceil(size / len(self.base_dataset))
-            return self.copy_with_expanded_size(size_factor)
+        if size is None:
+            size = self.acquisition_size
+        if not isinstance(size, int) or size <= 0:
+            raise ValueError("size should be a positive integer or None")
+        args, kwargs = self._init_params()
+        kwargs['acquisition_size'] = size
+        return type(self)(*args, **kwargs)
 
     def _pick_random_n_samples_and_n_candidates(self, n_datapoints_original):
         min_history = self.min_history
@@ -560,7 +572,9 @@ class FunctionSamplesAcquisitionDataset(
 
             # Need to have at least `min_history` history points
             if not (n_candidates + min_history <= n_datapoints_original):
-                raise ValueError(f"n_datapoints_original={n_datapoints_original} should be at least n_candidates+min_history={n_candidates}+{min_history}")
+                raise ValueError(
+                    f"n_datapoints_original={n_datapoints_original} should be at "
+                    f"least n_candidates+min_history={n_candidates}+{min_history}")
 
             # n_history = n_samples - n_candidates <= max_history
             # n_samples <= max_history + n_candidates
@@ -577,13 +591,16 @@ class FunctionSamplesAcquisitionDataset(
             min_n_candidates = self.min_n_candidates
 
             if not (min_n_candidates + min_history <= n_datapoints_original):
-                raise ValueError(f"n_datapoints_original={n_datapoints_original} should be at least min_n_candidates+min_history={min_n_candidates}+{min_history}")
+                raise ValueError(
+                    f"n_datapoints_original={n_datapoints_original} should be at least "
+                    f"min_n_candidates+min_history={min_n_candidates}+{min_history}")
 
             # generate n_samples first; either "all" or "uniform"
             if self.n_samples == "all":
                 n_samples = n_datapoints_original
             elif self.n_samples == "uniform":
-                n_samples = uniform_randint(min_n_candidates+min_history, n_datapoints_original)
+                n_samples = uniform_randint(
+                    min_n_candidates+min_history, n_datapoints_original)
 
             # generate n_candidates
             # n_history = n_samples - n_candidates >= min_history
@@ -594,9 +611,11 @@ class FunctionSamplesAcquisitionDataset(
             if self.n_candidate_points == "uniform":
                 n_candidates = uniform_randint(min_cands, n_samples-min_history)
             elif self.n_candidate_points == "binomial":
-                n_candidates = int(torch.distributions.Binomial(n_samples, 0.5).sample())
+                n_candidates = int(
+                    torch.distributions.Binomial(n_samples, 0.5).sample())
                 while not (min_cands <= n_candidates <= n_samples-min_history):
-                    n_candidates = int(torch.distributions.Binomial(n_samples, 0.5).sample())
+                    n_candidates = int(
+                        torch.distributions.Binomial(n_samples, 0.5).sample())
         
         if torch.is_tensor(n_samples):
             n_samples = n_samples.item()
@@ -607,7 +626,8 @@ class FunctionSamplesAcquisitionDataset(
         # y_values has shape (n_datapoints, n_out)
         for item in self._data_iterable:
             if not isinstance(item, FunctionSamplesItem):
-                raise TypeError(f"item should be an instance of FunctionSamplesItem, but got {item=}")
+                raise TypeError("item should be an instance of FunctionSamplesItem, "
+                                f"but got {item=}")
             x_values, y_values = item.x_values, item.y_values
             if item.has_model:
                 model, model_params = item._model, item.model_params
@@ -616,7 +636,8 @@ class FunctionSamplesAcquisitionDataset(
             
             n_datapoints = x_values.shape[0]
 
-            n_samples, n_candidate = self._pick_random_n_samples_and_n_candidates(n_datapoints)
+            n_samples, n_candidate = \
+                self._pick_random_n_samples_and_n_candidates(n_datapoints)
 
             rand_idx = torch.randperm(n_datapoints)
             candidate_idx = rand_idx[:n_candidate]
@@ -642,31 +663,59 @@ class FunctionSamplesAcquisitionDataset(
                 give_improvements=self.give_improvements)
 
     def random_split(self, lengths: Sequence[Union[int, float]]):
-        # Need to convert from lengths to proportions if absolute lengths were
-        # given...
+        if not iterable_is_finite(self):
+            raise ValueError("Can't split infinite FunctionSamplesAcquisitionDataset")
+
         lengths_is_proportions = math.isclose(sum(lengths), 1) and sum(lengths) <= 1
-        if not lengths_is_proportions:
+        if lengths_is_proportions:
+            af_ds_lens = get_lengths_from_proportions(
+                total_length=len(self), proportions=lengths)
+        else:
+            # Need to convert from lengths to proportions if absolute lengths were
+            # given...            
             if sum(lengths) == len(self):
+                af_ds_lens = lengths
                 lengths = [length / len(self) for length in lengths]
             else:
                 # Assume that sum(lengths) == len(self.base_dataset)
-                pass
-
+                if sum(lengths) != len(self.base_dataset):
+                    raise ValueError(
+                        "sum(lengths) should be equal to len(self.base_dataset) if "
+                        "lengths is not a list of proportions and does not sum "
+                        "to len(self)")
+                proportions = [length / len(self.base_dataset) for length in lengths]
+                af_ds_lens = get_lengths_from_proportions(
+                    total_length=len(self), proportions=proportions)
+        
+        split_base_dataset = self.base_dataset.random_split(lengths)
         return [
-            type(self)(split_dataset, self.n_candidate_points, self.n_samples,
-                       self.give_improvements, self.min_n_candidates,
-                       self.dataset_size_factor)
-            for split_dataset in self.base_dataset.random_split(lengths)]
+            type(self)(
+                split_ds,
+                n_candidate_points=self.n_candidate_points,
+                n_samples=self.n_samples,
+                give_improvements=self.give_improvements,
+                min_n_candidates=self.min_n_candidates,
+                min_history=self.min_history,
+                max_history=self.max_history,
+                acquisition_size=size,
+                replacement=self.replacement,
+                y_cand_indices=self._y_cand_indices
+            ) for size, split_ds in zip(af_ds_lens, split_base_dataset)
+        ]
 
 
 class CostAwareAcquisitionDataset(
     AcquisitionDataset, IterableDataset, SizedIterableMixin):
+    """Adds lambda values to the candidate values in the base dataset.
+    The log of the lambda values are drawn uniformly at random
+    from the interval [log(lambda_min), log(lambda_max)]."""
     def __init__(self,
                  base_dataset: AcquisitionDataset,
                  lambda_min:float,
                  lambda_max:Optional[float]=None):
         if not isinstance(base_dataset, AcquisitionDataset):
-            raise ValueError("CostAwareAcquisitionDataset: base_dataset must be a AcquisitionDataset")
+            raise ValueError("CostAwareAcquisitionDataset: base_dataset must "
+                             "be a AcquisitionDataset")
         self.base_dataset = base_dataset
 
         self._size = len_or_inf(base_dataset) # for SizedIterableMixin
@@ -679,7 +728,8 @@ class CostAwareAcquisitionDataset(
             lambda_max = None
         elif lambda_max is not None:
             if not (isinstance(lambda_max, float) and lambda_max > 0):
-                raise ValueError(f"lambda_max must be a positive float; was {lambda_max}")
+                raise ValueError(
+                    f"lambda_max must be a positive float; was {lambda_max}")
             if not (lambda_min <= lambda_max):
                 raise ValueError("lambda_min must be <= lambda_max")
             self._log_lambda_diff = math.log(lambda_max) - self._log_lambda_min
@@ -710,25 +760,22 @@ class CostAwareAcquisitionDataset(
     @property
     def _model_sampler(self):
         if not hasattr(self.base_dataset, "_model_sampler"):
-            raise RuntimeError(f"The base dataset of this {self.__class__.__name__} is a {self.base_dataset.__class__.__name__} "
+            raise RuntimeError(f"The base dataset of this {self.__class__.__name__} is "
+                               f"a {self.base_dataset.__class__.__name__} "
                                " which does not have the _model_sampler attribute")
         return self.base_dataset._model_sampler
     
-    def copy_with_expanded_size(self, size_factor: int) -> "CostAwareAcquisitionDataset":
-        return type(self)(
-            self.base_dataset.copy_with_expanded_size(size_factor),
-            lambda_min=self.lambda_min,
-            lambda_max=self.lambda_max
-        )
-    
-    def copy_with_new_size(self, size: Optional[int] = None) -> "CostAwareAcquisitionDataset":
+    def copy_with_new_size(
+            self, size: Optional[int] = None) -> "CostAwareAcquisitionDataset":
         return type(self)(
             self.base_dataset.copy_with_new_size(size),
             lambda_min=self.lambda_min,
             lambda_max=self.lambda_max
         )
 
-    def random_split(self, lengths: Sequence[Union[int, float]]) -> List['CostAwareAcquisitionDataset']:
+    def random_split(
+            self, lengths: Sequence[Union[int, float]]
+        ) -> List['CostAwareAcquisitionDataset']:
         return [
             type(self)(ds, lambda_min=self.lambda_min, lambda_max=self.lambda_max)
             for ds in self.base_dataset.random_split(lengths)

@@ -1,11 +1,9 @@
 from abc import ABC, abstractmethod
 import copy
-import math
 from typing import Optional, List, Tuple, Union
 from collections.abc import Sequence
 
 import os
-import warnings
 from tqdm import tqdm
 from tictoc import tic, tocl
 import json
@@ -86,7 +84,8 @@ class RandomModelSampler:
         initial_params_list = []
         for i in range(len(models)):
             if not isinstance(models[i], SingleTaskGP):
-                raise UnsupportedError(f"models[{i}] should be a SingleTaskGP instance.")
+                raise UnsupportedError(
+                    f"models[{i}] should be a SingleTaskGP instance.")
 
             if hasattr(models[i], "index") or hasattr(models[i], "initial_params"):
                 models[i] = copy.deepcopy(models[i])
@@ -182,7 +181,9 @@ class ModelsWithParamsList:
         """Initializes a ModelsWithParamsList object.
 
         Args:
-            models_and_params (List[Tuple[SingleTaskGP, dict]]): A list of tuples where each tuple contains a SingleTaskGP model and its corresponding parameters.
+            models_and_params (List[Tuple[SingleTaskGP, dict]]):
+                A list of tuples where each tuple contains a SingleTaskGP
+                model and its corresponding parameters.
         """
         self._models_and_params = models_and_params
     
@@ -220,7 +221,8 @@ class ModelsWithParamsList:
         return f"ModelsWithParamsList({str(self._models_and_params)})"
 
     def __eq__(self, other):
-        return type(self) == type(other) and self._models_and_params == other._models_and_params
+        return type(self) == type(other) \
+            and self._models_and_params == other._models_and_params
 
 
 class TupleWithModel:
@@ -238,6 +240,8 @@ class TupleWithModel:
         self._kwargs = {}
 
         if hasattr(self, "args_names"):
+            nam = self.__class__.__name__
+
             if len(items) != len(self.args_names):
                 if len(items) == 0:
                     if set(self.args_names) <= set(kwargs.keys()):
@@ -246,43 +250,52 @@ class TupleWithModel:
                             items.append(kwargs.pop(name))
                     else:
                         missing_keys = set(self.args_names) - set(kwargs.keys())
-                        missing_keys_str = ", ".join(map(repr, missing_keys))
-                        raise ValueError(f"{self.__class__.__name__}.__init__: Missing key{'' if len(missing_keys) == 1 else 's'} {missing_keys_str} in {self.__class__.__name__}")
+                        miss_keys_str = ", ".join(map(repr, missing_keys))
+                        tmp = f"key{'' if len(missing_keys) == 1 else 's'}"
+                        raise ValueError(
+                            f"{nam}.__init__: Missing {tmp} {miss_keys_str} in {nam}")
                 elif len(items) == len(self.args_names) + 1 and model is None:
                     model = items[-1]
                     items = items[:-1]
-                elif len(items) == len(self.args_names) + 2 and model is None and model_params is None:
+                elif len(items) == len(self.args_names) + 2 \
+                    and model is None and model_params is None:
                     model_params = items[-1]
                     model = items[-2]
                     items = items[:-2]
                 else:
-                    raise ValueError(f"{self.__class__.__name__}.__init__: Number of items in should be {len(self.args_names)} but got {len(items)}")
+                    raise ValueError(
+                        f"{nam}.__init__: Number of items in "
+                        f"should be {len(self.args_names)} but got {len(items)}")
 
             for key in kwargs:
                 if key in self.args_names:
                     raise ValueError(
-                        f"{self.__class__.__name__}.__init__: Keyword argument {key} should not be in the keyword arguments " \
-                        f"because it is already the name of an element in the tuple of {self.__class__.__name__}.")
+                        f"{nam}.__init__: Keyword argument {key} should not be in the "
+                        "keyword arguments because it is already the name of an "
+                        f"element in the tuple of {nam}.")
         
         self._items = items
 
         if hasattr(self, "kwargs_names"):
+            nam = self.__class__.__name__
+
             given_kwargs_keys = set(kwargs.keys())
             expected_kwargs_keys = set(self.kwargs_names)
             if given_kwargs_keys < expected_kwargs_keys:
                 missing_keys = expected_kwargs_keys - given_kwargs_keys
-                missing_keys_str = ", ".join(map(repr, missing_keys))
-                raise ValueError(f"{self.__class__.__name__}.__init__: Keyword arguments for {self.__class__.__name__} " \
-                    f"should be {self.kwargs_names}; "\
-                    f"missing key{'' if len(missing_keys) == 1 else 's'} {missing_keys_str}")
+                miss_keys_str = ", ".join(map(repr, missing_keys))
+                tmp = f"key{'' if len(missing_keys) == 1 else 's'}"
+                raise ValueError(f"{nam}.__init__: Keyword arguments for {nam} "
+                    f"should be {self.kwargs_names}; missing {tmp} {miss_keys_str}")
             elif given_kwargs_keys > expected_kwargs_keys:
                 extra_keys = given_kwargs_keys - expected_kwargs_keys
                 extra_keys_str = ", ".join(map(repr, extra_keys))
-                raise ValueError(f"{self.__class__.__name__}.__init__: Keyword arguments for {self.__class__.__name__} " \
-                    f"should be {self.kwargs_names} but got extra key" \
-                    f"{'' if len(extra_keys) == 1 else 's'} {extra_keys_str}")
+                tmp = f"key{'' if len(extra_keys) == 1 else 's'}"
+                raise ValueError(
+                    f"{nam}.__init__: Keyword arguments for {nam} should "
+                    f"be {self.kwargs_names} but got extra {tmp} {extra_keys_str}")
             elif given_kwargs_keys != expected_kwargs_keys:
-                raise ValueError(f"{self.__class__.__name__}.__init__: Keyword arguments for {self.__class__.__name__} " \
+                raise ValueError(f"{nam}.__init__: Keyword arguments for {nam} "
                     f"should be {self.kwargs_names} but got {given_kwargs_keys}")
         
         self._kwargs = kwargs
@@ -298,10 +311,13 @@ class TupleWithModel:
         pass
     
     def _set_model(self, model, model_params=None):
+        nam = self.__class__.__name__
         if model is not None:
             if isinstance(model, ModelsWithParamsList):
                 if model_params is not None:
-                    raise ValueError(f"{self.__class__.__name__}.__init__: model_params should not be specified if model is a ModelsWithParamsList instance.")
+                    raise ValueError(
+                        f"{nam}.__init__: model_params should not "
+                        "be specified if model is a ModelsWithParamsList instance.")
             elif isinstance(model, SingleTaskGP):
                 if model_params is None:
                     # need to copy the data, otherwise everything will be the same
@@ -310,10 +326,11 @@ class TupleWithModel:
                 self.model_params = model_params
                 self.model_index = model.index if hasattr(model, "index") else None
             else:
-                raise ValueError(f"{self.__class__.__name__}.__init__: model should be a SingleTaskGP or ModelsWithParamsList instance.")
+                raise ValueError(f"{nam}.__init__: model should be a SingleTaskGP or "
+                                 "ModelsWithParamsList instance.")
         elif model_params is not None:
-            raise ValueError(
-                f"{self.__class__.__name__}.__init__: model_params should not be specified if model is not specified.")
+            raise ValueError(f"{nam}.__init__: model_params should not be specified "
+                             "if model is not specified.")
         self._model = model
 
     @property
@@ -423,7 +440,8 @@ class TupleWithModel:
         return f"{self.__class__.__name__}({ret})"
     
     def __eq__(self, other):
-        return type(self) == type(other) and self._tuple == other._tuple and self._kwargs == other._kwargs
+        return type(self) == type(other) and self._tuple == other._tuple \
+            and self._kwargs == other._kwargs
     
     def to_dict(self):
         if hasattr(self, "args_names"):
@@ -456,14 +474,16 @@ class TupleWithModel:
         else: # then assume that model is a SingleTaskGP instance
             if 'model_index' in x:
                 if model_sampler is None:
-                    raise ValueError("model_sampler should be specified if model information is present.")
+                    raise ValueError("model_sampler should be specified if model "
+                                     "information is present.")
                 model_index = x.pop('model_index')
                 model = model_sampler._models[model_index]
                 model_params = x.pop('model_params', None)
             else:
                 assert 'model_params' not in x
                 if model_sampler is not None:
-                    raise ValueError("model_sampler should not be specified if model information is not present.")
+                    raise ValueError("model_sampler should not be specified if model "
+                                     "information is not present.")
                 model, model_params = None, None
         return cls(**x, model=model, model_params=model_params)
 
@@ -508,7 +528,8 @@ class DatasetWithModels(Dataset, ABC):
         if not (hasattr(cls, '_tuple_class') and
                 issubclass(cls._tuple_class, TupleWithModel)):
             raise AttributeError(
-                f"{cls.__name__} must have attribute '_tuple_class' that is a subclass of TupleWithModel.")
+                f"{cls.__name__} must have attribute '_tuple_class' that is a "
+                "subclass of TupleWithModel.")
         
         if not (hasattr(cls, '_base_class')):
             raise AttributeError(
@@ -517,22 +538,26 @@ class DatasetWithModels(Dataset, ABC):
         if not (hasattr(cls, '_map_base_class') and
                 issubclass(cls._map_base_class, cls._base_class)):
             raise AttributeError(
-                f"{cls.__name__} must have attribute '_map_base_class' that is a subclass of {cls._base_class.__name__}.")
+                f"{cls.__name__} must have attribute '_map_base_class' that is a "
+                f"subclass of {cls._base_class.__name__}.")
         
         if not (hasattr(cls, '_list_map_class') and
                 issubclass(cls._list_map_class, cls._map_base_class)):
             raise AttributeError(
-                f"{cls.__name__} must have attribute '_list_map_class' that is a subclass of {cls._map_base_class.__name__}.")
+                f"{cls.__name__} must have attribute '_list_map_class' that is a "
+                f"subclass of {cls._map_base_class.__name__}.")
         
         if not (hasattr(cls, '_lazy_map_class') and
                 issubclass(cls._lazy_map_class, cls._map_base_class)):
             raise AttributeError(
-                f"{cls.__name__} must have attribute '_lazy_map_class' that is a subclass of {cls._map_base_class.__name__}.")
+                f"{cls.__name__} must have attribute '_lazy_map_class' that is a "
+                f"subclass of {cls._map_base_class.__name__}.")
                 
         return Dataset.__new__(cls)
 
     @abstractmethod
-    def random_split(self, lengths: Sequence[Union[int, float]]) -> List['DatasetWithModels']:
+    def random_split(
+        self, lengths: Sequence[Union[int, float]]) -> List['DatasetWithModels']:
         """Randomly splits the dataset into multiple subsets.
 
         Args:
@@ -594,7 +619,8 @@ class DatasetWithModels(Dataset, ABC):
 
     def fix_samples(self, n_realizations:Optional[int]=None, lazy=True):
         if self.data_is_fixed:
-            raise ValueError(f"{self.__class__.__name__} is already fixed so don't need to fix.")
+            raise ValueError(
+                f"{self.__class__.__name__} is already fixed so don't need to fix.")
         if not isinstance(lazy, bool):
             raise ValueError("'lazy' parameter must be a boolean.")
         if lazy:
@@ -605,14 +631,13 @@ class DatasetWithModels(Dataset, ABC):
     def has_models(self):
         if not hasattr(self, "_model_sampler"):
             raise RuntimeError(
-                f"{self.__class__.__name__}, a subclass of {self._base_class.__name__}, "\
-                    "must have '_model_sampler' attribute "
-                    )
+                f"{self.__class__.__name__}, a subclass of {self._base_class.__name__}, "
+                    "must have '_model_sampler' attribute ")
         if not isinstance(self._model_sampler, (type(None), RandomModelSampler)):
             raise RuntimeError(
-                f"{self.__class__.__name__}, a subclass of {self._base_class.__name__}, "\
-                    "'_model_sampler' attribute must be a RandomModelSampler instance or None. "
-                    )
+                f"{self.__class__.__name__}, a subclass of {self._base_class.__name__}, "
+                "'_model_sampler' attribute must be a RandomModelSampler instance or None. "
+            )
         return self._model_sampler is not None
 
     @property
@@ -628,7 +653,8 @@ class DatasetWithModels(Dataset, ABC):
         it = tqdm(dataset_resized) if verbose else dataset_resized
         for item in it:
             if not isinstance(item, cls._tuple_class):
-                raise RuntimeError(f"Item should be an instance of {cls._tuple_class.__name__}")
+                raise RuntimeError(
+                    f"Item should be an instance of {cls._tuple_class.__name__}")
             yield item
 
     def _get_items_generator_and_size(self, n_samples: Optional[int]=None,
@@ -652,8 +678,10 @@ class DatasetWithModels(Dataset, ABC):
 
         if n_samples is None:
             if not iterable_is_finite(dataset):
-                raise ValueError(f"Can't store an infinite-sized {dataset.__class__.__name__} if n_samples "\
-                                 "is not specified. Either specify n_samples or use a finite-sized dataset.")
+                raise ValueError(
+                    f"Can't store an infinite-sized {dataset.__class__.__name__} if "
+                    "n_samples is not specified. Either specify n_samples or use a "
+                    "finite-sized dataset.")
             # The dataset is finite and we want to save all of it
             new_data_iterable = dataset
         else:
@@ -662,8 +690,12 @@ class DatasetWithModels(Dataset, ABC):
             try:
                 new_data_iterable = resize_iterable(dataset, n_samples)
             except ValueError as e:
-                raise ValueError(f"To store finite samples from this {dataset.__class__.__name__}, cannot make n_samples > len(dataset) since it " \
-                                 f"is not a SizedInfiniteIterableMixin. Got {n_samples=} and len(dataset)={len(dataset)}") from e
+                raise ValueError(
+                    f"To store finite samples from this {dataset.__class__.__name__}, "
+                    "cannot make n_samples > len(dataset) since it "
+                    f"is not a SizedInfiniteIterableMixin. Got {n_samples=} and "
+                    f"len(dataset)={len(dataset)}"
+                ) from e
         
         items_generator = self._get_items_generator(
             new_data_iterable, verbose, verbose_message)
@@ -693,14 +725,17 @@ class DatasetWithModels(Dataset, ABC):
             try:
                 class_type = cls._subclasses[class_name]
             except KeyError:
-                raise RuntimeError(f"Subclass {class_name} of {cls.__name__} does not exist")
+                raise RuntimeError(
+                    f"Subclass {class_name} of {cls.__name__} does not exist")
 
             if not issubclass(class_type, cls._base_class):
-                raise RuntimeError(f"{class_type.__name__} is not a subclass of {cls._base_class.__name__} so cannot load")
+                raise RuntimeError(f"{class_type.__name__} is not a subclass of "
+                                   f"{cls._base_class.__name__} so cannot load")
             
             return class_type.load(dir_name, verbose)
         
-        raise NotImplementedError(f"{cls.__name__} does not support loading from a file.")
+        raise NotImplementedError(
+            f"{cls.__name__} does not support loading from a file.")
     
     def save_samples(self, dir_name: str, n_realizations:Optional[int]=None,
              verbose:bool=True):
@@ -721,7 +756,8 @@ class DatasetWithModels(Dataset, ABC):
         if self.data_is_loaded():
             message = f"Saving realizations from {self.__class__.__name__}"
         else:
-            message = f"Generating and saving realizations from {self.__class__.__name__}"
+            message = "Generating and saving realizations from " \
+                      f"{self.__class__.__name__}"
         items_generator, length = self._get_items_generator_and_size(
             n_realizations, verbose=not self.data_is_loaded(),
             verbose_message=message)
@@ -749,8 +785,10 @@ class DatasetWithModels(Dataset, ABC):
             TupleWithModel: The sample at the specified index.
         """
         if isinstance(self, IterableDataset):
-            raise TypeError(f"{self.__class__.__name__} is an IterableDataset and should not be accessed by index.")
-        raise NotImplementedError("Subclass must implement __getitem__ for map-style datasets")
+            raise TypeError(f"{self.__class__.__name__} is an IterableDataset and "
+                            "should not be accessed by index.")
+        raise NotImplementedError(
+            "Subclass must implement __getitem__ for map-style datasets")
 
 
 class MapDatasetWithModels(DatasetWithModels):
@@ -761,7 +799,12 @@ class MapDatasetWithModels(DatasetWithModels):
     
     `__getitem__` is partially implemented for slices where it returns a
     `MapDatasetWithModelsSubset` instance, so subclasses should check for
-    slices and use super() accordingly."""
+    slices and use super() accordingly.
+    
+    This class also provides a mechanism to cache computed values, like so:
+    ```
+    self._cached_value = value
+    ```"""
 
     # Corresponds to MapDatasetWithModelsSubset
     _map_subset_class: type
@@ -771,7 +814,8 @@ class MapDatasetWithModels(DatasetWithModels):
         if not (hasattr(cls, '_map_subset_class') and
                 issubclass(cls._map_subset_class, cls._map_base_class)):
             raise AttributeError(
-                f"{cls.__name__} must have attribute '_map_subset_class' that is a subclass of {cls._map_base_class.__name__}.")
+                f"{cls.__name__} must have attribute '_map_subset_class' that is a "
+                f"subclass of {cls._map_base_class.__name__}.")
         return cls._base_class.__new__(cls)
 
     @property
@@ -779,7 +823,11 @@ class MapDatasetWithModels(DatasetWithModels):
         return True
 
     def __getattr__(self, name):
+        # Note: Implmenting __getattr__ provides a fallback for attributes that
+        # are not found first when looking up the attribute.
         if name == '_cache':
+            # Then this means that self does not currently have the attribute '_cache',
+            # so we should set it to an empty dictionary and return it.
             self._cache = {}
             return self._cache
         if name.startswith("_cached_"):
@@ -818,7 +866,8 @@ class MapDatasetWithModels(DatasetWithModels):
         if isinstance(index, slice):
             indices = list(range(*index.indices(len(self))))
             return self._map_subset_class(self, indices)
-        raise NotImplementedError("Subclass must implement __getitem__ for non-slice keys")
+        raise NotImplementedError(
+            "Subclass must implement __getitem__ for non-slice keys")
     
     @abstractmethod
     def __len__(self):
@@ -870,32 +919,39 @@ class ListMapDatasetWithModels(MapDatasetWithModels):
             model_sampler: Optional RandomModelSampler instance to associate
         """
         if not (model_sampler is None or isinstance(model_sampler, RandomModelSampler)):
-            raise ValueError("model_sampler should be None or a RandomModelSampler instance")
+            raise ValueError(
+                "model_sampler should be None or a RandomModelSampler instance")
 
         if all(isinstance(x, self._tuple_class) for x in data):
             if all(x.has_model for x in data):
                 if model_sampler is None:
-                    raise ValueError(f"model_sampler should not be None if all items are {self._tuple_class.__name__} with models.")
+                    raise ValueError("model_sampler should not be None if all items "
+                                     f"are {self._tuple_class.__name__} with models.")
             elif all(not x.has_model for x in data):
                 pass
             else:
-                raise ValueError("All items in data should either have models or not have models")
+                raise ValueError(
+                    "All items in data should either have models or not have models")
 
             for item in data:
                 if item.has_model:
                     if item.model_index is None:
-                        raise ValueError(f"model_index should be specified for each {self._tuple_class.__name__}")
+                        raise ValueError("model_index should be specified for each "
+                                         f"{self._tuple_class.__name__}")
                     else:
                         # print("Model index:", item.model_index)
                         # print("Model indices:", [
                         #     model.index for model in model_sampler._models])
                         if not (model_sampler._models[item.model_index] is item._model):
                             raise ValueError(
-                                f"{model_sampler._models[item.model_index]=}, {item._model=}, but expected to match")
+                                f"{model_sampler._models[item.model_index]=}, "
+                                f"{item._model=}, but expected to match")
         elif all(isinstance(x, tuple) for x in data):
-            return type(self).__init__(self, [self._tuple_class(*x) for x in data], model_sampler)
+            return type(self).__init__(
+                self, [self._tuple_class(*x) for x in data], model_sampler)
         else:
-            raise ValueError(f"All items in data should be of type {self._tuple_class.__name__}")
+            raise ValueError(
+                f"All items in data should be of type {self._tuple_class.__name__}")
 
         self._data = data
         self._model_sampler = model_sampler
@@ -962,10 +1018,12 @@ class ListMapDatasetWithModels(MapDatasetWithModels):
         for item in list_of_dicts:
             if has_models:
                 if 'model_index' not in item:
-                    raise ValueError("Model information should be present in the data if models are saved.")
+                    raise ValueError("Model information should be present in the data "
+                                     "if models are saved.")
             else:
                 if 'model_index' in item or 'model_params' in item:
-                    raise ValueError("Model information should not be present in the data if models are not saved.")
+                    raise ValueError("Model information should not be present in the "
+                                     "data if models are not saved.")
             data.append(cls._tuple_class.from_dict(item, model_sampler))
         ret = cls(data, model_sampler)
 
@@ -985,13 +1043,15 @@ class ListMapDatasetWithModels(MapDatasetWithModels):
                 raise ValueError(f"Cache key {key} is not present in both caches")
             value2 = cache2[key]
             if type(value1) is not type(value2):
-                raise ValueError(f"Value corresponding to cache key {key} has different types in the two caches")
+                raise ValueError(f"Value corresponding to cache key {key} has "
+                                 "different types in the two caches")
             if isinstance(value1, float):
                 new_cache[key] = (value1 * size_1 + value2 * size_2) / (size_1 + size_2)
             elif isinstance(value1, dict):
                 new_cache[key] = cls._combine_caches(value1, value2, size_1, size_2)
             else:
-                raise ValueError(f"Value corresponding to cache key {key} has an unsupported type")
+                raise ValueError(f"Value corresponding to cache key {key} "
+                                 "has an unsupported type")
         return new_cache
 
     def concat(self, other: 'ListMapDatasetWithModels') -> 'ListMapDatasetWithModels':
@@ -1005,11 +1065,13 @@ class ListMapDatasetWithModels(MapDatasetWithModels):
             that is the concatenation of the two datasets.
         """
         if not isinstance(other, self._list_map_class):
-            raise ValueError(f"Other dataset must be an instance of {self._list_map_class.__name__}")
+            raise ValueError(
+                f"Other dataset must be an instance of {self._list_map_class.__name__}")
         
         # Create a new model sampler if both datasets have models
         if self.has_models != other.has_models:
-            raise ValueError("Both datasets must have models or neither can have models.")
+            raise ValueError(
+                "Both datasets must have models or neither can have models.")
         
         new_other_data = other._data
         if self.has_models:
@@ -1033,9 +1095,11 @@ class ListMapDatasetWithModels(MapDatasetWithModels):
 
         # Concatenate caches if they exist
         if bool(self._cache) != bool(other._cache):
-            raise ValueError("Both datasets must have caches or neither can have caches")
+            raise ValueError(
+                "Both datasets must have caches or neither can have caches")
         if self._cache:
-            new_dataset._cache = self._combine_caches(self._cache, other._cache, len(self), len(other))
+            new_dataset._cache = self._combine_caches(
+                self._cache, other._cache, len(self), len(other))
 
         return new_dataset
     
@@ -1063,8 +1127,10 @@ class ListMapDatasetWithModels(MapDatasetWithModels):
         """
         if not (isinstance(dataset, cls._base_class) and
                 isinstance(dataset, IterableDataset)):
-            raise TypeError(f"dataset should be an instance of both {cls._base_class.__name__} and IterableDataset")
-        message = f"Saving realizations from {dataset.__class__.__name__} into {cls.__name__}"
+            raise TypeError("dataset should be an instance of both "
+                            f"{cls._base_class.__name__} and IterableDataset")
+        message = f"Saving realizations from " \
+                f"{dataset.__class__.__name__} into {cls.__name__}"
         items_generator, size = dataset._get_items_generator_and_size(
             n_realizations, verbose, verbose_message=message)
         data = list(items_generator)
@@ -1108,7 +1174,8 @@ class LazyMapDatasetWithModels(MapDatasetWithModels):
     @property
     def _model_sampler(self):
         if not hasattr(self.dataset, "_model_sampler"):
-            raise RuntimeError(f"The base dataset of this {self.__class__.__name__} is a {self.dataset.__class__.__name__} "
+            raise RuntimeError(f"The base dataset of this {self.__class__.__name__} "
+                               f"is a {self.dataset.__class__.__name__} "
                                " which does not have the _model_sampler attribute")
         return self.dataset._model_sampler
 
@@ -1141,7 +1208,8 @@ class MapDatasetWithModelsSubset(Subset, MapDatasetWithModels):
         """
         # MapDatasetWithModels
         if not isinstance(dataset, self._map_base_class):
-            raise ValueError(f"dataset should be an instance of {self._map_base_class.__name__}")
+            raise ValueError(
+                f"dataset should be an instance of {self._map_base_class.__name__}")
         
         # Equivalent to self.dataset = dataset; self.indices = indices
         Subset.__init__(self, dataset, indices)
@@ -1193,7 +1261,8 @@ def create_classes(dataset_base_name="DatasetWithModels",
     if tuple_class is None:
         raise ValueError("tuple_class should be specified in create_classes.")
     if not issubclass(tuple_class, TupleWithModel):
-        raise ValueError("create_classes: tuple_class should be a subclass of TupleWithModel.")
+        raise ValueError(
+            "create_classes: tuple_class should be a subclass of TupleWithModel.")
     
     def _docstring_replace(docstring):
         return docstring.replace("DatasetWithModels", dataset_base_name) \
@@ -1279,6 +1348,7 @@ if __name__ == "__main__":
     boo2 = ListDataset.load("boo")#[1:]
     print(list(boo2))
 
-    print(isinstance(boo2, MapBaseDataset), isinstance(boo2, ListDataset), isinstance(boo2, MapSubset))
+    print(isinstance(boo2, MapBaseDataset),
+          isinstance(boo2, ListDataset), isinstance(boo2, MapSubset))
 
     print(MapSubset.__doc__)

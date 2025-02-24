@@ -6,7 +6,7 @@ import torch
 from torch.utils.data import IterableDataset, DataLoader
 from torch.distributions import Uniform, Normal, Independent, Distribution
 from botorch.models.gp_regression import SingleTaskGP
-from botorch.exceptions import UnsupportedError, BotorchTensorDimensionError
+from botorch.exceptions import UnsupportedError
 from botorch.models.transforms.outcome import OutcomeTransform, Standardize
 import gpytorch
 from gpytorch.likelihoods import GaussianLikelihood, FixedNoiseGaussianLikelihood
@@ -15,7 +15,7 @@ import math
 
 from dataset_with_models import TupleWithModel, create_classes, RandomModelSampler
 from utils import (FirstNIterable, SizedInfiniteIterableMixin, SizedIterableMixin,
-                   get_lengths_from_proportions, iterable_is_finite,
+                   get_lengths_from_proportions,
                    invert_outcome_transform, concatenate_outcome_transforms,
                    get_gp, len_or_inf, resize_iterable)
 
@@ -109,7 +109,8 @@ class TransformedFunctionSamplesIterableDataset(
     @property
     def _model_sampler(self):
         if not hasattr(self.base_dataset, "_model_sampler"):
-            raise RuntimeError(f"The base dataset of this {self.__class__.__name__} is a {self.base_dataset.__class__.__name__} "
+            raise RuntimeError(f"The base dataset of this {self.__class__.__name__} "
+                               f"is a {self.base_dataset.__class__.__name__} "
                                " which does not have the _model_sampler attribute")
         return self.base_dataset._model_sampler
     
@@ -173,10 +174,16 @@ class TransformedFunctionSamplesIterableDataset(
 
 
 class TransformedLazyMapFunctionSamplesDataset(MapFunctionSamplesDataset):
-    def __init__(self, base_dataset: Union[LazyMapFunctionSamplesDataset, "TransformedLazyMapFunctionSamplesDataset"],
-                 transform):
+    def __init__(
+            self,
+            base_dataset: Union[
+                LazyMapFunctionSamplesDataset,
+                "TransformedLazyMapFunctionSamplesDataset"],
+            transform
+        ):
         if not isinstance(base_dataset, (LazyMapFunctionSamplesDataset, self.__class__)):
-            raise ValueError("base_dataset must be a LazyMapFunctionSamplesDataset or TransformedLazyMapFunctionSamplesDataset")
+            raise ValueError("base_dataset must be a LazyMapFunctionSamplesDataset "
+                             "or TransformedLazyMapFunctionSamplesDataset")
         self.dataset = base_dataset
         self._transform_func = transform
         self._data = [
@@ -186,7 +193,8 @@ class TransformedLazyMapFunctionSamplesDataset(MapFunctionSamplesDataset):
     @property
     def _model_sampler(self):
         if not hasattr(self.dataset, "_model_sampler"):
-            raise RuntimeError(f"The base dataset of this {self.__class__.__name__} is a {self.dataset.__class__.__name__} "
+            raise RuntimeError(f"The base dataset of this {self.__class__.__name__} "
+                               f"is a {self.dataset.__class__.__name__} "
                                " which does not have the _model_sampler attribute")
         return self.dataset._model_sampler
 
@@ -338,7 +346,8 @@ FunctionSamplesDataset.transform_outcomes = _transform_outcomes
 def _apply_standardize_outcome_transform(item: FunctionSamplesItem):
     return FunctionSamplesDataset._apply_outcome_transform(
         item, Standardize(m=item.get_outcome_dim()), retain_model=True)
-FunctionSamplesDataset._apply_standardize_outcome_transform = _apply_standardize_outcome_transform
+FunctionSamplesDataset._apply_standardize_outcome_transform = \
+    _apply_standardize_outcome_transform
 
 def _standardize_outcomes(self):
     return self.transform(self._apply_standardize_outcome_transform)
@@ -412,8 +421,10 @@ class GaussianProcessRandomDataset(
         """
         # exacly one of them should be specified; verify this by xor
         if not ((n_datapoints is None) ^ (n_datapoints_random_gen is None)):
-            raise ValueError("Exactly one of n_datapoints and n_datapoints_random_gen should be specified.")
-        if n_datapoints is not None and (not isinstance(n_datapoints, int) or n_datapoints <= 0):
+            raise ValueError("Exactly one of n_datapoints and n_datapoints_random_gen "
+                             "should be specified.")
+        if n_datapoints is not None and (
+            not isinstance(n_datapoints, int) or n_datapoints <= 0):
             raise ValueError("n_datapoints should be a positive integer.")
         self.n_datapoints = n_datapoints
         self.n_datapoints_random_gen = n_datapoints_random_gen
@@ -428,13 +439,16 @@ class GaussianProcessRandomDataset(
         # Set xvalue_distribution
         if xvalue_distribution == "uniform" or xvalue_distribution == "normal":
             if dimension is None:
-                raise ValueError("dimension should be specified if xvalue_distribution is 'uniform' or 'normal' string.")
+                raise ValueError("dimension should be specified if xvalue_distribution "
+                                 "is 'uniform' or 'normal' string.")
             dist_cls = {"uniform": Uniform, "normal": Normal}[xvalue_distribution]
             m = dist_cls(torch.zeros(dimension, device=device),
                         torch.ones(dimension, device=device))
             xvalue_distribution = Independent(m, 1)
         elif not isinstance(xvalue_distribution, Distribution):
-            raise ValueError(f"xvalue_distribution should be a Distribution object or 'uniform' or 'normal' string, but got {xvalue_distribution}")
+            raise ValueError(
+                "xvalue_distribution should be a Distribution object or "
+                f"'uniform' or 'normal' string, but got {xvalue_distribution}")
         self.xvalue_distribution = xvalue_distribution
 
         # If no observation noise is generated, then make the likelihood
@@ -451,14 +465,18 @@ class GaussianProcessRandomDataset(
         else:
             for i, model in enumerate(models):
                 if not isinstance(model, SingleTaskGP):
-                    raise UnsupportedError(f"models[{i}] should be a SingleTaskGP instance.")
+                    raise UnsupportedError(
+                        f"models[{i}] should be a SingleTaskGP instance.")
 
                 # Verify that the model is single-batch
                 if len(model.batch_shape) != 0:
-                    raise UnsupportedError(f"All models must be single-batch, but models[{i}] has batch shape {model.batch_shape}")
+                    raise UnsupportedError(
+                        "All models must be single-batch, but "
+                        f"models[{i}] has batch shape {model.batch_shape}")
                 # Verify that the model is single-output
                 if model.num_outputs != 1:
-                    raise UnsupportedError(f"All models must be single-output, but models[{i}] is {model.num_outputs}-output")
+                    raise UnsupportedError("All models must be single-output, but "
+                                           f"models[{i}] is {model.num_outputs}-output")
                 
                 if device is not None:
                     model.to(device)
@@ -466,10 +484,12 @@ class GaussianProcessRandomDataset(
                 if not observation_noise:
                     # If no observation noise, then keep the noise
                     # level fixed so it can't be changed by optimization.
-                    # Make it so nothing in likelihood can change by gradient-based optimization.
+                    # Make it so nothing in likelihood can change by gradient-based
+                    # optimization.
                     # Since only GaussianLikelihood is supported, we could just do
                     # model.likelihood.noise_covar.raw_noise.requires_grad_(False),
-                    # but this code is more general in case we want to support other likelihoods.
+                    # but this code is more general in case we want to support other
+                    # likelihoods.
                     for param in model.likelihood.parameters():
                         param.requires_grad_(False)
                 
@@ -482,7 +502,8 @@ class GaussianProcessRandomDataset(
                         # This actually won't work because it could be outside of the
                         # allowable range. But keeping this note here ...
                         # model.likelihood.noise_covar is a HomoskedasticNoise instance
-                        # Could also do model.initialize(**{'likelihood.noise_covar.raw_noise': 0.0})
+                        # Could also do model.initialize(
+                        #   **{'likelihood.noise_covar.raw_noise': 0.0})
                         # Equivalent because GaussianLikelihood has @raw_noise.setter
                         # model.likelihood.raw_noise = 0.0
                         
@@ -494,7 +515,9 @@ class GaussianProcessRandomDataset(
                         )
                 elif isinstance(model.likelihood, FixedNoiseGaussianLikelihood):
                     raise UnsupportedError(
-                        f"models[{i}] has FixedNoiseGaussianLikelihood which is not supported in GaussianProcessRandomDataset. Use GaussianLikelihood instead.")
+                        f"models[{i}] has FixedNoiseGaussianLikelihood which is not "
+                        "supported in GaussianProcessRandomDataset. "
+                        "Use GaussianLikelihood instead.")
 
                     # ## Could alternatively do it like this but that's too
                     # ## messy/buggy/not necessary:
@@ -506,8 +529,10 @@ class GaussianProcessRandomDataset(
                     #     # there is also a @second_noise.setter
                     #     model.likelihood.second_noise = 0.0
                 else:
+                    tmp = model.likelihood.__class__.__name__
                     raise UnsupportedError(
-                        f"models[{i}] has likelihood {model.likelihood.__class__.__name__} which is not supported in GaussianProcessRandomDataset. Use GaussianLikelihood instead.")
+                        f"models[{i}] has likelihood {tmp} which is not supported in "
+                        "GaussianProcessRandomDataset. Use GaussianLikelihood instead.")
         
         self._model_sampler = RandomModelSampler(
             models, model_probabilities, randomize_params=randomize_params)
@@ -539,7 +564,8 @@ class GaussianProcessRandomDataset(
         )
 
     def save(self, dir_name: str, verbose:bool=True):
-        raise NotImplementedError("GaussianProcessRandomDataset does not support saving to a file")
+        raise NotImplementedError(
+            "GaussianProcessRandomDataset does not support saving to a file")
 
     def copy_with_new_size(self, dataset_size:int):
         """Create a copy of the dataset with a new dataset size.
@@ -573,7 +599,8 @@ class GaussianProcessRandomDataset(
         if dataset_size == math.inf:
             if lengths_is_proportions:
                 raise ValueError(
-                    "The GaussianProcessRandomDataset should not be infinite if lengths is a list of proportions")
+                    "The GaussianProcessRandomDataset should not be infinite if "
+                    "lengths is a list of proportions")
         else:
             if lengths_is_proportions:
                 lengths = get_lengths_from_proportions(dataset_size, lengths)
@@ -599,7 +626,8 @@ class GaussianProcessRandomDataset(
         if self.n_datapoints is None: # then it's given by a distribution
             n_datapoints = self.n_datapoints_random_gen()
             if not isinstance(n_datapoints, int) or n_datapoints <= 0:
-                raise ValueError("n_datapoints_random_gen should return a positive integer.")
+                raise ValueError(
+                    "n_datapoints_random_gen should return a positive integer.")
         else:
             n_datapoints = self.n_datapoints
 
@@ -690,7 +718,8 @@ class ResizedFunctionSamplesIterableDataset(
     @property
     def _model_sampler(self):
         if not hasattr(self.base_dataset, "_model_sampler"):
-            raise RuntimeError(f"The base dataset of this {self.__class__.__name__} is a {self.base_dataset.__class__.__name__} "
+            raise RuntimeError(f"The base dataset of this {self.__class__.__name__} is "
+                               f"a {self.base_dataset.__class__.__name__} "
                                " which does not have the _model_sampler attribute")
         return self.base_dataset._model_sampler
     

@@ -782,7 +782,8 @@ def _get_xy_hist_and_cand(x_hist, y_hist, x_cand, hist_mask=None, include_y=True
         return xy_hist, x_hist_and_cand, mask
 
 
-class AcquisitionFunctionBodyPointnetV1and2(AcquisitionFunctionBodyFixedHistoryOutputDim):
+class AcquisitionFunctionBodyPointnetV1and2(
+    AcquisitionFunctionBodyFixedHistoryOutputDim):
     def __init__(self,
                  dimension:int, n_hist_out:int, n_acqf_params:int=0,
                  
@@ -828,7 +829,8 @@ class AcquisitionFunctionBodyPointnetV1and2(AcquisitionFunctionBodyFixedHistoryO
             activation_pointnet:
                 The activation function to use in the PointNet.
             include_best_y (bool, default: False):
-                Whether to include the best y value in the input to the local neural network.
+                Whether to include the best y value in the input to the local neural
+                network.
             n_pointnets (int, default: 1):
                 The number of PointNets to use. Default is 1.
         """

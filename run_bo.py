@@ -1,7 +1,6 @@
 from functools import cache
 import math
 import os
-import sys
 import torch
 from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprovement
 from botorch.utils.sampling import draw_sobol_samples
@@ -229,7 +228,6 @@ def run_bo(objective_args, bo_policy_args, gp_af_args):
         if af_octf is not None:
             add_outcome_transform(af_gp_model, af_octf)
 
-        # TODO: Make this work for Gittins index
         gp_af = gp_af_args[GP_AF_NAME_PREFIX]
         if gp_af is None:
             raise ValueError("If not using a NN AF, must specify gp_af")
