@@ -688,7 +688,8 @@ class DatasetWithModels(Dataset, ABC):
             if not isinstance(n_samples, int) or n_samples <= 0:
                 raise ValueError("n_samples should be a positive integer.")
             try:
-                new_data_iterable = resize_iterable(dataset, n_samples)
+                new_data_iterable = resize_iterable(dataset, n_samples, 
+                                                    allow_repeats=False)
             except ValueError as e:
                 raise ValueError(
                     f"To store finite samples from this {dataset.__class__.__name__}, "

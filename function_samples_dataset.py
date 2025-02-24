@@ -14,7 +14,7 @@ from gpytorch.constraints.constraints import GreaterThan
 import math
 
 from dataset_with_models import TupleWithModel, create_classes, RandomModelSampler
-from utils import (FirstNIterable, SizedInfiniteIterableMixin, SizedIterableMixin,
+from utils import (SizedInfiniteIterableMixin, SizedIterableMixin,
                    get_lengths_from_proportions,
                    invert_outcome_transform, concatenate_outcome_transforms,
                    get_gp, len_or_inf, resize_iterable)
@@ -676,8 +676,8 @@ class ResizedFunctionSamplesIterableDataset(
         self._size = new_size # Required by SizedIterableMixin; len(self) == new_size
         self.repeat_samples = repeat_samples
 
-        if new_size <= len_or_inf(base_dataset):
-            self._iterable = resize_iterable(base_dataset, new_size)
+        if not (repeat_samples and new_size > len_or_inf(self.base_dataset)):
+            self._iterable = resize_iterable(base_dataset, new_size, allow_repeats=True)
     
     def save(self, dir_name: str, verbose:bool=True):
         raise NotImplementedError(
@@ -695,23 +695,15 @@ class ResizedFunctionSamplesIterableDataset(
             repeat_samples=self.repeat_samples)
     
     def __iter__(self):
-        base_dataset_size = len_or_inf(self.base_dataset)
-        if len(self) <= base_dataset_size:
-            return iter(self._iterable)
+        if self.repeat_samples and len(self) > len_or_inf(self.base_dataset):
+            this_iter_base = LazyMapFunctionSamplesDataset(self.base_dataset)
+            sampler = torch.utils.data.RandomSampler(
+                this_iter_base, replacement=False, num_samples=len(self))
+            this_iter = DataLoader(this_iter_base, batch_size=None, sampler=sampler)
+            return iter(this_iter)
         else:
-            if self.repeat_samples:
-                this_iter_base = LazyMapFunctionSamplesDataset(self.base_dataset)
-                sampler = torch.utils.data.RandomSampler(
-                    this_iter_base, replacement=False, num_samples=len(self))
-                this_iter = DataLoader(this_iter_base, batch_size=None, sampler=sampler)
-                return iter(this_iter)
-            else:
-                for _ in range(len(self) // base_dataset_size):
-                    yield from self.base_dataset
-                remaining = len(self) % base_dataset_size
-                if remaining > 0:
-                    yield from FirstNIterable(self.base_dataset, remaining)
-    
+            return iter(self._iterable)
+
     def has_models(self):
         return self.base_dataset.has_models
     

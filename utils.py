@@ -1362,8 +1362,8 @@ class SizedIterableMixin(Iterable):
     the abstract base class `Iterable`.
 
     Attributes:
-        _size (int or inf): The size of the iterable object.
-            math.inf if the size is infinite.
+        _size (int or inf):
+            The size of the iterable object. math.inf if the size is infinite.
             Subclasses must use this attribute to hold the length of the object.
     """
     def _len_or_inf(self):
@@ -1394,10 +1394,10 @@ class SizedInfiniteIterableMixin(SizedIterableMixin):
     until the size is reached.
 
     Attributes:
-        _size (Optional[int]): The size of the iterable object.
-            inf if the size is infinite.
+        _size (int or inf):
+            The size of the iterable object. math.inf if the size is infinite.
+            Subclasses must use this attribute to hold the length of the object.
     """
-
     @abstractmethod
     def copy_with_new_size(self, size:int) -> "SizedInfiniteIterableMixin":
         """Creates a copy of the object with a new size.
@@ -1434,45 +1434,48 @@ class SizedInfiniteIterableMixin(SizedIterableMixin):
             f"Cannot call __next__ on a finitely sized {type(self)}. Use iter() first.")
 
 
-class FirstNIterable(Iterable):
+class _ResizedIterable(Iterable):
     """
-    Creates an iterable for the first 'n' elements of a given iterable.
+    Creates an iterable that resizes given iterable to desired size
 
+    If allow_repeats = False, then:
     Takes any iterable and an integer 'n', and provides an iterator
     that yields the first 'n' elements of the given iterable. If the original
     iterable contains fewer than 'n' elements, the iterator will yield only the
     available  elements without raising an error.
+    If allow_repeats = False, then:
+    repeats the given iterable until the desired number n.
 
     Args:
         iterable (iterable): The iterable to wrap.
         n (int): The number of elements to yield from the iterable.
-
-    Example:
-        >>> numbers = range(10)  # A range object is an iterable
-        >>> first_five = _FirstNIterable(numbers, 5)
-        >>> list(first_five)
-        [0, 1, 2, 3, 4]
-
-        >>> words = ["apple", "banana", "cherry", "date"]
-        >>> first_two = _FirstNIterable(words, 2)
-        >>> list(first_two)
-        ['apple', 'banana']
     """
-    def __init__(self, iterable, n):
+    def __init__(self, iterable, n, allow_repeats=False):
         if not isinstance(n, int) or n <= 0:
             raise ValueError("n should be a positive integer.")
         self.iterable = iterable
         self.n = n
+        self.allow_repeats = allow_repeats
     
     def __iter__(self):
+        allow_repeats = self.allow_repeats
+
+        n = self.n
+        i = 0
         iterator = iter(self.iterable)
-        for _ in range(self.n):
+        while i < n:
             try:
                 yield next(iterator)
+                i += 1
             except StopIteration:
-                break
+                if allow_repeats:
+                    iterator = iter(self.iterable)
+                else:
+                    break
     
     def __len__(self):
+        if self.allow_repeats:
+            return self.n
         return min(len_or_inf(self.iterable), self.n)
 
 
@@ -1498,22 +1501,20 @@ def iterable_is_finite(x):
     return len_or_inf(x) != math.inf
 
 
-def resize_iterable(it, new_len: Optional[int] = None):
-    original_len = len_or_inf(it)
-
+def resize_iterable(it, new_len: Optional[int] = None, allow_repeats=False):
     if new_len is not None:
         if not isinstance(new_len, int) or new_len <= 0:
             raise ValueError("new_len should be a positive integer")
+        original_len = len_or_inf(it)
         if new_len != original_len:
             # Weaker condition than `if isinstance(it, SizedInfiniteIterableMixin):`
             if callable(getattr(it, "copy_with_new_size", None)):
                 it = it.copy_with_new_size(new_len)
             else:
-                if new_len > original_len:
+                if not allow_repeats and new_len > original_len:
                     raise ValueError(f"{new_len=} should be <= len(it)={original_len} "
                                      "if it is not a SizedInfiniteIterableMixin")
-                it = FirstNIterable(it, new_len)
-
+                it = _ResizedIterable(it, new_len, allow_repeats=allow_repeats)
     return it
 
 
