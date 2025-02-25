@@ -7,7 +7,7 @@ import json
 import inspect
 import copy
 import math
-from typing import Any, TypeVar, Iterable, Sequence, List, Tuple, Dict, Optional, Union
+from typing import Any, Set, TypeVar, Iterable, Sequence, List, Tuple, Dict, Optional, Union
 # Python 3.11+: can do "from typing import Self"
 # Before Python 3.11: need to do the following:
 from typing_extensions import Self
@@ -1181,6 +1181,86 @@ def combine_nested_dicts(*dicts : Dict[str, Dict[K, V]]) -> Dict[str, Dict[K, V]
         ', '.join(names): combine_dicts([d[n] for d, n in zip(dicts, names)])
         for names in itertools.product(*dicts)
     }
+
+
+def group_by(items, group_function=lambda x: x):
+    """
+    Groups items by a grouping function
+    parameters:
+        items: iterable containing things
+        group_function: function that gives the same result when called on two
+            items in the same group
+    returns: a dict where the keys are results of the function and values are
+        lists of items that when passed to group_function give that key
+    """
+    group_dict = {}
+    for item in items:
+        value = group_function(item)
+        if value in group_dict:
+            group_dict[value].append(item)
+        else:
+            group_dict[value] = [item]
+    return group_dict
+
+
+def _group_by_nested_attrs(items: List[dict[K, Any]],
+                          attrs_groups_list: List[Set[K]],
+                          return_single=False):
+    if len(attrs_groups_list) == 0:
+        if return_single and len(items) == 1:
+            return items[0]
+        return items
+    initial_grouped_items = group_by(
+        items,
+        lambda x: dict_to_str({
+            k: x.get(k, None) for k in attrs_groups_list[0]
+        })
+    )
+    return {
+        k: _group_by_nested_attrs(v, attrs_groups_list[1:], return_single=return_single)
+        for k, v in initial_grouped_items.items()
+    }
+
+
+def get_values(d):
+    if type(d) is dict:
+        for v in d.values():
+            yield from get_values(v)
+    else:
+        yield d
+
+
+def group_by_nested_attrs(items: List[dict[K, Any]],
+                          attrs_groups_list: List[Set[K]]):
+    keys = set().union(*[set(item.keys()) for item in items])
+    if not all(attrs.issubset(keys) for attrs in attrs_groups_list):
+        raise ValueError("At least one group of attributes is not in the items")
+    
+    vals_dict = {
+        k: {item.get(k, None) for item in items}
+        for k in keys
+    }
+    constant_keys = {k for k in keys if len(vals_dict[k]) == 1}
+
+    attrs_groups_list = [x - constant_keys for x in attrs_groups_list]
+    attrs_groups_list = [x for x in attrs_groups_list if len(x) != 0]
+    if len(attrs_groups_list) == 0:
+        raise ValueError("No attributes to group by")
+
+    ret = _group_by_nested_attrs(items, attrs_groups_list)
+    nonconstant_keys = set()
+    for x in get_values(ret):
+        vals_dict_x = {
+            k: {item.get(k, None) for item in x}
+            for k in keys
+        }
+        nonconstant_keys_x = {k for k in keys if len(vals_dict_x[k]) > 1}
+        nonconstant_keys |= nonconstant_keys_x
+
+    if len(nonconstant_keys) != 0:
+        attrs_groups_list = [nonconstant_keys] + attrs_groups_list
+
+    return _group_by_nested_attrs(items, attrs_groups_list, return_single=True)
 
 
 def pad_tensor(vec, length, dim, add_mask=False):

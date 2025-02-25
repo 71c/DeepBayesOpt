@@ -8,7 +8,7 @@ import os
 from gp_acquisition_dataset import create_train_test_gp_acq_datasets_from_args
 from run_train import get_configs_and_model_and_paths, get_run_train_parser
 from train_acquisition_function_net import model_is_trained
-from utils import dict_to_cmd_args, save_json
+from utils import dict_to_cmd_args, group_by_nested_attrs, save_json
 from submit_dependent_jobs import CONFIG_DIR, SWEEPS_DIR, submit_dependent_jobs
 
 
@@ -447,6 +447,14 @@ def get_train_acqf_options_list(args: argparse.Namespace):
 
     if 'parameters' not in experiment_config:
         experiment_config['parameters'] = {}
+    
+    # TEST
+    # b = generate_options(base_config['parameters'])
+    # keys = sorted(list(set().union(*[set(x) for x in b])))
+    # print(len(b), len(keys))
+    # with open(os.path.join(CONFIG_DIR, 'keys.yml'), 'w') as f:
+    #     yaml.dump(keys, f)
+    # exit()
 
     # Refine the configuration
     refined_config = {
@@ -461,6 +469,20 @@ def get_train_acqf_options_list(args: argparse.Namespace):
     options_list = generate_options(refined_config['parameters'])
     with open(os.path.join(CONFIG_DIR, 'options.yml'), 'w') as f:
         yaml.dump(options_list, f)
+    
+    # # TEST
+    # # options_list[0]['odf'] = 3
+    # combined = group_by_nested_attrs(
+    #     options_list,
+    #     [{"function_samples_dataset.gp.dimension"},
+    #      {"training.method", "training.gi_loss_normalization", "training.lamda_config.lamda_min", "training.lamda_config.lamda_max", "training.lamda_config.lamda"},
+    #      {"function_samples_dataset.train_samples_size"}]
+    # )
+    # print(combined.keys())
+    # # exit()
+    # with open(os.path.join(CONFIG_DIR, 'combined.yml'), 'w') as f:
+    #     yaml.dump(combined, f)
+    # exit()
     
     return options_list
 
