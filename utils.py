@@ -1378,7 +1378,7 @@ if _REFER_TO_VALUE:
             if key == "":
                 warnings.warn(f"Warning: found an emptey key, value={value}")
 
-        return ret
+        return ret, attrs_groups_list
 
 else:
     def _group_by_nested_attrs(items: List[dict[K, Any]],
@@ -1510,10 +1510,8 @@ else:
 
         if len(nonconstant_keys_not_in_all) != 0:
             attrs_groups_list[add_extra_index] |= nonconstant_keys_not_in_all
-        
-        print(f"{attrs_groups_list=}")
-        
-        return _group_by_nested_attrs(items, attrs_groups_list, return_single=True)
+                
+        return _group_by_nested_attrs(items, attrs_groups_list, return_single=True), attrs_groups_list
 
 
 
