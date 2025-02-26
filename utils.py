@@ -1478,8 +1478,18 @@ else:
         if not are_all_disjoint(attrs_groups_list):
             raise ValueError("Attributes in the groups are not disjoint")    
         keys = set().union(*[set(item.keys()) for item in items])
-        if not all(attrs.issubset(keys) for attrs in attrs_groups_list):
-            raise ValueError("At least one group of attributes is not in the items")
+        
+        # Option 1: raise an error
+        # for attrs in attrs_groups_list:
+        #     if not attrs.issubset(keys):
+        #         raise ValueError(
+        #             "At least one group of attributes is not in the items: "
+        #             f"{attrs} is not a subset of {keys}")
+
+        # Option 2: silently remove those that we don't have
+        attrs_groups_list = [
+            attrs & keys for attrs in attrs_groups_list
+        ]
         
         vals_dict = {
             k: {item[k] for item in items if k in item}

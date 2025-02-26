@@ -534,7 +534,7 @@ class OptimizationResultsSingleMethod:
 
                 pbar.update(1)
 
-            # n_trials_per_function x 1+n_iter
+            # n_trials_per_function x 1+n_iter x 1
             function_best_y_data = np.array([r['best_y'] for r in results_func])
             # n_trials_per_function x 1+n_iter x dim
             function_best_x_data = np.array([r['best_x'] for r in results_func])

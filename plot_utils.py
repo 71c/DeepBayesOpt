@@ -223,10 +223,10 @@ def plot_nested_structure(plot_config: dict,
             data_index = v["items"]
             if isinstance(data_index, list):
                 raise ValueError
-            # Assumed to be array of shape (1+n_iter,)
-            results_this_legend.append(results_list[data_index]['best_y'])
+            best_y = results_list[data_index]['best_y']
+            assert len(best_y.shape) == 2 and best_y.shape[1] == 1
+            results_this_legend.append(best_y[:, 0])
         results_this_legend = np.array(results_this_legend)
-
         plot_optimization_trajectories_error_bars(
             ax, results_this_legend, legend_name, alpha)
     
@@ -301,9 +301,10 @@ def save_figures_from_nested_structure(
     if this_level_name == "folder":
         for folder_name, data in plot_config.items():
             items = data["items"]
-            vals = data["vals"]
             dirname = os.path.join(base_folder, folder_name)
-            save_json(vals, os.path.join(dirname, "vals.json"), indent=2)
+            
+            if "vals" in data:
+                save_json(data["vals"], os.path.join(dirname, "vals.json"), indent=2)
 
             save_figures_from_nested_structure(
                 items, results_list, next_attrs_groups, next_level_names,
@@ -313,8 +314,8 @@ def save_figures_from_nested_structure(
         info_dict = {}
         for fname_desc, data in plot_config.items():
             items = data["items"]
-
-            info_dict[fname_desc] = data["vals"]
+            if "vals" in data:
+                info_dict[fname_desc] = data["vals"]
 
             fig = get_figure_from_nested_structure(
                 items, results_list, next_attrs_groups, next_level_names, fname_desc)
@@ -324,4 +325,6 @@ def save_figures_from_nested_structure(
             fig.savefig(fpath, dpi=300, format='pdf', bbox_inches='tight')
             plt.close(fig)
         
-        save_json(info_dict, os.path.join(base_folder, "vals.json"), indent=2)
+        if info_dict:
+            save_json(info_dict,
+                      os.path.join(base_folder, "vals_per_figure.json"), indent=2)

@@ -11,7 +11,7 @@ from utils import dict_to_str, group_by, group_by_nested_attrs, save_json
 script_dir = os.path.dirname(os.path.abspath(__file__))
 PLOTS_DIR = os.path.join(script_dir, 'plots')
 
-TEST = True
+TEST = False
 
 
 def main():
@@ -93,12 +93,16 @@ def main():
     
     level_names = ["line", "random"]
     if n_groups >= 3:
-        if args.use_subplots and n_groups >= 4:
-            level_names = ['folder'] * (n_groups - 4) + ['fname', 'subplot'] + level_names
+        if args.use_subplots:
+            if n_groups >= 4:
+                level_names = ['folder'] * (n_groups - 4) + ['fname', 'subplot'] + level_names
+            else:
+                level_names = ['subplot'] + level_names
         else:
             level_names = ['folder'] * (n_groups - 3) + ['fname'] + level_names
-    else:
-        # n_groups == 2; need to add a file name level
+    
+    if n_groups == 2 or (n_groups == 3 and args.use_subplots):
+        # need to add a file name level
         plot_config = {
             "results": {
                 "items": plot_config
@@ -128,7 +132,7 @@ def main():
     save_json(plot_config, "config/plot_config.json", indent=2)
 
     results_list = [
-        {k: v[0, :] for k, v in next(r)[1].items()}
+        {k: v[0, :] for k, v in next(iter(r))[1].items()}
         for r in existing_results
     ]
 

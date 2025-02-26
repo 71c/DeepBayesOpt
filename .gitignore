@@ -6,3 +6,4 @@ sweeps/
 config/dependencies.json
 config/refined_config.yml
 config/options.yml
+stats_output.txt
