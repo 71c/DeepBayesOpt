@@ -316,12 +316,12 @@ def save_figures_from_nested_structure(
 
             info_dict[fname_desc] = data["vals"]
 
-            fname = f"{fname_desc}.pdf"
-            fpath = os.path.join(base_folder, fname)
-
             fig = get_figure_from_nested_structure(
                 items, results_list, next_attrs_groups, next_level_names, fname_desc)
-            fig.savefig(fpath)
+            
+            fname = f"{fname_desc}.pdf"
+            fpath = os.path.join(base_folder, fname)
+            fig.savefig(fpath, dpi=300, format='pdf', bbox_inches='tight')
             plt.close(fig)
         
         save_json(info_dict, os.path.join(base_folder, "vals.json"), indent=2)
