@@ -21,8 +21,11 @@ def main():
     
     # print(MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN)
 
-    # TEMPORARY TEST:
-    existing_bo_configs = new_bo_configs
+    # TEMPORARY TEST (NOT WHAT I WANT TO DO) to simulate having data:
+    existing_bo_configs = [(cfg, None) for cfg in new_bo_configs]
+
+    gr = group_by([cfg for cfg, result in existing_bo_configs], dict_to_str)
+    assert all(len(v) == 1 for v in gr.values())
     
     n_existing = len(existing_bo_configs)
     print(f"Number of new configs: {len(new_bo_configs)}")
@@ -31,7 +34,7 @@ def main():
         raise ValueError("There are no saved BO configs to plot.")
 
     reformatted_configs = []
-    for item in existing_bo_configs:
+    for item, result in existing_bo_configs:
         nn_model_name = item['bo_policy_args'].get('nn_model_name')
         if nn_model_name is not None:
             item['bo_policy_args'].update(
@@ -43,24 +46,17 @@ def main():
         reformatted_configs.append({
             **{f'objective.{k}': v for k, v in item['objective_args'].items()},
             **item['bo_policy_args'],
-            **{f'gp_af.{k}': v for k, v in item['gp_af_args'].items()}
+            **{k if k == 'gp_af' else f'gp_af.{k}': v for k, v in item['gp_af_args'].items()}
         })
     
-    # save_json(reformatted_configs, "config/reformatted_configs.json", indent=2)
-
-    y = group_by_nested_attrs(reformatted_configs,
+    plot_config = group_by_nested_attrs(reformatted_configs,
                           [{"nn.layer_width", "nn.train_samples_size"},
-                           {"lamda"},
+                           {"lamda", "gp_af", "nn.method"},
                            {"objective.gp_seed"}],
                            add_extra_index=-2)
-    save_json(y, "config/reformatted_configs.json", indent=2)
+    save_json(plot_config, "config/plot_config.json", indent=2)
 
-    # print(reformatted_configs[3708])
-    # print(reformatted_configs[3724])
-
-    # gr = group_by(existing_bo_configs, lambda x: dict_to_str(x))
     
-    # gr = {u: len(v) for u, v in gr.items()}
     # print(gr.values())
     
     # for u, v in gr.items():
