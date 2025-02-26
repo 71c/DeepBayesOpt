@@ -1,5 +1,4 @@
 import argparse
-from collections import defaultdict
 import itertools
 from datetime import datetime
 from typing import Any, Optional, Union
@@ -8,7 +7,7 @@ import os
 from gp_acquisition_dataset import create_train_test_gp_acq_datasets_from_args
 from run_train import get_configs_and_model_and_paths, get_run_train_parser
 from train_acquisition_function_net import model_is_trained
-from utils import dict_to_cmd_args, group_by_nested_attrs, save_json
+from utils import dict_to_cmd_args, dict_to_str, group_by_nested_attrs, save_json
 from submit_dependent_jobs import CONFIG_DIR, SWEEPS_DIR, submit_dependent_jobs
 
 
@@ -22,9 +21,9 @@ def check_dict_has_keys(d: dict, keys: list[str], error_msg=None):
             raise ValueError(msg)
 
 
-def refine_config(params_value: Union[dict, list[dict]],
-                  experiment_config: dict,
-                  params_names:list[str]=[]) -> dict:
+def refine_config(params_value: Union[dict[str, dict[str, Any]], list[dict[str, Any]]],
+                  experiment_config: dict[str, dict[str, Union[bool, list, int, float, type[None]]]],
+                  params_names:list[str]=[]):
     if not isinstance(experiment_config, dict):
         raise ValueError('experiment_config must be a dictionary.')
     
@@ -40,7 +39,7 @@ def refine_config(params_value: Union[dict, list[dict]],
             for params_dict in params_value
         ]
     elif isinstance(params_value, dict): # an AND
-        tmp = {}
+        tmp: dict[str, Any] = {}
         for param_name, param_config in params_value.items():
             this_params_names = params_names
             this_vary_params = vary_params or param_name in experiment_config['parameters']
@@ -131,7 +130,8 @@ def refine_config(params_value: Union[dict, list[dict]],
             f'params_value must be a dictionary or list, got {(params_value)}.')
 
 
-def generate_options(params_value: Union[dict, list[dict]], prefix=''):
+def generate_options(params_value: Union[dict[str, dict[str, Any]], list[dict[str, dict[str, Any]]]],
+                     prefix='') -> list[dict[str, Any]]:
     if isinstance(params_value, list): # an OR
         return [d for p in params_value for d in generate_options(p, prefix=prefix)]
     elif isinstance(params_value, dict): # an AND
@@ -247,6 +247,21 @@ def get_command_line_options(options: dict[str, Any]):
     return cmd_dataset, cmd_opts_dataset, cmd_nn_train, cmd_opts_nn
 
 
+MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN = {}
+_cache = {}
+def cmd_opts_nn_to_model_and_info_name(cmd_opts_nn):
+    s = dict_to_str(cmd_opts_nn)
+    if s in _cache:
+        return _cache[s]
+    cmd_args_list_nn = dict_to_cmd_args({**cmd_opts_nn, 'no-save-model': True})
+    args_nn = get_run_train_parser().parse_args(cmd_args_list_nn)
+    (af_dataset_configs, model,
+    model_and_info_name, models_path) = get_configs_and_model_and_paths(args_nn)
+    _cache[s] = model_and_info_name
+    MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN[model_and_info_name] = cmd_opts_nn
+    return model_and_info_name
+
+
 DATASETS_JOB_ID = "datasets"
 NO_DATASET_ID = 0
 NO_NN_ID = "dep-nn"
@@ -268,8 +283,6 @@ def create_dependency_structure_train_acqf(
     datasets_cached_dict = {}
     dataset_command_ids = {}
     ret = {}
-
-    run_train_parser = get_run_train_parser()
     
     for options, depdendent_commands in zip(options_list, dependents_list):
         (cmd_dataset, cmd_opts_dataset,
@@ -280,10 +293,7 @@ def create_dependency_structure_train_acqf(
             train_nn = True
         else:
             # Determine whether or not the NN is already cached
-            cmd_args_list_nn = dict_to_cmd_args({**cmd_opts_nn, 'no-save-model': True})
-            args_nn = run_train_parser.parse_args(cmd_args_list_nn)
-            (af_dataset_configs, model,
-            model_and_info_name, models_path) = get_configs_and_model_and_paths(args_nn)
+            model_and_info_name = cmd_opts_nn_to_model_and_info_name(cmd_opts_nn)
             
             model_already_trained = model_is_trained(model_and_info_name)
             # Train the NN iff it has not already been trained

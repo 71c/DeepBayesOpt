@@ -1,4 +1,5 @@
 from abc import abstractmethod, ABC
+from collections import defaultdict
 import hashlib
 import itertools
 import os
@@ -1203,21 +1204,168 @@ def group_by(items, group_function=lambda x: x):
     return group_dict
 
 
+# def _group_by_nested_attrs(items: List[dict[K, Any]],
+#                           attrs_groups_list: List[Set[K]],
+#                           return_single=False):
+#     if len(attrs_groups_list) == 0:
+#         if return_single and len(items) == 1:
+#             return items[0]
+#         return items
+#     initial_attrs = attrs_groups_list[0]
+#     initial_grouped_items = {}
+#     to_add = []
+#     for item in items:
+#         d = {k: item[k] for k in initial_attrs if k in item}
+#         key = dict_to_str({k: v for k, v in d.items() if v is not None})
+#         if set(d.keys()) == initial_attrs:
+#             if key in initial_grouped_items:
+#                 initial_grouped_items[key]['items'].append(item)
+#             else:
+#                 initial_grouped_items[key] = {
+#                     'items': [item],
+#                     'vals': d
+#                 }
+#         else:
+#             to_add.append((key, item))
+
+#     new_grouped_items = defaultdict(list)
+#     for key_to_add, item_to_add in to_add:
+#         count = 0
+#         for key, value in initial_grouped_items.items():
+#             if all(k not in item_to_add or item_to_add[k] == v for k, v in value['vals'].items()):
+#                 initial_grouped_items[key]['items'].append(item_to_add)
+#                 count += 1
+#         if count == 0:
+#             new_grouped_items[key_to_add].append(item_to_add)
+    
+#     initial_grouped_items = {key: value['items']
+#                              for key, value in initial_grouped_items.items()}
+#     initial_grouped_items.update(new_grouped_items)
+
+#     next_attrs = attrs_groups_list[1:]
+#     return {
+#         k: _group_by_nested_attrs(v, next_attrs, return_single=return_single)
+#         for k, v in initial_grouped_items.items()
+#     }
+
+
+# def get_values(d):
+#     if type(d) is dict:
+#         for v in d.values():
+#             yield from get_values(v)
+#     else:
+#         yield d
+
+
+# def group_by_nested_attrs(items: List[dict[K, Any]],
+#                           attrs_groups_list: List[Set[K]],
+#                           add_extra_index=-1):
+#     keys = set().union(*[set(item.keys()) for item in items])
+#     if not all(attrs.issubset(keys) for attrs in attrs_groups_list):
+#         raise ValueError("At least one group of attributes is not in the items")
+    
+#     vals_dict = {
+#         k: {item[k] for item in items if k in item}
+#         for k in keys
+#     }
+#     constant_keys = {k for k in keys if len(vals_dict[k]) == 1}
+
+#     attrs_groups_list = [z - constant_keys for z in attrs_groups_list]
+#     attrs_groups_list = [z for z in attrs_groups_list if len(z) != 0]
+#     if len(attrs_groups_list) == 0:
+#         raise ValueError("No attributes to group by")
+    
+#     ret = _group_by_nested_attrs(items, attrs_groups_list)
+    
+#     nonconstant_keys = set()
+#     keys_in_all = {u for u in keys}
+
+#     for itmz in get_values(ret):
+#         nonconstant_keys_item = set()
+#         in_all_keys_item = set()
+#         for k in keys:
+#             is_in_all = True
+#             vals_taken = set()
+#             for item in itmz:
+#                 if k in item:
+#                     vals_taken.add(item[k])
+#                 else:
+#                     is_in_all = False
+#             if is_in_all:
+#                 in_all_keys_item.add(k)
+#             if len(vals_taken) > 1: # if non-constant
+#                 nonconstant_keys_item.add(k)
+#         nonconstant_keys |= nonconstant_keys_item
+#         keys_in_all &= in_all_keys_item
+    
+#     nonconstant_keys_in_all = nonconstant_keys & keys_in_all
+#     nonconstant_keys_not_in_all = nonconstant_keys - nonconstant_keys_in_all
+
+#     print(f"{nonconstant_keys_in_all=}, {nonconstant_keys_not_in_all=}")
+
+#     if len(nonconstant_keys_in_all) != 0:
+#         attrs_groups_list = [nonconstant_keys_in_all] + attrs_groups_list
+#         return group_by_nested_attrs(
+#             items, attrs_groups_list, add_extra_index=add_extra_index)
+
+#     if len(nonconstant_keys_not_in_all) != 0:
+#          attrs_groups_list[add_extra_index] |= nonconstant_keys_not_in_all
+    
+#     print(f"{attrs_groups_list=}")
+    
+#     return _group_by_nested_attrs(items, attrs_groups_list, return_single=True)
+
+
+
+
 def _group_by_nested_attrs(items: List[dict[K, Any]],
                           attrs_groups_list: List[Set[K]],
-                          return_single=False):
+                          return_single=False,
+                          indices=None):
+    if indices is None:
+        indices = list(range(len(items)))
+
     if len(attrs_groups_list) == 0:
-        if return_single and len(items) == 1:
-            return items[0]
-        return items
-    initial_grouped_items = group_by(
-        items,
-        lambda x: dict_to_str({
-            k: x.get(k, None) for k in attrs_groups_list[0]
-        })
-    )
+        if return_single and len(indices) == 1:
+            return indices[0]
+        return indices
+    initial_attrs = attrs_groups_list[0]
+    initial_grouped_items = {}
+    to_add = []
+    for idx in indices:
+        item = items[idx]
+        d = {k: item[k] for k in initial_attrs if k in item}
+        key = dict_to_str({k: v for k, v in d.items() if v is not None})
+        if set(d.keys()) == initial_attrs:
+            if key in initial_grouped_items:
+                initial_grouped_items[key]['items'].append(idx)
+            else:
+                initial_grouped_items[key] = {
+                    'items': [idx],
+                    'vals': d
+                }
+        else:
+            to_add.append((key, idx))
+
+    new_grouped_items = defaultdict(list)
+    for key_to_add, idx_to_add in to_add:
+        item_to_add = items[idx_to_add]
+        count = 0
+        for key, value in initial_grouped_items.items():
+            if all(k not in item_to_add or item_to_add[k] == v for k, v in value['vals'].items()):
+                initial_grouped_items[key]['items'].append(idx_to_add)
+                count += 1
+        if count == 0:
+            new_grouped_items[key_to_add].append(idx_to_add)
+    
+    initial_grouped_items = {key: value['items']
+                             for key, value in initial_grouped_items.items()}
+    initial_grouped_items.update(new_grouped_items)
+
+    next_attrs = attrs_groups_list[1:]
     return {
-        k: _group_by_nested_attrs(v, attrs_groups_list[1:], return_single=return_single)
+        k: _group_by_nested_attrs(items, next_attrs,
+                                  indices=v, return_single=return_single)
         for k, v in initial_grouped_items.items()
     }
 
@@ -1231,36 +1379,65 @@ def get_values(d):
 
 
 def group_by_nested_attrs(items: List[dict[K, Any]],
-                          attrs_groups_list: List[Set[K]]):
+                          attrs_groups_list: List[Set[K]],
+                          add_extra_index=-1):
     keys = set().union(*[set(item.keys()) for item in items])
     if not all(attrs.issubset(keys) for attrs in attrs_groups_list):
         raise ValueError("At least one group of attributes is not in the items")
     
     vals_dict = {
-        k: {item.get(k, None) for item in items}
+        k: {item[k] for item in items if k in item}
         for k in keys
     }
     constant_keys = {k for k in keys if len(vals_dict[k]) == 1}
 
-    attrs_groups_list = [x - constant_keys for x in attrs_groups_list]
-    attrs_groups_list = [x for x in attrs_groups_list if len(x) != 0]
+    attrs_groups_list = [z - constant_keys for z in attrs_groups_list]
+    attrs_groups_list = [z for z in attrs_groups_list if len(z) != 0]
     if len(attrs_groups_list) == 0:
         raise ValueError("No attributes to group by")
-
+    
     ret = _group_by_nested_attrs(items, attrs_groups_list)
+    
     nonconstant_keys = set()
-    for x in get_values(ret):
-        vals_dict_x = {
-            k: {item.get(k, None) for item in x}
-            for k in keys
-        }
-        nonconstant_keys_x = {k for k in keys if len(vals_dict_x[k]) > 1}
-        nonconstant_keys |= nonconstant_keys_x
+    keys_in_all = {u for u in keys}
 
-    if len(nonconstant_keys) != 0:
-        attrs_groups_list = [nonconstant_keys] + attrs_groups_list
+    for itmz in get_values(ret):
+        nonconstant_keys_item = set()
+        in_all_keys_item = set()
+        for k in keys:
+            is_in_all = True
+            vals_taken = set()
+            for idx in itmz:
+                item = items[idx]
+                if k in item:
+                    vals_taken.add(item[k])
+                else:
+                    is_in_all = False
+            if is_in_all:
+                in_all_keys_item.add(k)
+            if len(vals_taken) > 1: # if non-constant
+                nonconstant_keys_item.add(k)
+        nonconstant_keys |= nonconstant_keys_item
+        keys_in_all &= in_all_keys_item
+    
+    nonconstant_keys_in_all = nonconstant_keys & keys_in_all
+    nonconstant_keys_not_in_all = nonconstant_keys - nonconstant_keys_in_all
 
+    print(f"{nonconstant_keys_in_all=}, {nonconstant_keys_not_in_all=}")
+
+    if len(nonconstant_keys_in_all) != 0:
+        attrs_groups_list = [nonconstant_keys_in_all] + attrs_groups_list
+        return group_by_nested_attrs(
+            items, attrs_groups_list, add_extra_index=add_extra_index)
+
+    if len(nonconstant_keys_not_in_all) != 0:
+         attrs_groups_list[add_extra_index] |= nonconstant_keys_not_in_all
+    
+    print(f"{attrs_groups_list=}")
+    
     return _group_by_nested_attrs(items, attrs_groups_list, return_single=True)
+
+
 
 
 def pad_tensor(vec, length, dim, add_mask=False):

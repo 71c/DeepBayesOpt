@@ -1,6 +1,7 @@
 from functools import cache
 import math
 import os
+from typing import Any
 import torch
 from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprovement
 from botorch.utils.sampling import draw_sobol_samples
@@ -30,7 +31,7 @@ GP_AF_DICT = {
 }
 
 
-def get_arg_names(p):
+def get_arg_names(p) -> list[str]:
     return [action.dest for action in p._group_actions if action.dest != "help"]
 
 
@@ -126,35 +127,40 @@ def get_bo_loop_args_parser():
 # This greatly speeds up the script bo_experiments_gp.py
 # that generates the commands for the BO loops.
 # Otherwise, it takes too long to run get_rff_function_and_name many times.
-_cached_objective_things = {}
-def _get_gp_objective_things(objective_args):
-    objective_args_str = dict_to_str(objective_args)
-    if objective_args_str in _cached_objective_things:
-        return _cached_objective_things[objective_args_str]
-    
-    objective_randomize_params = objective_args['randomize_params']
-    dimension = objective_args['dimension']
-
+@cache
+def _get_gp_objective_things_helper(
+    dimension, kernel, lengthscale, randomize_params, gp_seed):
     # Get GP model sampler
     objective_gp_base_model = get_gp_model_from_args_no_outcome_transform(
         dimension=dimension,
-        kernel=objective_args['kernel'],
-        lengthscale=objective_args['lengthscale'],
-        add_priors=objective_randomize_params,
+        kernel=kernel,
+        lengthscale=lengthscale,
+        add_priors=randomize_params,
         device=GP_GEN_DEVICE
     )
     objective_gp_sampler = RandomModelSampler(
         [objective_gp_base_model],
-        randomize_params=objective_randomize_params
+        randomize_params=randomize_params
     )
     # Seed
-    objective_gp_seed = objective_args['gp_seed']
-    torch.manual_seed(objective_gp_seed)
+    torch.manual_seed(gp_seed)
     # Get (potentially) random GP parameters
     objective_gp = objective_gp_sampler.sample(deepcopy=True).eval()
     # Get random GP draw
     objective_fn, realization_hash = get_rff_function_and_name(
         objective_gp, dimension=dimension)
+    
+    return objective_gp, objective_fn, realization_hash
+
+
+def _get_gp_objective_things(objective_args):
+    objective_gp, objective_fn, realization_hash = _get_gp_objective_things_helper(
+        dimension=objective_args['dimension'],
+        kernel=objective_args['kernel'],
+        lengthscale=objective_args['lengthscale'],
+        randomize_params=objective_args['randomize_params'],
+        gp_seed=objective_args['gp_seed']
+    )
     objective_name = f'gp_{realization_hash}'
     # Apply outcome transform to the objective function
     objective_octf, objective_octf_args = get_outcome_transform(
@@ -166,12 +172,23 @@ def _get_gp_objective_things(objective_args):
         objective_name = f'{objective_name}_{octf_str}'
         objective_fn = outcome_transform_function(objective_fn, objective_octf)
     
-    ret = (objective_gp, objective_octf, objective_fn, objective_name)
-    _cached_objective_things[objective_args_str] = ret
-    return ret
+    return objective_gp, objective_octf, objective_fn, objective_name
 
 
-def run_bo(objective_args, bo_policy_args, gp_af_args):
+def _get_sobol_samples_and_bounds(bo_seed, n_initial_samples, dimension):
+    bounds = torch.stack([torch.zeros(dimension), torch.ones(dimension)])
+    torch.manual_seed(bo_seed)
+    init_x = draw_sobol_samples(
+        bounds=bounds,
+        n=1, # Number of BO loops to do
+        q=n_initial_samples # Number of sobol points
+    )
+    return init_x, bounds
+
+
+def run_bo(objective_args: dict[str, Any],
+           bo_policy_args: dict[str, Any],
+           gp_af_args: dict[str, Any]):
     (objective_gp, objective_octf,
      objective_fn, objective_name) = _get_gp_objective_things(objective_args)
     dimension = objective_args['dimension']
@@ -314,17 +331,11 @@ def run_bo(objective_args, bo_policy_args, gp_af_args):
 
     results_name = dict_to_str(results_print_data, include_space=True)
     
-    bounds = torch.stack([torch.zeros(dimension), torch.ones(dimension)])
-
     bo_seed = bo_policy_args['bo_seed']
-
-    # Construct initial sobol points
-    torch.manual_seed(bo_seed)
-    init_x = draw_sobol_samples(
-        bounds=bounds,
-        n=1, # Number of BO loops to do
-        q=bo_policy_args['n_initial_samples'] # Number of sobol points
-    )
+    
+    init_x, bounds = _get_sobol_samples_and_bounds(
+        bo_seed, bo_policy_args['n_initial_samples'], dimension)
+    
     # One seed per BO loop. Here, we have n=1 BO loops, so need just 1 seed.
     seeds = [bo_seed]
 
