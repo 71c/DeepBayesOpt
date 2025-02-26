@@ -1212,6 +1212,30 @@ def iterate_nested(d):
             yield from iterate_nested(value)  # Recursively process the nested dict
 
 
+def get_values(d):
+    if type(d) is dict:
+        for v in d.values():
+            yield from get_values(v)
+    else:
+        yield d
+
+
+def are_all_disjoint(sets: Sequence[Set]) -> bool:
+    """Checks if all sets in a list are pairwise disjoint (have no common elements).
+
+    Args:
+        sets: A list of sets.
+
+    Returns:
+        True if all sets are disjoint, False otherwise.
+    """
+    for i in range(len(sets)):
+        for j in range(i + 1, len(sets)):
+            if not sets[i].isdisjoint(sets[j]):
+                return False
+    return True
+
+
 _REFER_TO_VALUE = False
 
 if _REFER_TO_VALUE:
@@ -1304,15 +1328,6 @@ if _REFER_TO_VALUE:
                                       complain=complain)
             for k, v in initial_grouped_items.items()
         }
-
-
-    def get_values(d):
-        if type(d) is dict:
-            for v in d.values():
-                yield from get_values(v)
-        else:
-            yield d
-
 
     def group_by_nested_attrs(items: List[dict[K, Any]],
                             attrs_groups_list: List[Set[K]],
@@ -1423,10 +1438,10 @@ else:
                         'vals': d
                     }
             else:
-                to_add.append((key, idx))
+                to_add.append((key, idx, d))
 
-        new_grouped_items = defaultdict(list)
-        for key_to_add, idx_to_add in to_add:
+        new_grouped_items = {}
+        for key_to_add, idx_to_add, d_to_add in to_add:
             item_to_add = items[idx_to_add]
             count = 0
             for key, value in initial_grouped_items.items():
@@ -1434,31 +1449,34 @@ else:
                     initial_grouped_items[key]['items'].append(idx_to_add)
                     count += 1
             if count == 0:
-                new_grouped_items[key_to_add].append(idx_to_add)
+                if key_to_add in new_grouped_items:
+                    new_grouped_items[key_to_add]['items'].append(idx_to_add)
+                else:
+                    new_grouped_items[key_to_add] = {
+                        'items': [idx_to_add],
+                        'vals': d_to_add
+                    }
         
-        initial_grouped_items = {key: value['items']
-                                for key, value in initial_grouped_items.items()}
+        # initial_grouped_items = {key: value['items']
+        #                         for key, value in initial_grouped_items.items()}
         initial_grouped_items.update(new_grouped_items)
 
         next_attrs = attrs_groups_list[1:]
         return {
-            k: _group_by_nested_attrs(items, next_attrs,
-                                    indices=v, return_single=return_single)
+            k: {
+                'items': _group_by_nested_attrs(items, next_attrs,
+                                    indices=v['items'], return_single=return_single),
+                'vals': v['vals']
+            }
             for k, v in initial_grouped_items.items()
         }
-
-
-    def get_values(d):
-        if type(d) is dict:
-            for v in d.values():
-                yield from get_values(v)
-        else:
-            yield d
 
 
     def group_by_nested_attrs(items: List[dict[K, Any]],
                             attrs_groups_list: List[Set[K]],
                             add_extra_index=-1):
+        if not are_all_disjoint(attrs_groups_list):
+            raise ValueError("Attributes in the groups are not disjoint")    
         keys = set().union(*[set(item.keys()) for item in items])
         if not all(attrs.issubset(keys) for attrs in attrs_groups_list):
             raise ValueError("At least one group of attributes is not in the items")
@@ -1479,7 +1497,10 @@ else:
         nonconstant_keys = set()
         keys_in_all = {u for u in keys}
 
-        for itmz in get_values(ret):
+        for key, value in iterate_nested(ret):
+            if not (key == "items" and isinstance(value, list)):
+                continue
+            itmz = value
             nonconstant_keys_item = set()
             in_all_keys_item = set()
             for k in keys:

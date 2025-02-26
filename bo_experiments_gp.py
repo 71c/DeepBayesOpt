@@ -17,7 +17,7 @@ def _generate_bo_commands(
         seeds: list[int], objective_args, bo_policy_args, gp_af_args):
     new_bo_comma = []
     new_bo_conf = []
-    existing_bo_conf = []
+    existing_bo_conf_and_results = []
     for seed in seeds:
         objective_args_ = {**objective_args, 'gp_seed': seed}
         bo_policy_args_ = {**bo_policy_args, 'bo_seed': seed}
@@ -37,18 +37,18 @@ def _generate_bo_commands(
             new_bo_conf.append(bo_config)
         else:
             # Store the configs corresponding to results we already have
-            existing_bo_conf.append((bo_config, opt_results))
+            existing_bo_conf_and_results.append((bo_config, opt_results))
 
-    return new_bo_comma, new_bo_conf, existing_bo_conf
+    return new_bo_comma, new_bo_conf, existing_bo_conf_and_results
 
 
-def _get_gp_bo_jobs_spec_and_configs(
+def _gp_bo_jobs_spec_and_cfgs(
         options_list, bo_loop_args, seeds, always_train=False):    
     gp_options_dict = {}
     nn_bo_loop_commands_list = []
 
     new_bo_configs = []
-    existing_bo_configs = []
+    existing_bo_configs_and_results = []
 
     for options in options_list:
         gp_options = {
@@ -86,16 +86,16 @@ def _get_gp_bo_jobs_spec_and_configs(
          cmd_nn_train, cmd_opts_nn) = get_command_line_options(options)
         
         model_and_info_name = cmd_opts_nn_to_model_and_info_name(cmd_opts_nn)
-        bo_commands, new_bo_cfgs, existing_bo_cfgs = _generate_bo_commands(
+        new_cmds, new_cfgs, existing_cfgs_and_results = _generate_bo_commands(
             seeds,
             objective_args=gp_options,
             bo_policy_args={**bo_loop_args, 'lamda': lamda,
                             'nn_model_name': model_and_info_name},
             gp_af_args={}
         )
-        nn_bo_loop_commands_list.append(bo_commands)
-        new_bo_configs.extend(new_bo_cfgs)
-        existing_bo_configs.extend(existing_bo_cfgs)
+        nn_bo_loop_commands_list.append(new_cmds)
+        new_bo_configs.extend(new_cfgs)
+        existing_bo_configs_and_results.extend(existing_cfgs_and_results)
     
     # Only train the NNs that are needed for the BO loops
     included = [
@@ -135,21 +135,21 @@ def _get_gp_bo_jobs_spec_and_configs(
             for lamda in lamda_vals_this_af:
                 extra_bo_policy_args = {'lamda': lamda}
                 bo_policy_args = {**bo_loop_args, **extra_bo_policy_args}
-                new_bo_commands, new_bo_cfgs, existing_bo_cfgs = _generate_bo_commands(
+                new_cmds, new_cfgs, existing_cfgs_and_results = _generate_bo_commands(
                     seeds,
                     objective_args=gp_options,
                     bo_policy_args=bo_policy_args,
                     gp_af_args=gp_af_args
                 )
-                gp_bo_commands.extend(new_bo_commands)
-                new_bo_configs.extend(new_bo_cfgs)
-                existing_bo_configs.extend(existing_bo_cfgs)
+                gp_bo_commands.extend(new_cmds)
+                new_bo_configs.extend(new_cfgs)
+                existing_bo_configs_and_results.extend(existing_cfgs_and_results)
     if gp_bo_commands:
         jobs_spec['gp_bo'] = {
             'commands': gp_bo_commands,
             'gpu': False
         }
-    return jobs_spec, new_bo_configs, existing_bo_configs
+    return jobs_spec, new_bo_configs, existing_bo_configs_and_results
 
 
 def get_bo_experiments_parser(train=True):
@@ -176,11 +176,11 @@ def get_bo_experiments_parser(train=True):
     return parser, bo_loop_group
 
 
-def get_gp_bo_jobs_spec_and_configs_from_args(args, bo_loop_group):
+def gp_bo_jobs_spec_cfgs_from_args(args, bo_loop_group):
     bo_loop_arg_names = get_arg_names(bo_loop_group)
     bo_loop_args = {k: v for k, v in vars(args).items() if k in bo_loop_arg_names}
 
-    options_list = get_train_acqf_options_list(args)
+    options_list, refined_config = get_train_acqf_options_list(args)
 
     # Set seed again for reproducibility
     torch.manual_seed(args.seed)
@@ -191,7 +191,7 @@ def get_gp_bo_jobs_spec_and_configs_from_args(args, bo_loop_group):
         pr = cProfile.Profile()
         pr.enable()
     
-    jobs_spec, new_bo_configs, existing_bo_configs = _get_gp_bo_jobs_spec_and_configs(
+    jobs_spec, new_cfgs, existing_cfgs_and_results = _gp_bo_jobs_spec_and_cfgs(
         options_list, bo_loop_args, seeds,
         always_train=getattr(args, 'always_train', False)
     )
@@ -202,7 +202,7 @@ def get_gp_bo_jobs_spec_and_configs_from_args(args, bo_loop_group):
             ps = pstats.Stats(pr, stream=s).sort_stats(pstats.SortKey.CUMULATIVE)
             ps.print_stats()
     
-    return jobs_spec, new_bo_configs, existing_bo_configs
+    return jobs_spec, new_cfgs, existing_cfgs_and_results, refined_config
 
 
 def main():
@@ -213,8 +213,8 @@ def main():
 
     args = parser.parse_args()
 
-    jobs_spec, new_bo_configs, existing_bo_configs = get_gp_bo_jobs_spec_and_configs_from_args(
-        args, bo_loop_group)
+    jobs_spec, new_cfgs, existing_cfgs_and_results, refined_config \
+        = gp_bo_jobs_spec_cfgs_from_args(args, bo_loop_group)
 
     save_json(jobs_spec, os.path.join(CONFIG_DIR, "dependencies.json"), indent=4)
     submit_jobs_sweep_from_args(jobs_spec, args)

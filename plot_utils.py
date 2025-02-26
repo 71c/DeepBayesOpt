@@ -1,5 +1,6 @@
 
-from typing import Optional, List
+import os
+from typing import Optional, List, Union
 import numpy as np
 from matplotlib import pyplot as plt
 import torch
@@ -7,7 +8,9 @@ from torch import Tensor
 import torch.distributions as dist
 from acquisition_dataset import AcquisitionDataset
 from acquisition_function_net import AcquisitionFunctionNet, AcquisitionFunctionNetAcquisitionFunction
+from bayesopt import plot_optimization_trajectories_error_bars
 from exact_gp_computations import calculate_EI_GP
+from utils import save_json
 
 
 
@@ -202,3 +205,123 @@ def plot_acquisition_function_net_training_history(training_history_data):
     ax.grid(True)
 
     return fig
+
+
+alpha = 0.05
+sharey = True
+aspect = 2.0
+scale = 0.5
+
+
+def plot_nested_structure(plot_config: dict,
+                          results_list: list,
+                          ax,
+                          plot_name: str):
+    for legend_name, data in plot_config.items():
+        results_this_legend = []
+        for k, v in data["items"].items():
+            data_index = v["items"]
+            if isinstance(data_index, list):
+                raise ValueError
+            # Assumed to be array of shape (1+n_iter,)
+            results_this_legend.append(results_list[data_index]['best_y'])
+        results_this_legend = np.array(results_this_legend)
+
+        plot_optimization_trajectories_error_bars(
+            ax, results_this_legend, legend_name, alpha)
+    
+    ax.set_xlabel('Iteration')
+    ax.set_ylabel('Best function value')
+    ax.set_title(plot_name)
+    ax.legend()
+
+
+def get_figure_from_nested_structure(
+        plot_config: dict,
+        results_list: list,
+        attrs_groups_list: list[Optional[set]],
+        level_names: list[str],
+        figure_name: str):
+    this_attrs_group = attrs_groups_list[0]
+    next_attrs_groups = attrs_groups_list[1:]
+    this_level_name = level_names[0]
+    next_level_names = level_names[1:]
+
+    area = 50 * scale**2
+    height = np.sqrt(area / aspect)
+    width = aspect * height
+
+    if this_level_name == "line":
+        n_rows = 1
+        n_cols = 1
+    elif this_level_name == "subplot":
+        n_rows = 1
+        n_cols = len(plot_config)
+    else:
+        raise ValueError
+    
+    fig, axes = plt.subplots(n_rows, n_cols,
+                             figsize=(width * n_cols, height * n_rows),
+                             sharex=True, sharey=sharey,
+                             squeeze=True # Currently, will always be 1D array since 1 row.
+                             )
+    if n_rows * n_cols == 1: # just to do with squeeze=True
+        axes = [axes]
+    
+    if this_level_name == "line":
+        assert next_level_names == ["random"]
+        randomize_attrs = next_attrs_groups[0]
+        plot_nested_structure(plot_config, results_list, axes[0], figure_name)
+    elif this_level_name == "subplot":
+        assert next_level_names == ["line", "random"]
+        fig.suptitle(figure_name, fontsize=16, fontweight='bold')
+        for ax, (subplot_name, subplot_data) in zip(axes, plot_config.items()):
+            plot_nested_structure(subplot_data["items"], results_list, ax, subplot_name)
+
+    fig.tight_layout()
+
+    return fig
+
+
+def save_figures_from_nested_structure(
+        plot_config: dict,
+        results_list: list,
+        attrs_groups_list: list[Optional[set]],
+        level_names: list[str],
+        base_folder=''):
+    this_attrs_group = attrs_groups_list[0]
+    next_attrs_groups = attrs_groups_list[1:]
+    this_level_name = level_names[0]
+    next_level_names = level_names[1:]
+
+    if this_attrs_group:
+        save_json({"attrs": list(this_attrs_group)},
+                    os.path.join(base_folder, "attrs.json"), indent=2)
+
+    if this_level_name == "folder":
+        for folder_name, data in plot_config.items():
+            items = data["items"]
+            vals = data["vals"]
+            dirname = os.path.join(base_folder, folder_name)
+            save_json(vals, os.path.join(dirname, "vals.json"), indent=2)
+
+            save_figures_from_nested_structure(
+                items, results_list, next_attrs_groups, next_level_names,
+                base_folder=dirname
+            )
+    elif this_level_name == "fname":
+        info_dict = {}
+        for fname_desc, data in plot_config.items():
+            items = data["items"]
+
+            info_dict[fname_desc] = data["vals"]
+
+            fname = f"{fname_desc}.pdf"
+            fpath = os.path.join(base_folder, fname)
+
+            fig = get_figure_from_nested_structure(
+                items, results_list, next_attrs_groups, next_level_names, fname_desc)
+            fig.savefig(fpath)
+            plt.close(fig)
+        
+        save_json(info_dict, os.path.join(base_folder, "vals.json"), indent=2)

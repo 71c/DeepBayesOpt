@@ -494,7 +494,7 @@ def get_train_acqf_options_list(args: argparse.Namespace):
     #     yaml.dump(combined, f)
     # exit()
     
-    return options_list
+    return options_list, refined_config
 
 
 def submit_jobs_sweep_from_args(jobs_spec, args):
@@ -516,7 +516,7 @@ def main():
 
     args = parser.parse_args()
 
-    options_list = get_train_acqf_options_list(args)
+    options_list, refined_config = get_train_acqf_options_list(args)
     
     jobs_spec = create_dependency_structure_train_acqf(
         options_list, always_train=args.always_train)
