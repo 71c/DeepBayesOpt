@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 import copy
 import os
+import time
 from tqdm import tqdm, trange
 from typing import Any, Callable, Type, Optional, List
 import matplotlib.pyplot as plt
@@ -50,7 +51,9 @@ class BayesianOptimizer(ABC):
         
         self._best_y_history = []
         self._best_x_history = []
-        self.update_best()
+        self._time_history = []
+        self._process_time_history = []
+        self.update_best(0.0, 0.0) # dummy time
     
     @property
     def best_y_history(self):
@@ -59,6 +62,14 @@ class BayesianOptimizer(ABC):
     @property
     def best_x_history(self):
         return torch.stack(self._best_x_history)
+
+    @property
+    def time_history(self):
+        return torch.tensor(self._time_history)
+    
+    @property
+    def process_time_history(self):
+        return torch.tensor(self._process_time_history)
     
     @abstractmethod
     def get_new_point(self) -> Tensor:
@@ -69,7 +80,11 @@ class BayesianOptimizer(ABC):
     
     def optimize(self, n_iter: int):
         for i in range(n_iter):
+            start_p = time.process_time()
+            start = time.time()
             new_x = self.get_new_point()
+            end_p = time.process_time()
+            end = time.time()
 
             # Get to shape n x d (where n=1 here)
             if new_x.dim() == 1:
@@ -86,14 +101,16 @@ class BayesianOptimizer(ABC):
 
             self.x = torch.cat([self.x, new_x])
             self.y = torch.cat([self.y, new_y])
-            self.update_best()
+            self.update_best(end - start, end_p - start_p)
     
-    def update_best(self):
+    def update_best(self, time, process_time):
         y = self.y
         best_index = torch.argmax(y).item() if self.maximize else torch.argmin(y).item()
         self.best_f = y[best_index]
         self._best_y_history.append(self.best_f)
         self._best_x_history.append(self.x[best_index])
+        self._time_history.append(time)
+        self._process_time_history.append(process_time)
 
 
 class RandomSearch(BayesianOptimizer):
@@ -439,7 +456,9 @@ class OptimizationResultsSingleMethod:
             optimizer.optimize(self.n_iter)
             trial_result = {
                 'best_y': optimizer.best_y_history.numpy(),
-                'best_x': optimizer.best_x_history.numpy()
+                'best_x': optimizer.best_x_history.numpy(),
+                'time': optimizer.time_history.numpy(),
+                'process_time': optimizer.process_time_history.numpy()
             }
             if self.save_dir is not None:
                 h = self.trial_configs_str[trial_index]
@@ -538,10 +557,14 @@ class OptimizationResultsSingleMethod:
             function_best_y_data = np.array([r['best_y'] for r in results_func])
             # n_trials_per_function x 1+n_iter x dim
             function_best_x_data = np.array([r['best_x'] for r in results_func])
+            function_time_data = np.array([r['time'] for r in results_func])
+            function_process_time_data = np.array([r['process_time'] for r in results_func])
 
             result = {
                 'best_y': function_best_y_data,
-                'best_x': function_best_x_data
+                'best_x': function_best_x_data,
+                'time': function_time_data,
+                'process_time': function_process_time_data
             }
 
             if self.objective_names is not None:

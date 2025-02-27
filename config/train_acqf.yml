@@ -80,7 +80,7 @@ parameters:
       batch_size:
         values: [32, 128]
       epochs:
-        value: 200
+        value: 500
       use_maxei:
         values: [false, true]
       early_stopping:

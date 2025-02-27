@@ -17,7 +17,7 @@ from utils import SaveableObject, convert_to_json_serializable, dict_to_hash, in
 
 
 MODELS_DIR_NAME = "saved_models"
-VERSION = "v1"
+VERSION = "v2"
 script_dir = os.path.dirname(os.path.abspath(__file__))
 MODELS_DIR = os.path.join(script_dir, MODELS_DIR_NAME)
 

@@ -5,8 +5,10 @@ parameters:
   train_samples_size:
     values: all
   layer_width:
-    values: all
+    values: [200, 500]
   dimension:
     values: all
+  learning_rate:
+    values: [3.e-3, 3.e-4]
   patience:
     value: 20
