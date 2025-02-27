@@ -62,9 +62,11 @@ def main():
             )
             item['bo_policy_args'].pop('nn_model_name')
         reformatted_configs.append({
-            **{f'objective.{k}': v for k, v in item['objective_args'].items()},
+            **{k if k == 'dimension' else f'objective.{k}': v
+               for k, v in item['objective_args'].items()},
             **item['bo_policy_args'],
-            **{k if k == 'gp_af' else f'gp_af.{k}': v for k, v in item['gp_af_args'].items()}
+            **{k if k == 'gp_af' else f'gp_af.{k}': v
+               for k, v in item['gp_af_args'].items()}
         })
 
     with open(args.plots_config, 'r') as f:
