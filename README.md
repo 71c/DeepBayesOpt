@@ -50,21 +50,22 @@ An example command is as follows:
 python bo_experiments_gp.py --base_config config/train_acqf.yml --experiment_config config/train_acqf_experiment_test_simple.yml --n_gp_draws 8 --seed 8 --n_iter 100 --n_initial_samples 1 --sweep_name preliminary-test-small --mail adj53@cornell.edu --gpu_gres gpu:1
 ```
 
-### Arguments for objective functions and seed:
+### Arguments
+#### Objective functions and seed
 - `--n_gp_draws`: the number of draws of GP objective functions per set of GP params.
 - `--seed SEED`: the seed for the random number generator.
 
-### Arguments for the BO loop
+#### BO loop
 - `--n_iter`: the number of iterations of BO to perform
 - `--n_initial_samples`: the number of initial sobol points to sample at before using the AF.
 
-### Arguments for the NN training experiments
+#### NN training experiments
 - `--base_config` is the base configuration file, containing the default values and default ranges to search over for all of the hyperparameters.
 - `--experiment_config` is the experiment configuration file, containing the specific values and ranges to search over a subset of the hyperparameters for the particular experiment. Replace the value for `--experiment_config` with your desired experiment configuration file.  For example, to investigate the effect of the hyperparameters regarding the dataset, NN architecture, and optimizer settings, we can specify the experiment configuration file to be `config/train_acqf_experiment_training.yml`, which varies `train_samples_size`, `layer_width`, and `learning_rate`, while fixing the dimension to 16 and the method to Gittins index with $\lambda=10^{-4}$.
 Alternatively, you can use `config/train_acqf_experiment_test_simple.yml` to just run a single NN training.
 - `--always_train`: If this flag is set, train all acquisition function NNs regardless of whether they have already been trained. Default is to only train acquisition function NNs that have not already been trained.
 
-### Arguments for the SLURM-based job submission
+#### SLURM-based job submission
 - `--sweep_name` is the name of the "sweep" (in Weights and Biases terminology). In this case, it just corresponds to the name of the directory where the err and out files, and other information about the experiment submission, will be saved.
 - `--mail` is the email address to send a notification to when the job is done (optional).
 - `--gpu_gres` is the GPU resource to request. In this case, it is requesting one GPU. (Also optional.)
