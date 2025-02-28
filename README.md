@@ -26,7 +26,53 @@ pip install -r requirements.txt
 ```
 
 
+
+# BO loops (+ NN training if necessary)
+
+## Running a single Bayesian optimization loop
+To run a BO loop, you can use `run_bo.py`. `run_bo.py --help` will show the description of the arguments. If the NN model has not been trained yet, it will raise an error. In this case, you need to enter the command to train the NN model and then the command to run the BO loop.
+
+An example command to use a GP acquisition function is as follows:
+```bash
+python run_bo.py --bo_seed 6888556634303915349 --gp_af gittins --gp_af_fit exact --lamda 0.01 --n_initial_samples 1 --n_iter 100 --objective_dimension 16 --objective_gp_seed 6888556634303915349 --objective_kernel Matern52 --objective_lengthscale 0.1
+```
+An example command to use a NN acquisition function is as follows:
+```bash
+python run_bo.py --bo_seed 6888556634303915349 --lamda 0.01 --n_initial_samples 1 --n_iter 100 --nn_model_name v2/model_1798dfc44d64e85c92ab88abd40fb62e97f216968037268b794b92c0a1099b4b --objective_dimension 16 --objective_gp_seed 6888556634303915349 --objective_kernel Matern52 --objective_lengthscale 0.1
+```
+See the [section on NN training](#NN-training-(-dataset-generation-if-necessary)) for how to train the NN model and obtain `--nn_model_name`.
+
+## Running multiple Bayesian optimization loops
+The following command automatically runs all of the BO loops of both the NNs and the GP-based AFs. Run `python bo_experiments_gp.py --help` to see the description of the arguments. Unlike the command for running a single BO loop, this command will automatically train any NNs that have not been trained yet prior to optimizing with them.
+
+An example command is as follows:
+```bash
+python bo_experiments_gp.py --base_config config/train_acqf.yml --experiment_config config/train_acqf_experiment_test_simple.yml --n_gp_draws 8 --seed 8 --n_iter 100 --n_initial_samples 1 --sweep_name preliminary-test-small --mail adj53@cornell.edu --gpu_gres gpu:1
+```
+
+### Arguments for objective functions and seed:
+- `--n_gp_draws`: the number of draws of GP objective functions per set of GP params.
+- `--seed SEED`: the seed for the random number generator.
+
+### Arguments for the BO loop
+- `--n_iter`: the number of iterations of BO to perform
+- `--n_initial_samples`: the number of initial sobol points to sample at before using the AF.
+
+### Arguments for the NN training experiments
+- `--base_config` is the base configuration file, containing the default values and default ranges to search over for all of the hyperparameters.
+- `--experiment_config` is the experiment configuration file, containing the specific values and ranges to search over a subset of the hyperparameters for the particular experiment. Replace the value for `--experiment_config` with your desired experiment configuration file.  For example, to investigate the effect of the hyperparameters regarding the dataset, NN architecture, and optimizer settings, we can specify the experiment configuration file to be `config/train_acqf_experiment_training.yml`, which varies `train_samples_size`, `layer_width`, and `learning_rate`, while fixing the dimension to 16 and the method to Gittins index with $\lambda=10^{-4}$.
+Alternatively, you can use `config/train_acqf_experiment_test_simple.yml` to just run a single NN training.
+- `--always_train`: If this flag is set, train all acquisition function NNs regardless of whether they have already been trained. Default is to only train acquisition function NNs that have not already been trained.
+
+### Arguments for the SLURM-based job submission
+- `--sweep_name` is the name of the "sweep" (in Weights and Biases terminology). In this case, it just corresponds to the name of the directory where the err and out files, and other information about the experiment submission, will be saved.
+- `--mail` is the email address to send a notification to when the job is done (optional).
+- `--gpu_gres` is the GPU resource to request. In this case, it is requesting one GPU. (Also optional.)
+Other arguments like partition and time may be added to the script if necessary.
+
+
 # NN training (+ dataset generation if necessary)
+Although the NN training is automatically done when running the BO loops, you can also just train the all the NNs without doing anything with them just yet, with the following scripts.
 
 ## Training a single neural network
 `run_train.py` is the script that trains a single neural network. `run_train.py --help` will show the description of the arguments. An example command is as follows:
@@ -46,8 +92,6 @@ To generate a synthetic dataset of black-box objective functions, use `gp_acquis
 ```bash
 python gp_acquisition_dataset.py --dimension 16 --kernel Matern52 --lamda_max 1.0 --lamda_min 0.0001 --lengthscale 0.1 --max_history 100 --min_history 1 --replacement --test_expansion_factor 1 --test_n_candidates 1 --test_samples_size 10000 --train_acquisition_size 30000 --train_n_candidates 1 --train_samples_size 10000
 ```
-This command will generate a dataset with the specified parameters and save it for use in training neural network-based acquisition functions.
-
 
 ## Training multiple neural networks
 `python train_acqf.py` is the script that trains multiple neural networks.
@@ -57,34 +101,6 @@ An example command is as follows:
 python train_acqf.py --base_config config/train_acqf.yml --experiment_config config/train_acqf_experiment_test_simple.yml --sweep_name preliminary-test-small-train --mail adj53@cornell.edu --gpu_gres gpu:1
 ```
 This will train multiple neural networks with different hyperparameters and save the models.
-
-Here, `--base_config` is the base configuration file, containing the default values and default ranges to search over for all of the hyperparameters. 
-
-`--experiment_config` is the experiment configuration file, containing the specific values and ranges to search over a subset of the hyperparameters for the particular experiment. Replace the value for `--experiment_config` with your desired experiment configuration file.  For example, to investigate the effect of the hyperparameters regarding the dataset, NN architecture, and optimizer settings, we can specify the experiment configuration file to be `config/train_acqf_experiment_training.yml`, which varies `train_samples_size`, `layer_width`, and `learning_rate`, while fixing the dimension to 16 and the method to Gittins index with $\lambda=10^{-4}$.
-Alternatively, you can use `config/train_acqf_experiment_test_simple.yml` to just run a single NN training.
-
-
-# BO loops (+ NN training if necessary)
-
-## Running a single Bayesian optimization loop
-To run a BO loop, you can use `run_bo.py`. `run_bo.py --help` will show the description of the arguments.
-An example command to use a GP acquisition function is as follows:
-```bash
-python run_bo.py --bo_seed 6888556634303915349 --gp_af gittins --gp_af_fit exact --lamda 0.01 --n_initial_samples 1 --n_iter 100 --objective_dimension 16 --objective_gp_seed 6888556634303915349 --objective_kernel Matern52 --objective_lengthscale 0.1
-```
-An example command to use a NN acquisition function is as follows:
-```bash
-python run_bo.py --bo_seed 6888556634303915349 --lamda 0.01 --n_initial_samples 1 --n_iter 100 --nn_model_name v2/model_1798dfc44d64e85c92ab88abd40fb62e97f216968037268b794b92c0a1099b4b --objective_dimension 16 --objective_gp_seed 6888556634303915349 --objective_kernel Matern52 --objective_lengthscale 0.1
-```
-If the NN model has not been trained yet, it will raise an error. In this case, you need to enter the command to train the NN model and then the command to run the BO loop.
-
-## Running multiple Bayesian optimization loops
-Run the following command to automatically run all of the BO loops of both the NNs and the GP-based AFs:
-```bash
-python bo_experiments_gp.py --base_config config/train_acqf.yml --experiment_config config/train_acqf_experiment_test_simple.yml --n_gp_draws 8 --seed 8 --n_iter 100 --n_initial_samples 1 --sweep_name preliminary-test-small --mail adj53@cornell.edu --gpu_gres gpu:1
-```
-Run `python bo_experiments_gp.py --help` to see the description of the arguments. 
-Unlike the command for running a single BO loop, this command will automatically train any NNs that have not been trained yet prior to optimizing with them.
 
 
 # Making plots
