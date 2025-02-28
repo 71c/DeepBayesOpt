@@ -40,7 +40,7 @@ An example command to use a NN acquisition function is as follows:
 ```bash
 python run_bo.py --bo_seed 6888556634303915349 --lamda 0.01 --n_initial_samples 1 --n_iter 100 --nn_model_name v2/model_1798dfc44d64e85c92ab88abd40fb62e97f216968037268b794b92c0a1099b4b --objective_dimension 16 --objective_gp_seed 6888556634303915349 --objective_kernel Matern52 --objective_lengthscale 0.1
 ```
-See the [section on NN training](#NN-training-(-dataset-generation-if-necessary)) for how to train the NN model and obtain `--nn_model_name`.
+See the [section on NN training](#nn-training--dataset-generation-if-necessary) for how to train the NN model and obtain `--nn_model_name`.
 
 ## Running multiple Bayesian optimization loops
 The following command automatically runs all of the BO loops of both the NNs and the GP-based AFs. Run `python bo_experiments_gp.py --help` to see the description of the arguments. Unlike the command for running a single BO loop, this command will automatically train any NNs that have not been trained yet prior to optimizing with them.
