@@ -40,8 +40,8 @@ def main():
         
     if TEST:
         # TEMPORARY TEST (NOT WHAT I WANT TO DO) to simulate having data:
-        print("Simulating having data by swapping new and existing configs")
-        existing_cfgs_and_results = [(cfg, None) for cfg in new_cfgs]
+        print("Simulating having data by pretending to have already computed everything")
+        existing_cfgs_and_results += [(cfg, None) for cfg in new_cfgs]
     
     if len(existing_cfgs_and_results) == 0:
         raise ValueError("There are no saved BO configs to plot.")
