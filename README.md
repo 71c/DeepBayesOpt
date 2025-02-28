@@ -184,6 +184,7 @@ This module implements the core Bayesian optimization loop. It includes:
   Classes for caching, saving, and validating BO results across functions and trials. This includes `OptimizationResultsSingleMethod` and `OptimizationResultsMultipleMethods`:
   - `OptimizationResultsSingleMethod`: can run several BO loops with the same method with different objective functions and seeds.
   - `OptimizationResultsMultipleMethods`: can run several `OptimizationResultsSingleMethod` instances with different methods.
+  
   These classes can only run the BO loops in sequence, not in parallel. For this reason, their full intended usage is now deprecated in favor of `bo_experiments_gp.py`, which submits jobs to repeatedly run `run_bo.py`. `run_bo.py` simply uses `OptimizationResultsSingleMethod` with a single objective function and a single BO seed.
 
 - **Plotting & Utility Functions:**  
