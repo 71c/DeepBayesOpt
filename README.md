@@ -24,6 +24,7 @@ Then install the required packages using pip:
 ```bash
 pip install -r requirements.txt
 ```
+Next, in `job_array.sub`, update the `conda activate` command to use this correct Python environment: `conda activate nn_bo`. (`job_array.sub` is the SLURM job submission script that is used to submit the jobs to the cluster in `submit_dependent_jobs.py`.)
 
 # Command-line scripts overview
 The command-line scripts are organized as follows. See the following sections for more details on each script.
