@@ -25,6 +25,13 @@ Then install the required packages using pip:
 pip install -r requirements.txt
 ```
 
+# Command-line scripts overview
+The command-line scripts are organized as follows. See the following sections for more details on each script.
+- **BO loops (+ NN training):** `run_bo.py` for running a single BO loop, `bo_experiments_gp.py` for running multiple. `bo_experiments_gp.py` is the most high-level script and the one that is most likely to be used.
+- **NN training (+ dataset generation):** `run_train.py` for training a single NN, `train_acqf.py` for training multiple.
+- **Dataset generation:** `gp_acquisition_dataset.py` for generating a dataset of black-box objective functions.
+- **Making plots:** `bo_experiments_gp_plot.py` for making plots of the BO loops once the results are available.
+
 
 # BO loops (+ NN training if necessary)
 Use `run_bo.py` for running a single BO loop, and use `bo_experiments_gp.py` for running multiple. `bo_experiments_gp.py` is the most high-level script and the one that is most likely to be used.
@@ -144,16 +151,7 @@ Enabling `--use_subplots` is more compact since it fits multiple subplots in a s
 
 
 
-
-
-# Overview of the code
-
-## Command-line scripts (discussed above)
-The command-line scripts are organized as follows. See the following sections for more details on each script.
-- **BO loops (+ NN training):** `run_bo.py` for running a single BO loop, `bo_experiments_gp.py` for running multiple. `bo_experiments_gp.py` is the most high-level script and the one that is most likely to be used.
-- **NN training (+ dataset generation):** `run_train.py` for training a single NN, `train_acqf.py` for training multiple.
-- **Dataset generation:** `gp_acquisition_dataset.py` for generating a dataset of black-box objective functions.
-- **Making plots:** `bo_experiments_gp_plot.py` for making plots of the BO loops once the results are available.
+# Overview of the rest of the codebase
 
 ## Datasets
 - `dataset_with_models.py`: Provides a mechanism for creating a hierarchy of classes that represents datasets and can optionally have a GP model attached to each item in the dataset.
@@ -184,12 +182,12 @@ This module implements the core Bayesian optimization loop. It includes:
 
 - **Results & Experiment Management:**
   Classes for caching, saving, and validating BO results across functions and trials. This includes `OptimizationResultsSingleMethod` and `OptimizationResultsMultipleMethods`:
-  - `OptimizationResultsSingleMethod`: can run several BO loops with the same method with different objective functions and seeds,
+  - `OptimizationResultsSingleMethod`: can run several BO loops with the same method with different objective functions and seeds.
   - `OptimizationResultsMultipleMethods`: can run several `OptimizationResultsSingleMethod` instances with different methods.
-  These classes can only run the BO loops in sequence, not in parallel. For this reason, their usage is now deprecated in favor of `bo_experiments_gp.py`, which submits jobs to repeatedly run `run_bo.py`. `run_bo.py` simply uses `OptimizationResultsSingleMethod` with a single objective function and a single BO seed.
+  These classes can only run the BO loops in sequence, not in parallel. For this reason, their full intended usage is now deprecated in favor of `bo_experiments_gp.py`, which submits jobs to repeatedly run `run_bo.py`. `run_bo.py` simply uses `OptimizationResultsSingleMethod` with a single objective function and a single BO seed.
 
 - **Plotting & Utility Functions:**  
-  Helper routines for plotting optimization trajectories, generating random GP realizations, and applying outcome transforms.
+  Helper routines for plotting optimization trajectories, generating random GP realizations, and applying outcome transforms. (Much of these are now deprecated in favor of `bo_experiments_gp_plot.py`.)
 
 ## Utility Functions
 - `utils.py`: provides a comprehensive suite of helper functions and classes to support operations such as outcome transformations, kernel and model setup, JSON serialization, tensor padding, and various utility routines for managing data and configurations in Bayesian optimization experiments.
