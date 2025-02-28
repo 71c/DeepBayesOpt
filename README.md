@@ -69,6 +69,7 @@ Alternatively, you can use `config/train_acqf_experiment_test_simple.yml` to jus
 - `--sweep_name` is the name of the "sweep" (in Weights and Biases terminology). In this case, it just corresponds to the name of the directory where the err and out files, and other information about the experiment submission, will be saved.
 - `--mail` is the email address to send a notification to when the job is done (optional).
 - `--gpu_gres` is the GPU resource to request. In this case, it is requesting one GPU. (Also optional.)
+
 Other arguments like partition and time may be added to the script if necessary.
 
 
