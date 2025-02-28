@@ -6,4 +6,5 @@ sweeps/
 config/dependencies.json
 config/refined_config.yml
 config/options.yml
+config/plot_config.json
 stats_output.txt

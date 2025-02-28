@@ -1,0 +1,15 @@
+parameters:
+  dimension:
+    value: 16
+  method:
+    value: gittins
+  gi_loss_normalization:
+    value: normal
+  lamda:
+    value: 1e-4
+  train_samples_size:
+    values: [1000, 10000, 100000]
+  layer_width:
+    values: [175, 500]
+  learning_rate:
+    values: [3.e-5, 3.e-4, 3.e-3]

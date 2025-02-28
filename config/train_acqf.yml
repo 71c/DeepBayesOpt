@@ -23,15 +23,15 @@ parameters:
       train_samples_size:
         values: [1000, 10000, 100000]
       test_samples_size:
-        value: 5000
+        value: 10000
   acquisition_dataset:
     parameters:
       train_acquisition_size:
-        value: 5000
+        value: 30000
       replacement:
         values: [true, false]
       test_expansion_factor:
-        value: 2
+        value: 1
       n_candidates:
         values: [1, 5, 25]
       min_history:
@@ -88,7 +88,7 @@ parameters:
         - value: true
           parameters:
             patience:
-              value: 20
+              value: 60
             min_delta:
               value: 0.0
             cumulative_delta:
