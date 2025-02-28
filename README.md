@@ -10,7 +10,7 @@ The repository includes:
 
 # Installation
 
-To install the required packages, make a new Python environment, e.g. using conda
+To install the required packages, make a new Python environment, for example using Anaconda:
 ```bash
 conda create --name nn_bo python=3.12.4
 ```
@@ -26,8 +26,8 @@ pip install -r requirements.txt
 ```
 
 
-
 # BO loops (+ NN training if necessary)
+Use `run_bo.py` for running a single BO loop, and use `bo_experiments_gp.py` for running multiple. `bo_experiments_gp.py` is the most high-level script and the one that is most likely to be used.
 
 ## Running a single Bayesian optimization loop
 To run a BO loop, you can use `run_bo.py`. `run_bo.py --help` will show the description of the arguments. If the NN model has not been trained yet, it will raise an error. In this case, you need to enter the command to train the NN model and then the command to run the BO loop.
@@ -75,6 +75,7 @@ Other arguments like partition and time may be added to the script if necessary.
 
 # NN training (+ dataset generation if necessary)
 Although the NN training is automatically done when running the BO loops, you can also just train the all the NNs without doing anything with them just yet, with the following scripts.
+Use `run_train.py` for training a single NN, and `train_acqf.py` for training multiple.
 
 ## Training a single neural network
 `run_train.py` is the script that trains a single neural network. `run_train.py --help` will show the description of the arguments. An example command is as follows:
@@ -85,7 +86,7 @@ It will output
 ```
 Saving NN to v2/model_1798dfc44d64e85c92ab88abd40fb62e97f216968037268b794b92c0a1099b4b
 ```
-This identifies the neural network model -- which is uniquely identified by the specific combination of dataset, architecture, training method, optimizer settings, etc -- and this info and the weights to this directory.
+This identifies the neural network model, which is uniquely identified by the specific combination of dataset, architecture, training method, optimizer settings, etc. This information, along with the weights of the NN corresponding to the epoch where it performed the best on the test dataset, are saved to this directory.
 
 ### Dataset generation
 In order to train the neural network, you need to have a dataset of black-box objective functions. Currently, the dataset is randomly generated using Gaussian process models. Since it takes some time to generate the datasets, they are cached in the `datasets` directory. When running `run_train.py`, if the dataset is not found, it will automatically generate the dataset and save it in the `datasets` directory. But there is also a stand-alone script to generate the dataset manually, because this way the dataset generation can be separated from the neural network training which makes it possible to have finer-grained control of the automated job scheduling.
@@ -94,6 +95,8 @@ To generate a synthetic dataset of black-box objective functions, use `gp_acquis
 ```bash
 python gp_acquisition_dataset.py --dimension 16 --kernel Matern52 --lamda_max 1.0 --lamda_min 0.0001 --lengthscale 0.1 --max_history 100 --min_history 1 --replacement --test_expansion_factor 1 --test_n_candidates 1 --test_samples_size 10000 --train_acquisition_size 30000 --train_n_candidates 1 --train_samples_size 10000
 ```
+Note that in the above command, the parameters `lamda_max` and `lamda_min` are used because this means that we are requesting a `CostAwareAcquisitionDataset` which, along with the other attributes like `'x_hist', 'y_hist', 'x_cand', 'y_cand'`, also includes random values of $\lambda$. It is done in this way as "part of the datset" rather than generating the $\lambda$ values in the training loop because this way, the *testing* dataset along with the random $\lambda$ values can be fixed, the stats for true GP model cached, and saved to disk. (In contrast, the train dataset will not have its acquisition function dataset samples fixed.)
+
 
 ## Training multiple neural networks
 `python train_acqf.py` is the script that trains multiple neural networks.
@@ -138,3 +141,58 @@ On the other hand, if you run the same command above but additionally with the f
 ```
 This means that each figure (file) corresponds to its own dimension, each subplot with in a figure corresponds to a combination of layer width and training samples size, error bar ("line") corresponds to a different BO policy, and the seed is the source of randomness for the error bar.
 Enabling `--use_subplots` is more compact since it fits multiple subplots in a single figure so you can view them side by side.
+
+
+
+
+
+# Overview of the code
+
+## Command-line scripts (discussed above)
+The command-line scripts are organized as follows. See the following sections for more details on each script.
+- **BO loops (+ NN training):** `run_bo.py` for running a single BO loop, `bo_experiments_gp.py` for running multiple. `bo_experiments_gp.py` is the most high-level script and the one that is most likely to be used.
+- **NN training (+ dataset generation):** `run_train.py` for training a single NN, `train_acqf.py` for training multiple.
+- **Dataset generation:** `gp_acquisition_dataset.py` for generating a dataset of black-box objective functions.
+- **Making plots:** `bo_experiments_gp_plot.py` for making plots of the BO loops once the results are available.
+
+## Datasets
+- `dataset_with_models.py`: Provides a mechanism for creating a hierarchy of classes that represents datasets and can optionally have a GP model attached to each item in the dataset.
+- `function_samples_dataset.py`: Defines classes that represent samples of functions. Uses `dataset_with_models.py` to create the class `FunctionSamplesDataset`, along with `MapFunctionSamplesDataset`, `ListMapFunctionSamplesDataset`, `LazyMapFunctionSamplesDataset`, and `MapFunctionSamplesSubset`. Also defines `TransformedFunctionSamplesIterableDataset`, `TransformedLazyMapFunctionSamplesDataset`, `GaussianProcessRandomDataset`, and `ResizedFunctionSamplesIterableDataset`.
+- `acquisition_dataset.py`: Defines classes that represent datasets for training acquisition functions. Uses `function_samples_dataset.py` to create the class `AcquisitionDataset`, along with `MapAcquisitionDataset`, `ListMapAcquisitionDataset`, `LazyMapAcquisitionDataset`, and `MapAcquisitionSubset`. Defines `FunctionSamplesAcquisitionDataset` which is used to create an acquisition dataset from a function samples dataset. Also defines `CostAwareAcquisitionDataset` which simply combines random $\lambda$ values with the acquisition dataset.
+
+## NN AF Architecture: `acquisition_function_net.py`
+`acquisition_function_net.py` defines PyTorch modules for acquisition functions in likelihood-free Bayesian optimization. It includes modular classes for structured acquisition function design, such as:
+- `AcquisitionFunctionNet`: Base class for acquisition function networks.
+- `ParameterizedAcquisitionFunctionNet`: Supports acquisition functions with parameters.
+- `TwoPartAcquisitionFunctionNet`: Splits acquisition functions into a feature-extracting body and an MLP head.
+- `GittinsAcquisitionFunctionNet`: Implements Gittins index-based acquisition function functionality.
+- `ExpectedImprovementAcquisitionFunctionNet`: Implements the architecture and interface used for the neural-network-based expected improvement.
+- `AcquisitionFunctionNetModel` and `AcquisitionFunctionNetAcquisitionFunction`: Enable integration with BoTorch to be used in Bayesian optimization loops.
+
+## Code for NN Training: `train_acquisition_function_net.py`
+`train_acquisition_function_net.py` contains the code for training neural networks for acquisition functions. In particular, the function `train_acquisition_function_net` is only used in `run_train.py`. Additionally, this script defines functions to be used for loading and saving the NN models.
+
+## Code for running BO loops: `bayesopt.py`
+This module implements the core Bayesian optimization loop. It includes:
+
+- **Optimizer Classes:**  
+  - **`BayesianOptimizer`**: An abstract base class handling initialization, tracking of the best observed values, and time statistics.  
+  - **`RandomSearch`**: A simple random sampling baseline.  
+  - **`SimpleAcquisitionOptimizer`**: Uses an acquisition function (optimized via BoTorch) to select new evaluation points.  
+  - **`ModelAcquisitionOptimizer`**: Integrates a model (GP or NN) with the acquisition function.  
+  - **`NNAcquisitionOptimizer` / `GPAcquisitionOptimizer`**: Concrete implementations for NN-based and GP-based acquisition functions, respectively.
+
+- **Results & Experiment Management:**
+  Classes for caching, saving, and validating BO results across functions and trials. This includes `OptimizationResultsSingleMethod` and `OptimizationResultsMultipleMethods`:
+  - `OptimizationResultsSingleMethod`: can run several BO loops with the same method with different objective functions and seeds,
+  - `OptimizationResultsMultipleMethods`: can run several `OptimizationResultsSingleMethod` instances with different methods.
+  These classes can only run the BO loops in sequence, not in parallel. For this reason, their usage is now deprecated in favor of `bo_experiments_gp.py`, which submits jobs to repeatedly run `run_bo.py`. `run_bo.py` simply uses `OptimizationResultsSingleMethod` with a single objective function and a single BO seed.
+
+- **Plotting & Utility Functions:**  
+  Helper routines for plotting optimization trajectories, generating random GP realizations, and applying outcome transforms.
+
+## Utility Functions
+- `utils.py`: provides a comprehensive suite of helper functions and classes to support operations such as outcome transformations, kernel and model setup, JSON serialization, tensor padding, and various utility routines for managing data and configurations in Bayesian optimization experiments.
+- `nn_utils.py`: provides utility functions and custom PyTorch modules to build and manage neural network components, including dense layers, learnable positive parameters, custom softplus activations, and PointNet layers with various pooling strategies. It also includes helper routines for tensor dimension checking and masked softmax operations, along with embedded test cases for verification.
+- `plot_utils.py`: a few utility functions for plotting things.
+
