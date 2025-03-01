@@ -1,10 +1,12 @@
 parameters:
+  max_history:
+    value: 20
   method:
     value: gittins
   gi_loss_normalization:
     value: normal
   lamda:
-    value: 1e-4
+    value: 1.e-4
   train_samples_size:
     value: 100000
   layer_width:
@@ -17,3 +19,5 @@ parameters:
     value: 100
   epochs:
     value: 1000
+  learning_rate:
+    value: 1.e-5

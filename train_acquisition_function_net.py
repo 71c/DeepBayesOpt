@@ -164,7 +164,7 @@ def calculate_gittins_loss(pred_gi, y, lamdas, costs=None,
             How to normalize the loss function as proposed
         known_costs (bool):
             Whether the costs `costs` are known
-            (only applicable if normalize=True and costs != None)
+            (only applicable if normalize != None and costs != None)
         mask (Tensor or None):
             The mask tensor, shape (batch_size, n_cand)
         reduction (str):
@@ -1195,6 +1195,17 @@ def get_test_during_after_training(
     return test_during_training, test_after_training
 
 
+def _remove_none_and_false(d):
+    if type(d) is dict:
+        return {
+            k: _remove_none_and_false(v) for k, v in d.items()
+            if not (v is None or v == False)
+        }
+    if type(d) is list:
+        return [_remove_none_and_false(x) for x in d]
+    return d
+
+
 MODELS_SUBDIR = "models"
 
 def save_af_net_configs(
@@ -1234,6 +1245,7 @@ def save_af_net_configs(
         'dataset_transform_config': dataset_transform_config_json,
         'model_sampler': model_sampler_json
     }
+    # all_info_json = _remove_none_and_false(all_info_json)
     all_info_hash = dict_to_hash(all_info_json)
     model_and_info_folder_name = os.path.join(VERSION, f"model_{all_info_hash}")
     model_and_info_path = os.path.join(MODELS_DIR, model_and_info_folder_name)

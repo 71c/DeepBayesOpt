@@ -23,7 +23,8 @@ def check_dict_has_keys(d: dict, keys: list[str], error_msg=None):
 
 def refine_config(params_value: Union[dict[str, dict[str, Any]], list[dict[str, Any]]],
                   experiment_config: dict[str, dict[str, Union[bool, list, int, float, type[None]]]],
-                  params_names:list[str]=[]):
+                  params_names:list[str]=[],
+                  apply_defaults=True):
     if not isinstance(experiment_config, dict):
         raise ValueError('experiment_config must be a dictionary.')
     
@@ -31,12 +32,26 @@ def refine_config(params_value: Union[dict[str, dict[str, Any]], list[dict[str, 
                       for param_name in params_names)
         
     if isinstance(params_value, list): # an OR
-        if not vary_params:
+        ret = [
+            refine_config(params_dict, experiment_config, params_names,
+                          apply_defaults=vary_params)
+            for params_dict in params_value
+        ]
+        if vary_params:
+            return ret
+        nonempty_indices = [i for i, x in enumerate(ret) if x]
+        if len(nonempty_indices) == 0:
             # If the parameter is not varying, we just take the first value
             params_value = [params_value[0]]
+            return [
+                refine_config(params_dict, experiment_config, params_names,
+                            apply_defaults=True)
+                for params_dict in params_value
+            ]
         return [
-            refine_config(params_dict, experiment_config, params_names)
-            for params_dict in params_value
+            refine_config(params_value[i], experiment_config, params_names,
+                          apply_defaults=True)
+            for i in nonempty_indices
         ]
     elif isinstance(params_value, dict): # an AND
         tmp: dict[str, Any] = {}
@@ -69,7 +84,8 @@ def refine_config(params_value: Union[dict[str, dict[str, Any]], list[dict[str, 
                 )
                 tmp[param_name] = {
                     'parameters': refine_config(
-                    param_config['parameters'], experiment_config, this_params_names)
+                    param_config['parameters'], experiment_config, this_params_names,
+                    apply_defaults=apply_defaults)
                 }
             else:
                 check_dict_has_keys(
@@ -108,10 +124,13 @@ def refine_config(params_value: Union[dict[str, dict[str, Any]], list[dict[str, 
 
                             values = new_values
                 else:
-                    if 'value' in param_config:
-                        values = [param_config['value']]
+                    if apply_defaults:
+                        if 'value' in param_config:
+                            values = [param_config['value']]
+                        else:
+                            values = [param_config['values'][0]]
                     else:
-                        values = [param_config['values'][0]]
+                        values = []
                 
                 for i, value in enumerate(values):
                     if type(value) is dict:
@@ -120,10 +139,12 @@ def refine_config(params_value: Union[dict[str, dict[str, Any]], list[dict[str, 
                             lambda kk: f"Invalid key '{kk}' in parameter value dictionary.")
                         if 'parameters' in value:
                             values[i]['parameters'] = refine_config(
-                                value['parameters'], experiment_config, this_params_names)
+                                value['parameters'], experiment_config, this_params_names,
+                                apply_defaults=apply_defaults)
                         else:
                             values[i] = value['value']
-                tmp[param_name] = {'values': values} if len(values) > 1 else {'value': values[0]}
+                if len(values) > 0:
+                    tmp[param_name] = {'values': values} if len(values) != 1 else {'value': values[0]}
         return tmp
     else:
         raise ValueError(

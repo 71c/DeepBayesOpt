@@ -9,6 +9,7 @@ import numpy as np
 import torch
 from torch import Tensor
 from botorch.optim import optimize_acqf
+from botorch.generation.gen import gen_candidates_scipy, gen_candidates_torch
 from botorch.acquisition.acquisition import AcquisitionFunction
 from botorch.models.model import Model
 from botorch.models.gp_regression import SingleTaskGP
@@ -29,7 +30,7 @@ class BayesianOptimizer(ABC):
                  maximize: bool,
                  initial_points: Tensor,
                  objective: Callable,
-                 bounds: Optional[Tensor]=None):
+                 bounds: Tensor):
         if not isinstance(dim, int) or dim < 1:
             raise ValueError("dim must be a positive integer.")
         if not isinstance(maximize, bool):
@@ -41,8 +42,8 @@ class BayesianOptimizer(ABC):
             
         self.dim = dim
         self.maximize = maximize
-        if bounds is None:
-            bounds = torch.stack([torch.zeros(dim), torch.ones(dim)])
+        if not (bounds.dim() == 2 and bounds.size(0) == 2 and bounds.size(1) == dim):
+            raise ValueError("Invalid bounds")
         self.bounds = bounds
         self.objective = objective
         
@@ -78,8 +79,9 @@ class BayesianOptimizer(ABC):
         """
         pass  # pragma: no cover
     
-    def optimize(self, n_iter: int):
-        for i in range(n_iter):
+    def optimize(self, n_iter: int, verbose=False):
+        it = trange(n_iter) if verbose else range(n_iter)
+        for i in it:
             start_p = time.process_time()
             start = time.time()
             new_x = self.get_new_point()
@@ -125,7 +127,7 @@ class SimpleAcquisitionOptimizer(BayesianOptimizer):
                  maximize: bool,
                  initial_points: Tensor,
                  objective: Callable,
-                 bounds: Optional[Tensor]=None):
+                 bounds: Tensor):
         super().__init__(dim, maximize, initial_points, objective, bounds)
         self._acq_history = []
     
@@ -173,8 +175,8 @@ class ModelAcquisitionOptimizer(SimpleAcquisitionOptimizer):
                  maximize: bool,
                  initial_points: Tensor,
                  objective: Callable,
+                 bounds: Tensor,
                  acquisition_function_class: Type[AcquisitionFunction],
-                 bounds: Optional[Tensor]=None,
                  **acqf_kwargs):
         super().__init__(dim, maximize, initial_points, objective, bounds)
         self.acqf_kwargs = acqf_kwargs
@@ -202,11 +204,11 @@ class NNAcquisitionOptimizer(ModelAcquisitionOptimizer):
                  maximize: bool,
                  initial_points: Tensor,
                  objective: Callable,
+                 bounds: Tensor,
                  model: AcquisitionFunctionNet,
-                 bounds: Optional[Tensor]=None,
                  **acqf_kwargs):
-        super().__init__(dim, maximize, initial_points, objective, 
-                         AcquisitionFunctionNetAcquisitionFunction, bounds,
+        super().__init__(dim, maximize, initial_points, objective, bounds,
+                         AcquisitionFunctionNetAcquisitionFunction,
                          **acqf_kwargs)
         self.model = model
     
@@ -226,14 +228,14 @@ class GPAcquisitionOptimizer(ModelAcquisitionOptimizer):
                  maximize: bool,
                  initial_points: Tensor,
                  objective: Callable,
+                 bounds: Tensor,
                  model: SingleTaskGP,
                  acquisition_function_class: Type[AcquisitionFunction],
                  fit_params: bool,
                  mle: bool=False,
-                 bounds: Optional[Tensor]=None,
                  **acqf_kwargs):
-        super().__init__(dim, maximize, initial_points, objective,
-                         acquisition_function_class, bounds, **acqf_kwargs)
+        super().__init__(dim, maximize, initial_points, objective, bounds,
+                         acquisition_function_class, **acqf_kwargs)
         
         self.fit_params = fit_params
         if fit_params:
@@ -274,9 +276,11 @@ class OptimizationResultsSingleMethod:
                  nn_model_name: Optional[str]=None,
                  save_dir: Optional[str]=None,
                  results_name: Optional[str]=None,
+                 verbose=False,
                  **optimizer_kwargs):
         self.objectives = objectives
         self.n_functions = len(objectives)
+        self.verbose = verbose
         
         if initial_points.dim() != 3:
             raise ValueError("initial_points must be a 3D tensor of shape "
@@ -440,7 +444,7 @@ class OptimizationResultsSingleMethod:
         else:
             return True
     
-    def _get_trial_result(self, func_index: int, trial_index: int):
+    def _get_trial_result(self, func_index: int, trial_index: int, verbose=False):
         trial_result = None
         if self.save_dir is not None:
             trial_result = self._get_cached_trial_result(func_index, trial_index)
@@ -453,7 +457,7 @@ class OptimizationResultsSingleMethod:
                 **self.optimizer_kwargs,
                 **self.optimizer_kwargs_per_function[func_index]
             )
-            optimizer.optimize(self.n_iter)
+            optimizer.optimize(self.n_iter, verbose=verbose)
             trial_result = {
                 'best_y': optimizer.best_y_history.numpy(),
                 'best_x': optimizer.best_x_history.numpy(),
@@ -523,8 +527,13 @@ class OptimizationResultsSingleMethod:
         prefix = f"{self.results_name}: " if self.results_name is not None else ""
         
         if n_funcs_to_optimize > 0:
-            desc = f"{prefix}Optimizing {n_funcs_to_optimize} functions"
-            pbar = tqdm(total=n_funcs_to_optimize, desc=desc)
+            if n_funcs_to_optimize > 1:
+                desc = f"{prefix}Optimizing {n_funcs_to_optimize} functions"
+                pbar = tqdm(total=n_funcs_to_optimize, desc=desc)
+                verbose = self.verbose
+            else:
+                print(f"{prefix}: Optimizing 1 function")
+                verbose = True
         
         for func_index in range(self.n_functions):
             trial_indices_not_cached_func = trial_indices_not_cached[func_index]
@@ -545,13 +554,14 @@ class OptimizationResultsSingleMethod:
                     print(desc)
                 for trial_index in it:
                     results_func[trial_index] = self._get_trial_result(
-                        func_index, trial_index)
+                        func_index, trial_index, verbose=verbose)
                     if hasattr(self, 'pbar'):
                         self.pbar.update(1)
                     
                 self._save_func_results(func_index)
 
-                pbar.update(1)
+                if n_funcs_to_optimize > 1:
+                    pbar.update(1)
 
             # n_trials_per_function x 1+n_iter x 1
             function_best_y_data = np.array([r['best_y'] for r in results_func])
@@ -574,7 +584,7 @@ class OptimizationResultsSingleMethod:
             
             yield func_name, result
         
-        if n_funcs_to_optimize > 0:
+        if n_funcs_to_optimize > 1:
             pbar.close()
 
 

@@ -4,7 +4,7 @@ parameters:
   gi_loss_normalization:
     value: normal
   lamda:
-    value: 1e-4
+    value: 1.e-4
   train_samples_size:
     value: 10000
   layer_width:

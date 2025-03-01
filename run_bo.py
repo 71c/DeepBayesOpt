@@ -349,6 +349,7 @@ def run_bo(objective_args: dict[str, Any],
         save_dir=RESULTS_DIR,
         results_name=results_name, # results_name is only used to print stuff out
         dim=dimension, bounds=bounds, maximize=True,
+        verbose=True,
         **af_options
     )
 

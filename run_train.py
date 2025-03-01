@@ -34,7 +34,7 @@ logging.basicConfig(level=logging.WARNING)
 ##################### Settings for this script #################################
 # Whether to fit maximum a posteriori GP for testing
 FIT_MAP_GP = False
-
+SAVE_INCREMENTAL_BEST_MODELS = False
 CPROFILE = False
 TIME = True
 VERBOSE = True
@@ -329,7 +329,7 @@ def run_train(args: argparse.Namespace):
             get_train_true_gp_stats=GET_TRAIN_TRUE_GP_STATS,
             get_test_true_gp_stats=GET_TEST_TRUE_GP_STATS,
             save_dir=model_path,
-            save_incremental_best_models=True and args.save_model,
+            save_incremental_best_models=SAVE_INCREMENTAL_BEST_MODELS and args.save_model,
             early_stopping=args.early_stopping,
             patience=args.patience,
             min_delta=args.min_delta,
