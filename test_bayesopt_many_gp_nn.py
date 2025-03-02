@@ -15,7 +15,7 @@ from bayesopt import (GPAcquisitionOptimizer, OptimizationResultsMultipleMethods
                       get_random_gp_functions, plot_optimization_results_multiple_methods, transform_functions_and_names)
 
 from utils import (dict_to_hash, dict_to_str, get_dimension,
-                   get_gp, DEVICE, Exp, load_json, save_json)
+                   get_gp, DEVICE, Exp, save_json)
 from dataset_with_models import RandomModelSampler
 
 from gpytorch.kernels import MaternKernel, ScaleKernel, RBFKernel

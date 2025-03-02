@@ -6,9 +6,7 @@ from torch import Tensor
 from gpytorch.utils.transforms import inv_softplus
 from botorch.utils.transforms import normalize_indices
 from botorch.utils.safe_math import fatmax, smooth_amax
-from abc import ABC, abstractmethod
-from botorch.exceptions import UnsupportedError
-from utils import expand_dim, load_json, save_json
+from utils import expand_dim
 
 import logging
 

@@ -1106,7 +1106,7 @@ def save_json(data, fname, **kwargs):
 
 def load_json(fname, **kwargs):
     with open(fname, 'r') as json_file:
-        return json.load(json_file)
+        return json.load(json_file, **kwargs)
 
 
 def dict_to_cmd_args(params, equals=False) -> list[str]:
