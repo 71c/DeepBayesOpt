@@ -1,4 +1,5 @@
 import copy
+from functools import cache
 import math
 import os
 from typing import Any, Optional
@@ -1314,7 +1315,8 @@ def model_is_trained(model_and_info_folder_name: str):
         return False
 
 
-def load_model(model_and_info_folder_name: str, return_model_path=False):
+@cache
+def _load_model(model_and_info_folder_name: str):
     model_and_info_path = os.path.join(MODELS_DIR, model_and_info_folder_name)
     model_path = get_latest_model_path(model_and_info_path)
 
@@ -1334,6 +1336,11 @@ def load_model(model_and_info_folder_name: str, return_model_path=False):
     print(f"Loading best weights from {best_model_path}")
     model.load_state_dict(torch.load(best_model_path))
 
+    return model, model_path
+
+
+def load_model(model_and_info_folder_name: str, return_model_path=False):
+    model, model_path = _load_model(model_and_info_folder_name)
     if return_model_path:
         return model, model_path
     return model

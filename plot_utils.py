@@ -209,36 +209,113 @@ def plot_acquisition_function_net_training_history(training_history_data):
 
 alpha = 0.05
 sharey = True
-aspect = 2.0
-scale = 0.5
+aspect = 1.618
+scale = 1.0
+
+attr_name_to_title = {
+    "best_y": "Best function value",
+    "process_time": "Process time",
+    "time": "Time",
+    "n_evals": "Number of AF evaluations by optimize_acqf",
+    "mean_eval_process_time": "Mean time to evaluate AF in optimize_acqf",
+    "optimize_process_time": "Time spent optimizing"
+}
 
 
 def plot_nested_structure(plot_config: dict,
-                          results_list: list,
+                          get_result_func,
                           ax,
-                          plot_name: str):
+                          plot_name: Optional[str]=None):
+    attr_names = set()
+    
     for legend_name, data in plot_config.items():
         results_this_legend = []
         for k, v in data["items"].items():
             data_index = v["items"]
             if isinstance(data_index, list):
                 raise ValueError
-            best_y = results_list[data_index]['best_y']
-            assert len(best_y.shape) == 2 and best_y.shape[1] == 1
-            results_this_legend.append(best_y[:, 0])
-        results_this_legend = np.array(results_this_legend)
-        plot_optimization_trajectories_error_bars(
-            ax, results_this_legend, legend_name, alpha)
+            info = get_result_func(data_index)
+            if info is not None:
+                attr_name = info['attr_name']
+                attr_names.add(attr_name)
+                val = info[attr_name]
+                if attr_name == 'best_y':
+                    assert len(val.shape) == 2 and val.shape[1] == 1
+                    val = val[:, 0]
+                else:
+                    assert len(val.shape) == 1
+                results_this_legend.append(val)
+        if len(results_this_legend) != 0:
+            results_this_legend = np.array(results_this_legend)
+            plot_optimization_trajectories_error_bars(
+                ax, results_this_legend, legend_name, alpha)
     
+    if len(attr_names) > 1:
+        raise ValueError(f"Expected just one attribute to plot but got {attr_names=}")
+
+    if len(attr_names) == 0:
+        raise ValueError("No data to plot")
+    
+    attr_name = attr_names.pop()
+
     ax.set_xlabel('Iteration')
-    ax.set_ylabel('Best function value')
+    attr_name_title = attr_name_to_title[attr_name]
+    ax.set_ylabel(attr_name_title)
+    if not plot_name:
+        plot_name = f"{attr_name_title} vs iteration"
     ax.set_title(plot_name)
     ax.legend()
 
 
+def add_headers(
+    fig,
+    *,
+    row_headers=None,
+    col_headers=None,
+    row_pad=1,
+    col_pad=30,
+    rotate_row_headers=True,
+    **text_kwargs
+):
+    # Based on https://stackoverflow.com/a/25814386
+
+    axes = fig.get_axes()
+
+    for ax in axes:
+        sbs = ax.get_subplotspec()
+
+        # Putting headers on cols
+        if (col_headers is not None) and sbs.is_first_row():
+            ax.annotate(
+                col_headers[sbs.colspan.start],
+                xy=(0.5, 1),
+                xytext=(0, col_pad),
+                xycoords="axes fraction",
+                textcoords="offset points",
+                ha="center",
+                va="baseline",
+                **text_kwargs,
+            )
+
+        # Putting headers on rows
+        if (row_headers is not None) and sbs.is_first_col():
+            ax.annotate(
+                row_headers[sbs.rowspan.start],
+                xy=(0, 0.5),
+                xytext=(-ax.yaxis.labelpad - row_pad, 0),
+                xycoords=ax.yaxis.label,
+                textcoords="offset points",
+                ha="right",
+                va="center",
+                rotation=rotate_row_headers * 90,
+                **text_kwargs,
+            )
+
+
+
 def get_figure_from_nested_structure(
         plot_config: dict,
-        results_list: list,
+        get_result_func,
         attrs_groups_list: list[Optional[set]],
         level_names: list[str],
         figure_name: str):
@@ -251,10 +328,25 @@ def get_figure_from_nested_structure(
     height = np.sqrt(area / aspect)
     width = aspect * height
 
+    row_and_col = False
+    col_names = None
     if this_level_name == "line":
         n_rows = 1
         n_cols = 1
-    elif this_level_name == "subplot":
+    elif this_level_name == "row":
+        n_rows = len(plot_config)
+        if next_level_names[0] == "col":
+            col_names = list(sorted(
+                set().union(*[set(v["items"].keys()) for v in plot_config.values()])
+            ))
+            col_name_to_col_index = {}
+            for i, col_name in enumerate(col_names):
+                col_name_to_col_index[col_name] = i
+            n_cols = len(col_names)
+            row_and_col = True
+        else:
+            n_cols = 1
+    elif this_level_name == "col":
         n_rows = 1
         n_cols = len(plot_config)
     else:
@@ -263,20 +355,38 @@ def get_figure_from_nested_structure(
     fig, axes = plt.subplots(n_rows, n_cols,
                              figsize=(width * n_cols, height * n_rows),
                              sharex=True, sharey=sharey,
-                             squeeze=True # Currently, will always be 1D array since 1 row.
+                             squeeze=False
                              )
-    if n_rows * n_cols == 1: # just to do with squeeze=True
-        axes = [axes]
     
     if this_level_name == "line":
         assert next_level_names == ["random"]
         randomize_attrs = next_attrs_groups[0]
-        plot_nested_structure(plot_config, results_list, axes[0], figure_name)
-    elif this_level_name == "subplot":
-        assert next_level_names == ["line", "random"]
+        plot_nested_structure(
+            plot_config, get_result_func, axes[0, 0], figure_name)
+    else:
         fig.suptitle(figure_name, fontsize=16, fontweight='bold')
-        for ax, (subplot_name, subplot_data) in zip(axes, plot_config.items()):
-            plot_nested_structure(subplot_data["items"], results_list, ax, subplot_name)
+        tmp = sorted(plot_config.items(), key=lambda x: x[0])
+        if row_and_col:
+            assert next_level_names == ["col", "line", "random"]
+            for row, (row_name, row_data) in enumerate(tmp):
+                row_items = row_data["items"]
+                for subplot_name, subplot_data in row_items.items():
+                    col = col_name_to_col_index[subplot_name]
+                    plot_nested_structure(
+                        subplot_data["items"], get_result_func, axes[row, col], None)
+            row_names = list(sorted(plot_config.keys()))
+            add_headers(fig, row_headers=row_names, col_headers=col_names)
+        elif this_level_name == "row" or this_level_name == "col":
+            assert next_level_names == ["line", "random"]
+            if this_level_name == "col":
+                axs = axes[0, :]
+            else:
+                axs = axes[:, 0]
+            for ax, (subplot_name, subplot_data) in zip(axs, tmp):
+                plot_nested_structure(
+                    subplot_data["items"], get_result_func, ax, subplot_name)
+        else:
+            raise ValueError
 
     fig.tight_layout()
 
@@ -285,7 +395,7 @@ def get_figure_from_nested_structure(
 
 def save_figures_from_nested_structure(
         plot_config: dict,
-        results_list: list,
+        get_result_func,
         attrs_groups_list: list[Optional[set]],
         level_names: list[str],
         base_folder=''):
@@ -307,7 +417,7 @@ def save_figures_from_nested_structure(
                 save_json(data["vals"], os.path.join(dirname, "vals.json"), indent=2)
 
             save_figures_from_nested_structure(
-                items, results_list, next_attrs_groups, next_level_names,
+                items, get_result_func, next_attrs_groups, next_level_names,
                 base_folder=dirname
             )
     elif this_level_name == "fname":
@@ -318,7 +428,8 @@ def save_figures_from_nested_structure(
                 info_dict[fname_desc] = data["vals"]
 
             fig = get_figure_from_nested_structure(
-                items, results_list, next_attrs_groups, next_level_names, fname_desc)
+                items, get_result_func, next_attrs_groups,
+                next_level_names, fname_desc)
             
             fname = f"{fname_desc}.pdf"
             fpath = os.path.join(base_folder, fname)

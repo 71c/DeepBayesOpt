@@ -1,15 +1,21 @@
 parameters:
+  max_history:
+    value: 20
   dimension:
     value: 16
   method:
-    value: gittins
+    values: ['gittins', 'mse_ei']
   gi_loss_normalization:
     value: normal
   lamda:
-    value: 1e-4
+    value: 1.e-3
   train_samples_size:
     values: [1000, 10000, 100000]
   layer_width:
-    values: [175, 500]
+    values: [175, 512]
   learning_rate:
-    values: [3.e-5, 3.e-4, 3.e-3]
+    values: [3.e-6, 1.e-3, 1.e-2]
+  batch_size:
+    values: [32, 128, 512]
+  patience:
+    value: 20

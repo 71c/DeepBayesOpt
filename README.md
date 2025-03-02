@@ -140,16 +140,17 @@ The script will output the following to indicate to the user the structure of th
 ```
 To do this, looks at the attributes that were not already specified in `config/plots_config_1.yml` but that do vary in the experiment. Of these, of the ones that are always present across all experiments, it adds them to a new, topmost level. And the rest, it adds to the existing second-to-last level (the "line" level).
 
-On the other hand, if you run the same command above but additionally with the flag `--use_subplots`, then the script will output the following:
+On the other hand, if you run the same command above but additionally with the flag `--use_cols` (you can also enable `--use_cols` instead of or in addition to `--use_rows`), then the script will output the following:
 ```
   fname: {'dimension'}
-  subplot: {'nn.layer_width', 'nn.train_samples_size'}
+  col: {'nn.layer_width', 'nn.train_samples_size'}
   line: {'nn.lamda_min', 'nn.method', 'nn.lamda_max', 'lamda', 'nn.lamda', 'gp_af', 'nn.gi_loss_normalization', 'nn.learning_rate'}
   random: {'objective.gp_seed'}
 ```
 This means that each figure (file) corresponds to its own dimension, each subplot with in a figure corresponds to a combination of layer width and training samples size, error bar ("line") corresponds to a different BO policy, and the seed is the source of randomness for the error bar.
-Enabling `--use_subplots` is more compact since it fits multiple subplots in a single figure so you can view them side by side.
+Enabling `--use_rows` and/or `use_cols` is more compact since it fits multiple subplots in a single figure so you can view them side by side.
 
+Also, the flag `--plot_runtime` plots the runtimes.
 
 
 # Overview of the rest of the codebase

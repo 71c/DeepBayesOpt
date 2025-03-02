@@ -12,6 +12,6 @@ parameters:
   dimension:
     value: 16
   learning_rate:
-    value: 3.e-4
+    value: 3.e-5
   patience:
-    value: 20
+    value: 30

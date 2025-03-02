@@ -7,7 +7,7 @@ import os
 from gp_acquisition_dataset import create_train_test_gp_acq_datasets_from_args
 from run_train import get_configs_and_model_and_paths, get_run_train_parser
 from train_acquisition_function_net import model_is_trained
-from utils import dict_to_cmd_args, dict_to_str, group_by_nested_attrs, save_json
+from utils import dict_to_cmd_args, dict_to_str, save_json
 from submit_dependent_jobs import CONFIG_DIR, SWEEPS_DIR, submit_dependent_jobs
 
 

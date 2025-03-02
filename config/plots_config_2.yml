@@ -1,0 +1,4 @@
+- ["nn.layer_width", "nn.train_samples_size"]
+- ["nn.batch_size", "nn.learning_rate"]
+- ["lamda", "gp_af", "nn.method"]
+- ["objective.gp_seed"]

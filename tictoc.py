@@ -13,7 +13,7 @@ def tic(name=None, say_name=False):
 def toc(name=None):
     t = _time() # calling time() asap makes it as accurate as possible in theory
     if name not in _start_times:
-        argument = repr(name) if name is None else ''
+        argument = repr(name) if name is not None else ''
         raise RuntimeError(f"Error using toc: You must call tic({argument}) before calling toc({argument})")
     dt = t - _start_times.pop(name)
     if name is None:

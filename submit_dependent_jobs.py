@@ -82,7 +82,7 @@ def submit_dependent_jobs(
             sbatch_args_dict['gres'] = job_spec.get("gpu_gres", gpu_gres)
             sbatch_args_dict['mem'] = "20gb"
         else:
-            sbatch_args_dict['partition'] = 'frazier'
+            # sbatch_args_dict['partition'] = 'frazier'
             sbatch_args_dict['mem'] = '4gb'
         if dependency_job_ids:
             dependency_flag = 'afterok:' + ':'.join(dependency_job_ids)

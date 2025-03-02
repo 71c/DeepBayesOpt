@@ -16,10 +16,11 @@ from botorch.models.gp_regression import SingleTaskGP
 from botorch.fit import fit_gpytorch_mll
 from botorch.sampling.pathwise import draw_kernel_feature_paths
 from botorch.models.transforms.outcome import Standardize
+from botorch.exceptions import UnsupportedError
 from gpytorch.mlls import ExactMarginalLogLikelihood
 from dataset_with_models import RandomModelSampler
 from random_gp_function import RandomGPFunction
-from utils import add_outcome_transform, combine_nested_dicts, concatenate_outcome_transforms, convert_to_json_serializable, dict_to_hash, invert_outcome_transform, json_serializable_to_numpy, load_json, remove_priors, sanitize_file_name, save_json
+from utils import add_outcome_transform, aggregate_stats_list, combine_nested_dicts, concatenate_outcome_transforms, convert_to_json_serializable, dict_to_hash, invert_outcome_transform, json_serializable_to_numpy, load_json, remove_priors, sanitize_file_name, save_json
 from json.decoder import JSONDecodeError
 from acquisition_function_net import AcquisitionFunctionNet, AcquisitionFunctionNetModel, AcquisitionFunctionNetAcquisitionFunction
 
@@ -72,6 +73,14 @@ class BayesianOptimizer(ABC):
     def process_time_history(self):
         return torch.tensor(self._process_time_history)
     
+    def get_stats(self):
+        return {
+            'best_y': self.best_y_history.numpy(),
+            'best_x': self.best_x_history.numpy(),
+            'time': self.time_history.numpy(),
+            'process_time': self.process_time_history.numpy()
+        }
+    
     @abstractmethod
     def get_new_point(self) -> Tensor:
         """Get the new point to sample.
@@ -121,6 +130,44 @@ class RandomSearch(BayesianOptimizer):
         return torch.rand(self.dim) * (ub - lb) + lb
 
 
+class TimeLogAcquisitionFunction(AcquisitionFunction):
+    def __init__(self, af: AcquisitionFunction) -> None:
+        super().__init__(model=None)
+        self.af: AcquisitionFunction = af
+        self._total_eval_process_time = 0.0
+        self._total_eval_time = 0.0
+        self._n_evals = 0
+
+    def set_X_pending(self, X_pending: Tensor | None = None) -> None:
+        self.af.set_X_pending(X_pending)
+
+    def forward(self, X: Tensor) -> Tensor:
+        if X.dim() != 3:
+            raise UnsupportedError("Does not support")
+        n_batches = X.size(0) # X has shape batch_size x q x d
+        self._n_evals += n_batches
+
+        start_p = time.process_time()
+        start = time.time()
+        
+        ret = self.af.forward(X)
+        
+        end_p = time.process_time()
+        end = time.time()
+        
+        self._total_eval_process_time += end_p - start_p
+        self._total_eval_time += end - start
+        
+        return ret
+
+    def get_stats(self):
+        return {
+            "n_evals": self._n_evals,
+            "mean_eval_time": self._total_eval_time / self._n_evals,
+            "mean_eval_process_time": self._total_eval_process_time / self._n_evals
+        }
+
+
 class SimpleAcquisitionOptimizer(BayesianOptimizer):
     def __init__(self,
                  dim: int,
@@ -130,10 +177,31 @@ class SimpleAcquisitionOptimizer(BayesianOptimizer):
                  bounds: Tensor):
         super().__init__(dim, maximize, initial_points, objective, bounds)
         self._acq_history = []
+        self._optimize_process_times = []
+        self._optimize_times = []
+        self._optimize_stats_history = []
     
     @property
     def acq_history(self):
         return torch.tensor(self._acq_history)
+
+    @property
+    def optimize_process_times(self):
+        return torch.tensor(self._optimize_process_times)
+
+    @property
+    def optimize_times(self):
+        return torch.tensor(self._optimize_times)
+    
+    def get_stats(self):
+        optimize_stats_ = aggregate_stats_list(self._optimize_stats_history)
+        return {
+            **super().get_stats(),
+            **optimize_stats_,
+            'acqf_value': self.acq_history.numpy(),
+            'optimize_process_time': self.optimize_process_times.numpy(),
+            'optimize_time': self.optimize_times.numpy()
+        }
 
     @abstractmethod
     def get_acquisition_function(self) -> AcquisitionFunction:
@@ -142,7 +210,11 @@ class SimpleAcquisitionOptimizer(BayesianOptimizer):
         pass  # pragma: no cover
 
     def get_new_point(self):
-        acq_function = self.get_acquisition_function()
+        acq_function = TimeLogAcquisitionFunction(
+            self.get_acquisition_function()
+        )
+        start_p = time.process_time()
+        start = time.time()
         new_point, new_point_acquisition_val = optimize_acqf(
             acq_function=acq_function,
             bounds=self.bounds,
@@ -155,7 +227,12 @@ class SimpleAcquisitionOptimizer(BayesianOptimizer):
             #     "method": "L-BFGS-B",
             # }
         )
+        end_p = time.process_time()
+        end = time.time()
+        self._optimize_process_times.append(end_p - start_p)
+        self._optimize_times.append(end - start)
         self._acq_history.append(new_point_acquisition_val.item())
+        self._optimize_stats_history.append(acq_function.get_stats())
         return new_point
 
 
@@ -425,6 +502,7 @@ class OptimizationResultsSingleMethod:
     def _get_cached_trial_result(self, func_index: int, trial_index: int,
                                  return_result: bool=True):
         if self.save_dir is None:
+            # print("Returning None because self.save_dir is None")
             return None
         func_name = self.objective_names[func_index]
         func_results = self._get_func_results(func_name, reload_result=False)
@@ -432,11 +510,15 @@ class OptimizationResultsSingleMethod:
         
         func_opt_config_str = self.func_opt_configs_str[func_index]
         if func_opt_config_str not in results_dict:
+            # print(f"{func_name=}, {func_opt_config_str=}, {func_name=}, {results_dict.keys()=}")
+            # print("Returning None because func_opt_config_str not in results_dict")
+            # print()
             return None
         trials_dict = results_dict[func_opt_config_str]['trials']
         
         trial_config_str = self.trial_configs_str[trial_index]
         if trial_config_str not in trials_dict:
+            # print("Returning None because trial_config_str not in trials_dict")
             return None
         
         if return_result:
@@ -458,12 +540,7 @@ class OptimizationResultsSingleMethod:
                 **self.optimizer_kwargs_per_function[func_index]
             )
             optimizer.optimize(self.n_iter, verbose=verbose)
-            trial_result = {
-                'best_y': optimizer.best_y_history.numpy(),
-                'best_x': optimizer.best_x_history.numpy(),
-                'time': optimizer.time_history.numpy(),
-                'process_time': optimizer.process_time_history.numpy()
-            }
+            trial_result = optimizer.get_stats()
             if self.save_dir is not None:
                 h = self.trial_configs_str[trial_index]
                 self._func_results_to_save[func_index][h] = convert_to_json_serializable(trial_result)
@@ -563,19 +640,20 @@ class OptimizationResultsSingleMethod:
                 if n_funcs_to_optimize > 1:
                     pbar.update(1)
 
-            # n_trials_per_function x 1+n_iter x 1
-            function_best_y_data = np.array([r['best_y'] for r in results_func])
-            # n_trials_per_function x 1+n_iter x dim
-            function_best_x_data = np.array([r['best_x'] for r in results_func])
-            function_time_data = np.array([r['time'] for r in results_func])
-            function_process_time_data = np.array([r['process_time'] for r in results_func])
+            # # n_trials_per_function x 1+n_iter x 1
+            # function_best_y_data = np.array([r['best_y'] for r in results_func])
+            # # n_trials_per_function x 1+n_iter x dim
+            # function_best_x_data = np.array([r['best_x'] for r in results_func])
+            # function_time_data = np.array([r['time'] for r in results_func])
+            # function_process_time_data = np.array([r['process_time'] for r in results_func])
+            # result = {
+            #     'best_y': function_best_y_data,
+            #     'best_x': function_best_x_data,
+            #     'time': function_time_data,
+            #     'process_time': function_process_time_data
+            # }
 
-            result = {
-                'best_y': function_best_y_data,
-                'best_x': function_best_x_data,
-                'time': function_time_data,
-                'process_time': function_process_time_data
-            }
+            result = aggregate_stats_list(results_func)
 
             if self.objective_names is not None:
                 func_name = self.objective_names[func_index]
@@ -836,7 +914,7 @@ def plot_optimization_trajectories(ax, data, label):
         ax.plot(x, data[i], label=label_i)
 
 
-def get_rff_function_and_name(gp, deepcopy=True, dimension=None):
+def get_rff_function(gp, deepcopy=True, dimension=None, get_hash=False):
     if deepcopy:
         gp = copy.deepcopy(gp)
     # Remove priors so that the name of the model doesn't depend on the priors.
@@ -844,7 +922,11 @@ def get_rff_function_and_name(gp, deepcopy=True, dimension=None):
     remove_priors(gp)
     f = draw_kernel_feature_paths(
         gp, sample_shape=torch.Size(), num_features=4096)
-    function_hash = dict_to_hash(convert_to_json_serializable(f.state_dict()))
+    
+    if get_hash:
+        j = convert_to_json_serializable(f.state_dict())
+        # save_json(j, "test-gpu.json", indent=2)
+        function_hash = dict_to_hash(j)
 
     def func(x):
         if x.dim() == 2:
@@ -861,7 +943,9 @@ def get_rff_function_and_name(gp, deepcopy=True, dimension=None):
         out = out.unsqueeze(-1) # get to shape n x m where m=1 (m = number of outputs)
         return out
 
-    return func, function_hash
+    if get_hash:
+        return func, function_hash
+    return func
 
 
 def outcome_transform_function(objective_fn, outcome_transform):
@@ -921,7 +1005,7 @@ def get_random_gp_functions(gp_sampler:RandomModelSampler,
         for _ in range(n_functions):
             gp = gp_sampler.sample(deepcopy=True).eval()
             random_gps.append(gp)
-            gp_realization, realization_hash = get_rff_function_and_name(gp)
+            gp_realization, realization_hash = get_rff_function(gp, get_hash=True)
             gp_realizations.append(gp_realization)
             function_names.append(f'gp_{realization_hash}')
     

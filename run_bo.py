@@ -8,7 +8,7 @@ from botorch.utils.sampling import draw_sobol_samples
 from botorch.exceptions import UnsupportedError
 import argparse
 from acquisition_function_net import GittinsAcquisitionFunctionNet
-from bayesopt import GPAcquisitionOptimizer, NNAcquisitionOptimizer, OptimizationResultsSingleMethod, get_rff_function_and_name, outcome_transform_function
+from bayesopt import GPAcquisitionOptimizer, NNAcquisitionOptimizer, OptimizationResultsSingleMethod, get_rff_function, outcome_transform_function
 from dataset_with_models import RandomModelSampler
 from gp_acquisition_dataset import GP_GEN_DEVICE, add_gp_args, get_gp_model_from_args_no_outcome_transform, get_outcome_transform
 from stable_gittins import StableGittinsIndex
@@ -142,26 +142,34 @@ def _get_gp_objective_things_helper(
         [objective_gp_base_model],
         randomize_params=randomize_params
     )
+
     # Seed
     torch.manual_seed(gp_seed)
+
     # Get (potentially) random GP parameters
     objective_gp = objective_gp_sampler.sample(deepcopy=True).eval()
     # Get random GP draw
-    objective_fn, realization_hash = get_rff_function_and_name(
-        objective_gp, dimension=dimension)
-    
-    return objective_gp, objective_fn, realization_hash
+    objective_fn = get_rff_function(objective_gp, dimension=dimension)
+
+    desc_dict = dict(
+        dimension=dimension,
+        kernel=kernel, lengthscale=lengthscale,
+        randomize_params=randomize_params,
+        seed=gp_seed
+    )
+    objective_name = f'gp_{dict_to_fname_str(desc_dict)}'
+
+    return objective_gp, objective_fn, objective_name
 
 
 def _get_gp_objective_things(objective_args):
-    objective_gp, objective_fn, realization_hash = _get_gp_objective_things_helper(
+    objective_gp, objective_fn, objective_name = _get_gp_objective_things_helper(
         dimension=objective_args['dimension'],
         kernel=objective_args['kernel'],
         lengthscale=objective_args['lengthscale'],
         randomize_params=objective_args['randomize_params'],
         gp_seed=objective_args['gp_seed']
     )
-    objective_name = f'gp_{realization_hash}'
     # Apply outcome transform to the objective function
     objective_octf, objective_octf_args = get_outcome_transform(
         argparse.Namespace(**objective_args),

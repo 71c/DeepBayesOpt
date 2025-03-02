@@ -1,3 +1,4 @@
+import itertools
 import os
 import yaml
 from datetime import datetime
@@ -5,6 +6,7 @@ from bo_experiments_gp import get_bo_experiments_parser, gp_bo_jobs_spec_cfgs_fr
 from plot_utils import save_figures_from_nested_structure
 from run_bo import GP_AF_DICT
 from submit_dependent_jobs import CONFIG_DIR
+from tictoc import tic, tocl
 from train_acqf import MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN
 from utils import dict_to_str, group_by, group_by_nested_attrs, save_json
 
@@ -13,6 +15,47 @@ script_dir = os.path.dirname(os.path.abspath(__file__))
 PLOTS_DIR = os.path.join(script_dir, 'plots')
 
 TEST = False
+
+
+def plot_key_value_to_str(k, v):
+    if k == "attr_name":
+        return (2, v)
+    if k != "nn.lamda" and k.startswith("nn."):
+        k = k[3:]
+    return (1, f"{k}={v}")
+
+
+def plot_dict_to_str(d):
+    for key_name, prefix, plot_name in [
+        ("nn.method", "nn.", "NN, method="),
+        ("gp_af", "gp_af.", "GP, ")
+    ]:
+        if key_name in d:
+            d_method = {}
+            d_non_method = {}
+            for k, v in d.items():
+                if k == key_name:
+                    continue
+                if k.startswith(prefix):
+                    d_method[k[len(prefix):]] = v
+                else:
+                    d_non_method[k] = v
+            method = d[key_name]
+            ret = f"{plot_name}{method}"
+            if d_method:
+                s = dict_to_str(d_method, include_space=True)
+                ret += f" ({s})"
+            if d_non_method:
+                s = dict_to_str(d_non_method, include_space=True)
+                ret += f", {s}"
+            return ret
+    
+    items = [
+        plot_key_value_to_str(k, v)
+        for k, v in d.items()
+    ]
+    items = sorted(items)
+    return ", ".join([item[1] for item in items])
 
 
 def main():
@@ -26,9 +69,19 @@ def main():
         help='YAML file containing the configuration for organizing the plots'
     )
     plot_group.add_argument(
-        '--use_subplots', 
+        '--use_cols', 
         action='store_true',
-        help='Whether to use subplots in the plots'
+        help='Whether to use columns for subplots in the plots'
+    )
+    plot_group.add_argument(
+        '--use_rows', 
+        action='store_true',
+        help='Whether to use rows for subplots in the plots'
+    )
+    plot_group.add_argument(
+        '--plot_runtime',
+        action='store_true',
+        help='Plots the runtimes and stuff (as opposed to regret or highest function value)'
     )
 
     args = parser.parse_args()
@@ -71,19 +124,47 @@ def main():
             **{k if k == 'gp_af' else f'gp_af.{k}': v
                for k, v in item['gp_af_args'].items()}
         })
+    
+    if args.plot_runtime:
+        attr_names = ["process_time", "n_evals", "mean_eval_process_time", "optimize_process_time"]
+    else:
+        attr_names = ["best_y"]
+    
+    results_list = [
+        {k: v[0, :] for k, v in next(iter(r))[1].items()}
+        for r in existing_results
+    ]
+    
+    all_keys = set().union(*[set(result.keys()) for result in results_list])
+    attr_names = [a for a in attr_names if a in all_keys]
+    print(f"{attr_names=}")
+    
+    reformatted_configs = [
+        {**cfg, 'attr_name': name, 'index': i}
+        for name in attr_names
+        for i, cfg in enumerate(reformatted_configs)
+    ]
 
     with open(args.plots_config, 'r') as f:
         attrs_groups_list = yaml.safe_load(f)
     attrs_groups_list = [set(group) for group in attrs_groups_list]
+
+    if len(attrs_groups_list) >= 3:
+        attrs_groups_list.insert(-3, {"attr_name"}) # Right before the one before "line"
+    else:
+        attrs_groups_list.insert(-2, {"attr_name"}) # right before "line"
     
-    plot_config, new_attrs_groups_list = group_by_nested_attrs(reformatted_configs,
-                          attrs_groups_list,
-                           add_extra_index=-2)
+    plot_config, new_attrs_groups_list = group_by_nested_attrs(
+        reformatted_configs,
+        attrs_groups_list,
+        dict_to_str_func=plot_dict_to_str,
+        add_extra_index=-2)
 
     n_groups = len(new_attrs_groups_list)
     if n_groups < 2:
         raise ValueError(
-            "There are not enough levels of plot grouping (at least 2 are required).")
+            "There are not enough levels of plot grouping (at least 2 are required). "
+            f"{new_attrs_groups_list=}")
     
     # Make script config
     script_config = vars(args)
@@ -96,30 +177,32 @@ def main():
     # SPECIAL
     script_config["gp_af_names"] = list(GP_AF_DICT)
 
-    level_names = ["line", "random"]
-    if n_groups >= 3:
-        if args.use_subplots:
-            if n_groups >= 4:
-                level_names = ['folder'] * (n_groups - 4) + ['fname', 'subplot'] + level_names
-            else:
-                level_names = ['subplot'] + level_names
-        else:
-            level_names = ['folder'] * (n_groups - 3) + ['fname'] + level_names
-    if n_groups == 2 or (n_groups == 3 and args.use_subplots):
+    levels_to_add = ["random", "line"]
+    if args.use_cols:
+        levels_to_add.append("col")
+    if args.use_rows:
+        levels_to_add.append("row")
+
+    levels_reversed = levels_to_add[:n_groups]
+
+    levels_reversed.append('fname')
+    if len(levels_reversed) > n_groups:
         # need to add a file name level
         plot_config = {
             "results": {
                 "items": plot_config
             }
         }
-        level_names = ["fname"] + level_names
         new_attrs_groups_list = [None] + new_attrs_groups_list
+    elif len(levels_reversed) < n_groups:
+        levels_reversed.extend(['folder'] * (n_groups - len(levels_reversed)))
 
     # Folder name
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     save_dir = os.path.join(PLOTS_DIR, timestamp)
+    
     # Add folder level
-    level_names = ["folder"] + level_names
+    levels_reversed.append("folder")
     new_attrs_groups_list = [None] + new_attrs_groups_list
     plot_config = {
         save_dir: {
@@ -128,6 +211,8 @@ def main():
         }
     }
 
+    level_names = list(reversed(levels_reversed))
+
     print("Plotting configuration:")
     for level_name, attrs in zip(level_names, new_attrs_groups_list):
         if attrs:
@@ -135,14 +220,18 @@ def main():
 
     save_json(plot_config, "config/plot_config.json", indent=2)
 
-    results_list = [
-        {k: v[0, :] for k, v in next(iter(r))[1].items()}
-        for r in existing_results
-    ]
+    def get_result(index):
+        cfg = reformatted_configs[index]
+        idx = cfg['index']
+        results = results_list[idx]
+        attr_name = cfg['attr_name']
+        if attr_name in results:
+            return {'attr_name': attr_name, attr_name: results[attr_name]}
+        return None
 
     save_figures_from_nested_structure(
         plot_config,
-        results_list,
+        get_result,
         new_attrs_groups_list,
         level_names,
         base_folder=save_dir

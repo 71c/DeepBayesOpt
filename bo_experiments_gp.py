@@ -74,10 +74,10 @@ def _gp_bo_jobs_spec_and_cfgs(
                 # We will test with the average
                 log_lamda = 0.5 * (log_min + log_max)
                 lamda = 10**log_lamda
-                gp_options_dict[gp_options_str]['lamda_vals'].add(lamda)
             else:
                 # then it is trained with a fixed value of lamda
                 pass
+            gp_options_dict[gp_options_str]['lamda_vals'].add(lamda)
         else:
             lamda = None
 
@@ -102,17 +102,18 @@ def _gp_bo_jobs_spec_and_cfgs(
         for nn_options, nn_bo_loop_cmds in zip(options_list, nn_bo_loop_commands_list)
         if nn_bo_loop_cmds
     ]
-    options_list, nn_bo_loop_commands_list = zip(*included)
-
-    jobs_spec = create_dependency_structure_train_acqf(
-        options_list,
-        dependents_list=nn_bo_loop_commands_list,
-        always_train=always_train)
+    if included:
+        options_list, nn_bo_loop_commands_list = zip(*included)
+        jobs_spec = create_dependency_structure_train_acqf(
+            options_list,
+            dependents_list=nn_bo_loop_commands_list,
+            always_train=always_train)
+    else:
+        jobs_spec = {}
 
     # Add the commands for the GP-BO loops
     gp_bo_commands = []
     for options in gp_options_dict.values():
-        
         gp_options = options['gp_options']
         lamda_vals = options['lamda_vals']
         if len(lamda_vals) == 0:
@@ -214,6 +215,9 @@ def main():
 
     jobs_spec, new_cfgs, existing_cfgs_and_results, refined_config \
         = gp_bo_jobs_spec_cfgs_from_args(args, bo_loop_group)
+    
+    print(f"Number of new BO configs: {len(new_cfgs)}")
+    print(f"Number of existing BO configs: {len(existing_cfgs_and_results)}")
 
     save_json(jobs_spec, os.path.join(CONFIG_DIR, "dependencies.json"), indent=4)
     submit_jobs_sweep_from_args(jobs_spec, args)
