@@ -336,9 +336,15 @@ def get_figure_from_nested_structure(
     elif this_level_name == "row":
         n_rows = len(plot_config)
         if next_level_names[0] == "col":
-            col_names = list(sorted(
-                set().union(*[set(v["items"].keys()) for v in plot_config.values()])
-            ))
+            key_to_data = {}
+            for v in plot_config.values():
+                for kk, vv in v["items"].items():
+                    if kk not in key_to_data:
+                        key_to_data[kk] = list(sorted(vv["vals"].items()))
+
+            col_names = list(sorted(key_to_data.keys(),
+                                    key=lambda u: key_to_data[u]))
+
             col_name_to_col_index = {}
             for i, col_name in enumerate(col_names):
                 col_name_to_col_index[col_name] = i
@@ -365,16 +371,21 @@ def get_figure_from_nested_structure(
             plot_config, get_result_func, axes[0, 0], figure_name)
     else:
         fig.suptitle(figure_name, fontsize=16, fontweight='bold')
-        tmp = sorted(plot_config.items(), key=lambda x: x[0])
+        
+        sorted_plot_config_items = list(sorted(
+            plot_config.items(),
+            key=lambda x: list(sorted(x[1]["vals"].items()))
+        ))
+        
         if row_and_col:
             assert next_level_names == ["col", "line", "random"]
-            for row, (row_name, row_data) in enumerate(tmp):
+            for row, (row_name, row_data) in enumerate(sorted_plot_config_items):
                 row_items = row_data["items"]
                 for subplot_name, subplot_data in row_items.items():
                     col = col_name_to_col_index[subplot_name]
                     plot_nested_structure(
                         subplot_data["items"], get_result_func, axes[row, col], None)
-            row_names = list(sorted(plot_config.keys()))
+            row_names = [x[0] for x in sorted_plot_config_items]
             add_headers(fig, row_headers=row_names, col_headers=col_names)
         elif this_level_name == "row" or this_level_name == "col":
             assert next_level_names == ["line", "random"]
@@ -382,7 +393,8 @@ def get_figure_from_nested_structure(
                 axs = axes[0, :]
             else:
                 axs = axes[:, 0]
-            for ax, (subplot_name, subplot_data) in zip(axs, tmp):
+
+            for ax, (subplot_name, subplot_data) in zip(axs, sorted_plot_config_items):
                 plot_nested_structure(
                     subplot_data["items"], get_result_func, ax, subplot_name)
         else:

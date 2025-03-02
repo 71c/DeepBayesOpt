@@ -1353,14 +1353,12 @@ def group_by_nested_attrs(items: List[dict[K, Any]],
         raise ValueError("Attributes in the groups are not disjoint")    
     keys = set().union(*[set(item.keys()) for item in items])
     
-    # Option 1: raise an error
-    # for attrs in attrs_groups_list:
-    #     if not attrs.issubset(keys):
-    #         raise ValueError(
-    #             "At least one group of attributes is not in the items: "
-    #             f"{attrs} is not a subset of {keys}")
+    for attrs in attrs_groups_list:
+        if not attrs.issubset(keys):
+            warnings.warn(
+                f"A group of attributes is not in the items: {attrs}")
 
-    # Option 2: silently remove those that we don't have
+    # Remove those that we don't have
     attrs_groups_list = [
         attrs & keys for attrs in attrs_groups_list
     ]
@@ -1403,6 +1401,9 @@ def group_by_nested_attrs(items: List[dict[K, Any]],
         nonconstant_keys |= nonconstant_keys_item
         keys_in_all &= in_all_keys_item
     
+    nonconstant_keys -= {"index"}
+    keys_in_all -= {"index"}
+    
     nonconstant_keys_in_all = nonconstant_keys & keys_in_all
     nonconstant_keys_not_in_all = nonconstant_keys - nonconstant_keys_in_all
 
@@ -1415,7 +1416,7 @@ def group_by_nested_attrs(items: List[dict[K, Any]],
 
     if len(nonconstant_keys_not_in_all) != 0:
         attrs_groups_list[add_extra_index] |= nonconstant_keys_not_in_all
-            
+
     return _group_by_nested_attrs(
         items, attrs_groups_list, dict_to_str_func,
         return_single=True), attrs_groups_list
