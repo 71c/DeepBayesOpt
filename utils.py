@@ -3,6 +3,7 @@ from collections import defaultdict
 import hashlib
 import itertools
 import os
+import random
 import re
 import json
 import inspect
@@ -1081,7 +1082,8 @@ def to_device(tensor, device):
 
 def save_json(data, fname, **kwargs):
     already_exists = os.path.exists(fname)
-    save_fname = fname + '.tmp' if already_exists else fname
+    r = random.randint(0, 1_000_000_000)
+    save_fname = fname + f'{r}.tmp' if already_exists else fname
     try:
         # Ensure the directory exists
         dirname = os.path.dirname(fname)
