@@ -194,9 +194,12 @@ def _get_sobol_samples_and_bounds(bo_seed, n_initial_samples, dimension):
     return init_x, bounds
 
 
+_BO_CACHE = {}
+
 def run_bo(objective_args: dict[str, Any],
            bo_policy_args: dict[str, Any],
-           gp_af_args: dict[str, Any]):
+           gp_af_args: dict[str, Any],
+           load_weights: bool=True):
     (objective_gp, objective_octf,
      objective_fn, objective_name) = _get_gp_objective_things(objective_args)
     dimension = objective_args['dimension']
@@ -284,7 +287,7 @@ def run_bo(objective_args: dict[str, Any],
         if not model_is_trained(nn_model_name):
             return None
         
-        nn_model = load_model(nn_model_name)
+        nn_model = load_model(nn_model_name, load_weights=load_weights)
 
         # TODO (maybe): provide exponentiate=False or exponentiate=True here
         # for ExpectedImprovementAcquisitionFunctionNet?
@@ -358,6 +361,7 @@ def run_bo(objective_args: dict[str, Any],
         results_name=results_name, # results_name is only used to print stuff out
         dim=dimension, bounds=bounds, maximize=True,
         verbose=True,
+        result_cache=_BO_CACHE,
         **af_options
     )
 

@@ -14,7 +14,7 @@ from tqdm import tqdm
 from acquisition_dataset import AcquisitionDataset
 from botorch.exceptions import UnsupportedError
 from tictoc import tic, toc
-from utils import SaveableObject, convert_to_json_serializable, dict_to_hash, int_linspace, calculate_batch_improvement, load_json, probability_y_greater_than_gi_normal, save_json
+from utils import convert_to_json_serializable, dict_to_hash, int_linspace, calculate_batch_improvement, load_json, probability_y_greater_than_gi_normal, save_json
 
 
 MODELS_DIR_NAME = "saved_models"
@@ -1316,7 +1316,12 @@ def model_is_trained(model_and_info_folder_name: str):
 
 
 @cache
-def _load_model(model_and_info_folder_name: str):
+def _get_state_dict(weights_path: str):
+    return torch.load(weights_path)
+
+
+@cache
+def _load_empty_model(model_and_info_folder_name: str):
     model_and_info_path = os.path.join(MODELS_DIR, model_and_info_folder_name)
     model_path = get_latest_model_path(model_and_info_path)
 
@@ -1325,22 +1330,24 @@ def _load_model(model_and_info_folder_name: str):
     # Load model (without weights)
     models_path = os.path.join(model_and_info_path, MODELS_SUBDIR)
     model = AcquisitionFunctionNet.load_init(models_path)
-    
-    # Load best weights
-    best_model_fname_json_path = os.path.join(model_path, "best_model_fname.json")
-    try:
-        best_model_fname = load_json(best_model_fname_json_path)["best_model_fname"]
-    except FileNotFoundError:
-        raise ValueError(f"No best model found: {best_model_fname_json_path} not found")
-    best_model_path = os.path.join(model_path, best_model_fname)
-    print(f"Loading best weights from {best_model_path}")
-    model.load_state_dict(torch.load(best_model_path))
 
     return model, model_path
 
 
-def load_model(model_and_info_folder_name: str, return_model_path=False):
-    model, model_path = _load_model(model_and_info_folder_name)
+def load_model(model_and_info_folder_name: str, return_model_path=False, load_weights=True):
+    model, model_path = _load_empty_model(model_and_info_folder_name)
+    
+    if load_weights:
+        # Load best weights
+        best_model_fname_json_path = os.path.join(model_path, "best_model_fname.json")
+        try:
+            best_model_fname = load_json(best_model_fname_json_path)["best_model_fname"]
+        except FileNotFoundError:
+            raise ValueError(f"No best model found: {best_model_fname_json_path} not found")
+        best_model_path = os.path.join(model_path, best_model_fname)
+        print(f"Loading best weights from {best_model_path}")
+        model.load_state_dict(_get_state_dict(best_model_path))
+
     if return_model_path:
         return model, model_path
     return model

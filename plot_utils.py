@@ -10,7 +10,7 @@ from acquisition_dataset import AcquisitionDataset
 from acquisition_function_net import AcquisitionFunctionNet, AcquisitionFunctionNetAcquisitionFunction
 from bayesopt import plot_optimization_trajectories_error_bars
 from exact_gp_computations import calculate_EI_GP
-from utils import save_json
+from utils import iterate_nested, save_json
 
 
 
@@ -448,6 +448,13 @@ def save_figures_from_nested_structure(
                 base_folder=dirname, **plot_kwargs
             )
     elif this_level_name == "fname":
+        cmd_ids = {v
+                 for k, v in iterate_nested(plot_config)
+                 if k == "items" and type(v) is int}
+        infos = [get_result_func(v) for v in cmd_ids]
+        
+        # TODO: Load all of the plots of training history and asave them here.
+
         info_dict = {}
         for fname_desc, data in plot_config.items():
             items = data["items"]

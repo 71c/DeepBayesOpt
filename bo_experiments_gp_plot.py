@@ -14,8 +14,6 @@ from utils import dict_to_str, group_by, group_by_nested_attrs, save_json
 script_dir = os.path.dirname(os.path.abspath(__file__))
 PLOTS_DIR = os.path.join(script_dir, 'plots')
 
-TEST = False
-
 
 def plot_key_value_to_str(k, v):
     if k == "attr_name":
@@ -96,12 +94,6 @@ def main():
 
     plot_group = parser.add_argument_group("Plotting")
     plot_group.add_argument(
-        '--plots_config', 
-        type=str,
-        required=True,
-        help='YAML file containing the configuration for organizing the plots'
-    )
-    plot_group.add_argument(
         '--use_cols', 
         action='store_true',
         help='Whether to use columns for subplots in the plots'
@@ -111,11 +103,6 @@ def main():
         action='store_true',
         help='Whether to use rows for subplots in the plots'
     )
-    # plot_group.add_argument(
-    #     '--plot_runtime',
-    #     action='store_true',
-    #     help='Plots the runtimes and stuff (as opposed to regret or highest function value)'
-    # )
 
     args = parser.parse_args()
 
@@ -126,11 +113,6 @@ def main():
     
     print(f"Number of new configs: {len(new_cfgs)}")
     print(f"Number of existing configs: {len(existing_cfgs_and_results)}")
-    
-    if TEST:
-        # TEMPORARY TEST (NOT WHAT I WANT TO DO) to simulate having data:
-        print("Simulating having data by pretending to have already computed everything")
-        existing_cfgs_and_results += [(cfg, None) for cfg in new_cfgs]
     
     if len(existing_cfgs_and_results) == 0:
         raise ValueError("There are no saved BO configs to plot.")
@@ -154,7 +136,7 @@ def main():
                  for k, v in MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN[nn_model_name].items()
                  }
             )
-            item['bo_policy_args'].pop('nn_model_name')
+            # item['bo_policy_args'].pop('nn_model_name')
         reformatted_configs.append({
             **{k if k == 'dimension' else f'objective.{k}': v
                for k, v in item['objective_args'].items()},
@@ -162,11 +144,7 @@ def main():
             **{k if k == 'gp_af' else f'gp_af.{k}': v
                for k, v in item['gp_af_args'].items()}
         })
-    
-    # Get attrs_groups_list
-    with open(args.plots_config, 'r') as f:
-        attrs_groups_list = yaml.safe_load(f)
-    
+
     # Folder name
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     save_dir = os.path.join(PLOTS_DIR, timestamp)
@@ -262,8 +240,17 @@ def main():
             idx = cfg['index']
             results = results_list[idx]
             attr_name = cfg['attr_name']
+            
+            cfg = existing_cfgs[idx]
+            bo_policy_args = cfg['bo_policy_args']
+            nn_model_name = bo_policy_args['nn_model_name']
+            
             if attr_name in results:
-                return {'attr_name': attr_name, attr_name: results[attr_name]}
+                return {
+                    'attr_name': attr_name,
+                    attr_name: results[attr_name],
+                    'nn_model_name': nn_model_name
+                }
             return None
 
         plot_kwargs=dict(
@@ -279,9 +266,6 @@ def main():
             base_folder=save_dir_this_attrs,
             **plot_kwargs
         )
-
-# e.g.,
-# python bo_experiments_gp_plot.py --base_config config/train_acqf.yml --experiment_config config/train_acqf_experiment_test1.yml --n_gp_draws 16 --seed 8 --n_iter 100 --n_initial_samples 1 --plots_config config/plots_config_1.yml
 
 if __name__ == "__main__":
     main()

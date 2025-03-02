@@ -27,7 +27,7 @@ def _generate_bo_commands(
         )
         cmd_args_list = bo_loop_dicts_to_cmd_args_list(**bo_config)
         # Only run the BO loop if it has not been run before
-        opt_results = run_bo(**bo_config)
+        opt_results = run_bo(**bo_config, load_weights=False)
         
         does_not_have_result = opt_results is None or opt_results.n_opts_to_run() > 0
         if does_not_have_result:

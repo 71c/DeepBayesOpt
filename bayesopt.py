@@ -354,6 +354,7 @@ class OptimizationResultsSingleMethod:
                  save_dir: Optional[str]=None,
                  results_name: Optional[str]=None,
                  verbose=False,
+                 result_cache={},
                  **optimizer_kwargs):
         self.objectives = objectives
         self.n_functions = len(objectives)
@@ -407,7 +408,7 @@ class OptimizationResultsSingleMethod:
             if objective_names is None:
                 raise ValueError(
                     "objective_names must be provided when saving results.")
-            self._cached_results = {}
+            self._cached_results = result_cache
             self._func_results_to_save = [{} for _ in range(self.n_functions)]
             os.makedirs(save_dir, exist_ok=True)
         
