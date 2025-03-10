@@ -3,12 +3,11 @@ import math
 import os
 from typing import Optional
 
-from sympy import refine
 from submit_dependent_jobs import CONFIG_DIR
 import torch
 from run_bo import GP_AF_DICT, bo_loop_dicts_to_cmd_args_list, get_arg_names, run_bo
 from train_acqf import add_config_args, add_slurm_args, add_train_acqf_args, cmd_opts_nn_to_model_and_info_name, create_dependency_structure_train_acqf, get_command_line_options, get_config_options_list, submit_jobs_sweep_from_args
-from utils import dict_to_str, save_json
+from utils import dict_to_str, group_by, save_json
 import cProfile, pstats
 
 
@@ -45,16 +44,18 @@ def _generate_bo_commands(
 
 
 def _gp_bo_jobs_spec_and_cfgs(
-        options_list, bo_loop_args_list, seeds, always_train=False):    
+        options_list, bo_loop_args_list, bo_loop_args_list_random_search,
+        seeds, always_train=False):
     gp_options_dict = {}
-    nn_bo_loop_commands_list = []
 
     new_bo_configs = []
     existing_bo_configs_and_results = []
 
-    for options in options_list:
+    included = []
+
+    for nn_options in options_list:
         gp_options = {
-            k.split('.')[-1]: v for k, v in options.items()
+            k.split('.')[-1]: v for k, v in nn_options.items()
             if k.startswith("function_samples_dataset.gp.")
         }
 
@@ -66,13 +67,13 @@ def _gp_bo_jobs_spec_and_cfgs(
                 'lamda_vals': set()
             }
 
-        if options['training.method'] == 'gittins':
+        if nn_options['training.method'] == 'gittins':
             # then there will be lambda value(s) specified
-            lamda = options.get('training.lamda_config.lamda')
+            lamda = nn_options.get('training.lamda_config.lamda')
             if lamda is None:
                 # then it is trained with a range of lamda values
-                lamda_min = options['training.lamda_config.lamda_min']
-                lamda_max = options['training.lamda_config.lamda_max']
+                lamda_min = nn_options['training.lamda_config.lamda_min']
+                lamda_max = nn_options['training.lamda_config.lamda_max']
                 log_min, log_max = math.log10(lamda_min), math.log10(lamda_max)
                 # We will test with the average
                 log_lamda = 0.5 * (log_min + log_max)
@@ -85,9 +86,11 @@ def _gp_bo_jobs_spec_and_cfgs(
             lamda = None
 
         (cmd_dataset, cmd_opts_dataset,
-         cmd_nn_train, cmd_opts_nn) = get_command_line_options(options)
+         cmd_nn_train, cmd_opts_nn) = get_command_line_options(nn_options)
         
         model_and_info_name = cmd_opts_nn_to_model_and_info_name(cmd_opts_nn)
+
+        all_new_cmds_this_nn = []
         for bo_loop_args in bo_loop_args_list:
             new_cmds, new_cfgs, existing_cfgs_and_results = _generate_bo_commands(
                 seeds,
@@ -96,16 +99,12 @@ def _gp_bo_jobs_spec_and_cfgs(
                                 'nn_model_name': model_and_info_name},
                 gp_af_args={}
             )
-            nn_bo_loop_commands_list.append(new_cmds)
+            all_new_cmds_this_nn.extend(new_cmds)
             new_bo_configs.extend(new_cfgs)
             existing_bo_configs_and_results.extend(existing_cfgs_and_results)
-        
-    # Only train the NNs that are needed for the BO loops
-    included = [
-        (nn_options, nn_bo_loop_cmds)
-        for nn_options, nn_bo_loop_cmds in zip(options_list, nn_bo_loop_commands_list)
-        if nn_bo_loop_cmds
-    ]
+        if all_new_cmds_this_nn:
+            included.append((nn_options, all_new_cmds_this_nn))
+
     if included:
         options_list, nn_bo_loop_commands_list = zip(*included)
         jobs_spec = create_dependency_structure_train_acqf(
@@ -115,8 +114,8 @@ def _gp_bo_jobs_spec_and_cfgs(
     else:
         jobs_spec = {}
 
-    # Add the commands for the GP-BO loops
-    gp_bo_commands = []
+    # Add the GP AF commands & random search
+    non_nn_bo_commands = []
     for options in gp_options_dict.values():
         gp_options = options['gp_options']
         lamda_vals = options['lamda_vals']
@@ -132,6 +131,7 @@ def _gp_bo_jobs_spec_and_cfgs(
         else:
             gp_af_fit_args = {'fit': 'exact'}
 
+        # Add all the GP AF commands
         for gp_af_name in GP_AF_DICT:
             gp_af_args = {'gp_af': gp_af_name, **gp_af_fit_args}
             
@@ -145,12 +145,25 @@ def _gp_bo_jobs_spec_and_cfgs(
                         bo_policy_args={**bo_loop_args, **extra_bo_policy_args},
                         gp_af_args=gp_af_args
                     )
-                    gp_bo_commands.extend(new_cmds)
+                    non_nn_bo_commands.extend(new_cmds)
                     new_bo_configs.extend(new_cfgs)
                     existing_bo_configs_and_results.extend(existing_cfgs_and_results)
-    if gp_bo_commands:
-        jobs_spec['gp_bo'] = {
-            'commands': gp_bo_commands,
+        
+        # Add random search
+        for bo_loop_args in bo_loop_args_list_random_search:
+            new_cmds, new_cfgs, existing_cfgs_and_results = _generate_bo_commands(
+                seeds,
+                objective_args=gp_options,
+                bo_policy_args={**bo_loop_args, 'random_search': True},
+                gp_af_args={}
+            )
+            non_nn_bo_commands.extend(new_cmds)
+            new_bo_configs.extend(new_cfgs)
+            existing_bo_configs_and_results.extend(existing_cfgs_and_results)
+    
+    if non_nn_bo_commands:
+        jobs_spec['no_nn'] = {
+            'commands': non_nn_bo_commands,
             'gpu': False
         }
     return jobs_spec, new_bo_configs, existing_bo_configs_and_results
@@ -194,7 +207,19 @@ def generate_gp_bo_job_specs(args: argparse.Namespace,
     bo_options_list, bo_refined_config = get_config_options_list(
         bo_base_config, bo_experiment_config)
 
-    print(f"{bo_options_list=}")
+    # I admit, this is really hacky and dumb, but what the hell,
+    # much of my code is like that.
+    bo_options_list_random_search = [
+        {k: v for k, v in o.items() if not k.startswith('optimizer.')}
+        for o in bo_options_list
+    ]
+    g = group_by(bo_options_list_random_search, dict_to_str)
+    bo_options_list_random_search = [next(iter(v)) for v in g.values()]
+
+    bo_options_list = [
+        {k.split('.')[-1]: v for k, v in options.items()}
+        for options in bo_options_list
+    ]
 
     nn_options_list, nn_refined_config = get_config_options_list(
         nn_base_config, nn_experiment_config)
@@ -209,8 +234,8 @@ def generate_gp_bo_job_specs(args: argparse.Namespace,
         pr.enable()
     
     jobs_spec, new_cfgs, existing_cfgs_and_results = _gp_bo_jobs_spec_and_cfgs(
-        nn_options_list, bo_options_list, seeds,
-        always_train=getattr(args, 'always_train', False)
+        nn_options_list, bo_options_list, bo_options_list_random_search,
+        seeds, always_train=getattr(args, 'always_train', False)
     )
 
     if CPROFILE:

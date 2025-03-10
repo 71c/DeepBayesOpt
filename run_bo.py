@@ -46,7 +46,7 @@ with open("config/bo_config.yml", 'r') as f:
 
 GEN_CANDIDATES_CONFIG = {
     d["value"]: d["parameters"]
-    for d in BO_BASE_CONFIG['parameters']['optimizer']['gen_candidates']['values']
+    for d in BO_BASE_CONFIG['parameters']['optimizer']['parameters']['gen_candidates']['values']
 }
 
 GEN_CANDIDATES_NAME_TO_FUNCTION = {
@@ -243,7 +243,7 @@ def _get_bo_loop_args_parser():
 
 
 def parse_bo_loop_args(args=None):
-    parser_info = _get_bo_loop_args_parser()
+    parser_info = {**_get_bo_loop_args_parser()}
     parser = parser_info.pop('parser')    
     parser_info['args'] = parser.parse_args(args=args)
     return parser_info
@@ -329,14 +329,14 @@ def run_bo(objective_args: dict[str, Any],
     info = _get_bo_loop_args_parser()
     optimize_acqf_arg_names = info['optimize_acqf_arg_names']
 
-    gen_candidates = bo_policy_args['gen_candidates']
+    gen_candidates = bo_policy_args.get('gen_candidates', None)
     
     for method, defaults in info['params_defaults'].items():
         for k, default_val in defaults.items():
             if method == gen_candidates:
                 if bo_policy_args[k] is None:
                     bo_policy_args[k] = default_val
-            elif bo_policy_args[k] is not None:
+            elif bo_policy_args.get(k) is not None:
                 param_methods = info['methods_per_param_name'][k]
                 if gen_candidates not in param_methods:
                     tmp = ', '.join(param_methods)
@@ -347,13 +347,14 @@ def run_bo(objective_args: dict[str, Any],
      objective_fn, objective_name) = _get_gp_objective_things(objective_args)
     dimension = objective_args['dimension']
     ############################# Determine the BO policy ##############################
-    lamda = bo_policy_args['lamda']
+    lamda = bo_policy_args.get('lamda', None)
     if lamda is not None and lamda <= 0:
         raise ValueError("lamda must be > 0")
     
     results_print_data = {'dimension': dimension}
     
     nn_model_name = bo_policy_args.get('nn_model_name')
+    random_search = bo_policy_args.get('random_search', False)
     gp_af = gp_af_args.get(GP_AF_NAME_PREFIX)
 
     if gp_af is None:
@@ -364,13 +365,13 @@ def run_bo(objective_args: dict[str, Any],
 
     af_options = {}
     
-    if bo_policy_args['random_search']: # Using random search
+    if random_search: # Using random search
         if nn_model_name is not None:
             raise ValueError("Cannot specify nn_model_name if using random search")
         if gp_af is not None:
             raise ValueError(f"Cannot specify {GP_AF_NAME_PREFIX} if using random search")
         for k in optimize_acqf_arg_names:
-            if bo_policy_args[k] is not None:
+            if bo_policy_args.get(k) is not None:
                 raise ValueError(f"Cannot specify {k} if using random search")
         if lamda is not None:
             raise ValueError("If using random search, cannot specify lamda")

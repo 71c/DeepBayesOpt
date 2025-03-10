@@ -18,6 +18,7 @@ def check_dict_has_keys(d: dict, keys: list[str], error_msg=None):
                 msg = f"Invalid key '{kk}' in dictionary."
             else:
                 msg = error_msg(kk)
+            msg += f" Expected one of {keys} but got keys {list(d.keys())}."
             raise ValueError(msg)
 
 
