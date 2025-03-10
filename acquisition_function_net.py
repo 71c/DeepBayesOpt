@@ -1283,8 +1283,8 @@ class AcquisitionFunctionNetModel(Model):
             Y = check_xy_dims(X, Y, "X", "Y")
             X = match_batch_shape(X, self.train_X)
             Y = match_batch_shape(Y, self.train_Y)
-            new_X = torch.cat(self.train_X, X, dim=-2)
-            new_Y = torch.cat(self.train_Y, Y, dim=-2)
+            new_X = torch.cat((self.train_X, X), dim=-2)
+            new_Y = torch.cat((self.train_Y, Y), dim=-2)
         return self.__class__(self.model, new_X, new_Y)
 
     def forward(self, X: Tensor, **kwargs) -> Tensor:

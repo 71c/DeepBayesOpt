@@ -1201,7 +1201,9 @@ def assert_all_have_type(values: list, name: str, t: type):
                 f"but {name}[{i}] is of type {v.__class__.__name__}")
 
 
-def aggregate_stats_list(stats_list: list):
+def aggregate_stats_list(stats_list: Union[list[dict[str]], list[np.ndarray],
+                                           list[float], list[int], list[str],
+                                             list[bool], list[None]]):
     assert_has_type(stats_list, "stats_list", list)
     stats0 = stats_list[0]
     if isinstance(stats0, dict):
