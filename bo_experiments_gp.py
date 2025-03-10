@@ -1,10 +1,13 @@
 import argparse
 import math
 import os
+from typing import Optional
+
+from sympy import refine
 from submit_dependent_jobs import CONFIG_DIR
 import torch
-from run_bo import GP_AF_DICT, add_bo_loop_args, bo_loop_dicts_to_cmd_args_list, get_arg_names, run_bo
-from train_acqf import add_slurm_args, add_train_acqf_args, cmd_opts_nn_to_model_and_info_name, create_dependency_structure_train_acqf, get_command_line_options, get_train_acqf_options_list, submit_jobs_sweep_from_args
+from run_bo import GP_AF_DICT, bo_loop_dicts_to_cmd_args_list, get_arg_names, run_bo
+from train_acqf import add_config_args, add_slurm_args, add_train_acqf_args, cmd_opts_nn_to_model_and_info_name, create_dependency_structure_train_acqf, get_command_line_options, get_config_options_list, submit_jobs_sweep_from_args
 from utils import dict_to_str, save_json
 import cProfile, pstats
 
@@ -42,7 +45,7 @@ def _generate_bo_commands(
 
 
 def _gp_bo_jobs_spec_and_cfgs(
-        options_list, bo_loop_args, seeds, always_train=False):    
+        options_list, bo_loop_args_list, seeds, always_train=False):    
     gp_options_dict = {}
     nn_bo_loop_commands_list = []
 
@@ -85,17 +88,18 @@ def _gp_bo_jobs_spec_and_cfgs(
          cmd_nn_train, cmd_opts_nn) = get_command_line_options(options)
         
         model_and_info_name = cmd_opts_nn_to_model_and_info_name(cmd_opts_nn)
-        new_cmds, new_cfgs, existing_cfgs_and_results = _generate_bo_commands(
-            seeds,
-            objective_args=gp_options,
-            bo_policy_args={**bo_loop_args, 'lamda': lamda,
-                            'nn_model_name': model_and_info_name},
-            gp_af_args={}
-        )
-        nn_bo_loop_commands_list.append(new_cmds)
-        new_bo_configs.extend(new_cfgs)
-        existing_bo_configs_and_results.extend(existing_cfgs_and_results)
-    
+        for bo_loop_args in bo_loop_args_list:
+            new_cmds, new_cfgs, existing_cfgs_and_results = _generate_bo_commands(
+                seeds,
+                objective_args=gp_options,
+                bo_policy_args={**bo_loop_args, 'lamda': lamda,
+                                'nn_model_name': model_and_info_name},
+                gp_af_args={}
+            )
+            nn_bo_loop_commands_list.append(new_cmds)
+            new_bo_configs.extend(new_cfgs)
+            existing_bo_configs_and_results.extend(existing_cfgs_and_results)
+        
     # Only train the NNs that are needed for the BO loops
     included = [
         (nn_options, nn_bo_loop_cmds)
@@ -134,16 +138,16 @@ def _gp_bo_jobs_spec_and_cfgs(
             lamda_vals_this_af = lamda_vals if gp_af_name == 'gittins' else [None]
             for lamda in lamda_vals_this_af:
                 extra_bo_policy_args = {'lamda': lamda}
-                bo_policy_args = {**bo_loop_args, **extra_bo_policy_args}
-                new_cmds, new_cfgs, existing_cfgs_and_results = _generate_bo_commands(
-                    seeds,
-                    objective_args=gp_options,
-                    bo_policy_args=bo_policy_args,
-                    gp_af_args=gp_af_args
-                )
-                gp_bo_commands.extend(new_cmds)
-                new_bo_configs.extend(new_cfgs)
-                existing_bo_configs_and_results.extend(existing_cfgs_and_results)
+                for bo_loop_args in bo_loop_args_list:
+                    new_cmds, new_cfgs, existing_cfgs_and_results = _generate_bo_commands(
+                        seeds,
+                        objective_args=gp_options,
+                        bo_policy_args={**bo_loop_args, **extra_bo_policy_args},
+                        gp_af_args=gp_af_args
+                    )
+                    gp_bo_commands.extend(new_cmds)
+                    new_bo_configs.extend(new_cfgs)
+                    existing_bo_configs_and_results.extend(existing_cfgs_and_results)
     if gp_bo_commands:
         jobs_spec['gp_bo'] = {
             'commands': gp_bo_commands,
@@ -169,18 +173,31 @@ def get_bo_experiments_parser(train=True):
         help='The seed for the random number generator.'
     )
     bo_loop_group = parser.add_argument_group("BO loops")
-    add_bo_loop_args(bo_loop_group) # n_iter, n_initial_samples
+    # add_bo_loop_args(bo_loop_group) # n_iter, n_initial_samples
+
+    bo_base_config_name, bo_experiment_config_name = add_config_args(
+        bo_loop_group, prefix='bo', experiment_name='BO loops')
 
     nn_train_group = parser.add_argument_group("NN experiments")
-    add_train_acqf_args(nn_train_group, train=train)
-    return parser, bo_loop_group
+    nn_base_config_name, nn_experiment_config_name = add_train_acqf_args(nn_train_group,
+                                                                         train=train)
+    return (parser,
+            nn_base_config_name, nn_experiment_config_name,
+            bo_base_config_name, bo_experiment_config_name)
 
 
-def gp_bo_jobs_spec_cfgs_from_args(args, bo_loop_group):
-    bo_loop_arg_names = get_arg_names(bo_loop_group)
-    bo_loop_args = {k: v for k, v in vars(args).items() if k in bo_loop_arg_names}
+def generate_gp_bo_job_specs(args: argparse.Namespace,
+                             nn_base_config: str,
+                             bo_base_config: str,
+                             nn_experiment_config: Optional[str]=None,
+                             bo_experiment_config: Optional[str]=None):
+    bo_options_list, bo_refined_config = get_config_options_list(
+        bo_base_config, bo_experiment_config)
 
-    options_list, refined_config = get_train_acqf_options_list(args)
+    print(f"{bo_options_list=}")
+
+    nn_options_list, nn_refined_config = get_config_options_list(
+        nn_base_config, nn_experiment_config)
 
     # Set seed again for reproducibility
     torch.manual_seed(args.seed)
@@ -192,7 +209,7 @@ def gp_bo_jobs_spec_cfgs_from_args(args, bo_loop_group):
         pr.enable()
     
     jobs_spec, new_cfgs, existing_cfgs_and_results = _gp_bo_jobs_spec_and_cfgs(
-        options_list, bo_loop_args, seeds,
+        nn_options_list, bo_options_list, seeds,
         always_train=getattr(args, 'always_train', False)
     )
 
@@ -202,11 +219,13 @@ def gp_bo_jobs_spec_cfgs_from_args(args, bo_loop_group):
             ps = pstats.Stats(pr, stream=s).sort_stats(pstats.SortKey.CUMULATIVE)
             ps.print_stats()
     
+    refined_config = {**nn_refined_config, **bo_refined_config}
     return jobs_spec, new_cfgs, existing_cfgs_and_results, refined_config
 
 
 def main():
-    parser, bo_loop_group = get_bo_experiments_parser(train=True)
+    (parser, nn_base_config_name, nn_experiment_config_name, bo_base_config_name,
+     bo_experiment_config_name) = get_bo_experiments_parser(train=True)
 
     slurm_group = parser.add_argument_group("Slurm and logging")
     add_slurm_args(slurm_group)
@@ -214,7 +233,13 @@ def main():
     args = parser.parse_args()
 
     jobs_spec, new_cfgs, existing_cfgs_and_results, refined_config \
-        = gp_bo_jobs_spec_cfgs_from_args(args, bo_loop_group)
+        = generate_gp_bo_job_specs(
+            args,
+            nn_base_config=getattr(args, nn_base_config_name),
+            nn_experiment_config=getattr(args, nn_experiment_config_name),
+            bo_base_config=getattr(args, bo_base_config_name),
+            bo_experiment_config=getattr(args, bo_experiment_config_name)
+        )
     
     print(f"Number of new BO configs: {len(new_cfgs)}")
     print(f"Number of existing BO configs: {len(existing_cfgs_and_results)}")

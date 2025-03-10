@@ -1,0 +1,38 @@
+parameters:
+  n_iter:
+    values: [100, 20]
+  n_initial_samples:
+    value: 1
+  optimizer:
+    num_restarts:
+      value: 160
+    raw_samples:
+      value: 3200
+    gen_candidates:
+      values:
+      - value: torch
+        parameters: # https://botorch.readthedocs.io/en/stable/optim.html#botorch.optim.stopping.ExpMAStoppingCriterion
+          maxiter:
+            value: 10000
+          n_window:
+            value: 10
+          eta:
+            value: 1.0
+          rel_tol:
+            value: 1.e-05
+      - value: L-BFGS-B
+        parameters: # know from https://github.com/scipy/scipy/blob/main/scipy/optimize/_lbfgsb_py.py#L290
+          maxcor:
+            value: 10
+          ftol:
+            value: 2.2204460492503131e-09
+          gtol:
+            value: 1.e-5
+          eps:
+            value: 1.e-8
+          maxfun:
+            value: 15000
+          maxiter:
+            value: 15000
+          maxls:
+            value: 20

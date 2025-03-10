@@ -433,52 +433,56 @@ def add_slurm_args(parser):
     )
 
 
-def add_train_acqf_args(parser, train=True):
+def add_config_args(parser, prefix='', experiment_name=None):
+    prefix = prefix + '_' if prefix else ''
+    suffix = f' for the {experiment_name} experiment' if experiment_name else ''
+    base_config_name = f'{prefix}base_config'
+    experiment_config_name = f'{prefix}experiment_config'
     parser.add_argument(
-        '--base_config',
+        f'--{base_config_name}',
         type=str,
         required=True,
-        help='YAML file containing the base configuration for the NN acqf experiment.'
+        help=f'YAML file containing the base configuration{suffix}.'
     )
     parser.add_argument(
-        '--experiment_config',
+        f'--{experiment_config_name}',
         type=str,
-        required=True,
-        help='YAML file containing the specific experiment configuration '
-             'for the NN acqf experiment.'
+        required=False,
+        help=f'YAML file containing the specific experiment configuration{suffix}.'
     )
+    return base_config_name, experiment_config_name
+
+
+ALWAYS_TRAIN_NAME = 'always_train'
+
+
+def add_train_acqf_args(parser, train=True, prefix='nn'):
+    nn_base_config_name, nn_experiment_config_name = add_config_args(
+        parser, prefix=prefix, experiment_name='NN acqf')
+
     if train:
         parser.add_argument(
-            '--always_train',
+            f'--{ALWAYS_TRAIN_NAME}',
             action='store_true',
             help=('If this flag is set, train all acquisition function NNs regardless of '
                 'whether they have already been trained. Default is to only train '
                 'acquisition function NNs that have not already been trained.')
         )
+    
+    return nn_base_config_name, nn_experiment_config_name
 
 
-def get_train_acqf_options_list(args: argparse.Namespace):
+def get_config_options_list(base_config: str,
+                            experiment_config: Optional[str]=None):
     # Load the base configuration
-    with open(args.base_config, 'r') as f:
+    with open(base_config, 'r') as f:
         base_config = yaml.safe_load(f)
-
-    # Load the experiment configuration
-    with open(args.experiment_config, 'r') as f:
-        experiment_config = yaml.safe_load(f)
 
     check_dict_has_keys(
         base_config,
         ['parameters'],
         lambda kk: f"Invalid key '{kk}' in base configuration.")
-    
-    check_dict_has_keys(
-        experiment_config,
-        ['parameters'],
-        lambda kk: f"Invalid key '{kk}' in experiment configuration.")
 
-    if 'parameters' not in experiment_config:
-        experiment_config['parameters'] = {}
-    
     # TEST
     # b = generate_options(base_config['parameters'])
     # keys = sorted(list(set().union(*[set(x) for x in b])))
@@ -487,14 +491,29 @@ def get_train_acqf_options_list(args: argparse.Namespace):
     #     yaml.dump(keys, f)
     # exit()
 
-    # Refine the configuration
-    refined_config = {
-        'parameters': refine_config(base_config['parameters'], experiment_config)
-    }
+    if experiment_config:
+        # Load the experiment configuration
+        with open(experiment_config, 'r') as f:
+            experiment_config = yaml.safe_load(f)
+        
+        check_dict_has_keys(
+            experiment_config,
+            ['parameters'],
+            lambda kk: f"Invalid key '{kk}' in experiment configuration.")
 
-    # Save the refined configuration
-    with open(os.path.join(CONFIG_DIR, 'refined_config.yml'), 'w') as f:
-        yaml.dump(refined_config, f)
+        if 'parameters' not in experiment_config:
+            experiment_config['parameters'] = {}
+    
+        # Refine the configuration
+        refined_config = {
+            'parameters': refine_config(base_config['parameters'], experiment_config)
+        }
+
+        # Save the refined configuration
+        with open(os.path.join(CONFIG_DIR, 'refined_config.yml'), 'w') as f:
+            yaml.dump(refined_config, f)
+    else:
+        refined_config = base_config
 
     # Generate the options
     options_list = generate_options(refined_config['parameters'])
@@ -532,15 +551,17 @@ def submit_jobs_sweep_from_args(jobs_spec, args):
 
 def main():
     parser = argparse.ArgumentParser()
-    add_train_acqf_args(parser, train=True)
+    nn_base_config_name, nn_experiment_config_name = add_train_acqf_args(parser,
+                                                                         train=True)
     add_slurm_args(parser)
 
     args = parser.parse_args()
 
-    options_list, refined_config = get_train_acqf_options_list(args)
+    options_list, refined_config = get_config_options_list(
+        getattr(args, nn_base_config_name), getattr(args, nn_experiment_config_name))
     
     jobs_spec = create_dependency_structure_train_acqf(
-        options_list, always_train=args.always_train)
+        options_list, always_train=getattr(args, ALWAYS_TRAIN_NAME))
     save_json(jobs_spec, os.path.join(CONFIG_DIR, "dependencies.json"), indent=4)
     submit_jobs_sweep_from_args(jobs_spec, args)
 

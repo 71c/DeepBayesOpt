@@ -55,7 +55,7 @@ The following command automatically runs all of the BO loops of both the NNs and
 
 An example command is as follows:
 ```bash
-python bo_experiments_gp.py --base_config config/train_acqf.yml --experiment_config config/train_acqf_experiment_test_simple.yml --n_gp_draws 8 --seed 8 --n_iter 100 --n_initial_samples 1 --sweep_name preliminary-test-small --mail adj53@cornell.edu --gpu_gres gpu:1
+python bo_experiments_gp.py --nn_base_config config/train_acqf.yml --nn_experiment_config config/train_acqf_experiment_test_simple.yml --bo_base_config config/bo_config.yml --n_gp_draws 8 --seed 8 --sweep_name preliminary-test-small --mail adj53@cornell.edu --gpu_gres gpu:1
 ```
 
 ### Arguments
@@ -68,8 +68,8 @@ python bo_experiments_gp.py --base_config config/train_acqf.yml --experiment_con
 - `--n_initial_samples`: the number of initial sobol points to sample at before using the AF.
 
 #### NN training experiments
-- `--base_config` is the base configuration file, containing the default values and default ranges to search over for all of the hyperparameters.
-- `--experiment_config` is the experiment configuration file, containing the specific values and ranges to search over a subset of the hyperparameters for the particular experiment. Replace the value for `--experiment_config` with your desired experiment configuration file.  For example, to investigate the effect of the hyperparameters regarding the dataset, NN architecture, and optimizer settings, we can specify the experiment configuration file to be `config/train_acqf_experiment_training.yml`, which varies `train_samples_size`, `layer_width`, and `learning_rate`, while fixing the dimension to 16 and the method to Gittins index with $\lambda=10^{-4}$.
+- `--nn_base_config` is the base configuration file, containing the default values and default ranges to search over for all of the hyperparameters.
+- `--nn_experiment_config` is the experiment configuration file, containing the specific values and ranges to search over a subset of the hyperparameters for the particular experiment. Replace the value for `--nn_experiment_config` with your desired experiment configuration file.  For example, to investigate the effect of the hyperparameters regarding the dataset, NN architecture, and optimizer settings, we can specify the experiment configuration file to be `config/train_acqf_experiment_training.yml`, which varies `train_samples_size`, `layer_width`, and `learning_rate`, while fixing the dimension to 16 and the method to Gittins index with $\lambda=10^{-4}$.
 Alternatively, you can use `config/train_acqf_experiment_test_simple.yml` to just run a single NN training.
 - `--always_train`: If this flag is set, train all acquisition function NNs regardless of whether they have already been trained. Default is to only train acquisition function NNs that have not already been trained.
 
@@ -111,7 +111,7 @@ Note that in the above command, the parameters `lamda_max` and `lamda_min` are u
 Run `python train_acqf.py --help` for the description of the arguments.
 An example command is as follows:
 ```bash
-python train_acqf.py --base_config config/train_acqf.yml --experiment_config config/train_acqf_experiment_test_simple.yml --sweep_name preliminary-test-small-train --mail adj53@cornell.edu --gpu_gres gpu:1
+python train_acqf.py --nn_base_config config/train_acqf.yml --nn_experiment_config config/train_acqf_experiment_test_simple.yml --sweep_name preliminary-test-small-train --mail adj53@cornell.edu --gpu_gres gpu:1
 ```
 This will train multiple neural networks with different hyperparameters and save the models.
 
@@ -121,7 +121,7 @@ This will train multiple neural networks with different hyperparameters and save
 
 An example command is as follows:
 ```bash
-python bo_experiments_gp_plot.py --base_config config/train_acqf.yml --experiment_config config/train_acqf_experiment_test1.yml --n_gp_draws 8 --seed 8 --n_iter 100 --n_initial_samples 1 --plots_config config/plots_config_1.yml
+python bo_experiments_gp_plot.py --nn_base_config config/train_acqf.yml --nn_experiment_config config/train_acqf_experiment_test1.yml --bo_base_config config/bo_config.yml --n_gp_draws 8 --seed 8 --plots_config config/plots_config_1.yml
 ```
 Here, `--plots_config` is the configuration file for the plots.
 For example, `config/plots_config_1.yml` is as follows:

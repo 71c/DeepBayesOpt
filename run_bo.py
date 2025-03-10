@@ -1,3 +1,4 @@
+from collections import defaultdict
 from functools import cache
 import math
 import os
@@ -7,6 +8,8 @@ from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprove
 from botorch.utils.sampling import draw_sobol_samples
 from botorch.exceptions import UnsupportedError
 import argparse
+
+import yaml
 from acquisition_function_net import GittinsAcquisitionFunctionNet
 from bayesopt import GPAcquisitionOptimizer, NNAcquisitionOptimizer, OptimizationResultsSingleMethod, get_rff_function, outcome_transform_function
 from dataset_with_models import RandomModelSampler
@@ -35,19 +38,95 @@ def get_arg_names(p) -> list[str]:
     return [action.dest for action in p._group_actions if action.dest != "help"]
 
 
-def add_bo_loop_args(parser):
-    parser.add_argument(
+# Load the base configuration
+with open("config/bo_config.yml", 'r') as f:
+    BO_BASE_CONFIG = yaml.safe_load(f)
+
+GEN_CANDIDATES_CONFIG = {
+    d["value"]: d["parameters"]
+    for d in BO_BASE_CONFIG['parameters']['optimizer']['gen_candidates']['values']
+}
+
+
+def add_bo_loop_args(parser, bo_policy_group):
+    bo_policy_group.add_argument(
         '--n_iter',
         type=int,
         help='Number of iterations of BO to perform',
         required=True
     )
-    parser.add_argument(
+    bo_policy_group.add_argument(
         '--n_initial_samples',
         type=int,
         help='Number of initial sobol points to sample at before using the AF',
         required=True
     )
+    
+    bo_policy_group.add_argument(
+        '--num_restarts',
+        type=int,
+        help='Number of restarts for the optimizer',
+        required=True
+    )
+    bo_policy_group.add_argument(
+        '--raw_samples',
+        type=int,
+        help='Number of random samples for the optimizer',
+        required=True
+    )
+    bo_policy_group.add_argument(
+        '--gen_candidates',
+        choices=list(GEN_CANDIDATES_CONFIG),
+        help='Method to generate candidates (see BoTorch optimize_acqf)',
+        required=True
+    )
+
+    sets = [set(x.keys()) for x in GEN_CANDIDATES_CONFIG.values()]
+    params_all = sets[0].intersection(*sets[1:])
+    
+    n_each = defaultdict(int)
+    for s in sets:
+        for k in s:
+            n_each[k] += 1
+    params_only_one = {k for k, v in n_each.items() if v == 1}
+
+    already_done_params_all = set()
+
+    added_args = set()
+    added_args_list = []
+
+    for gen_candidates_name, gen_candidates_params in GEN_CANDIDATES_CONFIG.items():
+        g = parser.add_argument_group(f"optimize_acqf options when gen_candidates={gen_candidates_name}")
+        for param_name, param_value in gen_candidates_params.items():
+            options = dict(
+                required=False,
+            )
+            if "value" in param_value:
+                options['type'] = type(param_value["value"])
+                options['default'] = param_value["value"]
+
+                tmp = "" if param_name in params_all else f" when gen_candidates={gen_candidates_name}"
+                options['help'] = f"Optimizer option{tmp}. Default value: {param_value['value']}"
+            if param_name in params_all:
+                if param_name in already_done_params_all:
+                    continue
+                nam = param_name
+                p = bo_policy_group
+                already_done_params_all.add(param_name)
+            else:
+                if param_name in params_only_one:
+                    nam =  param_name
+                else:
+                    # nam = f"{gen_candidates_name}_{param_name}"
+                    raise UnsupportedError(f"Parameter {param_name} is in more than one"
+                                           " set of parameters but not in all")
+                p = g
+            if nam not in added_args:
+                added_args.add(nam)
+                added_args_list.append(nam)
+            p.add_argument(f"--{nam}", **options)
+
+    return added_args_list
 
 
 @cache
@@ -71,9 +150,9 @@ def get_bo_loop_args_parser():
                 name_prefix=OBJECTIVE_NAME_PREFIX,
                 required=True, add_randomize_params=True)
 
-    ###################################### BO Policy ###################################
-    bo_policy_group = parser.add_argument_group("BO policy")
-    add_bo_loop_args(bo_policy_group)
+    ###################################### BO Policy ##################################
+    bo_policy_group = parser.add_argument_group("BO policy and misc. settings")
+    extra_bo_policy_args = add_bo_loop_args(parser, bo_policy_group)
     bo_policy_group.add_argument(
         '--bo_seed',
         type=int,
@@ -94,6 +173,8 @@ def get_bo_loop_args_parser():
         "Either nn_model_name should be specified or the arguments under 'GP-based AF' "
         "should be specified."
     )
+    bo_policy_args = get_arg_names(bo_policy_group) + extra_bo_policy_args
+    
     gp_af_group = parser.add_argument_group("GP-based AF")
     #### Option 2: policy is to use a GP-based AF
     gp_af_group.add_argument(
@@ -117,9 +198,9 @@ def get_bo_loop_args_parser():
 
     return {
         'parser': parser,
-        'objective_function_group': objective_function_group,
-        'bo_policy_group': bo_policy_group,
-        'gp_af_group': gp_af_group
+        'objective_function_args': get_arg_names(objective_function_group),
+        'bo_policy_args': bo_policy_args,
+        'gp_af_args': get_arg_names(gp_af_group)
     }
 
 
@@ -350,6 +431,7 @@ def run_bo(objective_args: dict[str, Any],
     # One seed per BO loop. Here, we have n=1 BO loops, so need just 1 seed.
     seeds = [bo_seed]
 
+    # TODO: Add in the optimizer options into here, as well as num_restarts and raw_samples
     return OptimizationResultsSingleMethod(
         objectives=[objective_fn],
         initial_points=init_x,
@@ -392,18 +474,18 @@ def main():
 
     objective_args = {
         k[len(OBJECTIVE_NAME_PREFIX)+1:]: getattr(args, k)
-        for k in get_arg_names(parser_info['objective_function_group'])
+        for k in parser_info['objective_function_args']
     }
 
     bo_policy_args = {
         k: getattr(args, k)
-        for k in get_arg_names(parser_info['bo_policy_group'])
+        for k in parser_info['bo_policy_args']
     }
 
     gp_af_args = {
         (k if k == GP_AF_NAME_PREFIX
          else k[len(GP_AF_NAME_PREFIX)+1:]): getattr(args, k)
-        for k in get_arg_names(parser_info['gp_af_group'])
+        for k in parser_info['gp_af_args']
     }
 
     optimization_results = run_bo(

@@ -138,7 +138,7 @@ class TimeLogAcquisitionFunction(AcquisitionFunction):
         self._total_eval_time = 0.0
         self._n_evals = 0
 
-    def set_X_pending(self, X_pending: Tensor | None = None) -> None:
+    def set_X_pending(self, X_pending: Optional[Tensor] = None) -> None:
         self.af.set_X_pending(X_pending)
 
     def forward(self, X: Tensor) -> Tensor:

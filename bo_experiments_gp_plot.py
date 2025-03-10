@@ -2,7 +2,7 @@ import itertools
 import os
 import yaml
 from datetime import datetime
-from bo_experiments_gp import get_bo_experiments_parser, gp_bo_jobs_spec_cfgs_from_args
+from bo_experiments_gp import get_bo_experiments_parser, generate_gp_bo_job_specs
 from plot_utils import save_figures_from_nested_structure
 from run_bo import GP_AF_DICT
 from submit_dependent_jobs import CONFIG_DIR
@@ -90,7 +90,8 @@ ATTR_GROUPS = [
 ]
 
 def main():
-    parser, bo_loop_group = get_bo_experiments_parser(train=False)
+    (parser, nn_base_config_name, nn_experiment_config_name, bo_base_config_name,
+     bo_experiment_config_name) = get_bo_experiments_parser(train=False)
 
     plot_group = parser.add_argument_group("Plotting")
     plot_group.add_argument(
@@ -107,7 +108,13 @@ def main():
     args = parser.parse_args()
 
     jobs_spec, new_cfgs, existing_cfgs_and_results, refined_config \
-          = gp_bo_jobs_spec_cfgs_from_args(args, bo_loop_group)
+        = generate_gp_bo_job_specs(
+            args,
+            nn_base_config=getattr(args, nn_base_config_name),
+            nn_experiment_config=getattr(args, nn_experiment_config_name),
+            bo_base_config=getattr(args, bo_base_config_name),
+            bo_experiment_config=getattr(args, bo_experiment_config_name)
+        )
     
     save_json(jobs_spec, os.path.join(CONFIG_DIR, "dependencies.json"), indent=4)
     
