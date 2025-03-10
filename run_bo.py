@@ -3,15 +3,17 @@ from functools import cache
 import math
 import os
 from typing import Any
+import argparse
+import yaml
+
 import torch
 from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprovement
 from botorch.utils.sampling import draw_sobol_samples
 from botorch.exceptions import UnsupportedError
-import argparse
+from botorch.generation.gen import gen_candidates_scipy, gen_candidates_torch
 
-import yaml
 from acquisition_function_net import GittinsAcquisitionFunctionNet
-from bayesopt import GPAcquisitionOptimizer, NNAcquisitionOptimizer, OptimizationResultsSingleMethod, get_rff_function, outcome_transform_function
+from bayesopt import GPAcquisitionOptimizer, NNAcquisitionOptimizer, OptimizationResultsSingleMethod, RandomSearch, get_rff_function, outcome_transform_function
 from dataset_with_models import RandomModelSampler
 from gp_acquisition_dataset import GP_GEN_DEVICE, add_gp_args, get_gp_model_from_args_no_outcome_transform, get_outcome_transform
 from stable_gittins import StableGittinsIndex
@@ -47,8 +49,20 @@ GEN_CANDIDATES_CONFIG = {
     for d in BO_BASE_CONFIG['parameters']['optimizer']['gen_candidates']['values']
 }
 
+GEN_CANDIDATES_NAME_TO_FUNCTION = {
+    "torch": {
+        "func": gen_candidates_torch
+    },
+    "L-BFGS-B": {
+        "func": gen_candidates_scipy,
+        "additional_params": {
+            "method": "L-BFGS-B"
+        }
+    }
+}
 
-def add_bo_loop_args(parser, bo_policy_group):
+
+def _add_bo_loop_args(parser, bo_policy_group, af_opt_group):
     bo_policy_group.add_argument(
         '--n_iter',
         type=int,
@@ -62,75 +76,86 @@ def add_bo_loop_args(parser, bo_policy_group):
         required=True
     )
     
-    bo_policy_group.add_argument(
+    af_opt_group.add_argument(
         '--num_restarts',
         type=int,
         help='Number of restarts for the optimizer',
-        required=True
+        required=False
     )
-    bo_policy_group.add_argument(
+    af_opt_group.add_argument(
         '--raw_samples',
         type=int,
         help='Number of random samples for the optimizer',
-        required=True
+        required=False
     )
-    bo_policy_group.add_argument(
+    af_opt_group.add_argument(
         '--gen_candidates',
         choices=list(GEN_CANDIDATES_CONFIG),
         help='Method to generate candidates (see BoTorch optimize_acqf)',
-        required=True
+        required=False
     )
 
-    sets = [set(x.keys()) for x in GEN_CANDIDATES_CONFIG.values()]
-    params_all = sets[0].intersection(*sets[1:])
+    optimize_acqf_arg_names = get_arg_names(af_opt_group)
+
+    sets_dict = {method: set(x.keys()) for method, x in GEN_CANDIDATES_CONFIG.items()}
+    sets_list = list(sets_dict.values())
+    params_all = sets_list[0].intersection(*sets_list[1:])
+    params_defaults = {}
     
-    n_each = defaultdict(int)
-    for s in sets:
+    methods_per_param_name = defaultdict(list)
+    for method, s in sets_dict.items():
         for k in s:
-            n_each[k] += 1
-    params_only_one = {k for k, v in n_each.items() if v == 1}
+            methods_per_param_name[k].append(method)
+    params_only_one = {k for k, v in methods_per_param_name.items() if len(v) == 1}
 
-    already_done_params_all = set()
-
-    added_args = set()
-    added_args_list = []
+    extra_bo_policy_args_set = set()
+    extra_bo_policy_args = []
 
     for gen_candidates_name, gen_candidates_params in GEN_CANDIDATES_CONFIG.items():
         g = parser.add_argument_group(f"optimize_acqf options when gen_candidates={gen_candidates_name}")
+        params_defaults[gen_candidates_name] = {}
         for param_name, param_value in gen_candidates_params.items():
-            options = dict(
-                required=False,
-            )
-            if "value" in param_value:
-                options['type'] = type(param_value["value"])
-                options['default'] = param_value["value"]
-
-                tmp = "" if param_name in params_all else f" when gen_candidates={gen_candidates_name}"
-                options['help'] = f"Optimizer option{tmp}. Default value: {param_value['value']}"
-            if param_name in params_all:
-                if param_name in already_done_params_all:
-                    continue
-                nam = param_name
-                p = bo_policy_group
-                already_done_params_all.add(param_name)
-            else:
-                if param_name in params_only_one:
-                    nam =  param_name
-                else:
-                    # nam = f"{gen_candidates_name}_{param_name}"
+            default_value = param_value.get("value", None)
+            params_defaults[gen_candidates_name][param_name] = default_value
+            if param_name not in params_all:
+                if param_name not in params_only_one:
                     raise UnsupportedError(f"Parameter {param_name} is in more than one"
                                            " set of parameters but not in all")
-                p = g
-            if nam not in added_args:
-                added_args.add(nam)
-                added_args_list.append(nam)
-            p.add_argument(f"--{nam}", **options)
+                options = dict(required=False)
+                desc = f"Optimizer option when gen_candidates={gen_candidates_name}."
+                if default_value is not None:
+                    options['type'] = type(default_value)
+                    # options['default'] = default_value
+                    desc += f" Default value: {default_value}"
+                options['help'] = desc
+                g.add_argument(f"--{param_name}", **options)
+            if param_name not in extra_bo_policy_args_set:
+                extra_bo_policy_args_set.add(param_name)
+                extra_bo_policy_args.append(param_name)
+        
+    for param_name in params_all:
+        defaults = {
+            method: d[param_name]
+            for method, d in params_defaults.items()
+        }
+        types = {type(v) for v in defaults.values()}
+        if len(types) > 1:
+            raise UnsupportedError(f"Parameter {param_name} has different types: {types}")
+        defaults_str = ", ".join(
+            f"gen_candidates={k}: {v}" for k, v in defaults.items()
+        )
+        af_opt_group.add_argument(
+            f"--{param_name}",
+            type=types.pop(),
+            help=f"Optimizer option. Default values: {defaults_str}",
+            required=False
+        )
 
-    return added_args_list
+    return extra_bo_policy_args, params_all, params_defaults, methods_per_param_name, optimize_acqf_arg_names
 
 
 @cache
-def get_bo_loop_args_parser():
+def _get_bo_loop_args_parser():
     parser = argparse.ArgumentParser()
     ################## Objective function (can only be a GP for now) ###################
     objective_function_group = parser.add_argument_group("Objective function")
@@ -152,7 +177,11 @@ def get_bo_loop_args_parser():
 
     ###################################### BO Policy ##################################
     bo_policy_group = parser.add_argument_group("BO policy and misc. settings")
-    extra_bo_policy_args = add_bo_loop_args(parser, bo_policy_group)
+    af_opt_group = parser.add_argument_group("optimize_acqf options")
+    
+    (extra_bo_policy_args, params_all, params_defaults,
+     methods_per_param_name, optimize_acqf_arg_names) = _add_bo_loop_args(
+        parser, bo_policy_group, af_opt_group)
     bo_policy_group.add_argument(
         '--bo_seed',
         type=int,
@@ -173,7 +202,12 @@ def get_bo_loop_args_parser():
         "Either nn_model_name should be specified or the arguments under 'GP-based AF' "
         "should be specified."
     )
-    bo_policy_args = get_arg_names(bo_policy_group) + extra_bo_policy_args
+    bo_policy_group.add_argument(
+        '--random_search',
+        action='store_true',
+        help='Whether to use random search instead of BO'
+    )
+    bo_policy_arg_names = get_arg_names(bo_policy_group) + get_arg_names(af_opt_group) + extra_bo_policy_args
     
     gp_af_group = parser.add_argument_group("GP-based AF")
     #### Option 2: policy is to use a GP-based AF
@@ -198,10 +232,21 @@ def get_bo_loop_args_parser():
 
     return {
         'parser': parser,
-        'objective_function_args': get_arg_names(objective_function_group),
-        'bo_policy_args': bo_policy_args,
-        'gp_af_args': get_arg_names(gp_af_group)
+        'params_all': params_all,
+        'params_defaults': params_defaults,
+        'methods_per_param_name': methods_per_param_name,
+        'objective_function_arg_names': get_arg_names(objective_function_group),
+        'bo_policy_arg_names': bo_policy_arg_names,
+        'gp_af_arg_names': get_arg_names(gp_af_group),
+        'optimize_acqf_arg_names': optimize_acqf_arg_names
     }
+
+
+def parse_bo_loop_args(args=None):
+    parser_info = _get_bo_loop_args_parser()
+    parser = parser_info.pop('parser')    
+    parser_info['args'] = parser.parse_args(args=args)
+    return parser_info
 
 
 # Cache the objective function things.
@@ -281,145 +326,198 @@ def run_bo(objective_args: dict[str, Any],
            bo_policy_args: dict[str, Any],
            gp_af_args: dict[str, Any],
            load_weights: bool=True):
+    info = _get_bo_loop_args_parser()
+    optimize_acqf_arg_names = info['optimize_acqf_arg_names']
+
+    gen_candidates = bo_policy_args['gen_candidates']
+    
+    for method, defaults in info['params_defaults'].items():
+        for k, default_val in defaults.items():
+            if method == gen_candidates:
+                if bo_policy_args[k] is None:
+                    bo_policy_args[k] = default_val
+            elif bo_policy_args[k] is not None:
+                param_methods = info['methods_per_param_name'][k]
+                if gen_candidates not in param_methods:
+                    tmp = ', '.join(param_methods)
+                    raise ValueError(f"Cannot specify {k} if {gen_candidates=} "
+                                    f"(this is only for gen_candidates={tmp})")
+
     (objective_gp, objective_octf,
      objective_fn, objective_name) = _get_gp_objective_things(objective_args)
     dimension = objective_args['dimension']
     ############################# Determine the BO policy ##############################
-    nn_model_name = bo_policy_args.get('nn_model_name')
-    
     lamda = bo_policy_args['lamda']
     if lamda is not None and lamda <= 0:
         raise ValueError("lamda must be > 0")
     
     results_print_data = {'dimension': dimension}
+    
+    nn_model_name = bo_policy_args.get('nn_model_name')
+    gp_af = gp_af_args.get(GP_AF_NAME_PREFIX)
 
-    if nn_model_name is None: # Using a GP AF
-        fit = gp_af_args.get('fit')
-        #### Determine the GP model to be used for the AF
-        if fit == "exact":
-            ## Determine af_gp_model from the GP used for the objective
-            for k, v in gp_af_args.items():
-                if not (k == "fit" or k == GP_AF_NAME_PREFIX):
-                    if v is not None:
-                        raise ValueError(f"Cannot specify {GP_AF_NAME_PREFIX}_{k} "
-                                         f"if {GP_AF_NAME_PREFIX}_fit=exact")
-            af_gp_model = objective_gp
-            af_octf = objective_octf
-        else:
-            ## Determine af_gp_model from the GP args
-            af_kernel = gp_af_args['kernel']
-            af_lengthscale = gp_af_args['lengthscale']
-            if af_kernel is None:
-                raise ValueError(
-                    f"If not using a NN AF and {GP_AF_NAME_PREFIX}_fit != exact, "
-                    f"must specify {GP_AF_NAME_PREFIX}_kernel")
-            if af_lengthscale is None:
-                raise ValueError(
-                    f"If not using a NN AF and {GP_AF_NAME_PREFIX}_fit != exact, "
-                    f"must specify {GP_AF_NAME_PREFIX}_lengthscale")
-            
-            # Add priors if using MAP. If using MLE or no fitting, don't add priors
-            add_gp_af_priors_flag = fit == "map"
-            
-            af_gp_model = get_gp_model_from_args_no_outcome_transform(
-                dimension=dimension,
-                kernel=af_kernel,
-                lengthscale=af_lengthscale,
-                add_priors=add_gp_af_priors_flag,
-                device=GP_GEN_DEVICE
-            )
-            af_octf, af_octf_args = get_outcome_transform(
-                argparse.Namespace(**gp_af_args),
-                name_prefix=GP_AF_NAME_PREFIX,
-                device=GP_GEN_DEVICE)
-        
-        #### Apply outcome transform to the AF GP model
-        if af_octf is not None:
-            add_outcome_transform(af_gp_model, af_octf)
-
-        gp_af = gp_af_args[GP_AF_NAME_PREFIX]
-        if gp_af is None:
-            raise ValueError("If not using a NN AF, must specify gp_af")
-
-        af_options = dict(
-            optimizer_kwargs_per_function=[{'model': af_gp_model}],
-            acquisition_function_class=GP_AF_DICT[gp_af],
-            fit_params=fit in {'map', 'mle'}
-        )
-        
-        if gp_af == 'gittins':
-            if lamda is None:
-                raise ValueError("If using Gittins index, must specify lamda")
-            af_options['lmbda'] = lamda
-            results_print_data['lambda'] = lamda
-        else:
-            if lamda is not None:
-                raise ValueError("If not using Gittins index, cannot specify lamda")
-
-        optimizer_class = GPAcquisitionOptimizer
-
-        results_print_data = {**results_print_data, 'GP AF': gp_af, 'fit': fit}
-    else: # Using a NN AF
+    if gp_af is None:
         for k, v in gp_af_args.items():
             if v is not None:
                 raise ValueError(
-                    f"Cannot specify {GP_AF_NAME_PREFIX}_{k} if using a NN AF")
+                    f"Cannot specify {GP_AF_NAME_PREFIX}_{k} if not using a GP AF")
+
+    af_options = {}
+    
+    if bo_policy_args['random_search']: # Using random search
+        if nn_model_name is not None:
+            raise ValueError("Cannot specify nn_model_name if using random search")
+        if gp_af is not None:
+            raise ValueError(f"Cannot specify {GP_AF_NAME_PREFIX} if using random search")
+        for k in optimize_acqf_arg_names:
+            if bo_policy_args[k] is not None:
+                raise ValueError(f"Cannot specify {k} if using random search")
+        if lamda is not None:
+            raise ValueError("If using random search, cannot specify lamda")
+        optimizer_class = RandomSearch
+    else:
+        # Using BO with optimize_acqf
+        # optimize_acqf_arg_names = num_restarts, raw_samples, gen_candidates
+        for k in optimize_acqf_arg_names:
+            v = bo_policy_args[k]
+            if v is None:
+                raise ValueError(f"Must specify {k} if not using random search")
+            if k == 'gen_candidates':
+                v = GEN_CANDIDATES_NAME_TO_FUNCTION[v]["func"]
+            af_options[k] = v
+        options = {
+            k: bo_policy_args[k]
+            for k in GEN_CANDIDATES_CONFIG[gen_candidates]
+        }
+        new_params = GEN_CANDIDATES_NAME_TO_FUNCTION[gen_candidates].get("additional_params", None)
+        if new_params is not None:
+            options.update(new_params)
+        af_options['options'] = options
         
-        if not model_is_trained(nn_model_name):
-            return None
-        
-        nn_model = load_model(nn_model_name, load_weights=load_weights)
+        if gp_af is not None: # Using a GP AF
+            if nn_model_name is not None:
+                raise ValueError(f"Cannot specify nn_model_name if using {GP_AF_NAME_PREFIX}")
+            fit = gp_af_args.get('fit')
+            #### Determine the GP model to be used for the AF
+            if fit == "exact":
+                ## Determine af_gp_model from the GP used for the objective
+                for k, v in gp_af_args.items():
+                    if not (k == "fit" or k == GP_AF_NAME_PREFIX):
+                        if v is not None:
+                            raise ValueError(f"Cannot specify {GP_AF_NAME_PREFIX}_{k} "
+                                            f"if {GP_AF_NAME_PREFIX}_fit=exact")
+                af_gp_model = objective_gp
+                af_octf = objective_octf
+            else:
+                ## Determine af_gp_model from the GP args
+                af_kernel = gp_af_args['kernel']
+                af_lengthscale = gp_af_args['lengthscale']
+                if af_kernel is None:
+                    raise ValueError(
+                        f"If using a GP AF and {GP_AF_NAME_PREFIX}_fit != exact, "
+                        f"must specify {GP_AF_NAME_PREFIX}_kernel")
+                if af_lengthscale is None:
+                    raise ValueError(
+                        f"If using a GP AF and {GP_AF_NAME_PREFIX}_fit != exact, "
+                        f"must specify {GP_AF_NAME_PREFIX}_lengthscale")
+                
+                # Add priors if using MAP. If using MLE or no fitting, don't add priors
+                add_gp_af_priors_flag = fit == "map"
+                
+                af_gp_model = get_gp_model_from_args_no_outcome_transform(
+                    dimension=dimension,
+                    kernel=af_kernel,
+                    lengthscale=af_lengthscale,
+                    add_priors=add_gp_af_priors_flag,
+                    device=GP_GEN_DEVICE
+                )
+                af_octf, af_octf_args = get_outcome_transform(
+                    argparse.Namespace(**gp_af_args),
+                    name_prefix=GP_AF_NAME_PREFIX,
+                    device=GP_GEN_DEVICE)
+            
+            #### Apply outcome transform to the AF GP model
+            if af_octf is not None:
+                add_outcome_transform(af_gp_model, af_octf)
 
-        # TODO (maybe): provide exponentiate=False or exponentiate=True here
-        # for ExpectedImprovementAcquisitionFunctionNet?
-        af_options = dict(
-            model=nn_model,
-            nn_model_name=nn_model_name
-        )
-
-        results_print_data = {**results_print_data, 'NN': nn_model_name}
-
-        if isinstance(nn_model, GittinsAcquisitionFunctionNet):
-            if nn_model.costs_in_history:
-                raise UnsupportedError("nn_model.costs_in_history=True is currently not"
-                                       " supported for Gittins index optimization")
-            if nn_model.cost_is_input:
-                raise UnsupportedError("nn_model.cost_is_input=True is currently not"
-                                       " supported for Gittins index optimization")
-
-            configs = load_configs(nn_model_name)
-            train_config = configs['training_config']
-            lamda_min, lamda_max = train_config['lamda_min'], train_config['lamda_max']
-
-            if nn_model.variable_lambda:
+            af_options = dict(
+                **af_options,
+                optimizer_kwargs_per_function=[{'model': af_gp_model}],
+                acquisition_function_class=GP_AF_DICT[gp_af],
+                fit_params=fit in {'map', 'mle'}
+            )
+            
+            if gp_af == 'gittins':
                 if lamda is None:
-                    raise ValueError(
-                        "If using a Gittins index NN AF architecture "
-                        "that has variable_lambda=True, must specify lamda "
-                        f"(should be between {lamda_min=} and {lamda_max=})")
-                if not (lamda_min <= lamda <= lamda_max):
-                    raise ValueError(
-                        f"lamda should be between {lamda_min=} and {lamda_max=}")
-                af_options['lambda_cand'] = math.log(lamda)
-                af_options['is_log'] = True
+                    raise ValueError("If using Gittins index, must specify lamda")
+                af_options['lmbda'] = lamda
+                results_print_data['lambda'] = lamda
             else:
                 if lamda is not None:
-                    if lamda != lamda_min:
-                        raise ValueError(
-                            f"lamda should be lamda={lamda_min} if using this Gittins "
-                            "index NN AF architecture that has variable_lambda=False, "
-                            f"but got lamda={lamda}")
-                else:
-                    lamda = lamda_min
-            
-            results_print_data['lambda'] = lamda
-            results_print_data['variable_lambda'] = nn_model.variable_lambda
-        else:
-            if lamda is not None:
-                raise ValueError(
-                    "Cannot specify lamda if not using Gittins index NN AF")
+                    raise ValueError("If not using Gittins index, cannot specify lamda")
 
-        optimizer_class = NNAcquisitionOptimizer
+            optimizer_class = GPAcquisitionOptimizer
+
+            results_print_data = {**results_print_data, 'GP AF': gp_af, 'fit': fit}
+        elif nn_model_name is not None: # Using a NN AF
+            if not model_is_trained(nn_model_name):
+                return None
+            
+            nn_model = load_model(nn_model_name, load_weights=load_weights)
+
+            # TODO (maybe): provide exponentiate=False or exponentiate=True here
+            # for ExpectedImprovementAcquisitionFunctionNet?
+            af_options = dict(
+                **af_options,
+                model=nn_model,
+                nn_model_name=nn_model_name
+            )
+
+            results_print_data = {**results_print_data, 'NN': nn_model_name}
+
+            if isinstance(nn_model, GittinsAcquisitionFunctionNet):
+                if nn_model.costs_in_history:
+                    raise UnsupportedError("nn_model.costs_in_history=True is currently not"
+                                        " supported for Gittins index optimization")
+                if nn_model.cost_is_input:
+                    raise UnsupportedError("nn_model.cost_is_input=True is currently not"
+                                        " supported for Gittins index optimization")
+
+                configs = load_configs(nn_model_name)
+                train_config = configs['training_config']
+                lamda_min, lamda_max = train_config['lamda_min'], train_config['lamda_max']
+
+                if nn_model.variable_lambda:
+                    if lamda is None:
+                        raise ValueError(
+                            "If using a Gittins index NN AF architecture "
+                            "that has variable_lambda=True, must specify lamda "
+                            f"(should be between {lamda_min=} and {lamda_max=})")
+                    if not (lamda_min <= lamda <= lamda_max):
+                        raise ValueError(
+                            f"lamda should be between {lamda_min=} and {lamda_max=}")
+                    af_options['lambda_cand'] = math.log(lamda)
+                    af_options['is_log'] = True
+                else:
+                    if lamda is not None:
+                        if lamda != lamda_min:
+                            raise ValueError(
+                                f"lamda should be lamda={lamda_min} if using this Gittins "
+                                "index NN AF architecture that has variable_lambda=False, "
+                                f"but got lamda={lamda}")
+                    else:
+                        lamda = lamda_min
+                
+                results_print_data['lambda'] = lamda
+                results_print_data['variable_lambda'] = nn_model.variable_lambda
+            else:
+                if lamda is not None:
+                    raise ValueError(
+                        "Cannot specify lamda if not using Gittins index NN AF")
+
+            optimizer_class = NNAcquisitionOptimizer
+        else:
+            raise ValueError(f"Must either specify {GP_AF_NAME_PREFIX}, specify nn_model_name, or set random_search=True")
 
     results_name = dict_to_str(results_print_data, include_space=True)
     
@@ -431,7 +529,6 @@ def run_bo(objective_args: dict[str, Any],
     # One seed per BO loop. Here, we have n=1 BO loops, so need just 1 seed.
     seeds = [bo_seed]
 
-    # TODO: Add in the optimizer options into here, as well as num_restarts and raw_samples
     return OptimizationResultsSingleMethod(
         objectives=[objective_fn],
         initial_points=init_x,
@@ -462,30 +559,29 @@ def bo_loop_dicts_to_cmd_args_list(
     
     # Just validate that the given args are correctly specified
     # (at least as much as the checks done by the parser)
-    parser_info = get_bo_loop_args_parser()
-    args = parser_info['parser'].parse_args(cmd_args_list)
+    info = parse_bo_loop_args(cmd_args_list)
 
     return cmd_args_list
 
 
 def main():
-    parser_info = get_bo_loop_args_parser()
-    args = parser_info['parser'].parse_args()
+    info = parse_bo_loop_args()
+    args = info['args']
 
     objective_args = {
         k[len(OBJECTIVE_NAME_PREFIX)+1:]: getattr(args, k)
-        for k in parser_info['objective_function_args']
+        for k in info['objective_function_arg_names']
     }
 
     bo_policy_args = {
         k: getattr(args, k)
-        for k in parser_info['bo_policy_args']
+        for k in info['bo_policy_arg_names']
     }
 
     gp_af_args = {
         (k if k == GP_AF_NAME_PREFIX
          else k[len(GP_AF_NAME_PREFIX)+1:]): getattr(args, k)
-        for k in parser_info['gp_af_args']
+        for k in info['gp_af_arg_names']
     }
 
     optimization_results = run_bo(

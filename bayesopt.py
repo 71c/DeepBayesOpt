@@ -3,13 +3,13 @@ import copy
 import os
 import time
 from tqdm import tqdm, trange
-from typing import Any, Callable, Type, Optional, List
+from typing import Any, Callable, Type, Optional, List, Union
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 from torch import Tensor
 from botorch.optim import optimize_acqf
-from botorch.generation.gen import gen_candidates_scipy, gen_candidates_torch
+from botorch.generation.gen import TGenCandidates
 from botorch.acquisition.acquisition import AcquisitionFunction
 from botorch.models.model import Model
 from botorch.models.gp_regression import SingleTaskGP
@@ -174,12 +174,20 @@ class SimpleAcquisitionOptimizer(BayesianOptimizer):
                  maximize: bool,
                  initial_points: Tensor,
                  objective: Callable,
-                 bounds: Tensor):
+                 bounds: Tensor,
+                 num_restarts: int,
+                 raw_samples: int,
+                 gen_candidates: Optional[TGenCandidates]=None,
+                 options: Optional[dict[str, Union[bool, float, int, str]]]=None):
         super().__init__(dim, maximize, initial_points, objective, bounds)
         self._acq_history = []
         self._optimize_process_times = []
         self._optimize_times = []
         self._optimize_stats_history = []
+        self.num_restarts = num_restarts
+        self.raw_samples = raw_samples
+        self.gen_candidates = gen_candidates
+        self.options = options
     
     @property
     def acq_history(self):
@@ -219,21 +227,20 @@ class SimpleAcquisitionOptimizer(BayesianOptimizer):
             acq_function=acq_function,
             bounds=self.bounds,
             q=1,
-            num_restarts=10 * self.dim,
-            raw_samples=200 * self.dim,
-            # options={
-            #     "batch_limit": 5,
-            #     "maxiter": 200,
-            #     "method": "L-BFGS-B",
-            # }
+            num_restarts=self.num_restarts,
+            raw_samples=self.raw_samples,
+            gen_candidates=self.gen_candidates,
+            options=self.options
         )
+        # num_restarts=10 * self.dim,
+        # raw_samples=200 * self.dim,
         end_p = time.process_time()
         end = time.time()
         self._optimize_process_times.append(end_p - start_p)
         self._optimize_times.append(end - start)
         self._acq_history.append(new_point_acquisition_val.item())
         self._optimize_stats_history.append(acq_function.get_stats())
-        return new_point
+        return new_point.detach()
 
 
 import inspect
@@ -254,8 +261,13 @@ class ModelAcquisitionOptimizer(SimpleAcquisitionOptimizer):
                  objective: Callable,
                  bounds: Tensor,
                  acquisition_function_class: Type[AcquisitionFunction],
+                 num_restarts: int,
+                 raw_samples: int,
+                 gen_candidates: Optional[TGenCandidates]=None,
+                 options: Optional[dict[str, Union[bool, float, int, str]]]=None,
                  **acqf_kwargs):
-        super().__init__(dim, maximize, initial_points, objective, bounds)
+        super().__init__(dim, maximize, initial_points, objective, bounds,
+                         num_restarts, raw_samples, gen_candidates, options)
         self.acqf_kwargs = acqf_kwargs
         self.acquisition_function_class = acquisition_function_class
         self._acquisition_args = get_all_args(acquisition_function_class)
@@ -283,10 +295,18 @@ class NNAcquisitionOptimizer(ModelAcquisitionOptimizer):
                  objective: Callable,
                  bounds: Tensor,
                  model: AcquisitionFunctionNet,
+                 num_restarts: int,
+                 raw_samples: int,
+                 gen_candidates: Optional[TGenCandidates]=None,
+                 options: Optional[dict[str, Union[bool, float, int, str]]]=None,
                  **acqf_kwargs):
-        super().__init__(dim, maximize, initial_points, objective, bounds,
-                         AcquisitionFunctionNetAcquisitionFunction,
-                         **acqf_kwargs)
+        super().__init__(
+            dim, maximize, initial_points, objective, bounds,
+            acquisition_function_class=AcquisitionFunctionNetAcquisitionFunction,
+            num_restarts=num_restarts, raw_samples=raw_samples,
+            gen_candidates=gen_candidates, options=options,
+            **acqf_kwargs
+        )
         self.model = model
     
     def get_model(self):
@@ -308,11 +328,20 @@ class GPAcquisitionOptimizer(ModelAcquisitionOptimizer):
                  bounds: Tensor,
                  model: SingleTaskGP,
                  acquisition_function_class: Type[AcquisitionFunction],
+                 num_restarts: int,
+                 raw_samples: int,
                  fit_params: bool,
                  mle: bool=False,
+                 gen_candidates: Optional[TGenCandidates]=None,
+                 options: Optional[dict[str, Union[bool, float, int, str]]]=None,
                  **acqf_kwargs):
-        super().__init__(dim, maximize, initial_points, objective, bounds,
-                         acquisition_function_class, **acqf_kwargs)
+        super().__init__(
+            dim, maximize, initial_points, objective, bounds,
+            acquisition_function_class=acquisition_function_class,
+            num_restarts=num_restarts, raw_samples=raw_samples,
+            gen_candidates=gen_candidates, options=options,
+            **acqf_kwargs
+        )
         
         self.fit_params = fit_params
         if fit_params:
@@ -390,6 +419,10 @@ class OptimizationResultsSingleMethod:
             'n_iter': self.n_iter,
             **optimizer_kwargs
         }
+        if 'gen_candidates' in opt_config:
+            # Need to convert the function to a string
+            # in such a way that it is the same every time
+            opt_config['gen_candidates'] = opt_config['gen_candidates'].__name__
         if optimizer_class is NNAcquisitionOptimizer:
             if save_dir is not None and nn_model_name is None:
                 raise ValueError(

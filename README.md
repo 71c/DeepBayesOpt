@@ -7,6 +7,8 @@ The repository includes:
 - Fully automated running of experiments using YAML config files and command-line Python scripts to automate the submission of several dependent jobs and job arrays using SLURM.  
 - Tools assessing the Bayesian optimization performance through scripts that generate and save plots in a hierarchical, systematic way.
 
+NOTE: I might not update this README as quickly as I change the code.
+
 
 # Installation
 
@@ -40,15 +42,23 @@ Use `run_bo.py` for running a single BO loop, and use `bo_experiments_gp.py` for
 ## Running a single Bayesian optimization loop
 To run a BO loop, you can use `run_bo.py`. `run_bo.py --help` will show the description of the arguments. If the NN model has not been trained yet, it will raise an error. In this case, you need to enter the command to train the NN model and then the command to run the BO loop.
 
-An example command to use a GP acquisition function is as follows:
+Example commands:
+- Random Search:
 ```bash
-python run_bo.py --bo_seed 6888556634303915349 --gp_af gittins --gp_af_fit exact --lamda 0.01 --n_initial_samples 1 --n_iter 100 --objective_dimension 16 --objective_gp_seed 6888556634303915349 --objective_kernel Matern52 --objective_lengthscale 0.1
+python run_bo.py --bo_seed 6888556634303915349 --n_initial_samples 1 --n_iter 100 --objective_dimension 16 --objective_gp_seed 6888556634303915349 --objective_kernel Matern52 --objective_lengthscale 0.1 --random_search
 ```
-An example command to use a NN acquisition function is as follows:
+- GP-based acquisition function:
 ```bash
-python run_bo.py --bo_seed 6888556634303915349 --lamda 0.01 --n_initial_samples 1 --n_iter 100 --nn_model_name v2/model_1798dfc44d64e85c92ab88abd40fb62e97f216968037268b794b92c0a1099b4b --objective_dimension 16 --objective_gp_seed 6888556634303915349 --objective_kernel Matern52 --objective_lengthscale 0.1
+python run_bo.py --bo_seed 6888556634303915349 --n_initial_samples 1 --n_iter 100 --objective_dimension 16 --objective_gp_seed 6888556634303915349 --objective_kernel Matern52 --objective_lengthscale 0.1 --gp_af LogEI --gp_af_fit exact --num_restarts 160 --raw_samples 3200 --gen_candidates L-BFGS-B
+```
+- NN-based acquisition function:
+```bash
+python run_bo.py --bo_seed 6888556634303915349 --lamda 0.01 --n_initial_samples 1 --n_iter 100 --nn_model_name v2/model_1798dfc44d64e85c92ab88abd40fb62e97f216968037268b794b92c0a1099b4b --objective_dimension 16 --objective_gp_seed 6888556634303915349 --objective_kernel Matern52 --objective_lengthscale 0.1 --num_restarts 160 --raw_samples 3200 --gen_candidates L-BFGS-B
 ```
 See the [section on NN training](#nn-training--dataset-generation-if-necessary) for how to train the NN model and obtain `--nn_model_name`.
+
+For `--gen_candidates` when optimizing AFs, you can currently choose between "L-BFGS-B" and "torch".
+
 
 ## Running multiple Bayesian optimization loops
 The following command automatically runs all of the BO loops of both the NNs and the GP-based AFs. Run `python bo_experiments_gp.py --help` to see the description of the arguments. Unlike the command for running a single BO loop, this command will automatically train any NNs that have not been trained yet prior to optimizing with them.
