@@ -191,9 +191,9 @@ def main():
         
         # Make script config
         script_config = {**vars(args)}
-        script_config.pop("base_config")
-        script_config.pop("experiment_config")
-        script_config["nn_train_config"] = refined_config
+        # script_config.pop("nn_base_config")
+        # script_config.pop("nn_experiment_config")
+        script_config["nn_train_and_bo_config"] = refined_config
         script_config["plots_config"] = [
             sorted(list(group)) for group in new_attrs_groups_list]
         

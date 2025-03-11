@@ -244,7 +244,12 @@ def generate_gp_bo_job_specs(args: argparse.Namespace,
             ps = pstats.Stats(pr, stream=s).sort_stats(pstats.SortKey.CUMULATIVE)
             ps.print_stats()
     
-    refined_config = {**nn_refined_config, **bo_refined_config}
+    refined_config = {
+        'parameters': {
+            **nn_refined_config['parameters'],
+            **bo_refined_config['parameters']
+        }
+    }
     return jobs_spec, new_cfgs, existing_cfgs_and_results, refined_config
 
 
