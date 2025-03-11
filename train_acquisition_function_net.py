@@ -299,21 +299,24 @@ def print_stat_summary(
     print_things(direct_things_to_print, prefix="  ")
 
 
-def print_stats(stats:dict, dataset_name, method, gi_loss_normalization=None):
-    print(f'{dataset_name}:\nExpected 1-step improvement:')
-
-    things_to_print = [
-        ('ei_softmax', 'NN (softmax)', True),
-        ('maxei', 'NN (max)', True),
-        ('true_gp_ei_maxei', 'True GP EI', False),
-        ('map_gp_ei_maxei', 'MAP GP EI', True),
-        ('true_gp_gi_maxei', 'True GP GI', True),
-        ('ei_random_search', 'Random search', True),
-        ('ei_ideal', 'Ideal', True),
-        ('avg_normalized_entropy', 'Avg norm. entropy', False)]
-    print_stat_summary(
-        stats, things_to_print, best_stat='true_gp_ei_maxei',
-        inverse_ratio=False, sqrt_ratio=False)
+def print_stats(stats:dict,
+                dataset_name, method,
+                gi_loss_normalization=None,
+                print_dataset_ei=True):
+    if print_dataset_ei:
+        print(f'{dataset_name}:\nExpected 1-step improvement:')
+        things_to_print = [
+            ('ei_softmax', 'NN (softmax)', True),
+            ('maxei', 'NN (max)', True),
+            ('true_gp_ei_maxei', 'True GP EI', False),
+            ('map_gp_ei_maxei', 'MAP GP EI', True),
+            ('true_gp_gi_maxei', 'True GP GI', True),
+            ('ei_random_search', 'Random search', True),
+            ('ei_ideal', 'Ideal', True),
+            ('avg_normalized_entropy', 'Avg norm. entropy', False)]
+        print_stat_summary(
+            stats, things_to_print, best_stat='true_gp_ei_maxei',
+            inverse_ratio=False, sqrt_ratio=False)
     
     if method == 'mse_ei':
         print('Improvement MSE:')
