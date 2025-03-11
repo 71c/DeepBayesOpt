@@ -56,14 +56,14 @@ def plot_dict_to_str(d):
     return ", ".join([item[1] for item in items])
 
 PRE = [
-    ["nn.layer_width", "nn.train_samples_size"]
+    ["nn.layer_width", "nn.train_samples_size", "gen_candidates"]
 ]
 
 ATTR_A = ["nn.batch_size"]
 ATTR_B = ["nn.learning_rate"]
 
 POST = [
-    ["lamda", "gp_af", "nn.method"],
+    ["lamda", "gp_af", "nn.method", "random_search"],
     ["objective.gp_seed"]
 ]
 
