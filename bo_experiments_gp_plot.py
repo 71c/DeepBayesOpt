@@ -250,14 +250,16 @@ def main():
             
             cfg = existing_cfgs[idx]
             bo_policy_args = cfg['bo_policy_args']
-            nn_model_name = bo_policy_args['nn_model_name']
+            
             
             if attr_name in results:
-                return {
+                ret = {
                     'attr_name': attr_name,
-                    attr_name: results[attr_name],
-                    'nn_model_name': nn_model_name
+                    attr_name: results[attr_name]
                 }
+                if 'nn_model_name' in bo_policy_args:
+                    ret['nn_model_name'] = bo_policy_args['nn_model_name']
+                return ret
             return None
 
         plot_kwargs=dict(

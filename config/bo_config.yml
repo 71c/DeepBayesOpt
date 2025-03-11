@@ -1,6 +1,6 @@
 parameters:
   n_iter:
-    values: [100, 20]
+    value: 50
   n_initial_samples:
     value: 1
   optimizer:
