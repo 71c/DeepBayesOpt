@@ -1004,6 +1004,9 @@ def train_acquisition_function_net(
         'stat_name': stat_name
     }
 
+    train_n_cand = next(iter(train_dataset)).x_cand.size(0)
+    test_n_cand = next(iter(test_dataset)).x_cand.size(0)
+
     for t in range(n_epochs):
         if verbose:
             print(f"Epoch {t+1}\n-------------------------------")
@@ -1036,7 +1039,8 @@ def train_acquisition_function_net(
             train_stats['while_training'] = train_nn_stats_while_training
             if verbose:
                 print_stats({**train_stats['while_training'], **non_nn_train_stats},
-                            "Train stats while training", method, gi_loss_normalization)
+                            "Train stats while training", method, gi_loss_normalization,
+                            print_dataset_ei=(train_n_cand > 1))
 
         if get_train_stats_after_training:
             train_stats['after_training'] = train_or_test_loop(
@@ -1051,7 +1055,8 @@ def train_acquisition_function_net(
                 get_basic_stats=False)
             if verbose:
                 print_stats({**train_stats['after_training'], **non_nn_train_stats},
-                            "Train stats after training", method, gi_loss_normalization)
+                            "Train stats after training", method, gi_loss_normalization,
+                            print_dataset_ei=(train_n_cand > 1))
         
         epoch_stats = {'train': train_stats}
 
@@ -1066,7 +1071,8 @@ def train_acquisition_function_net(
                 get_basic_stats=True)
             epoch_stats['test'] = test_stats
             if verbose:
-                print_stats(test_stats, "Test stats", method, gi_loss_normalization)
+                print_stats(test_stats, "Test stats", method, gi_loss_normalization,
+                            print_dataset_ei=(test_n_cand > 1))
         
         training_history_data['stats_epochs'].append(epoch_stats)
 
@@ -1150,7 +1156,8 @@ def train_acquisition_function_net(
         training_history_data['final_test_stats'] = final_test_stats
         if verbose:
             print_stats(final_test_stats, "Final test stats",
-                        method, gi_loss_normalization)
+                        method, gi_loss_normalization,
+                        print_dataset_ei=(test_n_cand > 1))
     
     if save_dir is not None:
         save_json(training_history_data, training_history_path, indent=4)
