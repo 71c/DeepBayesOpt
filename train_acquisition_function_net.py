@@ -1015,7 +1015,7 @@ def train_acquisition_function_net(
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode=mode, patience=lr_scheduler_patience,
             factor=lr_scheduler_factor, min_lr=lr_scheduler_min_lr,
-            cooldown=lr_scheduler_cooldown, verbose=verbose)
+            cooldown=lr_scheduler_cooldown)
     else:
         scheduler = None
 
@@ -1150,6 +1150,7 @@ def train_acquisition_function_net(
         # Learning rate scheduler
         if scheduler is not None:
             scheduler.step(cur_score)
+            print(f"Learning rate: {scheduler.get_last_lr().item()}")
     
     best_model_fname = f"model_{best_epoch}.pth"
     

@@ -1,6 +1,6 @@
 parameters:
   max_history:
-    value: 100
+    value: 20
   dimension:
     value: 1
   lengthscale:
@@ -16,7 +16,7 @@ parameters:
   layer_width:
     value: 300
   learning_rate:
-    values: [1.e-4, 1.e-3]
+    values: [1.e-6, 1.e-5, 1.e-4, 1.e-3]
   batch_size:
     value: 512
   lr_scheduler:
