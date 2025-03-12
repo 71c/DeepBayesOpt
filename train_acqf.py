@@ -241,6 +241,9 @@ def get_command_line_options(options: dict[str, Any]):
             'method', 'learning_rate', 'batch_size', 'epochs', 'use_maxei',
             # early stopping
             'early_stopping', 'patience', 'min_delta', 'cumulative_delta',
+            # learning rate scheduler
+            'lr_scheduler', 'lr_scheduler_patience', 'lr_scheduler_factor',
+            'lr_scheduler_min_lr', 'lr_scheduler_cooldown',
             # method=policy_gradient
             'include_alpha', 'learn_alpha', 'initial_alpha', 'alpha_increment',
             # method=gittins

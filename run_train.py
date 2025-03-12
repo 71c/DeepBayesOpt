@@ -89,6 +89,14 @@ def get_training_config(args: argparse.Namespace):
             patience=args.patience,
             min_delta=args.min_delta,
             cumulative_delta=args.cumulative_delta)
+    if args.lr_scheduler == 'ReduceLROnPlateau':
+        training_config = dict(
+            **training_config,
+            lr_scheduler=args.lr_scheduler,
+            lr_scheduler_patience=args.lr_scheduler_patience,
+            lr_scheduler_factor=args.lr_scheduler_factor,
+            lr_scheduler_min_lr=args.lr_scheduler_min_lr,
+            lr_scheduler_cooldown=args.lr_scheduler_cooldown)
             
     return training_config
 
@@ -312,10 +320,12 @@ def run_train(args: argparse.Namespace):
         if TIME:
             tic("Training")
         
+        print(f"Learning rate: {args.learning_rate}, lengthscale: {args.lengthscale}, dimension: {args.dimension}")
         optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate,
                                     #  weight_decay=1e-2
                                     )
         # optimizer = torch.optim.RMSprop(model.parameters(), lr=learning_rate)
+
         training_history_data = train_acquisition_function_net(
             model, train_aq_dataset, optimizer, args.method, args.epochs, args.batch_size,
             DEVICE, verbose=VERBOSE, n_train_printouts_per_epoch=10,
@@ -330,10 +340,18 @@ def run_train(args: argparse.Namespace):
             get_test_true_gp_stats=GET_TEST_TRUE_GP_STATS,
             save_dir=model_path,
             save_incremental_best_models=SAVE_INCREMENTAL_BEST_MODELS and args.save_model,
+            # early stopping
             early_stopping=args.early_stopping,
             patience=args.patience,
             min_delta=args.min_delta,
             cumulative_delta=args.cumulative_delta,
+            # learning rate scheduler
+            lr_scheduler=args.lr_scheduler,
+            lr_scheduler_patience=args.lr_scheduler_patience,
+            lr_scheduler_factor=args.lr_scheduler_factor,
+            lr_scheduler_min_lr=args.lr_scheduler_min_lr,
+            lr_scheduler_cooldown=args.lr_scheduler_cooldown,
+            # evaluation metric
             use_maxei=args.use_maxei
         )
 
@@ -548,6 +566,37 @@ def get_run_train_parser():
         help=('Whether to use cumulative delta for early stopping. Default is False. '
             'Only used if early_stopping=True.')
     )
+    ### Learning rate scheduler
+    training_group.add_argument(
+        '--lr_scheduler',
+        choices=['ReduceLROnPlateau'],
+        help='Use a learning rate scheduler. Default is to not use any.'
+    )
+    training_group.add_argument(
+        '--lr_scheduler_patience',
+        type=int,
+        help=('Number of epochs with no improvement after which learning rate will be '
+              'reduced. Only used if lr_scheduler=ReduceLROnPlateau.')
+    )
+    training_group.add_argument(
+        '--lr_scheduler_factor',
+        type=float,
+        help=('Factor by which the learning rate will be reduced. new_lr = lr * factor. '
+              'Only used if lr_scheduler=ReduceLROnPlateau.')
+    )
+    training_group.add_argument(
+        '--lr_scheduler_min_lr',
+        type=float,
+        help=('A lower bound on the learning rate. Only used if '
+              'lr_scheduler=ReduceLROnPlateau.')
+    )
+    training_group.add_argument(
+        '--lr_scheduler_cooldown',
+        type=int,
+        help=('Number of epochs to wait before resuming normal operation after lr has '
+              'been reduced. Only used if lr_scheduler=ReduceLROnPlateau.')
+    )
+    ### Evaluation metric
     training_group.add_argument(
         '--use_maxei',
         action='store_true',

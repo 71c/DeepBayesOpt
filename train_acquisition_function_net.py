@@ -303,8 +303,9 @@ def print_stats(stats:dict,
                 dataset_name, method,
                 gi_loss_normalization=None,
                 print_dataset_ei=True):
+    print(f'{dataset_name}:')
     if print_dataset_ei:
-        print(f'{dataset_name}:\nExpected 1-step improvement:')
+        print('Expected 1-step improvement:')
         things_to_print = [
             ('ei_softmax', 'NN (softmax)', True),
             ('maxei', 'NN (max)', True),
@@ -922,6 +923,13 @@ def train_acquisition_function_net(
         min_delta:float=0.0,
         cumulative_delta:bool=False,
 
+        # learning rate scheduler
+        lr_scheduler:Optional[str]=None,
+        lr_scheduler_patience:int=10,
+        lr_scheduler_factor:float=0.1,
+        lr_scheduler_min_lr:float=1e-6,
+        lr_scheduler_cooldown:int=0,
+
         use_maxei=False
     ):
     if not (isinstance(n_epochs, int) and n_epochs >= 1):
@@ -999,6 +1007,18 @@ def train_acquisition_function_net(
             (f"_normalized_{gi_loss_normalization}" \
              if gi_loss_normalization is not None else "")
         negate = True
+    
+    if lr_scheduler is not None:
+        if lr_scheduler != "ReduceLROnPlateau":
+            raise UnsupportedError(f"lr_scheduler '{lr_scheduler}' is not supported")
+        mode = "min" if negate else "max"
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer, mode=mode, patience=lr_scheduler_patience,
+            factor=lr_scheduler_factor, min_lr=lr_scheduler_min_lr,
+            cooldown=lr_scheduler_cooldown, verbose=verbose)
+    else:
+        scheduler = None
+
     training_history_data = {
         'stats_epochs': [],
         'stat_name': stat_name
@@ -1085,18 +1105,21 @@ def train_acquisition_function_net(
             cur_score = train_stats["after_training"][stat_name]
         else:
             cur_score = train_nn_stats_while_training[stat_name]
-        if negate:
-            cur_score = -cur_score
+        cur_score_maximize = -cur_score if negate else cur_score
         
         # If the best score increased, then update that and maybe save
-        if best_score is None or cur_score > best_score:
+        if best_score is None or cur_score_maximize > best_score:
             prev_best_score = best_score
-            best_score = cur_score
+            best_score = cur_score_maximize
             best_epoch = t
 
             if verbose and prev_best_score is not None:
-                msg = (f"Best score increased from {prev_best_score:>8f}"
-                        f" to {best_score:>8f}.")
+                if negate:
+                    msg = (f"Best score decreased from {-prev_best_score:>8f}"
+                           f" to {-best_score:>8f}.")
+                else:
+                    msg = (f"Best score increased from {prev_best_score:>8f}"
+                            f" to {best_score:>8f}.")
 
             if save_incremental_best_models:
                 fname = f"model_{best_epoch}.pth"
@@ -1115,13 +1138,18 @@ def train_acquisition_function_net(
             # Saving every epoch because why not
             save_json(training_history_data, training_history_path, indent=4)
         
-        if early_stopping and early_stopper(cur_score):
+        # Early stopping
+        if early_stopping and early_stopper(cur_score_maximize):
             if verbose:
                 print(
                     "Early stopping at epoch %i; counter is %i / %i" %
                     (t+1, early_stopper.counter, early_stopper.patience)
                 )
             break
+
+        # Learning rate scheduler
+        if scheduler is not None:
+            scheduler.step(cur_score)
     
     best_model_fname = f"model_{best_epoch}.pth"
     

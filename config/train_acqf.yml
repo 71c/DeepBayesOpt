@@ -88,9 +88,22 @@ parameters:
         - value: true
           parameters:
             patience:
-              value: 60
+              value: 30
             min_delta:
               value: 0.0
             cumulative_delta:
               value: false
         - value: false
+      lr_scheduler:
+        values:
+        - value: null
+        - value: ReduceLROnPlateau
+          parameters:
+            lr_scheduler_patience:
+              value: 15
+            lr_scheduler_factor:
+              value: 0.1
+            lr_scheduler_min_lr:
+              value: 0.0
+            lr_scheduler_cooldown:
+              value: 0

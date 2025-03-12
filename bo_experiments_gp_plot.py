@@ -39,7 +39,10 @@ def plot_dict_to_str(d):
                 else:
                     d_non_method[k] = v
             method = d[key_name]
-            ret = f"{plot_name}{method}"
+            if method == "random search":
+                ret = method
+            else:
+                ret = f"{plot_name}{method}"
             if d_method:
                 s = dict_to_str(d_method, include_space=True)
                 ret += f" ({s})"
@@ -63,7 +66,7 @@ ATTR_A = ["nn.batch_size"]
 ATTR_B = ["nn.learning_rate"]
 
 POST = [
-    ["lamda", "gp_af", "nn.method", "random_search"],
+    ["lamda", "gp_af", "nn.method"],
     ["objective.gp_seed"]
 ]
 
@@ -115,7 +118,7 @@ def main():
             bo_base_config=getattr(args, bo_base_config_name),
             bo_experiment_config=getattr(args, bo_experiment_config_name)
         )
-    
+    print(new_cfgs)
     save_json(jobs_spec, os.path.join(CONFIG_DIR, "dependencies.json"), indent=4)
     
     print(f"Number of new configs: {len(new_cfgs)}")
@@ -136,18 +139,25 @@ def main():
 
     reformatted_configs = []
     for item in existing_cfgs:
-        nn_model_name = item['bo_policy_args'].get('nn_model_name')
+        bo_policy_args = item['bo_policy_args']
+        nn_model_name = bo_policy_args.get('nn_model_name')
         if nn_model_name is not None:
-            item['bo_policy_args'].update(
+            bo_policy_args.update(
                 {"nn." + k: v
                  for k, v in MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN[nn_model_name].items()
                  }
             )
-            # item['bo_policy_args'].pop('nn_model_name')
+            # bo_policy_args.pop('nn_model_name')
+        
+        if 'random_search' in bo_policy_args:
+            random_search = bo_policy_args.pop('random_search')
+            if random_search:
+                item['gp_af_args']['gp_af'] = 'random search'
+
         reformatted_configs.append({
             **{k if k == 'dimension' else f'objective.{k}': v
                for k, v in item['objective_args'].items()},
-            **item['bo_policy_args'],
+            **bo_policy_args,
             **{k if k == 'gp_af' else f'gp_af.{k}': v
                for k, v in item['gp_af_args'].items()}
         })
