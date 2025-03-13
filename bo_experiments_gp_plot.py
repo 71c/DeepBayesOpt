@@ -1,12 +1,9 @@
-import itertools
 import os
-import yaml
 from datetime import datetime
 from bo_experiments_gp import get_bo_experiments_parser, generate_gp_bo_job_specs
 from plot_utils import save_figures_from_nested_structure
 from run_bo import GP_AF_DICT
 from submit_dependent_jobs import CONFIG_DIR
-from tictoc import tic, tocl
 from train_acqf import MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN
 from utils import dict_to_str, group_by, group_by_nested_attrs, save_json
 

@@ -13,7 +13,6 @@ from exact_gp_computations import calculate_EI_GP
 from utils import iterate_nested, save_json
 
 
-
 def plot_gp_posterior(ax, posterior, test_x, train_x, train_y, color, name=None):
     if not hasattr(posterior, "mvn"):
         # This in general won't correspond to the actual probability distribution AT ALL
@@ -186,23 +185,133 @@ def plot_nn_vs_gp_acquisition_function_1d_grid(
     return fig, axs
 
 
-def plot_acquisition_function_net_training_history(training_history_data):
+BLUE = '#1f77b4'
+ORANGE = '#ff7f0e'
+
+
+def plot_acquisition_function_net_training_history_ax(
+        ax, training_history_data, plot_maxei=False, plot_log_regret=False):
     stats_epochs = training_history_data['stats_epochs']
-    stat_name = training_history_data['stat_name']
-    train_ei_max = [epoch['train']['after_training'][stat_name] for epoch in stats_epochs]
-    test_ei_max = [epoch['test'][stat_name] for epoch in stats_epochs]
+    stat_name =  'maxei' if plot_maxei else training_history_data['stat_name']
+    
+    train_stat = np.array(
+        [epoch['train']['after_training'][stat_name] for epoch in stats_epochs])
+    test_stat = np.array([epoch['test'][stat_name] for epoch in stats_epochs])
+    
+    # Determine the GP test stat
+    if stat_name == 'mse' or stat_name == 'maxei':
+        gp_prefix = 'true_gp_ei_'
+    elif stat_name == 'ei_softmax':
+        gp_prefix = 'true_gp_ei_maxei_'
+    elif stat_name.startswith('gittins_loss'):
+        gp_prefix = f'true_gp_gi_'
+    else:
+        raise ValueError
+    gp_stat_name = gp_prefix + stat_name
+    try:
+        gp_test_stat = [epoch['test'][gp_stat_name] for epoch in stats_epochs]
+        # Validate that all the values in `gp_test_stat` are the same:
+        assert all(x == gp_test_stat[0] for x in gp_test_stat)
+        gp_test_stat = gp_test_stat[0]
+    except KeyError:
+        gp_test_stat = None
+    
+    if plot_log_regret:
+        if gp_test_stat is None:
+            raise ValueError("Need to have GP test stat to plot log regret")
+        to_plot = {
+            'lines': [
+                {
+                    'label': 'Regret (NN)',
+                    'data': np.abs(test_stat - gp_test_stat),
+                    'color': ORANGE
+                }
+            ],
+            'title': f'Test {stat_name} vs Epochs (log regret)',
+            'xlabel': 'Epochs',
+            'ylabel': f'{stat_name} regret',
+            'log_scale': True
+        }
+    else:
+        to_plot = {
+            'lines': [
+                {
+                    'label': 'Train (NN)',
+                    'data': train_stat,
+                    'color': BLUE
+                },
+                {
+                    'label': 'Test (NN)',
+                    'data': test_stat,
+                    'color': ORANGE
+                }
+            ],
+            'title': f'Train and Test {stat_name} vs Epochs',
+            'xlabel': 'Epochs',
+            'ylabel': stat_name,
+            'log_scale': False
+        }
 
-    epochs = np.arange(1, len(train_ei_max) + 1)
+        if gp_test_stat is not None:
+            to_plot['consts'] = [
+                {
+                    'label': f'Test (true GP value)',
+                    'data': gp_test_stat,
+                    'color': 'k',
+                    'linestyle': '--',
+                }
+            ]
 
-    fig = plt.figure(figsize=(10, 5))
-    ax = fig.add_subplot(111)
-    ax.plot(epochs, train_ei_max, label=f'Train {stat_name}', marker='o')
-    ax.plot(epochs, test_ei_max, label=f'Test {stat_name}', marker='x')
-    ax.set_xlabel('Epochs')
-    ax.set_ylabel(stat_name)
-    ax.set_title(f'Train and Test {stat_name} Over Epochs')
+    epochs = np.arange(1, len(train_stat) + 1)
+
+    line_properties = ['label', 'marker', 'linestyle', 'color']
+
+    lines = to_plot.get('lines')
+    if lines is not None:
+        for line in lines:
+            kwargs = {p: line[p] for p in line_properties if p in line}
+            ax.plot(epochs, line['data'], **kwargs)
+    consts = to_plot.get('consts')
+    if consts is not None:
+        for line in consts:
+            kwargs = {p: line[p] for p in line_properties if p in line}
+            ax.axhline(line['data'], **kwargs)
+
+    ax.set_xlabel(to_plot['xlabel'])
+    ax.set_ylabel(to_plot['ylabel'])
+    ax.set_title(to_plot['title'])
     ax.legend()
     ax.grid(True)
+    if to_plot['log_scale']:
+        ax.set_yscale('log')
+
+
+def plot_acquisition_function_net_training_history(
+        training_history_data, plot_maxei=False, plot_log_regret=True,
+        **plot_kwargs):
+    scale = plot_kwargs.get("scale", 1.0)
+    aspect = plot_kwargs.get("aspect", 1.5)
+
+    area = 50 * scale**2
+    height = np.sqrt(area / aspect)
+    width = aspect * height
+
+    plot_log_regrets = [False]
+    if plot_log_regret:
+        plot_log_regrets.append(True)
+
+    n_rows, n_cols = 1, len(plot_log_regrets)
+    fig, axs = plt.subplots(n_rows, n_cols,
+                             figsize=(width * n_cols, height * n_rows),
+                             sharex=False, sharey=False,
+                             squeeze=True)
+    for ax, plot_log_regret in zip(axs, plot_log_regrets):
+        plot_acquisition_function_net_training_history_ax(
+            ax=ax,
+            training_history_data=training_history_data,
+            plot_maxei=plot_maxei,
+            plot_log_regret=plot_log_regret
+        )
 
     return fig
 

@@ -404,10 +404,11 @@ def run_train(args: argparse.Namespace):
                         "Final test stats on this test dataset (should be same as above)",
                         args.method, args.gi_loss_normalization)
 
-        history_fig = plot_acquisition_function_net_training_history(training_history_data)
+        history_fig = plot_acquisition_function_net_training_history(
+            training_history_data, plot_log_regret=True)
         history_plot_path = os.path.join(model_path, 'training_history.pdf')
-        if not os.path.exists(history_plot_path):
-            history_fig.savefig(history_plot_path, bbox_inches='tight')
+        # if not os.path.exists(history_plot_path):
+        history_fig.savefig(history_plot_path, bbox_inches='tight')
 
     ######################## Plot performance of model #############################
     ######################## (old useless code)
