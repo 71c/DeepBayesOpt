@@ -1795,7 +1795,7 @@ def _get_class_from_name(class_name):
         loaded_cls = _CLASSES[class_name]
     except KeyError:
         try:
-            # Bckwards compatibility with old code
+            # Backwards compatibility with old code
             if '.' not in class_name:
                 raise KeyError
             new_class_name = class_name.split(".")[-1]
