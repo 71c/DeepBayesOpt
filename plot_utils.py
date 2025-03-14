@@ -1,16 +1,126 @@
 
 import os
-from typing import Optional, List, Union
+from typing import Literal, Optional, List, Union
 import numpy as np
+import scipy.stats as stats
 from matplotlib import pyplot as plt
 import torch
 from torch import Tensor
 import torch.distributions as dist
 from acquisition_dataset import AcquisitionDataset
 from acquisition_function_net import AcquisitionFunctionNet, AcquisitionFunctionNetAcquisitionFunction
-from bayesopt import plot_optimization_trajectories_error_bars
 from exact_gp_computations import calculate_EI_GP
-from utils import iterate_nested, save_json
+from utils import dict_to_str, iterate_nested, save_json
+
+
+def _calculate_center_and_interval(
+        data,
+        alpha,
+        interval_of_center,
+        assume_normal,
+        center_stat:Optional[Literal['mean', 'median']] = None):
+    """
+    Calculate the center and an interval around it.
+
+    Args:
+        data:
+            The data to calculate the center and interval of, shape (n_samples, n_stats)
+            where each column is a different statistic with n_samples measurements.
+        alpha:
+            The confidence level, i.e., 1 - alpha is the proportion of the data
+            that is within the confidence interval.
+        interval_of_center:
+            If True, calculate the confidence interval of the "center" (mean or median).
+            If False, calculate the prediction interval of the data.
+        assume_normal:
+            If True, assume the data is normally distributed and use the t-distribution
+            to calculate the confidence interval of the mean.
+            If False, use bootstrapping to calculate the confidence interval of the
+            center.
+        center_stat: {'mean', 'median'}, optional
+            The statistic used as the center. If None, defaults to 'mean' when
+            assume_normal is True and to 'median' when assume_normal is False.
+            If assume_normal is True and a value other than 'mean' is provided,
+            a ValueError is raised.
+    
+    Returns:
+        tuple (center, lo, hi)
+    """
+    if assume_normal:
+        if center_stat is None:
+            center_stat = 'mean'
+        elif center_stat != 'mean':
+            raise ValueError("Must use mean if using normal approximation")
+    else:
+        if center_stat is None:
+            center_stat = "median"
+        elif not (center_stat == 'mean' or center_stat == 'median'):
+            raise ValueError("Must use mean or median center statistic")
+
+    statistic = np.mean if center_stat == 'mean' else np.median
+    center = statistic(data, axis=0)
+    
+    if assume_normal:
+        n = data.shape[0]
+        t = stats.t.ppf(1 - alpha / 2, n - 1)
+        if interval_of_center:
+            # https://stackoverflow.com/a/15034143
+            se = stats.sem(data, axis=0, ddof=1)
+            ci = se * t
+        else:
+            # https://en.wikipedia.org/wiki/Prediction_interval#Unknown_mean,_unknown_variance
+            std = np.std(data, axis=0, ddof=1)
+            ci = std * t * np.sqrt(1 + 1/n)
+        lo, hi = center - ci, center + ci
+    else:
+        if interval_of_center:
+            res = stats.bootstrap(
+                (data,),
+                statistic=statistic,
+                axis=0,
+                confidence_level=1 - alpha
+            )
+            lo = res.confidence_interval.low
+            hi = res.confidence_interval.high
+        else:
+            # Calculate the interval of the data
+            lo = np.quantile(data, alpha / 2, axis=0)
+            hi = np.quantile(data, 1 - alpha / 2, axis=0)
+
+    return center, lo, hi
+
+
+def plot_error_bars(
+        ax,
+        center, lower, upper,
+        label=None,
+        shade=True):
+    x = range(len(center))
+    if shade:
+        ax.plot(x, center, label=label)
+        ax.fill_between(x, lower, upper, alpha=0.3)
+    else:
+        ax.errorbar(x, center, yerr=[center-lower, upper-center],
+                    fmt='-o', capsize=4, markersize=5, capthick=None, label=label)
+
+
+def plot_optimization_trajectories_error_bars(
+        ax,
+        data,
+        label=None,
+        shade=True,
+        alpha=0.05,
+        interval_of_center=True):
+    """Plot the mean and confidence interval of the data
+    alpha: confidence level, i.e., 1 - alpha is the proportion of the data
+    that is within the confidence interval.
+    """
+    center, lower, upper = _calculate_center_and_interval(
+        data=data,
+        alpha=alpha, interval_of_center=interval_of_center,
+        center_stat="median", assume_normal=False)
+    
+    plot_error_bars(ax, center, lower, upper, label=label, shade=shade)
 
 
 def plot_gp_posterior(ax, posterior, test_x, train_x, train_y, color, name=None):
@@ -371,6 +481,35 @@ attr_name_to_title = {
 }
 
 
+_ERROR_LINES_CACHE = {}
+def _get_error_lines(
+        ids: list,
+        data: list[np.ndarray],
+        alpha,
+        interval_of_center,
+        center_stat,
+        assume_normal):
+    ids.sort()
+    info = dict(
+        ids=ids,
+        alpha=alpha,
+        interval_of_center=interval_of_center,
+        center_stat=center_stat,
+        assume_normal=assume_normal,
+    )
+    info_str = dict_to_str(info, include_space=False)
+
+    if info_str in _ERROR_LINES_CACHE:
+        return _ERROR_LINES_CACHE[info_str]
+
+    ret = _calculate_center_and_interval(
+        data=np.array(data),
+        alpha=alpha, interval_of_center=interval_of_center,
+        center_stat=center_stat, assume_normal=assume_normal)
+    _ERROR_LINES_CACHE[info_str] = ret
+    return ret # center, lower, upper
+
+
 def plot_nested_structure(plot_config: dict,
                           get_result_func,
                           ax,
@@ -379,11 +518,13 @@ def plot_nested_structure(plot_config: dict,
     attr_names = set()
     
     for legend_name, data in plot_config.items():
-        results_this_legend = []
-        for k, v in data["items"].items():
+        this_ids = []
+        this_data = []
+        for v in data["items"].values():
             data_index = v["items"]
             if isinstance(data_index, list):
                 raise ValueError
+
             info = get_result_func(data_index)
             if info is not None:
                 attr_name = info['attr_name']
@@ -394,12 +535,24 @@ def plot_nested_structure(plot_config: dict,
                     val = val[:, 0]
                 else:
                     assert len(val.shape) == 1
-                results_this_legend.append(val)
-        if len(results_this_legend) != 0:
-            results_this_legend = np.array(results_this_legend)
-            plot_optimization_trajectories_error_bars(
-                ax, results_this_legend, legend_name, plot_kwargs.get("alpha", 0.05)
-            )
+                
+                val_id = f"{info['index']}_{attr_name}"
+                this_ids.append(val_id)
+                this_data.append(val)
+        
+        if len(this_ids) == 0:
+            continue
+
+        center, lower, upper = _get_error_lines(
+            this_ids, this_data,
+            alpha=plot_kwargs['alpha'],
+            interval_of_center=plot_kwargs['interval_of_center'],
+            center_stat=plot_kwargs['center_stat'],
+            assume_normal=plot_kwargs['assume_normal']
+        )
+
+        plot_error_bars(ax, center, lower, upper,
+                        label=legend_name, shade=plot_kwargs['shade'])
     
     if len(attr_names) > 1:
         raise ValueError(f"Expected just one attribute to plot but got {attr_names=}")
@@ -526,6 +679,52 @@ def get_figure_from_nested_structure(
     fig.tight_layout()
 
     return fig
+
+
+def _plot_key_value_to_str(k, v):
+    if k == "attr_name":
+        return (2, v)
+    if k != "nn.lamda" and k.startswith("nn."):
+        k = k[3:]
+    return (1, f"{k}={v}")
+
+
+def plot_dict_to_str(d):
+    for key_name, prefix, plot_name in [
+        ("nn.method", "nn.", "NN, method="),
+        ("method", "", "method="),
+        ("gp_af", "gp_af.", "GP, ")
+    ]:
+        if key_name in d:
+            d_method = {}
+            d_non_method = {}
+            for k, v in d.items():
+                if k == key_name:
+                    continue
+                if k.startswith(prefix):
+                    d_method[k[len(prefix):]] = v
+                else:
+                    d_non_method[k] = v
+            method = d[key_name]
+            if method == "random search":
+                ret = method
+            else:
+                ret = f"{plot_name}{method}"
+            if d_method:
+                s = dict_to_str(d_method, include_space=True)
+                ret += f" ({s})"
+            if d_non_method:
+                s = dict_to_str(d_non_method, include_space=True)
+                ret += f", {s}"
+            return ret
+    
+    items = [
+        _plot_key_value_to_str(k, v)
+        for k, v in d.items()
+    ]
+    items = sorted(items)
+    return ", ".join([item[1] for item in items])
+
 
 
 def save_figures_from_nested_structure(

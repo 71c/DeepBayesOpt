@@ -1,59 +1,22 @@
 import os
 from datetime import datetime
+
+from sympy import plot
 from bo_experiments_gp import get_bo_experiments_parser, generate_gp_bo_job_specs
-from plot_utils import save_figures_from_nested_structure
-from run_bo import GP_AF_DICT
-from submit_dependent_jobs import CONFIG_DIR
+from plot_utils import plot_dict_to_str, save_figures_from_nested_structure
+from run_bo import GP_AF_DICT, get_arg_names
+from experiment_config_utils import CONFIG_DIR
 from train_acqf import MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN
 from utils import dict_to_str, group_by, group_by_nested_attrs, save_json
+import cProfile, pstats
 
 
-script_dir = os.path.dirname(os.path.abspath(__file__))
-PLOTS_DIR = os.path.join(script_dir, 'plots')
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
+PLOTS_FOLDER = "plots"
+BO_PLOTS_FOLDER = "bo_plots"
 
-def plot_key_value_to_str(k, v):
-    if k == "attr_name":
-        return (2, v)
-    if k != "nn.lamda" and k.startswith("nn."):
-        k = k[3:]
-    return (1, f"{k}={v}")
-
-
-def plot_dict_to_str(d):
-    for key_name, prefix, plot_name in [
-        ("nn.method", "nn.", "NN, method="),
-        ("gp_af", "gp_af.", "GP, ")
-    ]:
-        if key_name in d:
-            d_method = {}
-            d_non_method = {}
-            for k, v in d.items():
-                if k == key_name:
-                    continue
-                if k.startswith(prefix):
-                    d_method[k[len(prefix):]] = v
-                else:
-                    d_non_method[k] = v
-            method = d[key_name]
-            if method == "random search":
-                ret = method
-            else:
-                ret = f"{plot_name}{method}"
-            if d_method:
-                s = dict_to_str(d_method, include_space=True)
-                ret += f" ({s})"
-            if d_non_method:
-                s = dict_to_str(d_non_method, include_space=True)
-                ret += f", {s}"
-            return ret
-    
-    items = [
-        plot_key_value_to_str(k, v)
-        for k, v in d.items()
-    ]
-    items = sorted(items)
-    return ", ".join([item[1] for item in items])
+CPROFILE = False
 
 PRE = [
     ["nn.layer_width", "nn.train_samples_size", "gen_candidates"]
@@ -80,20 +43,17 @@ PLOTS_CONFIG_MULTIPLE = [
     *POST
 ]
 
+# "optimize_process_time"
 ATTR_GROUPS = [
-    ["process_time", "n_evals",
-     "mean_eval_process_time", "optimize_process_time"],
     ["best_y", "mean_eval_process_time", "process_time", "n_evals"],
     ["process_time"],
     ["mean_eval_process_time"],
     ["best_y"]
 ]
 
-def main():
-    (parser, nn_base_config_name, nn_experiment_config_name, bo_base_config_name,
-     bo_experiment_config_name) = get_bo_experiments_parser(train=False)
 
-    plot_group = parser.add_argument_group("Plotting")
+def add_plot_args(parser):
+    plot_group = parser.add_argument_group("Plotting organization")
     plot_group.add_argument(
         '--use_cols', 
         action='store_true',
@@ -104,9 +64,70 @@ def main():
         action='store_true',
         help='Whether to use rows for subplots in the plots'
     )
+    plot_group.add_argument(
+        '--plots_group_name',
+        type=str,
+        help='Name of group of plots',
+        required=True
+    )
+    plot_group.add_argument(
+        '--plots_name',
+        type=str,
+        help='Name of these plots'
+    )
 
+
+def add_plot_interval_args(parser):
+    interval_group = parser.add_argument_group("Plotting intervals")
+    interval_group.add_argument(
+        '--alpha',
+        type=float,
+        default=0.05,
+        help='The significance level alpha for the interval '
+        '(e.g., 0.05 for a 95%% interval)'
+    )
+    interval_group.add_argument(
+        '--interval_of_center',
+        action='store_true',
+        help='If set, calculate the confidence interval for the center (mean/median); '
+        'if not, calculate the prediction interval'
+    )
+    interval_group.add_argument(
+        '--center_stat',
+        type=str,
+        choices=['mean', 'median'],
+        help=('Specifies the statistic to use as the center. '
+              'When --assume_normal is set, this must be "mean" '
+              '(defaulting to "mean" if not provided). '
+              'When --assume_normal is not set, you may choose "mean" or "median", '
+              'with "median" as the default.')
+    )
+    interval_group.add_argument(
+        '--assume_normal',
+        action='store_true',
+        help='If set, assume the data is normally distributed and use the '
+        't-distribution for interval calculations; otherwise, use '
+        'bootstrapping/quantiles. I recommend to use this option only if '
+        '--interval_of_center is set, as a way to save compute, since '
+        'this a good approximation due to the limit theorem. '
+        '(But it is not that bad compute using bootstrapping.)'
+    )
+    return interval_group
+
+
+def main():
+    ## Create parser
+    (parser, nn_base_config_name, nn_experiment_config_name, bo_base_config_name,
+     bo_experiment_config_name) = get_bo_experiments_parser(train=False)
+    add_plot_args(parser)
+    interval_group = add_plot_interval_args(parser)
+    
+    ## Parse arguments
     args = parser.parse_args()
 
+    interval_kwargs = {k: getattr(args, k) for k in get_arg_names(interval_group)}
+
+    ## Get the configurations and corresponding results
     jobs_spec, new_cfgs, existing_cfgs_and_results, refined_config \
         = generate_gp_bo_job_specs(
             args,
@@ -115,7 +136,6 @@ def main():
             bo_base_config=getattr(args, bo_base_config_name),
             bo_experiment_config=getattr(args, bo_experiment_config_name)
         )
-    print(new_cfgs)
     save_json(jobs_spec, os.path.join(CONFIG_DIR, "dependencies.json"), indent=4)
     
     print(f"Number of new configs: {len(new_cfgs)}")
@@ -129,6 +149,7 @@ def main():
     gr = group_by(existing_cfgs, dict_to_str)
     assert all(len(v) == 1 for v in gr.values())
 
+    # Extract results
     results_list = [
         {k: v[0, :] for k, v in next(iter(r))[1].items()}
         for r in existing_results
@@ -161,7 +182,26 @@ def main():
 
     # Folder name
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    save_dir = os.path.join(PLOTS_DIR, timestamp)
+    parts = [timestamp]
+    if args.plots_name is not None:
+        parts = [args.plots_name] + parts
+    folder_name = "_".join(parts)
+    relative_save_dir = os.path.join(PLOTS_FOLDER, args.plots_group_name,
+                                    BO_PLOTS_FOLDER, folder_name)
+    print(f"Saving plots to {relative_save_dir}")
+    save_dir = os.path.join(SCRIPT_DIR, relative_save_dir)
+
+    if CPROFILE:
+        pr = cProfile.Profile()
+        pr.enable()
+    
+    script_plot_kwargs = dict(
+        sharey=True,
+        aspect=1.618,
+        scale=1.0,
+        shade=True,
+        **interval_kwargs
+    )
 
     all_keys = set().union(*[set(result.keys()) for result in results_list])
     for attr_names in ATTR_GROUPS:
@@ -258,30 +298,31 @@ def main():
             cfg = existing_cfgs[idx]
             bo_policy_args = cfg['bo_policy_args']
             
-            
             if attr_name in results:
                 ret = {
                     'attr_name': attr_name,
-                    attr_name: results[attr_name]
+                    attr_name: results[attr_name],
+                    'index': idx
                 }
                 if 'nn_model_name' in bo_policy_args:
                     ret['nn_model_name'] = bo_policy_args['nn_model_name']
                 return ret
             return None
-
-        plot_kwargs=dict(
-            alpha=0.05,
-            sharey=True,
-            aspect=1.618,
-            scale=1.0)
+        
         save_figures_from_nested_structure(
             plot_config,
             get_result,
             new_attrs_groups_list,
             level_names,
             base_folder=save_dir_this_attrs,
-            **plot_kwargs
+            **script_plot_kwargs
         )
+
+    if CPROFILE:
+        pr.disable()
+        with open('stats_output_plots.txt', 'w') as s:
+            ps = pstats.Stats(pr, stream=s).sort_stats(pstats.SortKey.CUMULATIVE)
+            ps.print_stats()
 
 if __name__ == "__main__":
     main()

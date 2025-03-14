@@ -3,15 +3,16 @@ import math
 import os
 from typing import Optional
 
-from submit_dependent_jobs import CONFIG_DIR
+from experiment_config_utils import CONFIG_DIR, add_config_args, get_config_options_list
+from submit_dependent_jobs import add_slurm_args, submit_jobs_sweep_from_args
 import torch
-from run_bo import GP_AF_DICT, bo_loop_dicts_to_cmd_args_list, get_arg_names, run_bo
-from train_acqf import add_config_args, add_slurm_args, add_train_acqf_args, cmd_opts_nn_to_model_and_info_name, create_dependency_structure_train_acqf, get_command_line_options, get_config_options_list, submit_jobs_sweep_from_args
+from run_bo import GP_AF_DICT, bo_loop_dicts_to_cmd_args_list, run_bo
+from train_acqf import add_train_acqf_args, cmd_opts_nn_to_model_and_info_name, create_dependency_structure_train_acqf, get_cmd_options_train_acqf
 from utils import dict_to_str, group_by, save_json
 import cProfile, pstats
 
 
-CPROFILE = True
+CPROFILE = False
 
 
 def _generate_bo_commands(
@@ -86,7 +87,7 @@ def _gp_bo_jobs_spec_and_cfgs(
             lamda = None
 
         (cmd_dataset, cmd_opts_dataset,
-         cmd_nn_train, cmd_opts_nn) = get_command_line_options(nn_options)
+         cmd_nn_train, cmd_opts_nn) = get_cmd_options_train_acqf(nn_options)
         
         model_and_info_name = cmd_opts_nn_to_model_and_info_name(cmd_opts_nn)
 
@@ -250,6 +251,7 @@ def generate_gp_bo_job_specs(args: argparse.Namespace,
             **bo_refined_config['parameters']
         }
     }
+
     return jobs_spec, new_cfgs, existing_cfgs_and_results, refined_config
 
 

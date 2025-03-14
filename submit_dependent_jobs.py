@@ -2,15 +2,49 @@ from typing import Optional
 import subprocess
 import os
 import argparse
+from datetime import datetime
 
 from utils import dict_to_cmd_args, save_json
 
 
-CONFIG_DIR = "config"
 SWEEPS_DIR = "sweeps"
 
 
-def submit_dependent_jobs(
+def add_slurm_args(parser):
+    parser.add_argument(
+        '--sweep_name',
+        type=str,
+        default='test',
+        help='Name of the sweep.'
+    )
+    parser.add_argument(
+        '--gpu_gres',
+        type=str,
+        help='GPU resource specification for Slurm. e.g., "gpu:a100:1" or "gpu:1". '
+              'Default is "gpu:a100:1".',
+        default="gpu:a100:1"
+    )
+    parser.add_argument(
+        '--mail',
+        type=str,
+        help='email address to send Slurm notifications to. '
+              'If not specified, no notifications are sent.'
+    )
+
+
+def submit_jobs_sweep_from_args(jobs_spec, args):
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    sweep_dir = os.path.join(SWEEPS_DIR, f"{args.sweep_name}_{timestamp}")
+    _submit_dependent_jobs(
+        sweep_dir=sweep_dir,
+        jobs_spec=jobs_spec,
+        args=args,
+        gpu_gres=args.gpu_gres,
+        mail=args.mail
+    )
+
+
+def _submit_dependent_jobs(
         sweep_dir: str,
         jobs_spec: dict,
         args: argparse.Namespace,

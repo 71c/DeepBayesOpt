@@ -1,20 +1,18 @@
 import copy
-from functools import cache
 import math
 import os
-from typing import Any, Optional
+from typing import Optional
 import torch
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from torch.distributions import Categorical
 from acquisition_function_net import AcquisitionFunctionNet, ExpectedImprovementAcquisitionFunctionNet, GittinsAcquisitionFunctionNet
-from dataset_with_models import RandomModelSampler
 from exact_gp_computations import calculate_EI_GP_padded_batch, calculate_gi_gp_padded_batch
 from tqdm import tqdm
 from acquisition_dataset import AcquisitionDataset
 from botorch.exceptions import UnsupportedError
 from tictoc import tic, toc
-from utils import convert_to_json_serializable, dict_to_hash, int_linspace, calculate_batch_improvement, load_json, probability_y_greater_than_gi_normal, save_json
+from utils import int_linspace, calculate_batch_improvement, probability_y_greater_than_gi_normal, save_json
 
 
 MODELS_DIR_NAME = "saved_models"
@@ -1244,183 +1242,3 @@ def _remove_none_and_false(d):
     if type(d) is list:
         return [_remove_none_and_false(x) for x in d]
     return d
-
-
-MODELS_SUBDIR = "models"
-
-def save_af_net_configs(
-        model: AcquisitionFunctionNet,
-        training_config: dict[str, Any],
-        af_dataset_config: dict[str, dict[str, Any]],
-        save:bool=True
-    ):
-    function_samples_config = af_dataset_config["function_samples_config"]
-    acquisition_dataset_config = af_dataset_config["acquisition_dataset_config"]
-    n_points_config = af_dataset_config["n_points_config"]
-    dataset_transform_config = af_dataset_config["dataset_transform_config"]
-
-    model_sampler = RandomModelSampler(
-        models=function_samples_config["models"],
-        model_probabilities=function_samples_config["model_probabilities"],
-        randomize_params=function_samples_config["randomize_params"]
-    )
-
-    function_samples_config_json = convert_to_json_serializable(function_samples_config)
-    dataset_transform_config_json = convert_to_json_serializable(dataset_transform_config)
-    model_sampler_json = convert_to_json_serializable({
-            '_models': model_sampler._models,
-            '_initial_params_list': model_sampler._initial_params_list,
-            'model_probabilities': model_sampler.model_probabilities,
-            'randomize_params': model_sampler.randomize_params
-        },
-        include_priors=True, hash_gpytorch_modules=True,
-        hash_include_str=False, hash_str=True)
-    
-    all_info_json = {
-        'model': model.get_info_dict(),
-        'training_config': training_config,
-        'function_samples_config': function_samples_config_json,
-        'acquisition_dataset_config': acquisition_dataset_config,
-        'n_points_config': n_points_config,
-        'dataset_transform_config': dataset_transform_config_json,
-        'model_sampler': model_sampler_json
-    }
-    # all_info_json = _remove_none_and_false(all_info_json)
-    all_info_hash = dict_to_hash(all_info_json)
-    model_and_info_folder_name = os.path.join(VERSION, f"model_{all_info_hash}")
-    model_and_info_path = os.path.join(MODELS_DIR, model_and_info_folder_name)
-    models_path = os.path.join(model_and_info_path, MODELS_SUBDIR)
-
-    already_saved = os.path.isdir(model_and_info_path)
-
-    # Assume that all the json files are already saved if the directory exists
-    if save and not already_saved:
-        os.makedirs(model_and_info_path, exist_ok=False)
-
-        print(f"Saving model and configs to {model_and_info_folder_name}")
-
-        # Save model config
-        model.save_init(models_path)
-
-        # Save training config
-        save_json(training_config,
-                os.path.join(model_and_info_path, "training_config.json"))
-
-        # Save GP dataset config
-        save_json(function_samples_config_json,
-                os.path.join(model_and_info_path, "function_samples_config.json"))
-        save_json(acquisition_dataset_config,
-                os.path.join(model_and_info_path, "acquisition_dataset_config.json"))
-        save_json(n_points_config,
-                os.path.join(model_and_info_path, "n_points_config.json"))
-        model_sampler.save(
-            os.path.join(model_and_info_path, "model_sampler"))
-
-        # Save dataset transform config
-        save_json(dataset_transform_config_json,
-                os.path.join(model_and_info_path, "dataset_transform_config.json"))
-        outcome_transform = dataset_transform_config['outcome_transform']
-        if outcome_transform is not None:
-            torch.save(outcome_transform,
-                    os.path.join(model_and_info_path, "outcome_transform.pt"))
-    
-    return model_and_info_folder_name, models_path
-
-
-def get_latest_model_path(model_and_info_folder_name):
-    model_and_info_path = os.path.join(MODELS_DIR, model_and_info_folder_name)
-    already_saved = os.path.isdir(model_and_info_path)
-    if not already_saved:
-        raise FileNotFoundError(f"Models path {model_and_info_path} does not exist")
-
-    models_path = os.path.join(model_and_info_path, MODELS_SUBDIR)
-
-    latest_model_path = os.path.join(models_path, "latest_model.json")
-    try:
-        latest_model_name = load_json(latest_model_path)["latest_model"]
-    except FileNotFoundError:
-        raise FileNotFoundError(f"Latest model path {latest_model_path} does not exist."
-                                " i.e., no models have been fully trained yet.")
-    model_path = os.path.join(models_path, latest_model_name)
-    return model_path
-
-
-def model_is_trained(model_and_info_folder_name: str):
-    model_and_info_path = os.path.join(MODELS_DIR, model_and_info_folder_name)
-    try:
-        model_path = get_latest_model_path(model_and_info_path)
-        return True
-    except FileNotFoundError:
-        return False
-
-
-@cache
-def _get_state_dict(weights_path: str):
-    return torch.load(weights_path)
-
-
-@cache
-def _load_empty_model(model_and_info_folder_name: str):
-    model_and_info_path = os.path.join(MODELS_DIR, model_and_info_folder_name)
-    model_path = get_latest_model_path(model_and_info_path)
-
-    print(f"Loading model from {model_path}")
-    
-    # Load model (without weights)
-    models_path = os.path.join(model_and_info_path, MODELS_SUBDIR)
-    model = AcquisitionFunctionNet.load_init(models_path)
-
-    return model, model_path
-
-
-def load_model(model_and_info_folder_name: str, return_model_path=False, load_weights=True):
-    model, model_path = _load_empty_model(model_and_info_folder_name)
-    
-    if load_weights:
-        # Load best weights
-        best_model_fname_json_path = os.path.join(model_path, "best_model_fname.json")
-        try:
-            best_model_fname = load_json(best_model_fname_json_path)["best_model_fname"]
-        except FileNotFoundError:
-            raise ValueError(f"No best model found: {best_model_fname_json_path} not found")
-        best_model_path = os.path.join(model_path, best_model_fname)
-        print(f"Loading best weights from {best_model_path}")
-        model.load_state_dict(_get_state_dict(best_model_path))
-
-    if return_model_path:
-        return model, model_path
-    return model
-
-
-def load_configs(model_and_info_folder_name: str):
-    model_and_info_path = os.path.join(MODELS_DIR, model_and_info_folder_name)
-    function_samples_config = load_json(
-        os.path.join(model_and_info_path, "function_samples_config.json"))
-    model_sampler = RandomModelSampler.load(
-        os.path.join(model_and_info_path, "model_sampler"))
-    if function_samples_config['models'] is not None:
-        function_samples_config['models'] = model_sampler.initial_models
-        function_samples_config['model_probabilities'] = model_sampler.model_probabilities
-        assert model_sampler.randomize_params == function_samples_config['randomize_params']
-    acquisition_dataset_config = load_json(
-        os.path.join(model_and_info_path, "acquisition_dataset_config.json"))
-    n_points_config = load_json(
-        os.path.join(model_and_info_path, "n_points_config.json"))
-    
-    dataset_transform_config = load_json(
-        os.path.join(model_and_info_path, "dataset_transform_config.json"))
-    if dataset_transform_config['outcome_transform'] is not None:
-        dataset_transform_config['outcome_transform'] = torch.load(
-            os.path.join(model_and_info_path, "outcome_transform.pt"))
-    
-    training_config = load_json(
-        os.path.join(model_and_info_path, "training_config.json"))
-    
-    return {
-        "function_samples_config": function_samples_config,
-        "acquisition_dataset_config": acquisition_dataset_config,
-        "n_points_config": n_points_config,
-        "dataset_transform_config": dataset_transform_config,
-        "model_sampler": model_sampler,
-        "training_config": training_config
-    }

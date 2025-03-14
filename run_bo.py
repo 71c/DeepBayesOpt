@@ -13,11 +13,12 @@ from botorch.exceptions import UnsupportedError
 from botorch.generation.gen import gen_candidates_scipy, gen_candidates_torch
 
 from acquisition_function_net import GittinsAcquisitionFunctionNet
+from acquisition_function_net_save_utils import load_nn_acqf, nn_acqf_is_trained
 from bayesopt import GPAcquisitionOptimizer, NNAcquisitionOptimizer, OptimizationResultsSingleMethod, RandomSearch, get_rff_function, outcome_transform_function
 from dataset_with_models import RandomModelSampler
 from gp_acquisition_dataset import GP_GEN_DEVICE, add_gp_args, get_gp_model_from_args_no_outcome_transform, get_outcome_transform
 from stable_gittins import StableGittinsIndex
-from train_acquisition_function_net import load_configs, load_model, model_is_trained
+from acquisition_function_net_save_utils import load_nn_acqf_configs
 from utils import add_outcome_transform, dict_to_cmd_args, dict_to_fname_str, dict_to_str
 
 
@@ -461,10 +462,10 @@ def run_bo(objective_args: dict[str, Any],
 
             results_print_data = {**results_print_data, 'GP AF': gp_af, 'fit': fit}
         elif nn_model_name is not None: # Using a NN AF
-            if not model_is_trained(nn_model_name):
+            if not nn_acqf_is_trained(nn_model_name):
                 return None
             
-            nn_model = load_model(nn_model_name, load_weights=load_weights)
+            nn_model = load_nn_acqf(nn_model_name, load_weights=load_weights)
 
             # TODO (maybe): provide exponentiate=False or exponentiate=True here
             # for ExpectedImprovementAcquisitionFunctionNet?
@@ -484,7 +485,7 @@ def run_bo(objective_args: dict[str, Any],
                     raise UnsupportedError("nn_model.cost_is_input=True is currently not"
                                         " supported for Gittins index optimization")
 
-                configs = load_configs(nn_model_name)
+                configs = load_nn_acqf_configs(nn_model_name)
                 train_config = configs['training_config']
                 lamda_min, lamda_max = train_config['lamda_min'], train_config['lamda_max']
 

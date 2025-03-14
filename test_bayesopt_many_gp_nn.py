@@ -4,7 +4,8 @@ import os
 import matplotlib.pyplot as plt
 import torch
 
-from train_acquisition_function_net import load_configs, load_model
+from acquisition_function_net_save_utils import load_nn_acqf
+from acquisition_function_net_save_utils import load_nn_acqf_configs
 torch.set_default_dtype(torch.float64)
 from botorch.utils.sampling import draw_sobol_samples
 from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprovement
@@ -92,11 +93,11 @@ model_and_info_plot_names = [
 plots_title = "Just a test"
 
 nn_models = [
-    load_model(model_and_info_name).to(DEVICE)
+    load_nn_acqf(model_and_info_name).to(DEVICE)
     for model_and_info_name in model_and_info_names
 ]
 
-configs = [load_configs(model_and_info_name)
+configs = [load_nn_acqf_configs(model_and_info_name)
            for model_and_info_name in model_and_info_names]
 
 methods = [

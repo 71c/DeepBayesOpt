@@ -6,6 +6,8 @@ from tqdm import tqdm, trange
 from typing import Any, Callable, Type, Optional, List, Union
 import matplotlib.pyplot as plt
 import numpy as np
+
+from plot_utils import plot_optimization_trajectories_error_bars
 import torch
 from torch import Tensor
 from botorch.optim import optimize_acqf
@@ -914,30 +916,6 @@ def plot_optimization_results_multiple_methods(
     # filename = f"aggregate_optimization_{config_str}.pdf"
     # plt.savefig(filename, dpi=300, format='pdf', bbox_inches='tight')
 
-
-import scipy.stats as stats
-
-def calculate_mean_and_interval(data, alpha=0.05, use_std=False):
-    mean = np.mean(data, axis=0)
-    
-    if use_std:
-        std = np.std(data, axis=0)
-        x = stats.norm.ppf(1 - alpha / 2)
-        ci = x * std 
-        lo, hi = mean - ci, mean + ci
-    else:
-        lo = np.quantile(data, alpha / 2, axis=0)
-        hi = np.quantile(data, 1 - alpha / 2, axis=0)
-
-    return mean, lo, hi
-
-
-def plot_optimization_trajectories_error_bars(ax, data, label, alpha):
-    mean, lower, upper = calculate_mean_and_interval(
-        data, alpha, use_std=False)
-    x = range(len(mean))
-    ax.plot(x, mean, label=label)
-    ax.fill_between(x, lower, upper, alpha=0.3)
 
 def plot_optimization_trajectories(ax, data, label):
     for i in range(data.shape[0]):
