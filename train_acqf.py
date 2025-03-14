@@ -1,12 +1,14 @@
 import argparse
 from typing import Any, Optional
 import os
-from experiment_config_utils import CONFIG_DIR, add_config_args, get_config_options_list
+
+from utils.experiment_config_utils import CONFIG_DIR, add_config_args, get_config_options_list
+from utils.utils import dict_to_cmd_args, dict_to_str, save_json
+from utils.submit_dependent_jobs import add_slurm_args, submit_jobs_sweep_from_args
+
 from datasets.gp_acquisition_dataset import create_train_test_gp_acq_datasets_from_args
 from acquisition_function_net_save_utils import get_nn_af_args_configs_model_paths_from_cmd_args
 from acquisition_function_net_save_utils import nn_acqf_is_trained
-from utils.utils import dict_to_cmd_args, dict_to_str, save_json
-from submit_dependent_jobs import add_slurm_args, submit_jobs_sweep_from_args
 
 
 def get_cmd_options_train_acqf(options: dict[str, Any]):

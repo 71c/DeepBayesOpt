@@ -1,26 +1,24 @@
 from functools import partial
+from typing import Optional, List, Union
+from collections.abc import Sequence
 import os
+import warnings
+import math
+
+from tqdm import tqdm
 import torch
+from torch.utils.data import IterableDataset, DataLoader
 from botorch.models.gp_regression import SingleTaskGP
 
-from torch.utils.data import IterableDataset, DataLoader
+from utils.utils import (get_lengths_from_proportions, iterable_is_finite, uniform_randint,
+                   get_uniform_randint_generator, max_pad_tensors_batch, pad_tensor)
+from utils.utils import SizedIterableMixin, len_or_inf, save_json, load_json
+from utils.tictoc import tic, tocl
 
 from datasets.dataset_with_models import ModelsWithParamsList, TupleWithModel, create_classes
 from datasets.function_samples_dataset import (
     FunctionSamplesDataset, GaussianProcessRandomDataset,
     ResizedFunctionSamplesIterableDataset, FunctionSamplesItem)
-
-from utils.utils import (get_lengths_from_proportions, iterable_is_finite, uniform_randint,
-                   get_uniform_randint_generator, max_pad_tensors_batch, pad_tensor)
-from utils.utils import SizedIterableMixin, len_or_inf, save_json, load_json
-
-from typing import Optional, List, Union
-from collections.abc import Sequence
-
-import warnings
-import math
-from tqdm import tqdm
-from tictoc import tic, tocl
 
 
 torch.set_default_dtype(torch.double)

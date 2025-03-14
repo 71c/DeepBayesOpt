@@ -4,8 +4,13 @@ import torch
 import matplotlib.pyplot as plt
 import os
 import cProfile, pstats
-from tictoc import tic, tocl
 from datetime import datetime
+
+from utils.exact_gp_computations import calculate_EI_GP
+from utils.utils import DEVICE, load_json, save_json
+from utils.plot_utils import plot_nn_vs_gp_acquisition_function_1d_grid, plot_acquisition_function_net_training_history
+from utils.nn_utils import count_trainable_parameters, count_parameters
+from utils.tictoc import tic, tocl
 
 from datasets.gp_acquisition_dataset import create_train_test_gp_acq_datasets_helper
 from acquisition_function_net_save_utils import get_nn_af_args_configs_model_paths_from_cmd_args, load_nn_acqf
@@ -14,10 +19,6 @@ from train_acquisition_function_net import (
     print_stats,
     train_acquisition_function_net,
     train_or_test_loop)
-from utils.exact_gp_computations import calculate_EI_GP
-from utils.utils import DEVICE, load_json, save_json
-from utils.plot_utils import plot_nn_vs_gp_acquisition_function_1d_grid, plot_acquisition_function_net_training_history
-from utils.nn_utils import count_trainable_parameters, count_parameters
 
 import logging
 logging.basicConfig(level=logging.WARNING)

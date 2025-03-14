@@ -2,19 +2,17 @@ from abc import ABC, abstractmethod
 import copy
 from typing import Optional, List, Tuple, Union
 from collections.abc import Sequence
-
 import os
 from tqdm import tqdm
-from tictoc import tic, tocl
 import json
 
 import torch
 from torch.utils.data import Dataset, IterableDataset, random_split, Subset
-
 from botorch.models.gp_regression import SingleTaskGP
 from botorch.exceptions import UnsupportedError
 import pyro
 
+from utils.tictoc import tic, tocl
 from utils.utils import resize_iterable, iterable_is_finite, save_json, load_json
 
 
