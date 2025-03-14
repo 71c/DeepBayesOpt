@@ -934,6 +934,174 @@ class AcquisitionFunctionBodyPointnetV1and2(
         return out
 
 
+# THE FOLLOWING WAS WRITTEN BY CHATGPT (I don't know how it works or whether it is what
+# I would have written).
+class AcquisitionFunctionBodyTransformerNP(AcquisitionFunctionBodyFixedHistoryOutputDim):
+    r"""AcquisitionFunctionBodyTransformerNP uses a transformer-based encoder
+    (with cross-attention) to process history and candidate data for computing features
+    for an acquisition function.
+    
+    Args:
+        dimension (int):
+            Dimensionality of the input x.
+        n_hist_out (int):
+            Number of outputs (i.e. function values) per historical point.
+        n_acqf_params (int, optional):
+            Number of additional parameters (e.g. from acqf_params) to be appended
+            to each candidate. Default is 0.
+        hidden_dim (int, optional):
+            Internal hidden dimension used for both the history encoder and attention.
+            Default is 128.
+        num_heads (int, optional):
+            Number of attention heads. Default is 4.
+        num_layers (int, optional):
+            Number of transformer encoder layers. Default is 2.
+        dropout (float, optional):
+            Dropout probability. Default is None.
+        include_best_y (bool, optional):
+            Whether to augment y_hist by concatenating the best y value (across history).
+            Default is False.
+        input_xcand_to_final_mlp (bool, optional):
+            If True, the candidate's raw input (with acqf parameters, if any) is concatenated
+            to the attended features. This is analogous to the flag in the PointNet version.
+            Default is False.
+    """
+    def __init__(
+        self,
+        dimension: int,
+        n_hist_out: int,
+        n_acqf_params: int = 0,
+        hidden_dim: int = 128,
+        num_heads: int = 4,
+        num_layers: int = 2,
+        dropout: Optional[float] = 0.0,
+        include_best_y: bool = False,
+        input_xcand_to_final_mlp: bool = False,
+    ):
+        super().__init__()
+        self.dimension = dimension
+        self._n_hist_out = n_hist_out
+        self._n_acqf_params = n_acqf_params
+        self.include_best_y = include_best_y
+        self.input_xcand_to_final_mlp = input_xcand_to_final_mlp
+
+        # The context comes from concatenating x_hist and y_hist.
+        # Its dimension is (dimension + n_hist_out).
+        self.context_proj = nn.Linear(dimension + n_hist_out, hidden_dim)
+
+        # Candidate representation: if n_acqf_params > 0, then x_cand
+        # will be concatenated with acqf_params, making its input dim (dimension + n_acqf_params).
+        candidate_in_dim = dimension + n_acqf_params
+        self.candidate_proj = nn.Linear(candidate_in_dim, hidden_dim)
+
+        # Transformer encoder layers over the history (context).
+        encoder_layer = nn.TransformerEncoderLayer(
+            d_model=hidden_dim, nhead=num_heads, dropout=dropout
+        )
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layer, num_layers=num_layers)
+
+        # Cross-attention: candidates (queries) attend over the encoded history (keys/values).
+        self.attention = nn.MultiheadAttention(embed_dim=hidden_dim, num_heads=num_heads, dropout=dropout)
+
+        # Final feature dimension: if we choose to append the raw candidate representation,
+        # the output feature dimension is hidden_dim + candidate_in_dim, otherwise just hidden_dim.
+        if self.input_xcand_to_final_mlp:
+            self._features_dim = hidden_dim + candidate_in_dim
+        else:
+            self._features_dim = hidden_dim
+
+    @property
+    def output_dim(self) -> int:
+        r"""Returns the feature dimension that will be fed to the final MLP."""
+        return self._features_dim
+
+    @property
+    def n_acqf_params(self) -> int:
+        r"""Number of extra acquisition function parameters."""
+        return self._n_acqf_params
+
+    @property
+    def n_hist_out(self) -> int:
+        r"""Number of history outputs."""
+        return self._n_hist_out
+
+    def forward(
+        self,
+        x_hist: Tensor,
+        y_hist: Tensor,
+        x_cand: Tensor,
+        acqf_params: Optional[Tensor] = None,
+        hist_mask: Optional[Tensor] = None,
+        cand_mask: Optional[Tensor] = None,
+    ) -> Tensor:
+        # Ensure y_hist has the expected output dimension.
+        y_hist = check_xy_dims(x_hist, y_hist, "x_hist", "y_hist", expected_y_dim=self.n_hist_out)
+
+        if self.include_best_y:
+            # Augment y_hist with its best value.
+            y_hist = concat_y_hist_with_best_y(y_hist, hist_mask, subtract=False)
+
+        if self.n_acqf_params > 0:
+            if acqf_params is None:
+                raise ValueError("acqf_params must be provided if n_acqf_params > 0.")
+            acqf_params = check_xy_dims(x_cand, acqf_params, "x_cand", "acqf_params")
+            x_cand = torch.cat((x_cand, acqf_params), dim=-1)
+        elif acqf_params is not None:
+            raise ValueError("acqf_params should not be provided if n_acqf_params == 0.")
+
+        # Encode the history.
+        # Concatenate x_hist and y_hist along the last dimension.
+        context = torch.cat((x_hist, y_hist), dim=-1)  # shape: (*, n_hist, dimension+n_hist_out)
+        # Project the context.
+        context_encoded = self.context_proj(context)  # shape: (*, n_hist, hidden_dim)
+
+        # Flatten the leading batch dimensions for the transformer.
+        orig_batch_shape = context_encoded.shape[:-2]
+        n_hist = context_encoded.shape[-2]
+        hidden_dim = context_encoded.shape[-1]
+        context_flat = context_encoded.reshape(-1, n_hist, hidden_dim)  # shape: (B, n_hist, hidden_dim)
+        # Transformer expects (seq_len, batch, embed_dim)
+        context_flat = context_flat.transpose(0, 1)  # shape: (n_hist, B, hidden_dim)
+        encoded_context = self.transformer_encoder(context_flat)  # shape: (n_hist, B, hidden_dim)
+        encoded_context = encoded_context.transpose(0, 1).reshape(*orig_batch_shape, n_hist, hidden_dim)
+
+        # Prepare candidate representations.
+        candidate_proj = self.candidate_proj(x_cand)  # shape: (*, n_cand, hidden_dim)
+        orig_candidate = x_cand  # Save raw candidate (after concatenation if acqf_params were added)
+
+        # Flatten candidate batch dims.
+        cand_shape = candidate_proj.shape[:-2]
+        n_cand = candidate_proj.shape[-2]
+        candidate_flat = candidate_proj.reshape(-1, n_cand, hidden_dim).transpose(0, 1)  # (n_cand, B, hidden_dim)
+
+        # Also flatten the encoded context.
+        context_flat = encoded_context.reshape(-1, n_hist, hidden_dim).transpose(0, 1)  # (n_hist, B, hidden_dim)
+        # Optionally, if hist_mask is provided, prepare a key_padding_mask.
+        if hist_mask is not None:
+            # Expected shape for key_padding_mask is (B, n_hist) with True for positions to mask.
+            key_padding_mask = ~hist_mask.squeeze(-1).reshape(-1, n_hist)
+        else:
+            key_padding_mask = None
+
+        # Use candidate as query to attend over context.
+        attn_output, _ = self.attention(
+            query=candidate_flat,
+            key=context_flat,
+            value=context_flat,
+            key_padding_mask=key_padding_mask,
+        )
+        # Reshape attention output back to candidate shape.
+        attn_output = attn_output.transpose(0, 1).reshape(*cand_shape, n_cand, hidden_dim)  # (*, n_cand, hidden_dim)
+
+        # Optionally, concatenate raw candidate representation.
+        if self.input_xcand_to_final_mlp:
+            out = torch.cat((orig_candidate, attn_output), dim=-1)
+        else:
+            out = attn_output
+
+        return out
+
+
 def safe_log(x):
     if x is None:
         return None

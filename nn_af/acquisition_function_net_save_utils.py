@@ -7,7 +7,7 @@ import argparse
 from utils.utils import convert_to_json_serializable, dict_to_hash, load_json, save_json
 from utils.constants import MODELS_DIR, MODELS_VERSION
 
-from nn_af.acquisition_function_net import AcquisitionFunctionBodyPointnetV1and2, AcquisitionFunctionNet, AcquisitionFunctionNetFinalMLP, ExpectedImprovementAcquisitionFunctionNet, GittinsAcquisitionFunctionNet, TwoPartAcquisitionFunctionNetFixedHistoryOutputDim
+from nn_af.acquisition_function_net import AcquisitionFunctionBodyPointnetV1and2, AcquisitionFunctionBodyTransformerNP, AcquisitionFunctionNet, AcquisitionFunctionNetFinalMLP, ExpectedImprovementAcquisitionFunctionNet, GittinsAcquisitionFunctionNet, TwoPartAcquisitionFunctionNetFixedHistoryOutputDim
 from nn_af.train_acquisition_function_net import GI_NORMALIZATIONS, METHODS
 
 from datasets.dataset_with_models import RandomModelSampler
@@ -307,23 +307,39 @@ def _parse_af_train_cmd_args(cmd_args:Optional[Sequence[str]]=None):
 
 
 def _get_model(args: argparse.Namespace):
-    af_body_init_params = dict(
-        dimension=args.dimension,
+    if args.architecture == "pointnet":
+        body_cls = AcquisitionFunctionBodyPointnetV1and2
+        af_body_init_params = dict(
+            dimension=args.dimension,
 
-        history_enc_hidden_dims=[args.layer_width, args.layer_width],
-        pooling="max",
-        encoded_history_dim=args.layer_width,
+            history_enc_hidden_dims=[args.layer_width, args.layer_width],
+            pooling="max",
+            encoded_history_dim=args.layer_width,
 
-        input_xcand_to_local_nn=True,
-        input_xcand_to_final_mlp=True,
+            input_xcand_to_local_nn=True,
+            input_xcand_to_final_mlp=True,
 
-        activation_at_end_pointnet=True,
-        layer_norm_pointnet=False,
-        dropout_pointnet=None,
-        activation_pointnet="relu",
+            activation_at_end_pointnet=True,
+            layer_norm_pointnet=False,
+            dropout_pointnet=None,
+            activation_pointnet="relu",
 
-        include_best_y=False,
-        n_pointnets=1)
+            include_best_y=False,
+            n_pointnets=1)
+    elif args.architecture == "transformer":
+        body_cls = AcquisitionFunctionBodyTransformerNP
+        af_body_init_params = dict(
+            dimension=args.dimension,
+            hidden_dim=args.layer_width,
+            num_heads=getattr(args, "num_heads", 4),
+            num_layers=getattr(args, "num_layers", 2),
+            dropout=getattr(args, "dropout", 0.0),
+            include_best_y=False,
+            input_xcand_to_final_mlp=True,
+        )
+    else:
+        ValueError(f"Unknown architecture {args.architecture}")
+    
     af_head_init_params = dict(
         hidden_dims=[args.layer_width, args.layer_width],
         activation="relu",
@@ -338,7 +354,7 @@ def _get_model(args: argparse.Namespace):
             variable_lambda=args.lamda is None,
             costs_in_history=False,
             cost_is_input=False,
-            af_body_class=AcquisitionFunctionBodyPointnetV1and2,
+            af_body_class=body_cls,
             af_head_class=AcquisitionFunctionNetFinalMLP,
             af_body_init_params=af_body_init_params,
             af_head_init_params=af_head_init_params,
@@ -360,11 +376,13 @@ def _get_model(args: argparse.Namespace):
             gp_ei_computation=args.gp_ei_computation
         )
         model = ExpectedImprovementAcquisitionFunctionNet(
-            af_body_class=AcquisitionFunctionBodyPointnetV1and2,
+            af_body_class=body_cls,
             af_body_init_params=af_body_init_params,
             af_head_init_params=af_head_init_params,
             standardize_outcomes=args.standardize_nn_history_outcomes
         )
+    
+    return model
 
     # model = AcquisitionFunctionNetV4(args.dimension,
     #                                 history_enc_hidden_dims=[32, 32], pooling="max",
@@ -394,8 +412,6 @@ def _get_model(args: argparse.Namespace):
     #                                     include_alpha=args.include_alpha and policy_gradient_flag,
     #                                     learn_alpha=args.learn_alpha,
     #                                     initial_alpha=args.initial_alpha)
-
-    return model
 
 
 def _get_training_config(args: argparse.Namespace):
@@ -491,6 +507,29 @@ def _get_run_train_parser():
         action='store_true',
         help=('Whether to standardize the history outcomes when computing the NN '
             'acquisition function. Default is False.')
+    )
+    nn_architecture_group.add_argument(
+        '--architecture',
+        type=str,
+        choices=['pointnet', 'transformer'],
+        required=True,
+        help='Type of NN architecture to use: "pointnet" or "transformer".'
+    )
+    # Optional transformer-specific arguments
+    nn_architecture_group.add_argument(
+        '--num_heads',
+        type=int,
+        help='(Transformer only) Number of attention heads. Default is 4.'
+    )
+    nn_architecture_group.add_argument(
+        '--num_layers',
+        type=int,
+        help='(Transformer only) Number of transformer encoder layers. Default is 2.'
+    )
+    nn_architecture_group.add_argument(
+        '--dropout',
+        type=float,
+        help='(Transformer only) Dropout rate for transformer layers. Default is None.'
     )
 
     ############################ Training settings #####################################
