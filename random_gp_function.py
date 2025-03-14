@@ -14,7 +14,7 @@ from botorch.models.gp_regression import SingleTaskGP
 from gpytorch.models import ExactGP
 from botorch.exceptions import UnsupportedError
 import torch
-import utils # just to make sure that the additions to the BoTorch Model classes are loaded
+import utils.utils as utils # just to make sure that the additions to the BoTorch Model classes are loaded
 
 
 def _gp_model_has_no_data(model: ExactGP):

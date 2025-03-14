@@ -8,7 +8,7 @@ from submit_dependent_jobs import add_slurm_args, submit_jobs_sweep_from_args
 import torch
 from run_bo import GP_AF_DICT, bo_loop_dicts_to_cmd_args_list, run_bo
 from train_acqf import add_train_acqf_args, cmd_opts_nn_to_model_and_info_name, create_dependency_structure_train_acqf, get_cmd_options_train_acqf
-from utils import dict_to_str, group_by, save_json
+from utils.utils import dict_to_str, group_by, save_json
 import cProfile, pstats
 
 

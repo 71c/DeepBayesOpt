@@ -6,8 +6,8 @@ from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprove
 
 from bayesopt import GPAcquisitionOptimizer
 from random_gp_function import RandomGPFunction
-from utils import get_gp
-from dataset_with_models import RandomModelSampler
+from utils.utils import get_gp
+from datasets.dataset_with_models import RandomModelSampler
 
 
 dim = 6

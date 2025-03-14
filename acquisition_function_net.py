@@ -10,8 +10,8 @@ from botorch.acquisition.acquisition import AcquisitionFunction
 from botorch.exceptions import UnsupportedError
 from botorch.utils.transforms import t_batch_mode_transform, match_batch_shape
 from abc import abstractmethod
-from utils import safe_issubclass, to_device, standardize_y_hist, SaveableObject
-from nn_utils import (Dense, MultiLayerPointNet, PointNetLayer,
+from utils.utils import safe_issubclass, to_device, standardize_y_hist, SaveableObject
+from utils.nn_utils import (Dense, MultiLayerPointNet, PointNetLayer,
                       SoftmaxOrSoftplusLayer, check_xy_dims, expand_dim)
 
 import logging

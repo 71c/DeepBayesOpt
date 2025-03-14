@@ -5,10 +5,10 @@ import torch
 import argparse
 
 from acquisition_function_net import AcquisitionFunctionBodyPointnetV1and2, AcquisitionFunctionNet, AcquisitionFunctionNetFinalMLP, ExpectedImprovementAcquisitionFunctionNet, GittinsAcquisitionFunctionNet, TwoPartAcquisitionFunctionNetFixedHistoryOutputDim
-from dataset_with_models import RandomModelSampler
-from gp_acquisition_dataset import FIX_TRAIN_ACQUISITION_DATASET, GP_GEN_DEVICE, add_gp_acquisition_dataset_args, add_lamda_args, get_gp_acquisition_dataset_configs, get_lamda_min_max
+from datasets.dataset_with_models import RandomModelSampler
+from datasets.gp_acquisition_dataset import FIX_TRAIN_ACQUISITION_DATASET, GP_GEN_DEVICE, add_gp_acquisition_dataset_args, add_lamda_args, get_gp_acquisition_dataset_configs, get_lamda_min_max
 from train_acquisition_function_net import GI_NORMALIZATIONS, METHODS, MODELS_DIR, VERSION
-from utils import convert_to_json_serializable, dict_to_hash, load_json, save_json
+from utils.utils import convert_to_json_serializable, dict_to_hash, load_json, save_json
 
 
 MODELS_SUBDIR = "models"

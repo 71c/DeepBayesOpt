@@ -15,11 +15,11 @@ from botorch.generation.gen import gen_candidates_scipy, gen_candidates_torch
 from acquisition_function_net import GittinsAcquisitionFunctionNet
 from acquisition_function_net_save_utils import load_nn_acqf, nn_acqf_is_trained
 from bayesopt import GPAcquisitionOptimizer, NNAcquisitionOptimizer, OptimizationResultsSingleMethod, RandomSearch, get_rff_function, outcome_transform_function
-from dataset_with_models import RandomModelSampler
-from gp_acquisition_dataset import GP_GEN_DEVICE, add_gp_args, get_gp_model_from_args_no_outcome_transform, get_outcome_transform
+from datasets.dataset_with_models import RandomModelSampler
+from datasets.gp_acquisition_dataset import GP_GEN_DEVICE, add_gp_args, get_gp_model_from_args_no_outcome_transform, get_outcome_transform
 from stable_gittins import StableGittinsIndex
 from acquisition_function_net_save_utils import load_nn_acqf_configs
-from utils import add_outcome_transform, dict_to_cmd_args, dict_to_fname_str, dict_to_str
+from utils.utils import add_outcome_transform, dict_to_cmd_args, dict_to_fname_str, dict_to_str
 
 
 script_dir = os.path.dirname(os.path.abspath(__file__))

@@ -9,9 +9,9 @@ from bayesopt import (GPAcquisitionOptimizer, OptimizationResultsMultipleMethods
                       NNAcquisitionOptimizer, RandomSearch,
                       get_random_gp_functions, plot_optimization_results_multiple_methods)
 
-from utils import (get_gp, dict_to_fname_str,
+from utils.utils import (get_gp, dict_to_fname_str,
                    combine_nested_dicts)
-from dataset_with_models import RandomModelSampler
+from datasets.dataset_with_models import RandomModelSampler
 from acquisition_function_net import AcquisitionFunctionNet
 
 from gpytorch.kernels import MaternKernel, ScaleKernel, RBFKernel

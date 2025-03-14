@@ -2,9 +2,9 @@ import torch
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 import os
-from function_samples_dataset import GaussianProcessRandomDataset
-from acquisition_dataset import FunctionSamplesAcquisitionDataset
-from utils import get_uniform_randint_generator, get_loguniform_randint_generator, pad_tensor
+from datasets.function_samples_dataset import GaussianProcessRandomDataset
+from datasets.acquisition_dataset import FunctionSamplesAcquisitionDataset
+from utils.utils import get_uniform_randint_generator, get_loguniform_randint_generator, pad_tensor
 from acquisition_function_net import AcquisitionFunctionNetV1and2, AcquisitionFunctionNetV3
 
 

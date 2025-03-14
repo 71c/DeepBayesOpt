@@ -2,17 +2,19 @@ import copy
 import math
 import os
 from typing import Optional
+from tqdm import tqdm
+
 import torch
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from torch.distributions import Categorical
-from acquisition_function_net import AcquisitionFunctionNet, ExpectedImprovementAcquisitionFunctionNet, GittinsAcquisitionFunctionNet
-from exact_gp_computations import calculate_EI_GP_padded_batch, calculate_gi_gp_padded_batch
-from tqdm import tqdm
-from acquisition_dataset import AcquisitionDataset
 from botorch.exceptions import UnsupportedError
 from tictoc import tic, toc
-from utils import int_linspace, calculate_batch_improvement, probability_y_greater_than_gi_normal, save_json
+
+from acquisition_function_net import AcquisitionFunctionNet, ExpectedImprovementAcquisitionFunctionNet, GittinsAcquisitionFunctionNet
+from datasets.acquisition_dataset import AcquisitionDataset
+from utils.utils import int_linspace, calculate_batch_improvement, save_json
+from utils.exact_gp_computations import calculate_EI_GP_padded_batch, calculate_gi_gp_padded_batch, probability_y_greater_than_gi_normal
 
 
 MODELS_DIR_NAME = "saved_models"

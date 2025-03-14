@@ -4,7 +4,7 @@ import os
 import argparse
 from datetime import datetime
 
-from utils import dict_to_cmd_args, save_json
+from utils.utils import dict_to_cmd_args, save_json
 
 
 SWEEPS_DIR = "sweeps"

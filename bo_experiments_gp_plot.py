@@ -1,14 +1,13 @@
 import os
 from datetime import datetime
+import cProfile, pstats
 
-from sympy import plot
 from bo_experiments_gp import get_bo_experiments_parser, generate_gp_bo_job_specs
-from plot_utils import plot_dict_to_str, save_figures_from_nested_structure
 from run_bo import GP_AF_DICT, get_arg_names
 from experiment_config_utils import CONFIG_DIR
 from train_acqf import MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN
-from utils import dict_to_str, group_by, group_by_nested_attrs, save_json
-import cProfile, pstats
+from utils.utils import dict_to_str, group_by, group_by_nested_attrs, save_json
+from utils.plot_utils import plot_dict_to_str, save_figures_from_nested_structure
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
