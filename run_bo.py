@@ -11,7 +11,6 @@ from botorch.utils.sampling import draw_sobol_samples
 from botorch.exceptions import UnsupportedError
 from botorch.generation.gen import gen_candidates_scipy, gen_candidates_torch
 
-from utils.stable_gittins import StableGittinsIndex
 from utils.utils import (add_outcome_transform, dict_to_cmd_args,
                          dict_to_fname_str, dict_to_str)
 from utils.constants import RESULTS_DIR
@@ -24,9 +23,10 @@ from datasets.gp_acquisition_dataset import (
     GP_GEN_DEVICE, add_gp_args, get_gp_model_from_args_no_outcome_transform,
     get_outcome_transform)
 
-from bayesopt import (
+from bayesopt.bayesopt import (
     GPAcquisitionOptimizer, NNAcquisitionOptimizer, OptimizationResultsSingleMethod,
     RandomSearch, get_rff_function, outcome_transform_function)
+from bayesopt.stable_gittins import StableGittinsIndex
 
 
 GP_AF_NAME_PREFIX = "gp_af"

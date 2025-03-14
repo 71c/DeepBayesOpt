@@ -1771,21 +1771,41 @@ def _info_dict_to_instance(info_dict) -> tuple[type, dict]:
         raise ValueError("info_dict should have keys 'class_name' and 'kwargs'")
     
     class_name = info_dict["class_name"]
-    try:
-        loaded_cls = _CLASSES[class_name]
-    except KeyError:
-        raise RuntimeError(f"Subclass {class_name} of SaveableObject does not exist")
+    loaded_cls = _get_class_from_name(class_name)
     
     kwargs = info_dict["kwargs"]
     if not isinstance(kwargs, dict):
         raise TypeError("'kwargs' should be a dictionary")
     for k, v in kwargs.items():
-        if type(v) is str and v in _CLASSES:
-            kwargs[k] = _CLASSES[v]
+        class_ = None
+        if type(v) is str:
+            try:
+                class_ = _get_class_from_name(v)
+            except KeyError:
+                pass
+        if class_ is not None:
+            kwargs[k] = class_
         elif isinstance(v, dict) and set(v.keys()) == {"class_name", "kwargs"}:
             v_cls, v_kwargs = _info_dict_to_instance(v)
             kwargs[k] = v_cls(**v_kwargs)
     return loaded_cls, kwargs
+
+def _get_class_from_name(class_name):
+    try:
+        loaded_cls = _CLASSES[class_name]
+    except KeyError:
+        try:
+            # Bckwards compatibility with old code
+            if '.' not in class_name:
+                raise KeyError
+            new_class_name = class_name.split(".")[-1]
+            warnings.warn(
+                f"Subclass {class_name} of SaveableObject is not registered. "
+                f"Must be old code. Trying to get it as {new_class_name}")
+            loaded_cls = _CLASSES[new_class_name]
+        except KeyError:
+            raise KeyError(f"Subclass {class_name} of SaveableObject does not exist")
+    return loaded_cls
 
 def _default_json_SaveableObject(o):
     if o.__class__ is type:
@@ -1802,7 +1822,8 @@ def _default_json_SaveableObject(o):
     raise TypeError(msg)
 
 def _get_class_name(c: type):
-    return f"{c.__module__}.{c.__name__}"
+    # return f"{c.__module__}.{c.__name__}"  # Old code was this
+    return c.__name__                        # This allows for moving files around
 
 class SaveableObject(ABC):
     r"""An abstract base class for objects that can be saved and loaded with their

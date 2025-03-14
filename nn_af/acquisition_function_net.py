@@ -1021,7 +1021,7 @@ class GittinsAcquisitionFunctionNet(AcquisitionFunctionNet):
             self.assume_y_independent_cost = assume_y_independent_cost
         else:
             n_acqf_params = variable_lambda + cost_is_input
-        
+        print(f"{af_class=}")
         check_subclass(af_class, "af_class", AcquisitionFunctionNetFixedHistoryOutputDim)
         check_subclass(af_class, "af_class", AcquisitionFunctionNetGivenOutputDim)
 

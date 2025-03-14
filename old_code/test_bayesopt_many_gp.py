@@ -4,18 +4,14 @@ import torch
 torch.set_default_dtype(torch.float64)
 from botorch.utils.sampling import draw_sobol_samples
 from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprovement
-
-from bayesopt import (GPAcquisitionOptimizer, OptimizationResultsMultipleMethods,
-                      NNAcquisitionOptimizer, RandomSearch,
-                      get_random_gp_functions, plot_optimization_results_multiple_methods)
-
-from utils.utils import (get_gp, dict_to_fname_str,
-                   combine_nested_dicts)
-from datasets.dataset_with_models import RandomModelSampler
-from nn_af.acquisition_function_net import AcquisitionFunctionNet
-
 from gpytorch.kernels import MaternKernel, ScaleKernel, RBFKernel
 from gpytorch.priors.torch_priors import GammaPrior
+
+from utils.utils import get_gp, dict_to_fname_str, combine_nested_dicts
+from datasets.dataset_with_models import RandomModelSampler
+from bayesopt.bayesopt import (GPAcquisitionOptimizer, OptimizationResultsMultipleMethods,
+                      NNAcquisitionOptimizer, RandomSearch,
+                      get_random_gp_functions, plot_optimization_results_multiple_methods)
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 PLOTS_DIR = os.path.join(script_dir, 'plots')

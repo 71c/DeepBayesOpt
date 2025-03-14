@@ -22,7 +22,7 @@ from botorch.models.transforms.outcome import Standardize
 from botorch.exceptions import UnsupportedError
 from gpytorch.mlls import ExactMarginalLogLikelihood
 
-from utils.random_gp_function import RandomGPFunction
+from bayesopt.random_gp_function import RandomGPFunction
 from utils.utils import (
     add_outcome_transform, aggregate_stats_list, combine_nested_dicts,
     convert_to_json_serializable, dict_to_hash, json_serializable_to_numpy,

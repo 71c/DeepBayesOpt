@@ -14,7 +14,7 @@ from utils.utils import (dict_to_hash, dict_to_str, get_dimension,
 from nn_af.acquisition_function_net_save_utils import load_nn_acqf, load_nn_acqf_configs
 from datasets.dataset_with_models import RandomModelSampler
 
-from bayesopt import (GPAcquisitionOptimizer, OptimizationResultsMultipleMethods,
+from bayesopt.bayesopt import (GPAcquisitionOptimizer, OptimizationResultsMultipleMethods,
                       NNAcquisitionOptimizer, RandomSearch, generate_gp_acquisition_options,
                       get_random_gp_functions, plot_optimization_results_multiple_methods, transform_functions_and_names)
 
