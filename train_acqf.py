@@ -2,9 +2,9 @@ import argparse
 from typing import Any, Optional
 import os
 
-from utils.experiment_config_utils import CONFIG_DIR, add_config_args, get_config_options_list
 from utils.utils import dict_to_cmd_args, dict_to_str, save_json
-from utils.submit_dependent_jobs import add_slurm_args, submit_jobs_sweep_from_args
+from utils.experiments.experiment_config_utils import CONFIG_DIR, add_config_args, get_config_options_list
+from utils.experiments.submit_dependent_jobs import add_slurm_args, submit_jobs_sweep_from_args
 
 from nn_af.acquisition_function_net_save_utils import (
     get_nn_af_args_configs_model_paths_from_cmd_args, nn_acqf_is_trained)

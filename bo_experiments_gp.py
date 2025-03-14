@@ -6,8 +6,8 @@ import cProfile, pstats
 import torch
 
 from utils.utils import dict_to_str, group_by, save_json
-from utils.experiment_config_utils import CONFIG_DIR, add_config_args, get_config_options_list
-from utils.submit_dependent_jobs import add_slurm_args, submit_jobs_sweep_from_args
+from utils.experiments.experiment_config_utils import CONFIG_DIR, add_config_args, get_config_options_list
+from utils.experiments.submit_dependent_jobs import add_slurm_args, submit_jobs_sweep_from_args
 
 from run_bo import GP_AF_DICT, bo_loop_dicts_to_cmd_args_list, run_bo
 from train_acqf import add_train_acqf_args, cmd_opts_nn_to_model_and_info_name, create_dependency_structure_train_acqf, get_cmd_options_train_acqf
