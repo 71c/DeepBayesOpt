@@ -1,4 +1,4 @@
-datasets/
+datasets_cache/
 saved_models/
 bayesopt_results/
 plots/

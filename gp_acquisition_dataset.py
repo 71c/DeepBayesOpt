@@ -102,7 +102,7 @@ def get_n_datapoints_random_gen_variable_n_candidates(
 
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
-DATASETS_DIR = os.path.join(script_dir, "datasets")
+DATASETS_DIR = os.path.join(script_dir, "datasets_cache")
 
 def create_gp_acquisition_dataset(
         samples_size:int,
