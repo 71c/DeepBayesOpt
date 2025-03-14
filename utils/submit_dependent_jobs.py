@@ -4,10 +4,8 @@ import os
 import argparse
 from datetime import datetime
 
+from constants import JOB_ARRAY_SUB_PATH, SWEEPS_DIR
 from utils.utils import dict_to_cmd_args, save_json
-
-
-SWEEPS_DIR = "sweeps"
 
 
 def add_slurm_args(parser):
@@ -123,7 +121,7 @@ def _submit_dependent_jobs(
             sbatch_args_dict['dependency'] = dependency_flag
         
         sbatch_args = dict_to_cmd_args(sbatch_args_dict, equals=True)
-        args = ["sbatch"] + sbatch_args + ["job_array.sub", commands_list_fpath]
+        args = ["sbatch"] + sbatch_args + [JOB_ARRAY_SUB_PATH, commands_list_fpath]
         print(" ".join(args))
         result = subprocess.run(
             args,

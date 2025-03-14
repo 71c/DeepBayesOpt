@@ -14,14 +14,8 @@ from utils.tictoc import tic, toc
 from utils.utils import int_linspace, calculate_batch_improvement, save_json
 from utils.exact_gp_computations import calculate_EI_GP_padded_batch, calculate_gi_gp_padded_batch, probability_y_greater_than_gi_normal
 
-from acquisition_function_net import AcquisitionFunctionNet, ExpectedImprovementAcquisitionFunctionNet, GittinsAcquisitionFunctionNet
+from nn_af.acquisition_function_net import AcquisitionFunctionNet, ExpectedImprovementAcquisitionFunctionNet, GittinsAcquisitionFunctionNet
 from datasets.acquisition_dataset import AcquisitionDataset
-
-
-MODELS_DIR_NAME = "saved_models"
-VERSION = "v2"
-script_dir = os.path.dirname(os.path.abspath(__file__))
-MODELS_DIR = os.path.join(script_dir, MODELS_DIR_NAME)
 
 
 METHODS = ['mse_ei', 'policy_gradient', 'gittins']
@@ -247,9 +241,6 @@ def compute_acquisition_output_batch_stats(
             raise ValueError("y_cand must be specified for method='gittins'")
         if lambdas is None:
             raise ValueError("lambdas must be specified for method='gittins'")
-        if normalize is None and return_loss:
-            raise ValueError(
-                "normalize must be specified for method='gittins' if return_loss=True")
         normalizes = [None] + GI_NORMALIZATIONS if normalize is None else [normalize]
         for nrmlz in normalizes:
             gittins_loss = calculate_gittins_loss(
@@ -950,6 +941,25 @@ def train_acquisition_function_net(
         raise ValueError("You probably want to get some train stats...specify "
                          "either get_train_stats_while_training=True or "
                          "get_train_stats_after_training=True or both.")
+    # if not isinstance(min_delta, float):
+    #     raise ValueError("min_delta should be a float")
+    # if not isinstance(cumulative_delta, bool):
+    #     raise ValueError("cumulative_delta should be a boolean")
+    # if not isinstance(early_stopping, bool):
+    #     raise ValueError("early_stopping should be a boolean")
+    if not isinstance(save_incremental_best_models, bool):
+        raise ValueError("save_incremental_best_models should be a boolean")
+    if not isinstance(use_maxei, bool):
+        raise ValueError("use_maxei should be a boolean")
+    
+    # if not isinstance(lr_scheduler_patience, int):
+    #     raise ValueError("lr_scheduler_patience should be an integer")
+    # if not isinstance(lr_scheduler_factor, float):
+    #     raise ValueError("lr_scheduler_factor should be a float")
+    # if not isinstance(lr_scheduler_min_lr, float):
+    #     raise ValueError("lr_scheduler_min_lr should be a float")
+    # if not isinstance(lr_scheduler_cooldown, int):
+    #     raise ValueError("lr_scheduler_cooldown should be an integer")
 
     test_during_training, test_after_training = get_test_during_after_training(
         test_dataset, small_test_dataset, test_during_training)
@@ -1149,9 +1159,11 @@ def train_acquisition_function_net(
             break
 
         # Learning rate scheduler
-        if scheduler is not None:
+        if verbose and scheduler is not None:
             scheduler.step(cur_score)
-            print(f"Learning rate: {scheduler.get_last_lr().item()}")
+            _lr = scheduler.get_last_lr()
+            assert len(_lr) == 1
+            print(f"Learning rate: {_lr[0]}")
     
     best_model_fname = f"model_{best_epoch}.pth"
     

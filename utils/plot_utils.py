@@ -1,6 +1,5 @@
-
 import os
-from typing import Literal, Optional, List, Union
+from typing import Literal, Optional, List
 import numpy as np
 import scipy.stats as stats
 from matplotlib import pyplot as plt
@@ -8,7 +7,7 @@ import torch
 from torch import Tensor
 import torch.distributions as dist
 from datasets.acquisition_dataset import AcquisitionDataset
-from acquisition_function_net import AcquisitionFunctionNet, AcquisitionFunctionNetAcquisitionFunction
+from nn_af.acquisition_function_net import AcquisitionFunctionNet, AcquisitionFunctionNetAcquisitionFunction
 from utils.exact_gp_computations import calculate_EI_GP
 from utils.utils import dict_to_str, iterate_nested, save_json
 
@@ -523,6 +522,7 @@ def plot_nested_structure(plot_config: dict,
         for v in data["items"].values():
             data_index = v["items"]
             if isinstance(data_index, list):
+                print([get_result_func(i) for i in data_index])
                 raise ValueError
 
             info = get_result_func(data_index)

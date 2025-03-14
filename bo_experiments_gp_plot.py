@@ -2,6 +2,7 @@ import os
 from datetime import datetime
 import cProfile, pstats
 
+from constants import PLOTS_DIR
 from utils.experiment_config_utils import CONFIG_DIR
 from utils.utils import dict_to_str, group_by, group_by_nested_attrs, save_json
 from utils.plot_utils import plot_dict_to_str, save_figures_from_nested_structure
@@ -11,9 +12,6 @@ from run_bo import GP_AF_DICT, get_arg_names
 from train_acqf import MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN
 
 
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-
-PLOTS_FOLDER = "plots"
 BO_PLOTS_FOLDER = "bo_plots"
 
 CPROFILE = False
@@ -140,6 +138,8 @@ def main():
     
     print(f"Number of new configs: {len(new_cfgs)}")
     print(f"Number of existing configs: {len(existing_cfgs_and_results)}")
+
+    print(f"New configs: {new_cfgs}")
     
     if len(existing_cfgs_and_results) == 0:
         raise ValueError("There are no saved BO configs to plot.")
@@ -186,11 +186,10 @@ def main():
     if args.plots_name is not None:
         parts = [args.plots_name] + parts
     folder_name = "_".join(parts)
-    relative_save_dir = os.path.join(PLOTS_FOLDER, args.plots_group_name,
+    save_dir = os.path.join(PLOTS_DIR, args.plots_group_name,
                                     BO_PLOTS_FOLDER, folder_name)
-    print(f"Saving plots to {relative_save_dir}")
-    save_dir = os.path.join(SCRIPT_DIR, relative_save_dir)
-
+    print(f"Saving plots to {save_dir}")
+    
     if CPROFILE:
         pr = cProfile.Profile()
         pr.enable()
@@ -300,9 +299,10 @@ def main():
             
             if attr_name in results:
                 ret = {
-                    'attr_name': attr_name,
                     attr_name: results[attr_name],
-                    'index': idx
+                    'attr_name': attr_name,
+                    'index': idx,
+                    **cfg
                 }
                 if 'nn_model_name' in bo_policy_args:
                     ret['nn_model_name'] = bo_policy_args['nn_model_name']

@@ -4,11 +4,15 @@ from typing import Any, Sequence, Optional
 import torch
 import argparse
 
-from acquisition_function_net import AcquisitionFunctionBodyPointnetV1and2, AcquisitionFunctionNet, AcquisitionFunctionNetFinalMLP, ExpectedImprovementAcquisitionFunctionNet, GittinsAcquisitionFunctionNet, TwoPartAcquisitionFunctionNetFixedHistoryOutputDim
+from utils.utils import convert_to_json_serializable, dict_to_hash, load_json, save_json
+from constants import MODELS_DIR, MODELS_VERSION
+
+from nn_af.acquisition_function_net import AcquisitionFunctionBodyPointnetV1and2, AcquisitionFunctionNet, AcquisitionFunctionNetFinalMLP, ExpectedImprovementAcquisitionFunctionNet, GittinsAcquisitionFunctionNet, TwoPartAcquisitionFunctionNetFixedHistoryOutputDim
+from nn_af.train_acquisition_function_net import GI_NORMALIZATIONS, METHODS
+
 from datasets.dataset_with_models import RandomModelSampler
 from datasets.gp_acquisition_dataset import FIX_TRAIN_ACQUISITION_DATASET, GP_GEN_DEVICE, add_gp_acquisition_dataset_args, add_lamda_args, get_gp_acquisition_dataset_configs, get_lamda_min_max
-from train_acquisition_function_net import GI_NORMALIZATIONS, METHODS, MODELS_DIR, VERSION
-from utils.utils import convert_to_json_serializable, dict_to_hash, load_json, save_json
+
 
 
 MODELS_SUBDIR = "models"
@@ -154,7 +158,7 @@ def _save_nn_acqf_configs(
     }
     # all_info_json = _remove_none_and_false(all_info_json)
     all_info_hash = dict_to_hash(all_info_json)
-    model_and_info_folder_name = os.path.join(VERSION, f"model_{all_info_hash}")
+    model_and_info_folder_name = os.path.join(MODELS_VERSION, f"model_{all_info_hash}")
     model_and_info_path = os.path.join(MODELS_DIR, model_and_info_folder_name)
     models_path = os.path.join(model_and_info_path, MODELS_SUBDIR)
 
@@ -162,9 +166,9 @@ def _save_nn_acqf_configs(
 
     # Assume that all the json files are already saved if the directory exists
     if save and not already_saved:
-        os.makedirs(model_and_info_path, exist_ok=False)
+        print(f"Saving model and configs to new directory {model_and_info_folder_name}")
 
-        print(f"Saving model and configs to {model_and_info_folder_name}")
+        os.makedirs(model_and_info_path, exist_ok=False)
 
         # Save model config
         model.save_init(models_path)
@@ -253,6 +257,19 @@ def _parse_af_train_cmd_args(cmd_args:Optional[Sequence[str]]=None):
                 raise ValueError(f"positive_linear_at_end should be False if {reason_desc}")
             if args.gp_ei_computation:
                 raise ValueError(f"gp_ei_computation should be False if {reason_desc}")
+    
+    if args.early_stopping:
+        if args.patience is None:
+            raise ValueError("patience should be specified if early_stopping is True")
+        if args.min_delta is None:
+            raise ValueError("min_delta should be specified if early_stopping is True")
+
+    if args.lr_scheduler == 'ReduceLROnPlateau':
+        if args.lr_scheduler_patience is None:
+            raise ValueError("lr_scheduler_patience should be specified if lr_scheduler=ReduceLROnPlateau")
+        if args.lr_scheduler_factor is None:
+            raise ValueError("lr_scheduler_factor should be specified if lr_scheduler=ReduceLROnPlateau")
+        # lr_scheduler_min_lr and lr_scheduler_cooldown are optional (have defaults)
 
     lamda_given = args.lamda is not None
     lamda_min_given = args.lamda_min is not None
@@ -545,14 +562,16 @@ def _get_run_train_parser():
     training_group.add_argument(
         '--lr_scheduler_min_lr',
         type=float,
+        default=0.0,
         help=('A lower bound on the learning rate. Only used if '
-              'lr_scheduler=ReduceLROnPlateau.')
+              'lr_scheduler=ReduceLROnPlateau. Default is 0.0.')
     )
     training_group.add_argument(
         '--lr_scheduler_cooldown',
         type=int,
-        help=('Number of epochs to wait before resuming normal operation after lr has '
-              'been reduced. Only used if lr_scheduler=ReduceLROnPlateau.')
+        default=0,
+        help='Number of epochs to wait before resuming normal operation after lr has '
+             'been reduced. Only used if lr_scheduler=ReduceLROnPlateau. Default is 0.'
     )
     ### Evaluation metric
     training_group.add_argument(

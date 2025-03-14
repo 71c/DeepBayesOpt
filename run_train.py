@@ -1,5 +1,6 @@
 # Run like, e.g.,
 # python run_train.py --dimension 8 --test_expansion_factor 1 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_samples_size 5000 --test_n_candidates 1 --train_samples_size 10000 --train_acquisition_size 2000 --train_n_candidates 1 --batch_size 32 --early_stopping --epochs 200 --layer_width 100 --learning_rate 0.0003 --method gittins --min_delta 0.0 --gi_loss_normalization normal --patience 5 --lamda 0.001 --replacement
+from typing import Optional, Sequence
 import torch
 import matplotlib.pyplot as plt
 import os
@@ -8,17 +9,19 @@ from datetime import datetime
 
 from utils.exact_gp_computations import calculate_EI_GP
 from utils.utils import DEVICE, load_json, save_json
-from utils.plot_utils import plot_nn_vs_gp_acquisition_function_1d_grid, plot_acquisition_function_net_training_history
+from utils.plot_utils import (
+    plot_nn_vs_gp_acquisition_function_1d_grid,
+    plot_acquisition_function_net_training_history)
 from utils.nn_utils import count_trainable_parameters, count_parameters
 from utils.tictoc import tic, tocl
 
 from datasets.gp_acquisition_dataset import create_train_test_gp_acq_datasets_helper
-from acquisition_function_net_save_utils import get_nn_af_args_configs_model_paths_from_cmd_args, load_nn_acqf
-from acquisition_function_net import AcquisitionFunctionNetAcquisitionFunction
-from train_acquisition_function_net import (
-    print_stats,
-    train_acquisition_function_net,
-    train_or_test_loop)
+
+from nn_af.acquisition_function_net_save_utils import (
+    get_nn_af_args_configs_model_paths_from_cmd_args, load_nn_acqf)
+from nn_af.acquisition_function_net import AcquisitionFunctionNetAcquisitionFunction
+from nn_af.train_acquisition_function_net import (
+    print_stats, train_acquisition_function_net, train_or_test_loop)
 
 import logging
 logging.basicConfig(level=logging.WARNING)
@@ -38,10 +41,10 @@ from datasets.gp_acquisition_dataset import (
 )
 
 
-def _main():
+def run_train(cmd_args: Optional[Sequence[str]]=None):
     (args, af_dataset_configs, model,
      model_and_info_folder_name, models_path
-    ) = get_nn_af_args_configs_model_paths_from_cmd_args()
+    ) = get_nn_af_args_configs_model_paths_from_cmd_args(cmd_args)
 
     if args.load_saved_model:
         model, model_path = load_nn_acqf(
@@ -54,6 +57,7 @@ def _main():
     print(model)
     print("Number of trainable parameters:", count_trainable_parameters(model))
     print("Number of parameters:", count_parameters(model))
+    print(f"\nSaving model and configs to {model_and_info_folder_name}\n")
 
     ####################### Make the train and test datasets #######################
     (train_aq_dataset, test_aq_dataset,
@@ -66,7 +70,6 @@ def _main():
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             model_name = f"model_{timestamp}"
             model_path = os.path.join(models_path, model_name)
-            print(f"Saving NN to {model_and_info_folder_name}")
         else:
             model_path = None
 
@@ -77,7 +80,8 @@ def _main():
         if TIME:
             tic("Training")
         
-        print(f"Learning rate: {args.learning_rate}, lengthscale: {args.lengthscale}, dimension: {args.dimension}")
+        print(f"learning rate: {args.learning_rate}, batch size: {args.batch_size}")
+        print(f"dimension: {args.dimension}, lengthscale: {args.lengthscale}")
         optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate,
                                     #  weight_decay=1e-2
                                     )
@@ -236,4 +240,4 @@ def _main():
 
 
 if __name__ == "__main__":
-    _main()
+    run_train()

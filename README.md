@@ -45,15 +45,25 @@ To run a BO loop, you can use `run_bo.py`. `run_bo.py --help` will show the desc
 Example commands:
 - Random Search:
 ```bash
-python run_bo.py --bo_seed 6888556634303915349 --n_initial_samples 1 --n_iter 100 --objective_dimension 16 --objective_gp_seed 6888556634303915349 --objective_kernel Matern52 --objective_lengthscale 0.1 --random_search
+python run_bo.py --n_initial_samples 1 --n_iter 20 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --random_search --bo_seed 6888556634303915349 --objective_gp_seed 6888556634303915349
+
+python run_bo.py --n_initial_samples 1 --n_iter 20 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --random_search --bo_seed 8643049736318478698 --objective_gp_seed 8643049736318478698
 ```
 - GP-based acquisition function:
 ```bash
-python run_bo.py --bo_seed 6888556634303915349 --n_initial_samples 1 --n_iter 100 --objective_dimension 16 --objective_gp_seed 6888556634303915349 --objective_kernel Matern52 --objective_lengthscale 0.1 --gp_af LogEI --gp_af_fit exact --num_restarts 160 --raw_samples 3200 --gen_candidates L-BFGS-B
+python run_bo.py --n_initial_samples 1 --n_iter 20 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --gp_af LogEI --gp_af_fit exact --num_restarts 160 --raw_samples 3200 --gen_candidates L-BFGS-B --bo_seed 6888556634303915349 --objective_gp_seed 6888556634303915349
+
+python run_bo.py --n_initial_samples 1 --n_iter 20 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --gp_af LogEI --gp_af_fit exact --num_restarts 160 --raw_samples 3200 --gen_candidates L-BFGS-B --bo_seed 8643049736318478698 --objective_gp_seed 8643049736318478698
+
+python run_bo.py --eps 1e-08 --ftol 2.220446049250313e-09 --gen_candidates L-BFGS-B --gp_af gittins --gp_af_fit exact --gtol 1e-05 --lamda 0.01 --maxcor 10 --maxfun 15000 --maxiter 15000 --maxls 20 --n_initial_samples 1 --n_iter 20 --num_restarts 160 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --raw_samples 3200 --bo_seed 6888556634303915349 --objective_gp_seed 6888556634303915349
+
+python run_bo.py --eps 1e-08 --ftol 2.220446049250313e-09 --gen_candidates L-BFGS-B --gp_af gittins --gp_af_fit exact --gtol 1e-05 --lamda 0.01 --maxcor 10 --maxfun 15000 --maxiter 15000 --maxls 20 --n_initial_samples 1 --n_iter 20 --num_restarts 160 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --raw_samples 3200 --bo_seed 8643049736318478698 --objective_gp_seed 8643049736318478698
 ```
 - NN-based acquisition function:
 ```bash
-python run_bo.py --bo_seed 6888556634303915349 --lamda 0.01 --n_initial_samples 1 --n_iter 100 --nn_model_name v2/model_1798dfc44d64e85c92ab88abd40fb62e97f216968037268b794b92c0a1099b4b --objective_dimension 16 --objective_gp_seed 6888556634303915349 --objective_kernel Matern52 --objective_lengthscale 0.1 --num_restarts 160 --raw_samples 3200 --gen_candidates L-BFGS-B
+python run_bo.py --lamda 1e-2 --n_initial_samples 1 --n_iter 20 --nn_model_name v2/model_35f043d1473e2adc8a97027e56c8dc8cefd60ef48a14382cfd07e60e52a55234 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --num_restarts 160 --raw_samples 3200 --gen_candidates L-BFGS-B --bo_seed 6888556634303915349 --objective_gp_seed 6888556634303915349
+
+python run_bo.py --lamda 1e-2 --n_initial_samples 1 --n_iter 20 --nn_model_name v2/model_35f043d1473e2adc8a97027e56c8dc8cefd60ef48a14382cfd07e60e52a55234 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --num_restarts 160 --raw_samples 3200 --gen_candidates L-BFGS-B --bo_seed 8643049736318478698 --objective_gp_seed 8643049736318478698
 ```
 See the [section on NN training](#nn-training--dataset-generation-if-necessary) for how to train the NN model and obtain `--nn_model_name`.
 
@@ -98,13 +108,18 @@ Use `run_train.py` for training a single NN, and `train_acqf.py` for training mu
 ## Training a single neural network
 `run_train.py` is the script that trains a single neural network. `run_train.py --help` will show the description of the arguments. An example command is as follows:
 ```bash
-python run_train.py --dimension 16 --kernel Matern52 --lamda_max 1.0 --lamda_min 0.0001 --lengthscale 0.1 --max_history 100 --min_history 1 --replacement --test_expansion_factor 2 --test_n_candidates 1 --test_samples_size 5000 --train_acquisition_size 5000 --train_n_candidates 1 --train_samples_size 10000 --batch_size 32 --early_stopping --epochs 500 --gi_loss_normalization normal --lamda_max 1.0 --lamda_min 0.0001 --layer_width 200 --learning_rate 0.0003 --method gittins --min_delta 0.0 --patience 20
+python run_train.py --dimension 1 --lengthscale 0.05 --kernel Matern52 --min_history 1 --max_history 20 --replacement --train_n_candidates 1 --test_n_candidates 1 --train_acquisition_size 8192 --train_samples_size 10000 --test_expansion_factor 1 --test_samples_size 5000 --batch_size 512 --epochs 500 --early_stopping --min_delta 0.0 --patience 30 --layer_width 200 --learning_rate 3e-4 --lr_scheduler ReduceLROnPlateau --lr_scheduler_patience 15 --lr_scheduler_factor 0.1 --method gittins --lamda 1e-2 --gi_loss_normalization normal
 ```
 It will output
 ```
-Saving NN to v2/model_1798dfc44d64e85c92ab88abd40fb62e97f216968037268b794b92c0a1099b4b
+Saving model and configs to v2/model_35f043d1473e2adc8a97027e56c8dc8cefd60ef48a14382cfd07e60e52a55234
 ```
 This identifies the neural network model, which is uniquely identified by the specific combination of dataset, architecture, training method, optimizer settings, etc. This information, along with the weights of the NN corresponding to the epoch where it performed the best on the test dataset, are saved to this directory.
+
+Example of a long-running command:
+```bash
+python run_train.py --dimension 1 --kernel Matern52 --lamda 0.01 --lengthscale 0.05 --max_history 20 --min_history 1 --replacement --test_expansion_factor 1 --test_n_candidates 1 --test_samples_size 10000 --train_acquisition_size 30000 --train_n_candidates 1 --train_samples_size 10000 --batch_size 512 --early_stopping --epochs 500 --gi_loss_normalization normal --lamda 0.01 --layer_width 300 --learning_rate 0.001 --lr_scheduler ReduceLROnPlateau --lr_scheduler_cooldown 0 --lr_scheduler_factor 0.1 --lr_scheduler_min_lr 0.0 --lr_scheduler_patience 15 --method gittins --min_delta 0.0 --patience 30
+```
 
 ### Dataset generation
 In order to train the neural network, you need to have a dataset of black-box objective functions. Currently, the dataset is randomly generated using Gaussian process models. Since it takes some time to generate the datasets, they are cached in the `datasets` directory. When running `run_train.py`, if the dataset is not found, it will automatically generate the dataset and save it in the `datasets` directory. But there is also a stand-alone script to generate the dataset manually, because this way the dataset generation can be separated from the neural network training which makes it possible to have finer-grained control of the automated job scheduling.
@@ -131,17 +146,10 @@ This will train multiple neural networks with different hyperparameters and save
 
 An example command is as follows:
 ```bash
-python bo_experiments_gp_plot.py --nn_base_config config/train_acqf.yml --nn_experiment_config config/train_acqf_experiment_test1.yml --bo_base_config config/bo_config.yml --n_gp_draws 8 --seed 8 --plots_config config/plots_config_1.yml
-```
-Here, `--plots_config` is the configuration file for the plots.
-For example, `config/plots_config_1.yml` is as follows:
-```yaml
-- ["nn.layer_width", "nn.train_samples_size"]
-- ["lamda", "gp_af", "nn.method"]
-- ["objective.gp_seed"]
+python bo_experiments_gp_plot.py --nn_base_config config/train_acqf.yml --nn_experiment_config config/train_acqf_experiment_1dim_example.yml --bo_base_config config/bo_config.yml --bo_experiment_config config/bo_config_experiment_2_20iter_160.yml --n_gp_draws 2 --seed 8 --use_rows --use_cols --center_stat mean --interval_of_center --plots_group_name test_1dim_maxhistory20_example --plots_name results_20iter
 ```
 This means that at the highest level it will vary the layer width and the training samples size, then the lambda, the GP acquisition function or NN method, and finally the seed for the GP. The GP seed corresponds to individual BO runs that together comprise an error bar that is in the legend of a specific subplot. The higher levels make up subplots within a figure, figures (which correspond to `.pdf` files), and folders containing the figures. 
-The script will output the following to indicate to the user the structure of the plots:
+The script will output something like the following to indicate to the user the structure of the plots:
 ```
   folder: {'dimension'}
   fname: {'nn.train_samples_size', 'nn.layer_width'}
@@ -159,9 +167,6 @@ On the other hand, if you run the same command above but additionally with the f
 ```
 This means that each figure (file) corresponds to its own dimension, each subplot with in a figure corresponds to a combination of layer width and training samples size, error bar ("line") corresponds to a different BO policy, and the seed is the source of randomness for the error bar.
 Enabling `--use_rows` and/or `use_cols` is more compact since it fits multiple subplots in a single figure so you can view them side by side.
-
-Also, the flag `--plot_runtime` plots the runtimes.
-
 
 # Overview of the rest of the codebase
 
@@ -206,4 +211,3 @@ This module implements the core Bayesian optimization loop. It includes:
 - `utils.py`: provides a comprehensive suite of helper functions and classes to support operations such as outcome transformations, kernel and model setup, JSON serialization, tensor padding, and various utility routines for managing data and configurations in Bayesian optimization experiments.
 - `nn_utils.py`: provides utility functions and custom PyTorch modules to build and manage neural network components, including dense layers, learnable positive parameters, custom softplus activations, and PointNet layers with various pooling strategies. It also includes helper routines for tensor dimension checking and masked softmax operations, along with embedded test cases for verification.
 - `plot_utils.py`: a few utility functions for plotting things.
-

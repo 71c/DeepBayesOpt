@@ -1,9 +1,11 @@
 from abc import ABC, abstractmethod
+from typing import Any, Callable, Type, Optional, List, Union
 import copy
 import os
 import time
+from json.decoder import JSONDecodeError
+
 from tqdm import tqdm, trange
-from typing import Any, Callable, Type, Optional, List, Union
 import matplotlib.pyplot as plt
 import numpy as np
 
@@ -19,12 +21,18 @@ from botorch.sampling.pathwise import draw_kernel_feature_paths
 from botorch.models.transforms.outcome import Standardize
 from botorch.exceptions import UnsupportedError
 from gpytorch.mlls import ExactMarginalLogLikelihood
-from datasets.dataset_with_models import RandomModelSampler
-from random_gp_function import RandomGPFunction
-from utils.utils import add_outcome_transform, aggregate_stats_list, combine_nested_dicts, concatenate_outcome_transforms, convert_to_json_serializable, dict_to_hash, json_serializable_to_numpy, load_json, remove_priors, sanitize_file_name, save_json
+
+from utils.random_gp_function import RandomGPFunction
+from utils.utils import (
+    add_outcome_transform, aggregate_stats_list, combine_nested_dicts,
+    convert_to_json_serializable, dict_to_hash, json_serializable_to_numpy,
+    load_json, remove_priors, sanitize_file_name, save_json)
 from utils.plot_utils import plot_optimization_trajectories_error_bars
-from json.decoder import JSONDecodeError
-from acquisition_function_net import AcquisitionFunctionNet, AcquisitionFunctionNetModel, AcquisitionFunctionNetAcquisitionFunction
+
+from datasets.dataset_with_models import RandomModelSampler
+from nn_af.acquisition_function_net import (
+    AcquisitionFunctionNet, AcquisitionFunctionNetModel,
+    AcquisitionFunctionNetAcquisitionFunction)
 
 
 class BayesianOptimizer(ABC):

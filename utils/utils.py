@@ -1363,6 +1363,7 @@ def group_by_nested_attrs(items: List[dict[K, Any]],
         for k in keys
     }
     constant_keys = {k for k in keys if len(vals_dict[k]) == 1}
+    constant_keys -= {"nn.method", "gp_af"}
 
     attrs_groups_list = [z - constant_keys for z in attrs_groups_list]
     attrs_groups_list = [z for z in attrs_groups_list if len(z) != 0]

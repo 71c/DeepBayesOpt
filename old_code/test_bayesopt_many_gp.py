@@ -12,7 +12,7 @@ from bayesopt import (GPAcquisitionOptimizer, OptimizationResultsMultipleMethods
 from utils.utils import (get_gp, dict_to_fname_str,
                    combine_nested_dicts)
 from datasets.dataset_with_models import RandomModelSampler
-from acquisition_function_net import AcquisitionFunctionNet
+from nn_af.acquisition_function_net import AcquisitionFunctionNet
 
 from gpytorch.kernels import MaternKernel, ScaleKernel, RBFKernel
 from gpytorch.priors.torch_priors import GammaPrior

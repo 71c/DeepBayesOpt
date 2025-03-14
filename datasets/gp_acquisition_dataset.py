@@ -3,16 +3,24 @@ import os
 import sys
 import traceback
 from typing import Any, List, Optional, Union
-from datasets.function_samples_dataset import GaussianProcessRandomDataset, ListMapFunctionSamplesDataset
-from datasets.acquisition_dataset import AcquisitionDataset, CostAwareAcquisitionDataset, FunctionSamplesAcquisitionDataset
-from train_acquisition_function_net import train_or_test_loop
-from utils.utils import (dict_to_hash, get_gp, get_kernel, get_standardized_exp_transform, get_uniform_randint_generator,
-                   get_loguniform_randint_generator,
-                   get_lengths_from_proportions)
+
 from torch.distributions import Distribution
 from botorch.models.transforms.outcome import OutcomeTransform
 from botorch.models.gp_regression import SingleTaskGP
 # from botorch.models.transforms.outcome import Power
+
+from utils.utils import (
+    dict_to_hash, get_gp, get_kernel, get_standardized_exp_transform,
+    get_uniform_randint_generator, get_loguniform_randint_generator,
+    get_lengths_from_proportions)
+from constants import DATASETS_DIR
+
+from datasets.function_samples_dataset import (
+    GaussianProcessRandomDataset, ListMapFunctionSamplesDataset)
+from datasets.acquisition_dataset import (
+    AcquisitionDataset, CostAwareAcquisitionDataset, FunctionSamplesAcquisitionDataset)
+
+from nn_af.train_acquisition_function_net import train_or_test_loop
 
 
 CACHE_DATASETS = True
@@ -33,6 +41,8 @@ GET_TEST_TRUE_GP_STATS = True
 GP_GEN_DEVICE = "cpu"
 
 FIX_TRAIN_ACQUISITION_DATASET = False
+
+DEBUG = False
 
 
 def add_lamda_args(parser):
@@ -98,9 +108,6 @@ def get_n_datapoints_random_gen_variable_n_candidates(
                 "pre_offset should not be specified for uniform randint.")
         return get_uniform_randint_generator(min_points, max_points)
 
-
-script_dir = os.path.dirname(os.path.abspath(__file__))
-DATASETS_DIR = os.path.join(script_dir, "datasets_cache")
 
 def create_gp_acquisition_dataset(
         samples_size:int,
@@ -423,7 +430,7 @@ def create_train_and_test_gp_acquisition_datasets(
         check_cached=False,
         load_dataset=True
     ):
-    if not check_cached:
+    if False and not check_cached:
         print(f"Small test proportion of test: {small_test_proportion_of_test:.4f}")
         test_factor = (test_samples_size * test_expansion_factor) / train_acquisition_size
         # small_test_proportion_of_test = 1 / ((1 / small_test_proportion_of_train_and_small_test - 1) * test_factor)
@@ -702,31 +709,42 @@ def create_train_test_gp_acq_datasets_helper(
     if not check_cached:
         if train_aq_dataset is not None:
             # print("Training function samples dataset size:", len(train_dataset))
-            print("Original training acquisition dataset size parameter:",
-                  gp_af_dataset_configs["acquisition_dataset_config"]["train_acquisition_size"])
-            print("Training acquisition dataset size:", len(train_aq_dataset),
-                "number of batches:", len(train_aq_dataset) // args.batch_size,
+            if isinstance(train_aq_dataset, CostAwareAcquisitionDataset):
+                fs_dataset = train_aq_dataset.base_dataset.base_dataset
+            elif isinstance(train_aq_dataset, FunctionSamplesAcquisitionDataset):
+                fs_dataset = train_aq_dataset.base_dataset
+            else:
+                fs_dataset = None
+            if fs_dataset is not None:
+                print("Train function samples dataset size:", len(fs_dataset))
+            print("Train      acquisition dataset size:", len(train_aq_dataset),
+                "number of batches:",
+                len(train_aq_dataset) // args.batch_size,
                 len(train_aq_dataset) % args.batch_size)
 
         if test_aq_dataset is not None:
-            # print("Test function samples dataset size:", len(test_dataset))
             print("Test acquisition dataset size:", len(test_aq_dataset),
-                "number of batches:", len(test_aq_dataset) // args.batch_size,
-                len(test_aq_dataset) % args.batch_size)
+                  "number of batches:",
+                  len(test_aq_dataset) // args.batch_size,
+                  len(test_aq_dataset) % args.batch_size)
         
         if small_test_aq_dataset != test_aq_dataset and small_test_aq_dataset is not None:
             print("Small test acquisition dataset size:", len(small_test_aq_dataset),
-                    "number of batches:", len(small_test_aq_dataset) // args.batch_size,
-                    len(small_test_aq_dataset) % args.batch_size)
+                  "number of batches:",
+                  len(small_test_aq_dataset) // args.batch_size,
+                  len(small_test_aq_dataset) % args.batch_size)
         
-        for name, dataset in [("Train acquisition dataset", train_aq_dataset),
+        if DEBUG:
+            for name, dataset in [
+                ("Train acquisition dataset", train_aq_dataset),
                 ("Test acquisition dataset", test_aq_dataset),
-                ("Small test acquisition dataset", small_test_aq_dataset)]:
-            if dataset is None:
-                continue
-            print(f"{name}:")
-            print(f"{name} type: {type(dataset)}")
-            print(f"{name} n_out_cand: {next(iter(dataset)).vals_cand.size(-1)}")
+                ("Small test acquisition dataset", small_test_aq_dataset)
+            ]:
+                if dataset is None:
+                    continue
+                print(f"{name}:")
+                print(f"{name} type: {type(dataset)}")
+                print(f"{name} n_out_cand: {next(iter(dataset)).vals_cand.size(-1)}")
 
     return train_aq_dataset, test_aq_dataset, small_test_aq_dataset
 

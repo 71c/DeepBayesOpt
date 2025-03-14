@@ -1,8 +1,4 @@
-datasets_cache/
-saved_models/
-bayesopt_results/
-plots/
-sweeps/
+data/
 config/dependencies.json
 config/refined_config.yml
 config/options.yml

@@ -3,9 +3,8 @@ import torch
 torch.set_default_dtype(torch.float64)
 from botorch.utils.sampling import draw_sobol_samples
 from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprovement
-
 from bayesopt import GPAcquisitionOptimizer
-from random_gp_function import RandomGPFunction
+from utils.random_gp_function import RandomGPFunction
 from utils.utils import get_gp
 from datasets.dataset_with_models import RandomModelSampler
 

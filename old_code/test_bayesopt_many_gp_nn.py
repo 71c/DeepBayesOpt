@@ -2,28 +2,22 @@ import os
 import matplotlib.pyplot as plt
 import torch
 
-from acquisition_function_net_save_utils import load_nn_acqf
-from acquisition_function_net_save_utils import load_nn_acqf_configs
 torch.set_default_dtype(torch.float64)
 from botorch.utils.sampling import draw_sobol_samples
 from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprovement
+from gpytorch.kernels import MaternKernel, ScaleKernel, RBFKernel
+from gpytorch.priors.torch_priors import GammaPrior
 
+from constants import PLOTS_DIR, RESULTS_DIR
+from utils.utils import (dict_to_hash, dict_to_str, get_dimension,
+                   get_gp, DEVICE, Exp, save_json)
+from nn_af.acquisition_function_net_save_utils import load_nn_acqf, load_nn_acqf_configs
+from datasets.dataset_with_models import RandomModelSampler
 
 from bayesopt import (GPAcquisitionOptimizer, OptimizationResultsMultipleMethods,
                       NNAcquisitionOptimizer, RandomSearch, generate_gp_acquisition_options,
                       get_random_gp_functions, plot_optimization_results_multiple_methods, transform_functions_and_names)
 
-from utils.utils import (dict_to_hash, dict_to_str, get_dimension,
-                   get_gp, DEVICE, Exp, save_json)
-from datasets.dataset_with_models import RandomModelSampler
-
-from gpytorch.kernels import MaternKernel, ScaleKernel, RBFKernel
-from gpytorch.priors.torch_priors import GammaPrior
-
-script_dir = os.path.dirname(os.path.abspath(__file__))
-PLOTS_DIR = os.path.join(script_dir, 'plots')
-RESULTS_DIR = os.path.join(script_dir, 'bayesopt_results')
-MODELS_DIR = os.path.join(script_dir, "saved_models")
 
 # model_and_info_name = "model_20240715_204121_e6101c167831be592f2608748e4175bd77837853ed05e81c56ec7f9f3ee61695" # untransformed
 

@@ -6,9 +6,9 @@ from utils.experiment_config_utils import CONFIG_DIR, add_config_args, get_confi
 from utils.utils import dict_to_cmd_args, dict_to_str, save_json
 from utils.submit_dependent_jobs import add_slurm_args, submit_jobs_sweep_from_args
 
+from nn_af.acquisition_function_net_save_utils import (
+    get_nn_af_args_configs_model_paths_from_cmd_args, nn_acqf_is_trained)
 from datasets.gp_acquisition_dataset import create_train_test_gp_acq_datasets_from_args
-from acquisition_function_net_save_utils import get_nn_af_args_configs_model_paths_from_cmd_args
-from acquisition_function_net_save_utils import nn_acqf_is_trained
 
 
 def get_cmd_options_train_acqf(options: dict[str, Any]):
@@ -87,8 +87,8 @@ def cmd_opts_nn_to_model_and_info_name(cmd_opts_nn):
     if s in _cache:
         return _cache[s]
     cmd_args_list_nn = dict_to_cmd_args({**cmd_opts_nn, 'no-save-model': True})
-    (args_nn, af_dataset_configs, model,
-    model_and_info_name, models_path) = get_nn_af_args_configs_model_paths_from_cmd_args(cmd_args_list_nn)
+    (args_nn, af_dataset_configs, model, model_and_info_name, models_path
+    ) = get_nn_af_args_configs_model_paths_from_cmd_args(cmd_args_list_nn)
     _cache[s] = model_and_info_name
     MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN[model_and_info_name] = cmd_opts_nn
     return model_and_info_name
