@@ -270,6 +270,14 @@ def _parse_af_train_cmd_args(cmd_args:Optional[Sequence[str]]=None):
         if args.lr_scheduler_factor is None:
             raise ValueError("lr_scheduler_factor should be specified if lr_scheduler=ReduceLROnPlateau")
         # lr_scheduler_min_lr and lr_scheduler_cooldown are optional (have defaults)
+    
+    if args.architecture == 'transformer':
+        if args.num_heads is None:
+            args.num_heads = 4
+        if args.num_layers is None:
+            args.num_layers = 2
+        if args.dropout is None:
+            args.dropout = 0.0
 
     lamda_given = args.lamda is not None
     lamda_min_given = args.lamda_min is not None
@@ -331,9 +339,9 @@ def _get_model(args: argparse.Namespace):
         af_body_init_params = dict(
             dimension=args.dimension,
             hidden_dim=args.layer_width,
-            num_heads=getattr(args, "num_heads", 4),
-            num_layers=getattr(args, "num_layers", 2),
-            dropout=getattr(args, "dropout", 0.0),
+            num_heads=args.num_heads,
+            num_layers=args.num_layers,
+            dropout=args.dropout,
             include_best_y=False,
             input_xcand_to_final_mlp=True,
         )

@@ -108,7 +108,7 @@ Use `run_train.py` for training a single NN, and `train_acqf.py` for training mu
 ## Training a single neural network
 `run_train.py` is the script that trains a single neural network. `run_train.py --help` will show the description of the arguments. An example command is as follows:
 ```bash
-python run_train.py --dimension 1 --lengthscale 0.05 --kernel Matern52 --min_history 1 --max_history 20 --replacement --train_n_candidates 1 --test_n_candidates 1 --train_acquisition_size 8192 --train_samples_size 10000 --test_expansion_factor 1 --test_samples_size 5000 --batch_size 512 --epochs 500 --early_stopping --min_delta 0.0 --patience 30 --layer_width 200 --learning_rate 3e-4 --lr_scheduler ReduceLROnPlateau --lr_scheduler_patience 15 --lr_scheduler_factor 0.1 --method gittins --lamda 1e-2 --gi_loss_normalization normal
+python run_train.py --dimension 1 --lengthscale 0.05 --kernel Matern52 --min_history 1 --max_history 20 --replacement --train_n_candidates 1 --test_n_candidates 1 --train_acquisition_size 8192 --train_samples_size 10000 --test_expansion_factor 1 --test_samples_size 5000 --batch_size 512 --epochs 500 --early_stopping --min_delta 0.0 --patience 30 --layer_width 200 --learning_rate 3e-4 --lr_scheduler ReduceLROnPlateau --lr_scheduler_patience 15 --lr_scheduler_factor 0.1 --method gittins --lamda 1e-2 --gi_loss_normalization normal --architecture pointnet
 ```
 It will output
 ```
@@ -118,7 +118,7 @@ This identifies the neural network model, which is uniquely identified by the sp
 
 Example of a long-running command:
 ```bash
-python run_train.py --dimension 1 --kernel Matern52 --lamda 0.01 --lengthscale 0.05 --max_history 20 --min_history 1 --replacement --test_expansion_factor 1 --test_n_candidates 1 --test_samples_size 10000 --train_acquisition_size 30000 --train_n_candidates 1 --train_samples_size 10000 --batch_size 512 --early_stopping --epochs 500 --gi_loss_normalization normal --lamda 0.01 --layer_width 300 --learning_rate 0.001 --lr_scheduler ReduceLROnPlateau --lr_scheduler_cooldown 0 --lr_scheduler_factor 0.1 --lr_scheduler_min_lr 0.0 --lr_scheduler_patience 15 --method gittins --min_delta 0.0 --patience 30
+python run_train.py --dimension 1 --kernel Matern52 --lamda 0.01 --lengthscale 0.05 --max_history 20 --min_history 1 --replacement --test_expansion_factor 1 --test_n_candidates 1 --test_samples_size 10000 --train_acquisition_size 30000 --train_n_candidates 1 --train_samples_size 10000 --batch_size 512 --early_stopping --epochs 500 --gi_loss_normalization normal --lamda 0.01 --layer_width 300 --learning_rate 0.001 --lr_scheduler ReduceLROnPlateau --lr_scheduler_cooldown 0 --lr_scheduler_factor 0.1 --lr_scheduler_min_lr 0.0 --lr_scheduler_patience 15 --method gittins --min_delta 0.0 --patience 30 --architecture pointnet
 ```
 
 ### Dataset generation
