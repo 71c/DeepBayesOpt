@@ -8,7 +8,7 @@ from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprove
 from gpytorch.kernels import MaternKernel, ScaleKernel, RBFKernel
 from gpytorch.priors.torch_priors import GammaPrior
 
-from constants import PLOTS_DIR, RESULTS_DIR
+from utils.constants import PLOTS_DIR, RESULTS_DIR
 from utils.utils import (dict_to_hash, dict_to_str, get_dimension,
                    get_gp, DEVICE, Exp, save_json)
 from nn_af.acquisition_function_net_save_utils import load_nn_acqf, load_nn_acqf_configs

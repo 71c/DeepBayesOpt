@@ -4,7 +4,7 @@ import os
 import argparse
 from datetime import datetime
 
-from constants import JOB_ARRAY_SUB_PATH, SWEEPS_DIR
+from utils.constants import JOB_ARRAY_SUB_PATH, SWEEPS_DIR
 from utils.utils import dict_to_cmd_args, save_json
 
 

@@ -14,8 +14,8 @@ from botorch.generation.gen import gen_candidates_scipy, gen_candidates_torch
 from utils.stable_gittins import StableGittinsIndex
 from utils.utils import (add_outcome_transform, dict_to_cmd_args,
                          dict_to_fname_str, dict_to_str)
+from utils.constants import RESULTS_DIR
 from nn_af.acquisition_function_net_save_utils import load_nn_acqf_configs
-from constants import RESULTS_DIR
 
 from nn_af.acquisition_function_net import GittinsAcquisitionFunctionNet
 from nn_af.acquisition_function_net_save_utils import load_nn_acqf, nn_acqf_is_trained

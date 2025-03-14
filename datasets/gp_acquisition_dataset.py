@@ -13,7 +13,7 @@ from utils.utils import (
     dict_to_hash, get_gp, get_kernel, get_standardized_exp_transform,
     get_uniform_randint_generator, get_loguniform_randint_generator,
     get_lengths_from_proportions)
-from constants import DATASETS_DIR
+from utils.constants import DATASETS_DIR
 
 from datasets.function_samples_dataset import (
     GaussianProcessRandomDataset, ListMapFunctionSamplesDataset)

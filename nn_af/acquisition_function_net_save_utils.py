@@ -5,7 +5,7 @@ import torch
 import argparse
 
 from utils.utils import convert_to_json_serializable, dict_to_hash, load_json, save_json
-from constants import MODELS_DIR, MODELS_VERSION
+from utils.constants import MODELS_DIR, MODELS_VERSION
 
 from nn_af.acquisition_function_net import AcquisitionFunctionBodyPointnetV1and2, AcquisitionFunctionNet, AcquisitionFunctionNetFinalMLP, ExpectedImprovementAcquisitionFunctionNet, GittinsAcquisitionFunctionNet, TwoPartAcquisitionFunctionNetFixedHistoryOutputDim
 from nn_af.train_acquisition_function_net import GI_NORMALIZATIONS, METHODS
