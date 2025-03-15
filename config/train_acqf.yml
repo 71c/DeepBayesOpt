@@ -45,6 +45,17 @@ parameters:
         value: 250
       standardize_nn_history_outcomes:
         value: false
+      architecture: # TODO: Will change/improve this in the future
+        values:
+        - value: pointnet
+        - value: transformer
+          parameters:
+            num_heads:
+              value: 4
+            num_layers:
+              value: 2
+            dropout:
+              value: 0.0
   training:
     parameters:
       method:

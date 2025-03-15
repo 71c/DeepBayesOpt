@@ -1,6 +1,6 @@
 import inspect
 import math
-from typing import List, Optional, Sequence, Tuple, Type, Union
+from typing import List, Optional, Sequence, Tuple, Type, Union, Literal
 
 import torch
 from torch import nn
@@ -786,6 +786,7 @@ class AcquisitionFunctionBodyPointnetV1and2(
     AcquisitionFunctionBodyFixedHistoryOutputDim):
     def __init__(self,
                  dimension:int, n_hist_out:int, n_acqf_params:int=0,
+                #  history_encoder: Literal["pointnet", "transformer"] = "pointnet",  # TODO: work on this
                  
                  history_enc_hidden_dims=[256, 256],
                  pooling="max",
@@ -849,31 +850,32 @@ class AcquisitionFunctionBodyPointnetV1and2(
         self._n_acqf_params = n_acqf_params
         self._n_hist_out = n_hist_out
 
-        pointnet_input_dim = dimension + n_hist_out + int(include_best_y) * n_hist_out \
+        input_dim = dimension + n_hist_out + int(include_best_y) * n_hist_out \
             + (dimension + n_acqf_params if input_xcand_to_local_nn else 0)
 
-        pointnet_kwargs = dict(activation_at_end=activation_at_end_pointnet,
-                layer_norm_before_end=layer_norm_pointnet,
-                layer_norm_at_end=layer_norm_pointnet,
-                dropout=dropout_pointnet,
-                dropout_at_end=True,
-                activation=activation_pointnet)
-        
-        if n_pointnets == 1:
-            self.pointnet = PointNetLayer(
-                pointnet_input_dim, history_enc_hidden_dims,
-                encoded_history_dim, pooling, **pointnet_kwargs)
-        else:
-            kwargs_list = [pointnet_kwargs] * n_pointnets
-            self.pointnet = MultiLayerPointNet(
-                pointnet_input_dim,
-                [history_enc_hidden_dims] * n_pointnets,
-                [encoded_history_dim] * n_pointnets,
-                [pooling] * n_pointnets,
-                kwargs_list, use_local_features=True)
+        history_encoder = "pointnet" # Temporary
+        if history_encoder == "pointnet":
+            pointnet_kwargs = dict(activation_at_end=activation_at_end_pointnet,
+                    layer_norm_before_end=layer_norm_pointnet,
+                    layer_norm_at_end=layer_norm_pointnet,
+                    dropout=dropout_pointnet,
+                    dropout_at_end=True,
+                    activation=activation_pointnet)
+            if n_pointnets == 1:
+                self.history_encoder_net = PointNetLayer(
+                    input_dim, history_enc_hidden_dims,
+                    encoded_history_dim, pooling, **pointnet_kwargs)
+            else:
+                kwargs_list = [pointnet_kwargs] * n_pointnets
+                self.history_encoder_net = MultiLayerPointNet(
+                    input_dim,
+                    [history_enc_hidden_dims] * n_pointnets,
+                    [encoded_history_dim] * n_pointnets,
+                    [pooling] * n_pointnets,
+                    kwargs_list, use_local_features=True)
 
-        self._features_dim = encoded_history_dim + \
-            (dimension + n_acqf_params if input_xcand_to_final_mlp else 0)
+            self._features_dim = encoded_history_dim + \
+                (dimension + n_acqf_params if input_xcand_to_final_mlp else 0)
         self.dimension = dimension
         self.include_best_y = include_best_y
 
@@ -913,12 +915,12 @@ class AcquisitionFunctionBodyPointnetV1and2(
             xy_hist, xy_hist_and_cand, mask = _get_xy_hist_and_cand(
                 x_hist, y_hist, x_cand, hist_mask)
             # shape (*, n_cand, encoded_history_dim)
-            out = self.pointnet(xy_hist_and_cand, mask=mask, keepdim=False)
+            out = self.history_encoder_net(xy_hist_and_cand, mask=mask, keepdim=False)
             logger.debug(f"out.shape: {out.shape}")
         else: # V1
             xy_hist = torch.cat((x_hist, y_hist), dim=-1)
             # shape (*, 1, encoded_history_dim)
-            out = self.pointnet(xy_hist, mask=hist_mask, keepdim=True)
+            out = self.history_encoder_net(xy_hist, mask=hist_mask, keepdim=True)
             
             ## Prepare input to the acquisition function network final dense layer
             n_cand = x_cand.size(-2)

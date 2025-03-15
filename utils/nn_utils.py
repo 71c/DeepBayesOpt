@@ -759,6 +759,51 @@ class MultiLayerPointNet(nn.Module):
         return global_feat
 
 
+# Also generated from ChatGPT
+class TransformerHistoryEncoder(nn.Module):
+    def __init__(self, input_dim: int, hidden_dim: int = 256, num_heads: int = 4,
+                 num_layers: int = 2, dropout: float = 0.1):
+        """
+        Transformer-based alternative to PointNetLayer for encoding history.
+
+        Args:
+            input_dim (int): Input feature dimension (x_hist + y_hist combined).
+            hidden_dim (int): Hidden dimension for transformer.
+            num_heads (int): Number of attention heads.
+            num_layers (int): Number of transformer encoder layers.
+            dropout (float): Dropout rate for transformer layers.
+        """
+        super().__init__()
+        
+        self.input_proj = nn.Linear(input_dim, hidden_dim)
+
+        self.encoder_layer = nn.TransformerEncoderLayer(
+            d_model=hidden_dim, nhead=num_heads, dim_feedforward=4 * hidden_dim, 
+            dropout=dropout, batch_first=True
+        )
+        self.transformer_encoder = nn.TransformerEncoder(self.encoder_layer, num_layers=num_layers)
+        
+        self.output_dim = hidden_dim  # Learned representation of the history
+
+    def forward(self, x: torch.Tensor, mask: Optional[torch.Tensor] = None):
+        """
+        Args:
+            x (Tensor): (*, n_hist, input_dim), representing (x_hist, y_hist) pairs.
+            mask (Tensor, optional): (*, n_hist), indicating valid history points.
+
+        Returns:
+            Tensor: Encoded representation (*, hidden_dim).
+        """
+        x = self.input_proj(x)  # Project to hidden dim
+
+        if mask is not None:
+            attn_mask = mask.unsqueeze(-1).expand(-1, -1, x.size(-1))  # Expand for transformer
+            x = x * attn_mask  # Zero out invalid points
+        
+        out = self.transformer_encoder(x)  # Pass through Transformer
+        
+        return out.mean(dim=-2)  # Aggregate features (learned pooling)
+
 
 if __name__ == "__main__":
     def test_positive_scalar():
