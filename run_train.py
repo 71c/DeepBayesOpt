@@ -15,7 +15,7 @@ from utils.plot_utils import (
 from utils.nn_utils import count_trainable_parameters, count_parameters
 from utils.tictoc import tic, tocl
 
-from datasets.gp_acquisition_dataset import create_train_test_gp_acq_datasets_helper
+from gp_acquisition_dataset import create_train_test_gp_acq_datasets_helper
 
 from nn_af.acquisition_function_net_save_utils import (
     get_nn_af_args_configs_model_paths_from_cmd_args, load_nn_acqf)
@@ -35,7 +35,7 @@ TIME = True
 VERBOSE = True
 
 ############################# Settings for datasets ############################
-from datasets.gp_acquisition_dataset import (
+from gp_acquisition_dataset import (
     GET_TRAIN_TRUE_GP_STATS,
     GET_TEST_TRUE_GP_STATS
 )

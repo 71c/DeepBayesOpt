@@ -19,7 +19,7 @@ from nn_af.acquisition_function_net_save_utils import load_nn_acqf_configs
 from nn_af.acquisition_function_net import GittinsAcquisitionFunctionNet
 from nn_af.acquisition_function_net_save_utils import load_nn_acqf, nn_acqf_is_trained
 from datasets.dataset_with_models import RandomModelSampler
-from datasets.gp_acquisition_dataset import (
+from gp_acquisition_dataset import (
     GP_GEN_DEVICE, add_gp_args, get_gp_model_from_args_no_outcome_transform,
     get_outcome_transform)
 

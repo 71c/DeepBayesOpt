@@ -46,6 +46,15 @@ ATTR_GROUPS = [
     ["best_y"]
 ]
 
+ATTR_NAME_TO_TITLE = {
+    "best_y": "Best function value",
+    "process_time": "Process time",
+    "time": "Time",
+    "n_evals": "Number of AF evaluations by optimize_acqf",
+    "mean_eval_process_time": "Mean time to evaluate AF in optimize_acqf",
+    "optimize_process_time": "Time spent optimizing"
+}
+
 
 def add_plot_interval_args(parser):
     interval_group = parser.add_argument_group("Plotting intervals")
@@ -110,8 +119,6 @@ def main():
     
     print(f"Number of new configs: {len(new_cfgs)}")
     print(f"Number of existing configs: {len(existing_cfgs_and_results)}")
-
-    print(f"New configs: {new_cfgs}")
     
     if len(existing_cfgs_and_results) == 0:
         raise ValueError("There are no saved BO configs to plot.")
@@ -281,6 +288,7 @@ def main():
             plot_ax_func,
             new_attrs_groups_list,
             level_names,
+            attr_name_to_title=ATTR_NAME_TO_TITLE,
             base_folder=save_dir_this_attrs,
             **script_plot_kwargs
         )

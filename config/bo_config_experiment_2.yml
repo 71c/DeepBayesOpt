@@ -17,6 +17,6 @@ parameters:
   gtol:
     value: 1.e-5
   maxfun:
-    value: 10000
+    value: 15000
   maxls:
     value: 20

@@ -462,7 +462,7 @@ class OptimizationResultsSingleMethod:
                 for fn_kwargs in self.optimizer_kwargs_per_function]
             func_opt_configs_list = [
                 {**opt_config_json, **fn_config,
-                 'optimizer_class': str(optimizer_class)}
+                 'optimizer_class': optimizer_class.__name__}
                 for fn_config in extra_fn_configs
             ]
             self.func_opt_configs_str = list(map(dict_to_hash, func_opt_configs_list))
@@ -523,8 +523,9 @@ class OptimizationResultsSingleMethod:
                 
                 for trial_config_str in opt_results['trials']:
                     assert trial_config_str in trial_configs_dict
-        except AssertionError:
-            raise RuntimeError("Loaded results are inconsistent with current configuration.")
+        except AssertionError as e:
+            raise RuntimeError(
+                "Loaded results are inconsistent with current configuration.") from e
         except KeyError as e:
             raise RuntimeError("Loaded results are missing keys!") from e
 

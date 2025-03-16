@@ -302,7 +302,8 @@ ORANGE = '#ff7f0e'
 
 
 def plot_acquisition_function_net_training_history_ax(
-        ax, training_history_data, plot_maxei=False, plot_log_regret=False):
+        ax, training_history_data, plot_maxei=False, plot_log_regret=False,
+        plot_name=None):
     stats_epochs = training_history_data['stats_epochs']
     stat_name =  'maxei' if plot_maxei else training_history_data['stat_name']
     
@@ -388,10 +389,16 @@ def plot_acquisition_function_net_training_history_ax(
         for line in consts:
             kwargs = {p: line[p] for p in line_properties if p in line}
             ax.axhline(line['data'], **kwargs)
+    
+    plot_desc = to_plot['title']
+    if plot_name is not None:
+        plot_name = f"{plot_name} ({plot_desc})"
+    else:
+        plot_name = plot_desc
 
+    ax.set_title(plot_name)
     ax.set_xlabel(to_plot['xlabel'])
     ax.set_ylabel(to_plot['ylabel'])
-    ax.set_title(to_plot['title'])
     ax.legend()
     ax.grid(True)
     if to_plot['log_scale']:
@@ -473,15 +480,6 @@ def add_headers(
             )
 
 
-_attr_name_to_title = {
-    "best_y": "Best function value",
-    "process_time": "Process time",
-    "time": "Time",
-    "n_evals": "Number of AF evaluations by optimize_acqf",
-    "mean_eval_process_time": "Mean time to evaluate AF in optimize_acqf",
-    "optimize_process_time": "Time spent optimizing"
-}
-
 _ERROR_LINES_CACHE = {}
 def _get_error_lines(
         ids: list,
@@ -514,6 +512,7 @@ def get_plot_ax_bo_stats_vs_iteration_func(get_result_func):
     def ret(plot_config: dict,
             ax,
             plot_name: Optional[str]=None,
+            attr_name_to_title: dict[str, str] = {},
             **plot_kwargs):
         attr_names = set()
         
@@ -564,10 +563,15 @@ def get_plot_ax_bo_stats_vs_iteration_func(get_result_func):
         attr_name = attr_names.pop()
 
         ax.set_xlabel('Iteration')
-        attr_name_title = _attr_name_to_title[attr_name]
+        attr_name_title = attr_name_to_title.get(attr_name, attr_name)
         ax.set_ylabel(attr_name_title)
-        if not plot_name:
-            plot_name = f"{attr_name_title} vs iteration"
+
+        plot_desc = f"{attr_name_title} vs iteration"
+        if plot_name:
+            plot_name = f"{plot_name} ({plot_desc})"
+        else:
+            plot_name = plot_desc
+
         ax.set_title(plot_name)
         ax.legend()
     
@@ -577,6 +581,7 @@ def get_plot_ax_bo_stats_vs_iteration_func(get_result_func):
 def _get_figure_from_nested_structure(
         plot_config: dict,
         plot_ax_func,
+        attr_name_to_title: dict[str, str],
         attrs_groups_list: list[Optional[set]],
         level_names: list[str],
         figure_name: str,
@@ -643,7 +648,9 @@ def _get_figure_from_nested_structure(
                              )
     
     if this_level_name == "line":
-        plot_ax_func(plot_config, axes[0, 0], figure_name, **plot_kwargs)
+        plot_ax_func(plot_config=plot_config, ax=axes[0, 0], plot_name=figure_name,
+                     attr_name_to_title=attr_name_to_title,
+                     **plot_kwargs)
     else:
         fig.suptitle(figure_name, fontsize=16, fontweight='bold')
         
@@ -657,8 +664,9 @@ def _get_figure_from_nested_structure(
                 row_items = row_data["items"]
                 for subplot_name, subplot_data in row_items.items():
                     col = col_name_to_col_index[subplot_name]
-                    plot_ax_func(subplot_data["items"], axes[row, col],
-                                 plot_name=None, **plot_kwargs)
+                    plot_ax_func(plot_config=subplot_data["items"], ax=axes[row, col],
+                                 plot_name=None,  attr_name_to_title=attr_name_to_title,
+                                 **plot_kwargs)
             row_names = [x[0] for x in sorted_plot_config_items]
             add_headers(fig, row_headers=row_names, col_headers=col_names)
         elif this_level_name == "row" or this_level_name == "col":
@@ -669,7 +677,10 @@ def _get_figure_from_nested_structure(
                 axs = axes[:, 0]
 
             for ax, (subplot_name, subplot_data) in zip(axs, sorted_plot_config_items):
-                plot_ax_func(subplot_data["items"], ax, subplot_name, **plot_kwargs)
+                plot_ax_func(plot_config=subplot_data["items"], ax=ax,
+                             plot_name=subplot_name,
+                             attr_name_to_title=attr_name_to_title,
+                             **plot_kwargs)
         else:
             raise ValueError
 
@@ -684,6 +695,7 @@ def save_figures_from_nested_structure(
         attrs_groups_list: list[Optional[set]],
         level_names: list[str],
         base_folder='',
+        attr_name_to_title: dict[str, str] = {},
         **plot_kwargs):
     this_attrs_group = attrs_groups_list[0]
     next_attrs_groups = attrs_groups_list[1:]
@@ -704,17 +716,21 @@ def save_figures_from_nested_structure(
 
             save_figures_from_nested_structure(
                 items, plot_ax_func, next_attrs_groups, next_level_names,
-                base_folder=dirname, **plot_kwargs
+                base_folder=dirname,
+                attr_name_to_title=attr_name_to_title,
+                **plot_kwargs
             )
     elif this_level_name == "fname":        
         info_dict = {}
+        # print(f"{plot_config=}")
+        # exit()
         for fname_desc, data in plot_config.items():
             items = data["items"]
             if "vals" in data:
                 info_dict[fname_desc] = data["vals"]
 
             fig = _get_figure_from_nested_structure(
-                items, plot_ax_func, next_attrs_groups,
+                items, plot_ax_func, attr_name_to_title, next_attrs_groups,
                 next_level_names, fname_desc, **plot_kwargs)
             
             fname = f"{fname_desc}.pdf"

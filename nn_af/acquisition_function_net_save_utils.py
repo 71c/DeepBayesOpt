@@ -11,7 +11,7 @@ from nn_af.acquisition_function_net import AcquisitionFunctionBodyPointnetV1and2
 from nn_af.train_acquisition_function_net import GI_NORMALIZATIONS, METHODS
 
 from datasets.dataset_with_models import RandomModelSampler
-from datasets.gp_acquisition_dataset import FIX_TRAIN_ACQUISITION_DATASET, GP_GEN_DEVICE, add_gp_acquisition_dataset_args, add_lamda_args, get_gp_acquisition_dataset_configs, get_lamda_min_max
+from gp_acquisition_dataset import FIX_TRAIN_ACQUISITION_DATASET, GP_GEN_DEVICE, add_gp_acquisition_dataset_args, add_lamda_args, get_gp_acquisition_dataset_configs, get_lamda_min_max
 
 
 MODELS_SUBDIR = "models"
@@ -47,7 +47,10 @@ def nn_acqf_is_trained(model_and_info_folder_name: str):
 
 
 def load_nn_acqf(
-        model_and_info_folder_name: str, return_model_path=False, load_weights=True):
+        model_and_info_folder_name: str,
+        return_model_path=False,
+        load_weights=True,
+        verbose=True):
     model_and_info_path = os.path.join(MODELS_DIR, model_and_info_folder_name)
     model = _load_empty_nn_acqf(model_and_info_path)
 
@@ -63,7 +66,8 @@ def load_nn_acqf(
         except FileNotFoundError:
             raise ValueError(f"No best model found: {best_model_fname_json_path} not found")
         best_model_path = os.path.join(model_path, best_model_fname)
-        print(f"Loading best weights from {best_model_path}")
+        if verbose:
+            print(f"Loading best weights from {best_model_path}")
         model.load_state_dict(_get_state_dict(best_model_path))
 
     if return_model_path:

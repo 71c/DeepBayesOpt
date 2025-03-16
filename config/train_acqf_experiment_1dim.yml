@@ -21,3 +21,11 @@ parameters:
     value: 512
   lr_scheduler:
     value: ReduceLROnPlateau
+  lr_scheduler_patience:
+    value: 15
+  lr_scheduler_factor:
+    value: 0.1
+  early_stopping:
+    value: true
+  patience:
+    value: 30

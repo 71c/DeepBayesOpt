@@ -1,14 +1,11 @@
 import argparse
 import cProfile
 import os
-from datetime import datetime
 import pstats
 from typing import Optional
 
-from run_bo import GP_AF_DICT
-from utils.constants import PLOTS_DIR
 from utils.experiments.experiment_config_utils import get_config_options_list
-from utils.plot_utils import add_plot_args, create_plot_directory, plot_dict_to_str, save_figures_from_nested_structure
+from utils.plot_utils import add_plot_args, create_plot_directory, plot_acquisition_function_net_training_history_ax, plot_dict_to_str, save_figures_from_nested_structure
 from utils.utils import dict_to_str, group_by, group_by_nested_attrs, load_json, save_json
 
 from nn_af.acquisition_function_net_save_utils import load_nn_acqf
@@ -19,15 +16,13 @@ CPROFILE = False
 
 
 PRE = [
-    ["nn.layer_width", "nn.train_samples_size"]
+    ["layer_width", "train_samples_size"]
 ]
 
-ATTR_A = ["nn.batch_size"]
-ATTR_B = ["nn.learning_rate"]
+ATTR_A = ["batch_size"]
+ATTR_B = ["learning_rate"]
 
-POST = [
-    None
-]
+POST = [] # No "line" level yet
 
 PLOTS_CONFIG_SINGLE = [
     *PRE,
@@ -43,17 +38,43 @@ PLOTS_CONFIG_MULTIPLE = [
 ]
 
 ATTR_GROUPS = [
-    ["training_history", "af_plot"]
+    ["0_training_history_train_test", "1_training_history_test_log_regret", "2_af_plot"]
 ]
+
+ATTR_NAME_TO_TITLE = {
+    "0_training_history_train_test": "Training history (train and test loss)",
+    "1_training_history_test_log_regret": "Training history (test log regret)",
+    "2_af_plot": "Acquisition function plot"
+}
 
 
 def get_plot_ax_train_acqf_func(get_result_func):
     def train_acqf_plot_ax(
-            plot_config: dict,
+            plot_config,
             ax,
             plot_name: Optional[str]=None,
             **plot_kwargs):
-        pass # TODO: Implement this function
+        if not isinstance(plot_config, int):
+            raise ValueError("The plot config should be an int.")
+        info = get_result_func(plot_config)
+        attr_name = info['attr_name']
+
+        results = info['results']
+        training_history_data = results['training_history_data']
+        model = results['model']
+
+        if attr_name == "0_training_history_train_test":
+            plot_acquisition_function_net_training_history_ax(
+                ax, training_history_data, plot_maxei=False, plot_name=plot_name,
+                plot_log_regret=False)
+        elif attr_name == "1_training_history_test_log_regret":
+            plot_acquisition_function_net_training_history_ax(
+                ax, training_history_data, plot_maxei=False, plot_name=plot_name,
+                plot_log_regret=True)
+        elif attr_name == "2_af_plot":
+            pass # TODO
+        else:
+            raise ValueError(f"Unknown attribute name: {attr_name}")
     
     return train_acqf_plot_ax
 
@@ -68,21 +89,23 @@ def main():
     ## Parse arguments
     args = parser.parse_args()
 
-    options_list, refined_config = get_config_options_list(
+    # Get all the configs of all the NNs
+    all_cfgs_list, refined_config = get_config_options_list(
         getattr(args, nn_base_config_name), getattr(args, nn_experiment_config_name))
     
+    # Get all the configs for which we have results, and the corresponding results
     existing_cfgs = []
     results_list = []
-    
-    for options in options_list:
+    for cfg in all_cfgs_list:
         (cmd_dataset, cmd_opts_dataset,
-         cmd_nn_train, cmd_opts_nn) = get_cmd_options_train_acqf(options)
+         cmd_nn_train, cmd_opts_nn) = get_cmd_options_train_acqf(cfg)
         
         model_and_info_name = cmd_opts_nn_to_model_and_info_name(cmd_opts_nn)
 
         try:
             model, model_path = load_nn_acqf(
-                model_and_info_name, return_model_path=True, load_weights=True)
+                model_and_info_name,
+                return_model_path=True, load_weights=True, verbose=False)
         except FileNotFoundError:
             # If the model is not found, skip this iteration
             continue
@@ -90,13 +113,18 @@ def main():
         training_history_data = load_json(
             os.path.join(model_path, 'training_history_data.json'))
 
-        existing_cfgs.append(options)
+        existing_cfgs.append(cfg)
         results_list.append({
             'training_history_data': training_history_data,
             'model': model
         })
     
-    n_options = len(options_list)
+    # Remove all the prefixes
+    existing_cfgs = [
+        {k.split(".")[-1]: v for k, v in cfg.items()} for cfg in existing_cfgs
+    ]
+    
+    n_options = len(all_cfgs_list)
     n_options_trained = len(results_list)
     n_options_not_trained = n_options - n_options_trained
     print(f"Number of not-trained-yet (unavailable) options: {n_options_not_trained}")
@@ -121,24 +149,22 @@ def main():
         scale=1.0
     )
 
-    all_keys = set().union(*[set(result.keys()) for result in results_list])
     for attr_names in ATTR_GROUPS:
-        attr_names = [a for a in attr_names if a in all_keys]
         print(f"\n-----------------------------------------------------\n{attr_names=}")
 
         if len(attr_names) == 1:
             attrs_groups_list = PLOTS_CONFIG_SINGLE
         else:
             attrs_groups_list = PLOTS_CONFIG_MULTIPLE
-        
+                
         attrs_groups_list = [set(group) for group in attrs_groups_list]
-        if len(attrs_groups_list) >= 2:
-            # Right before the one before "line" (-1) level
-            attrs_groups_list.insert(-2, {"attr_name"})
-        else:
-            # Right before "line" (-1) level
+        if len(attrs_groups_list) + 1 >= 2:
+            # Right before the one before "line" level
             attrs_groups_list.insert(-1, {"attr_name"})
-        
+        else:
+            # Right before "line" level
+            attrs_groups_list.append({"attr_name"})
+                
         this_configs = [{**cfg, 'attr_name': name, 'index': i}
              for name in attr_names
              for i, cfg in enumerate(existing_cfgs)]
@@ -147,20 +173,18 @@ def main():
             this_configs,
             attrs_groups_list,
             dict_to_str_func=plot_dict_to_str,
-            add_extra_index=-2 # -2 is the level above "line" level
+            add_extra_index=-1 # the level above "line" level
         )
-
-        n_groups = len(new_attrs_groups_list)
-        if n_groups < 2:
-            raise ValueError(
-                "There are not enough levels of plot grouping (at least 2 are required). "
-                f"{new_attrs_groups_list=}")
         
         # Make script config
         script_config = {**vars(args)}
         script_config["nn_train_config"] = refined_config
         script_config["plots_config"] = [
             sorted(list(group)) for group in new_attrs_groups_list]
+        
+        new_attrs_groups_list.append(None) # for the "line" level (just a dummy value)
+
+        n_groups = len(new_attrs_groups_list)
         
         levels_to_add = ["line"]
         if args.use_cols:
@@ -199,8 +223,7 @@ def main():
 
         print("Plotting configuration:")
         for level_name, attrs in zip(level_names, new_attrs_groups_list):
-            if attrs:
-                print(f"  {level_name}: {attrs}")
+            print(f"  {level_name}: {attrs}")
 
         save_json(plot_config, "config/plot_config.json", indent=2)
 
@@ -209,15 +232,10 @@ def main():
             idx = cfg['index']
             results = results_list[idx]
             attr_name = cfg['attr_name']
-                        
-            if attr_name in results:
-                ret = {
-                    attr_name: results[attr_name],
-                    'attr_name': attr_name,
-                    'index': idx
-                }
-                return ret
-            return None
+            return {
+                'attr_name': attr_name,
+                'results': results
+            }
 
         train_acqf_plot_ax = get_plot_ax_train_acqf_func(get_result)
         
@@ -226,6 +244,7 @@ def main():
             train_acqf_plot_ax,
             new_attrs_groups_list,
             level_names,
+            attr_name_to_title=ATTR_NAME_TO_TITLE,
             base_folder=save_dir_this_attrs,
             **script_plot_kwargs
         )

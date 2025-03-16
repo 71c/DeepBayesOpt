@@ -1044,6 +1044,9 @@ def convert_to_json_serializable(data,
             if not include_priors:
                 add_priors(named_priors_tuple_list)
             return ret
+    if isinstance(data, type):
+        # e.g. ExpectedImprovement instead of <class 'botorch.acquisition.analytic.ExpectedImprovement'>
+        return data.__name__
     return str(data)
 
 def _json_serializable_to_numpy(data: Any, array_keys: Optional[set]=None):
