@@ -1,3 +1,4 @@
+from datetime import datetime
 import os
 from typing import Literal, Optional, List
 import numpy as np
@@ -6,8 +7,10 @@ from matplotlib import pyplot as plt
 import torch
 from torch import Tensor
 import torch.distributions as dist
+from utils.constants import BO_PLOTS_FOLDER
 from datasets.acquisition_dataset import AcquisitionDataset
 from nn_af.acquisition_function_net import AcquisitionFunctionNet, AcquisitionFunctionNetAcquisitionFunction
+from utils.constants import PLOTS_DIR
 from utils.exact_gp_computations import calculate_EI_GP
 from utils.utils import dict_to_str, iterate_nested, save_json
 
@@ -470,7 +473,7 @@ def add_headers(
             )
 
 
-attr_name_to_title = {
+_attr_name_to_title = {
     "best_y": "Best function value",
     "process_time": "Process time",
     "time": "Time",
@@ -478,7 +481,6 @@ attr_name_to_title = {
     "mean_eval_process_time": "Mean time to evaluate AF in optimize_acqf",
     "optimize_process_time": "Time spent optimizing"
 }
-
 
 _ERROR_LINES_CACHE = {}
 def _get_error_lines(
@@ -508,72 +510,73 @@ def _get_error_lines(
     _ERROR_LINES_CACHE[info_str] = ret
     return ret # center, lower, upper
 
-
-def plot_nested_structure(plot_config: dict,
-                          get_result_func,
-                          ax,
-                          plot_name: Optional[str]=None,
-                          **plot_kwargs):
-    attr_names = set()
-    
-    for legend_name, data in plot_config.items():
-        this_ids = []
-        this_data = []
-        for v in data["items"].values():
-            data_index = v["items"]
-            if isinstance(data_index, list):
-                print([get_result_func(i) for i in data_index])
-                raise ValueError
-
-            info = get_result_func(data_index)
-            if info is not None:
-                attr_name = info['attr_name']
-                attr_names.add(attr_name)
-                val = info[attr_name]
-                if attr_name == 'best_y':
-                    assert len(val.shape) == 2 and val.shape[1] == 1
-                    val = val[:, 0]
-                else:
-                    assert len(val.shape) == 1
-                
-                val_id = f"{info['index']}_{attr_name}"
-                this_ids.append(val_id)
-                this_data.append(val)
+def get_plot_ax_bo_stats_vs_iteration_func(get_result_func):
+    def ret(plot_config: dict,
+            ax,
+            plot_name: Optional[str]=None,
+            **plot_kwargs):
+        attr_names = set()
         
-        if len(this_ids) == 0:
-            continue
+        for legend_name, data in plot_config.items():
+            this_ids = []
+            this_data = []
+            for v in data["items"].values():
+                data_index = v["items"]
+                if isinstance(data_index, list):
+                    print([get_result_func(i) for i in data_index])
+                    raise ValueError
 
-        center, lower, upper = _get_error_lines(
-            this_ids, this_data,
-            alpha=plot_kwargs['alpha'],
-            interval_of_center=plot_kwargs['interval_of_center'],
-            center_stat=plot_kwargs['center_stat'],
-            assume_normal=plot_kwargs['assume_normal']
-        )
+                info = get_result_func(data_index)
+                if info is not None:
+                    attr_name = info['attr_name']
+                    attr_names.add(attr_name)
+                    val = info[attr_name]
+                    if attr_name == 'best_y':
+                        assert len(val.shape) == 2 and val.shape[1] == 1
+                        val = val[:, 0]
+                    else:
+                        assert len(val.shape) == 1
+                    
+                    val_id = f"{info['index']}_{attr_name}"
+                    this_ids.append(val_id)
+                    this_data.append(val)
+            
+            if len(this_ids) == 0:
+                continue
 
-        plot_error_bars(ax, center, lower, upper,
-                        label=legend_name, shade=plot_kwargs['shade'])
+            center, lower, upper = _get_error_lines(
+                this_ids, this_data,
+                alpha=plot_kwargs['alpha'],
+                interval_of_center=plot_kwargs['interval_of_center'],
+                center_stat=plot_kwargs['center_stat'],
+                assume_normal=plot_kwargs['assume_normal']
+            )
+
+            plot_error_bars(ax, center, lower, upper,
+                            label=legend_name, shade=plot_kwargs['shade'])
+        
+        if len(attr_names) > 1:
+            raise ValueError(f"Expected just one attribute to plot but got {attr_names=}")
+
+        if len(attr_names) == 0:
+            raise ValueError("No data to plot")
+        
+        attr_name = attr_names.pop()
+
+        ax.set_xlabel('Iteration')
+        attr_name_title = _attr_name_to_title[attr_name]
+        ax.set_ylabel(attr_name_title)
+        if not plot_name:
+            plot_name = f"{attr_name_title} vs iteration"
+        ax.set_title(plot_name)
+        ax.legend()
     
-    if len(attr_names) > 1:
-        raise ValueError(f"Expected just one attribute to plot but got {attr_names=}")
-
-    if len(attr_names) == 0:
-        raise ValueError("No data to plot")
-    
-    attr_name = attr_names.pop()
-
-    ax.set_xlabel('Iteration')
-    attr_name_title = attr_name_to_title[attr_name]
-    ax.set_ylabel(attr_name_title)
-    if not plot_name:
-        plot_name = f"{attr_name_title} vs iteration"
-    ax.set_title(plot_name)
-    ax.legend()
+    return ret
 
 
-def get_figure_from_nested_structure(
+def _get_figure_from_nested_structure(
         plot_config: dict,
-        get_result_func,
+        plot_ax_func,
         attrs_groups_list: list[Optional[set]],
         level_names: list[str],
         figure_name: str,
@@ -601,6 +604,7 @@ def get_figure_from_nested_structure(
         n_rows = len(plot_config)
         if next_level_names[0] == "col":
             row_and_col = True
+            assert next_level_names[1] == "line"
             key_to_data = {}
             for v in plot_config.values():
                 for kk, vv in v["items"].items():
@@ -639,10 +643,7 @@ def get_figure_from_nested_structure(
                              )
     
     if this_level_name == "line":
-        assert next_level_names == ["random"]
-        randomize_attrs = next_attrs_groups[0]
-        plot_nested_structure(
-            plot_config, get_result_func, axes[0, 0], figure_name, **plot_kwargs)
+        plot_ax_func(plot_config, axes[0, 0], figure_name, **plot_kwargs)
     else:
         fig.suptitle(figure_name, fontsize=16, fontweight='bold')
         
@@ -652,33 +653,80 @@ def get_figure_from_nested_structure(
         ))
         
         if row_and_col:
-            assert next_level_names == ["col", "line", "random"]
             for row, (row_name, row_data) in enumerate(sorted_plot_config_items):
                 row_items = row_data["items"]
                 for subplot_name, subplot_data in row_items.items():
                     col = col_name_to_col_index[subplot_name]
-                    plot_nested_structure(
-                        subplot_data["items"], get_result_func, axes[row, col],
-                        plot_name=None, **plot_kwargs)
+                    plot_ax_func(subplot_data["items"], axes[row, col],
+                                 plot_name=None, **plot_kwargs)
             row_names = [x[0] for x in sorted_plot_config_items]
             add_headers(fig, row_headers=row_names, col_headers=col_names)
         elif this_level_name == "row" or this_level_name == "col":
-            assert next_level_names == ["line", "random"]
+            assert next_level_names[0] == "line"
             if this_level_name == "col":
                 axs = axes[0, :]
             else:
                 axs = axes[:, 0]
 
             for ax, (subplot_name, subplot_data) in zip(axs, sorted_plot_config_items):
-                plot_nested_structure(
-                    subplot_data["items"], get_result_func, ax, subplot_name,
-                    **plot_kwargs)
+                plot_ax_func(subplot_data["items"], ax, subplot_name, **plot_kwargs)
         else:
             raise ValueError
 
     fig.tight_layout()
 
     return fig
+
+
+def save_figures_from_nested_structure(
+        plot_config: dict,
+        plot_ax_func,
+        attrs_groups_list: list[Optional[set]],
+        level_names: list[str],
+        base_folder='',
+        **plot_kwargs):
+    this_attrs_group = attrs_groups_list[0]
+    next_attrs_groups = attrs_groups_list[1:]
+    this_level_name = level_names[0]
+    next_level_names = level_names[1:]
+
+    if this_attrs_group:
+        save_json({"attrs": list(this_attrs_group)},
+                    os.path.join(base_folder, "attrs.json"), indent=2)
+
+    if this_level_name == "folder":
+        for folder_name, data in plot_config.items():
+            items = data["items"]
+            dirname = os.path.join(base_folder, folder_name)
+            
+            if "vals" in data:
+                save_json(data["vals"], os.path.join(dirname, "vals.json"), indent=2)
+
+            save_figures_from_nested_structure(
+                items, plot_ax_func, next_attrs_groups, next_level_names,
+                base_folder=dirname, **plot_kwargs
+            )
+    elif this_level_name == "fname":        
+        info_dict = {}
+        for fname_desc, data in plot_config.items():
+            items = data["items"]
+            if "vals" in data:
+                info_dict[fname_desc] = data["vals"]
+
+            fig = _get_figure_from_nested_structure(
+                items, plot_ax_func, next_attrs_groups,
+                next_level_names, fname_desc, **plot_kwargs)
+            
+            fname = f"{fname_desc}.pdf"
+            fpath = os.path.join(base_folder, fname)
+            fig.savefig(fpath, dpi=300, format='pdf', bbox_inches='tight')
+            plt.close(fig)
+        
+        if info_dict:
+            save_json(info_dict,
+                      os.path.join(base_folder, "vals_per_figure.json"), indent=2)
+    else:
+        raise ValueError
 
 
 def _plot_key_value_to_str(k, v):
@@ -726,58 +774,39 @@ def plot_dict_to_str(d):
     return ", ".join([item[1] for item in items])
 
 
+def add_plot_args(parser):
+    plot_group = parser.add_argument_group("Plotting organization")
+    plot_group.add_argument(
+        '--use_cols', 
+        action='store_true',
+        help='Whether to use columns for subplots in the plots'
+    )
+    plot_group.add_argument(
+        '--use_rows', 
+        action='store_true',
+        help='Whether to use rows for subplots in the plots'
+    )
+    plot_group.add_argument(
+        '--plots_group_name',
+        type=str,
+        help='Name of group of plots',
+    )
+    plot_group.add_argument(
+        '--plots_name',
+        type=str,
+        help='Name of these plots'
+    )
 
-def save_figures_from_nested_structure(
-        plot_config: dict,
-        get_result_func,
-        attrs_groups_list: list[Optional[set]],
-        level_names: list[str],
-        base_folder='',
-        **plot_kwargs):
-    this_attrs_group = attrs_groups_list[0]
-    next_attrs_groups = attrs_groups_list[1:]
-    this_level_name = level_names[0]
-    next_level_names = level_names[1:]
 
-    if this_attrs_group:
-        save_json({"attrs": list(this_attrs_group)},
-                    os.path.join(base_folder, "attrs.json"), indent=2)
-
-    if this_level_name == "folder":
-        for folder_name, data in plot_config.items():
-            items = data["items"]
-            dirname = os.path.join(base_folder, folder_name)
-            
-            if "vals" in data:
-                save_json(data["vals"], os.path.join(dirname, "vals.json"), indent=2)
-
-            save_figures_from_nested_structure(
-                items, get_result_func, next_attrs_groups, next_level_names,
-                base_folder=dirname, **plot_kwargs
-            )
-    elif this_level_name == "fname":
-        cmd_ids = {v
-                 for k, v in iterate_nested(plot_config)
-                 if k == "items" and type(v) is int}
-        infos = [get_result_func(v) for v in cmd_ids]
-        
-        # TODO: Load all of the plots of training history and asave them here.
-
-        info_dict = {}
-        for fname_desc, data in plot_config.items():
-            items = data["items"]
-            if "vals" in data:
-                info_dict[fname_desc] = data["vals"]
-
-            fig = get_figure_from_nested_structure(
-                items, get_result_func, next_attrs_groups,
-                next_level_names, fname_desc, **plot_kwargs)
-            
-            fname = f"{fname_desc}.pdf"
-            fpath = os.path.join(base_folder, fname)
-            fig.savefig(fpath, dpi=300, format='pdf', bbox_inches='tight')
-            plt.close(fig)
-        
-        if info_dict:
-            save_json(info_dict,
-                      os.path.join(base_folder, "vals_per_figure.json"), indent=2)
+def create_plot_directory(plots_name=None, plots_group_name=None):
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    parts = [timestamp]
+    if plots_name is not None:
+        parts = [plots_name] + parts
+    folder_name = "_".join(parts)
+    pp = [PLOTS_DIR] + (
+        [plots_group_name] if plots_group_name else []
+    ) + [BO_PLOTS_FOLDER, folder_name]
+    save_dir = os.path.join(*pp)
+    print(f"Saving plots to {save_dir}")
+    return save_dir

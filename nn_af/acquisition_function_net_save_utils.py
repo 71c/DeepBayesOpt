@@ -14,17 +14,36 @@ from datasets.dataset_with_models import RandomModelSampler
 from datasets.gp_acquisition_dataset import FIX_TRAIN_ACQUISITION_DATASET, GP_GEN_DEVICE, add_gp_acquisition_dataset_args, add_lamda_args, get_gp_acquisition_dataset_configs, get_lamda_min_max
 
 
-
 MODELS_SUBDIR = "models"
 
 
-def nn_acqf_is_trained(model_and_info_folder_name: str):
+def get_latest_model_path(model_and_info_folder_name: str):
     model_and_info_path = os.path.join(MODELS_DIR, model_and_info_folder_name)
+    already_saved = os.path.isdir(model_and_info_path)
+    if not already_saved:
+        raise FileNotFoundError(f"Models path {model_and_info_path} does not exist")
+
+    models_path = os.path.join(model_and_info_path, MODELS_SUBDIR)
+
+    latest_model_path = os.path.join(models_path, "latest_model.json")
     try:
-        model_path = _get_latest_model_path(model_and_info_path)
-        return True
+        latest_model_name = load_json(latest_model_path)["latest_model"]
     except FileNotFoundError:
-        return False
+        raise FileNotFoundError(f"Latest model path {latest_model_path} does not exist."
+                                " i.e., no models have been fully trained yet.")
+    model_path = os.path.join(models_path, latest_model_name)
+    return model_path
+
+
+def safe_get_latest_model_path(model_and_info_folder_name: str):
+    try:
+        return get_latest_model_path(model_and_info_folder_name)
+    except FileNotFoundError:
+        return None
+
+
+def nn_acqf_is_trained(model_and_info_folder_name: str):
+    return safe_get_latest_model_path(model_and_info_folder_name) is not None
 
 
 def load_nn_acqf(
@@ -33,7 +52,7 @@ def load_nn_acqf(
     model = _load_empty_nn_acqf(model_and_info_path)
 
     if return_model_path or load_weights:
-        model_path = _get_latest_model_path(model_and_info_path)
+        model_path = get_latest_model_path(model_and_info_path)
 
     if load_weights:
         # print(f"Loading model from {model_path}")
@@ -196,24 +215,6 @@ def _save_nn_acqf_configs(
                     os.path.join(model_and_info_path, "outcome_transform.pt"))
 
     return model_and_info_folder_name, models_path
-
-
-def _get_latest_model_path(model_and_info_folder_name):
-    model_and_info_path = os.path.join(MODELS_DIR, model_and_info_folder_name)
-    already_saved = os.path.isdir(model_and_info_path)
-    if not already_saved:
-        raise FileNotFoundError(f"Models path {model_and_info_path} does not exist")
-
-    models_path = os.path.join(model_and_info_path, MODELS_SUBDIR)
-
-    latest_model_path = os.path.join(models_path, "latest_model.json")
-    try:
-        latest_model_name = load_json(latest_model_path)["latest_model"]
-    except FileNotFoundError:
-        raise FileNotFoundError(f"Latest model path {latest_model_path} does not exist."
-                                " i.e., no models have been fully trained yet.")
-    model_path = os.path.join(models_path, latest_model_name)
-    return model_path
 
 
 @cache

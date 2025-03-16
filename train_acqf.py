@@ -245,11 +245,13 @@ def add_train_acqf_args(parser, train=True, prefix='nn'):
 
 
 def main():
+    ## Create parser
     parser = argparse.ArgumentParser()
     nn_base_config_name, nn_experiment_config_name = add_train_acqf_args(parser,
                                                                          train=True)
     add_slurm_args(parser)
 
+    ## Parse arguments
     args = parser.parse_args()
 
     options_list, refined_config = get_config_options_list(

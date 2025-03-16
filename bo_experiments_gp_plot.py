@@ -1,18 +1,15 @@
 import os
-from datetime import datetime
 import cProfile, pstats
 
-from utils.constants import PLOTS_DIR
+from utils.plot_utils import create_plot_directory
 from utils.utils import dict_to_str, group_by, group_by_nested_attrs, save_json
-from utils.plot_utils import plot_dict_to_str, save_figures_from_nested_structure
+from utils.plot_utils import add_plot_args, get_plot_ax_bo_stats_vs_iteration_func, plot_dict_to_str, save_figures_from_nested_structure
 from utils.experiments.experiment_config_utils import CONFIG_DIR
 
 from bo_experiments_gp import get_bo_experiments_parser, generate_gp_bo_job_specs
 from run_bo import GP_AF_DICT, get_arg_names
 from train_acqf import MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN
 
-
-BO_PLOTS_FOLDER = "bo_plots"
 
 CPROFILE = False
 
@@ -48,31 +45,6 @@ ATTR_GROUPS = [
     ["mean_eval_process_time"],
     ["best_y"]
 ]
-
-
-def add_plot_args(parser):
-    plot_group = parser.add_argument_group("Plotting organization")
-    plot_group.add_argument(
-        '--use_cols', 
-        action='store_true',
-        help='Whether to use columns for subplots in the plots'
-    )
-    plot_group.add_argument(
-        '--use_rows', 
-        action='store_true',
-        help='Whether to use rows for subplots in the plots'
-    )
-    plot_group.add_argument(
-        '--plots_group_name',
-        type=str,
-        help='Name of group of plots',
-        required=True
-    )
-    plot_group.add_argument(
-        '--plots_name',
-        type=str,
-        help='Name of these plots'
-    )
 
 
 def add_plot_interval_args(parser):
@@ -181,14 +153,7 @@ def main():
         })
 
     # Folder name
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    parts = [timestamp]
-    if args.plots_name is not None:
-        parts = [args.plots_name] + parts
-    folder_name = "_".join(parts)
-    save_dir = os.path.join(PLOTS_DIR, args.plots_group_name,
-                                    BO_PLOTS_FOLDER, folder_name)
-    print(f"Saving plots to {save_dir}")
+    save_dir = create_plot_directory(args.plots_name, args.plots_group_name)
     
     if CPROFILE:
         pr = cProfile.Profile()
@@ -214,9 +179,11 @@ def main():
         
         attrs_groups_list = [set(group) for group in attrs_groups_list]
         if len(attrs_groups_list) >= 3:
-            attrs_groups_list.insert(-3, {"attr_name"}) # Right before the one before "line"
+            # Right before the one before "line" (-2) level
+            attrs_groups_list.insert(-3, {"attr_name"})
         else:
-            attrs_groups_list.insert(-2, {"attr_name"}) # right before "line"
+            # Right before "line" (-2) level
+            attrs_groups_list.insert(-2, {"attr_name"})
         
         this_reformatted_configs = [{**cfg, 'attr_name': name, 'index': i}
              for name in attr_names
@@ -226,7 +193,7 @@ def main():
             this_reformatted_configs,
             attrs_groups_list,
             dict_to_str_func=plot_dict_to_str,
-            add_extra_index=-2
+            add_extra_index=-2 # -2 is the "line" level
         )
 
         n_groups = len(new_attrs_groups_list)
@@ -294,24 +261,24 @@ def main():
             results = results_list[idx]
             attr_name = cfg['attr_name']
             
-            cfg = existing_cfgs[idx]
-            bo_policy_args = cfg['bo_policy_args']
+            bo_policy_args = existing_cfgs[idx]['bo_policy_args']
             
             if attr_name in results:
                 ret = {
                     attr_name: results[attr_name],
                     'attr_name': attr_name,
-                    'index': idx,
-                    **cfg
+                    'index': idx
                 }
                 if 'nn_model_name' in bo_policy_args:
                     ret['nn_model_name'] = bo_policy_args['nn_model_name']
                 return ret
             return None
+
+        plot_ax_func = get_plot_ax_bo_stats_vs_iteration_func(get_result)
         
         save_figures_from_nested_structure(
             plot_config,
-            get_result,
+            plot_ax_func,
             new_attrs_groups_list,
             level_names,
             base_folder=save_dir_this_attrs,
