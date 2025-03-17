@@ -132,14 +132,16 @@ def get_nn_af_args_configs_model_paths_from_cmd_args(
     model = _get_model(args)
 
     #### Save the configs for the model and training and datasets
+    training_config = _get_training_config(args)
     model_and_info_folder_name, models_path = _save_nn_acqf_configs(
         model,
-        training_config=_get_training_config(args),
+        training_config=training_config,
         af_dataset_config=gp_af_dataset_configs,
         save=args.save_model
     )
 
-    return args, gp_af_dataset_configs, model, model_and_info_folder_name, models_path
+    return (args, gp_af_dataset_configs,
+            model, model_and_info_folder_name, models_path)
 
 
 def _save_nn_acqf_configs(

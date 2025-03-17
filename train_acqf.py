@@ -90,11 +90,12 @@ def cmd_opts_nn_to_model_and_info_name(cmd_opts_nn):
     if s in _cache:
         return _cache[s]
     cmd_args_list_nn = dict_to_cmd_args({**cmd_opts_nn, 'no-save-model': True})
-    (args_nn, af_dataset_configs, model, model_and_info_name, models_path
-    ) = get_nn_af_args_configs_model_paths_from_cmd_args(cmd_args_list_nn)
-    _cache[s] = model_and_info_name
+    ret = get_nn_af_args_configs_model_paths_from_cmd_args(cmd_args_list_nn)
+    (args_nn, af_dataset_configs,
+     model, model_and_info_name, models_path) = ret
+    _cache[s] = ret
     MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN[model_and_info_name] = cmd_opts_nn
-    return model_and_info_name
+    return ret
 
 
 DATASETS_JOB_ID = "datasets"
@@ -128,7 +129,8 @@ def create_dependency_structure_train_acqf(
             train_nn = True
         else:
             # Determine whether or not the NN is already cached
-            model_and_info_name = cmd_opts_nn_to_model_and_info_name(cmd_opts_nn)
+            (args_nn, af_dataset_configs, pre_model, model_and_info_name, models_path
+            ) = cmd_opts_nn_to_model_and_info_name(cmd_opts_nn)
             
             model_already_trained = nn_acqf_is_trained(model_and_info_name)
             # Train the NN iff it has not already been trained

@@ -3,13 +3,16 @@
 from typing import Optional, Sequence
 import torch
 import matplotlib.pyplot as plt
+import numpy as np
 import os
 import cProfile, pstats
 from datetime import datetime
 
+from bo_experiments_gp import get_lamda_for_bo_of_nn
 from utils.exact_gp_computations import calculate_EI_GP
 from utils.utils import DEVICE, load_json, save_json
 from utils.plot_utils import (
+    plot_acquisition_function_net_training_history_ax,
     plot_nn_vs_gp_acquisition_function_1d_grid,
     plot_acquisition_function_net_training_history)
 from utils.nn_utils import count_trainable_parameters, count_parameters
@@ -42,8 +45,8 @@ from gp_acquisition_dataset import (
 
 
 def run_train(cmd_args: Optional[Sequence[str]]=None):
-    (args, af_dataset_configs, model,
-     model_and_info_folder_name, models_path
+    (args, af_dataset_configs,
+     model, model_and_info_folder_name, models_path
     ) = get_nn_af_args_configs_model_paths_from_cmd_args(cmd_args)
 
     if args.load_saved_model:
@@ -138,45 +141,46 @@ def run_train(cmd_args: Optional[Sequence[str]]=None):
 
         if not TIME:
             print("Done training")
+    else:
+        training_history_data = None
 
     ######################## Evaluate and plot model performance #######################
-    if model_path is not None:
-        training_history_path = os.path.join(model_path, 'training_history_data.json')
+    if not args.train and model_path is not None:
+        training_history_path = os.path.join(
+            model_path, 'training_history_data.json')
+        training_history_data = load_json(training_history_path)
+        final_test_stats_original = training_history_data['final_test_stats']
+        print_stats(final_test_stats_original,
+                    "Final test stats on the original test dataset",
+                    args.method, args.gi_loss_normalization)
 
-        if not args.train:
-            training_history_data = load_json(training_history_path)
-            final_test_stats_original = training_history_data['final_test_stats']
-            print_stats(final_test_stats_original,
-                        "Final test stats on the original test dataset",
-                        args.method, args.gi_loss_normalization)
-
-            test_dataloader = test_aq_dataset.get_dataloader(
-                        batch_size=args.batch_size, drop_last=False)
-            final_test_stats = train_or_test_loop(
-                        test_dataloader, model, train=False,
-                        nn_device=DEVICE, method=args.method,
-                        verbose=False, desc=f"Compute final test stats",
-                        get_true_gp_stats=GET_TEST_TRUE_GP_STATS,
-                        get_map_gp_stats=False,
-                        get_basic_stats=True,
-                        alpha_increment=args.alpha_increment,
-                        gi_loss_normalization=args.gi_loss_normalization)
-            print_stats(final_test_stats,
-                        "Final test stats on this test dataset (should be same as above)",
-                        args.method, args.gi_loss_normalization)
-
+        test_dataloader = test_aq_dataset.get_dataloader(
+                    batch_size=args.batch_size, drop_last=False)
+        final_test_stats = train_or_test_loop(
+                    test_dataloader, model, train=False,
+                    nn_device=DEVICE, method=args.method,
+                    verbose=False, desc=f"Compute final test stats",
+                    get_true_gp_stats=GET_TEST_TRUE_GP_STATS,
+                    get_map_gp_stats=False,
+                    get_basic_stats=True,
+                    alpha_increment=args.alpha_increment,
+                    gi_loss_normalization=args.gi_loss_normalization)
+        print_stats(final_test_stats,
+                    "Final test stats on this test dataset (should be same as above)",
+                    args.method, args.gi_loss_normalization)
+    
+    if training_history_data is not None:
         history_fig = plot_acquisition_function_net_training_history(
             training_history_data, plot_log_regret=True)
-        history_plot_path = os.path.join(model_path, 'training_history.pdf')
-        # if not os.path.exists(history_plot_path):
-        history_fig.savefig(history_plot_path, bbox_inches='tight')
+        if model_path is not None:
+            history_plot_path = os.path.join(model_path, 'training_history.pdf')
+            history_fig.savefig(history_plot_path, bbox_inches='tight')
 
     ######################## Plot performance of model #############################
     ######################## (old useless code)
     # TODO: Fix the below code to work with Gittins index
-    plot_stuff = False
+    plot_stuff = True
     if plot_stuff:
-        policy_gradient_flag = args.method == 'policy_gradient'
         n_candidates = 2_000
         plot_map = False
 
@@ -184,12 +188,13 @@ def run_train(cmd_args: Optional[Sequence[str]]=None):
         if args.dimension == 1:
             nrows, ncols = 5, 5
             fig, axs = plot_nn_vs_gp_acquisition_function_1d_grid(
-                test_aq_dataset, model, policy_gradient_flag, name,
-                n_candidates, nrows, ncols,
+                aq_dataset=test_aq_dataset, nn_model=model, plot_name=name,
+                n_candidates=n_candidates, nrows=nrows, ncols=ncols,
+                method=args.method,
+                min_x=0., max_x=1.,
+                lamda=get_lamda_for_bo_of_nn(args.lamda, args.lamda_min, args.lamda_max),
                 plot_map=plot_map, nn_device=DEVICE,
-                # If policy_gradient_flag=False, set this to False if it's hard to see some
-                # of the plots
-                group_standardization=None 
+                group_standardization=None # May manually set this to True or False
             )
             if model_path is not None:
                 fname = f'acqusion_function_net_vs_gp_acquisition_function_1d_grid_{nrows}x{ncols}.pdf'
@@ -214,7 +219,7 @@ def run_train(cmd_args: Optional[Sequence[str]]=None):
 
             ei_true = calculate_EI_GP(gp_model, x_hist, y_hist, x_cand, log=False)
             if plot_map:
-                ei_map = calculate_EI_GP(gp_model, x_hist, y_hist, x_cand, fit_params=True, log=False)
+                ei_map = calculate_EI_GP(gp_model, x_hist, y_hist, x_cand, mle=False, log=False)
 
             # print(f"{name} True:")
             # print(ei_true)
@@ -235,8 +240,7 @@ def run_train(cmd_args: Optional[Sequence[str]]=None):
                 plt.ylabel(f'{name} MAP')
                 plt.title(f'{name} True vs {name} MAP')
 
-
-        plt.show()
+    plt.show()
 
 
 if __name__ == "__main__":

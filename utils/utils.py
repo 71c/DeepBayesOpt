@@ -28,6 +28,8 @@ from gpytorch.likelihoods import GaussianLikelihood
 from gpytorch.constraints.constraints import GreaterThan
 from gpytorch.kernels import MaternKernel, ScaleKernel, RBFKernel
 from gpytorch.priors.torch_priors import GammaPrior
+from gpytorch.mlls import ExactMarginalLogLikelihood
+from botorch.fit import fit_gpytorch_mll
 from botorch.exceptions.errors import (
     BotorchTensorDimensionError,
     InputDataError,
@@ -2017,6 +2019,23 @@ def get_param_value(module, name):
         return getattr(module, name)
     else:
         return module.__getattr__(name)
+
+
+def fit_model(model, x_hist, y_hist, fit_params, mle):
+    # reset the data in the model to be this data
+    model.set_train_data_with_transforms(x_hist, y_hist, strict=False, train=fit_params)
+
+    if fit_params:
+        if mle: # remove priors for MLE
+            named_priors_tuple_list = remove_priors(model)
+
+        if hasattr(model, "initial_params"):
+            model.initialize(**model.initial_params)
+        mll = ExactMarginalLogLikelihood(model.likelihood, model)
+        fit_gpytorch_mll(mll)
+
+        if mle: # add back the priors
+            add_priors(named_priors_tuple_list)
 
 
 # Print out all parameters of a random model:

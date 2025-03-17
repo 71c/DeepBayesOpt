@@ -7,11 +7,12 @@ from matplotlib import pyplot as plt
 import torch
 from torch import Tensor
 import torch.distributions as dist
+from botorch.models.gpytorch import GPyTorchModel
 from utils.constants import BO_PLOTS_FOLDER
 from datasets.acquisition_dataset import AcquisitionDataset
 from nn_af.acquisition_function_net import AcquisitionFunctionNet, AcquisitionFunctionNetAcquisitionFunction
 from utils.constants import PLOTS_DIR
-from utils.exact_gp_computations import calculate_EI_GP
+from utils.exact_gp_computations import calculate_EI_GP, calculate_gi_gp
 from utils.utils import dict_to_str, iterate_nested, save_json
 
 
@@ -190,10 +191,12 @@ def standardize_arrs(arrs: List[Tensor], correction=1, group=False):
 
 
 def plot_nn_vs_gp_acquisition_function_1d_grid(
-        aq_dataset:AcquisitionDataset, nn_model:AcquisitionFunctionNet,
-        policy_gradient:bool, plot_name:str,
-        n_candidates:int, nrows:int, ncols:int, min_x:float=0., max_x:float=1.,
-        plot_map:bool=True, nn_device:Optional[torch.device]=None,
+        aq_dataset:AcquisitionDataset, nn_model:AcquisitionFunctionNet, plot_name:str,
+        n_candidates:int, nrows:int, ncols:int,
+        method:str,
+        min_x:float=0., max_x:float=1.,
+        lamda:Optional[float]=None,  # for Gittins
+        plot_map:bool=False, nn_device:Optional[torch.device]=None,
         group_standardization:Optional[bool]=None):
     """Plot the acquisition function of a neural network and a GP on a grid of
       1D functions.
@@ -217,8 +220,11 @@ def plot_nn_vs_gp_acquisition_function_1d_grid(
         which is applicable if predicting the improvement with MSE, but not
         if using policy gradient.
     """
+    if lamda is None:
+        lamda = 0.01
+
     if group_standardization is None:
-        group_standardization = not policy_gradient
+        group_standardization = method == 'mse_ei'
 
     fig, axs = plt.subplots(nrows=nrows, ncols=ncols, figsize=(2.5*ncols, 2.5*nrows),
                             sharex=True, sharey=False)
@@ -227,60 +233,19 @@ def plot_nn_vs_gp_acquisition_function_1d_grid(
     for row in range(nrows):
         for col in range(ncols):
             item = next(it)
-
-            gp_model = item.model
-
+            # Get the data to plot
             x_hist, y_hist, x_cand, vals_cand = item.tuple_no_model
             x_cand_original = x_cand
             x_cand = torch.linspace(0, 1, n_candidates).unsqueeze(1)
-            item.x_cand = x_cand
-
-            sorted_indices = np.argsort(x_cand.detach().numpy().flatten())
-            sorted_x_cand = x_cand.detach().numpy().flatten()[sorted_indices]
-
-            arrs_and_labels_to_plot = []
-
-            # Compute GP EI acquisition function
-            plot_gp = True
-            try:
-                gp_model.set_train_data_with_transforms(x_hist, y_hist, strict=False, train=False)
-                posterior_true = gp_model.posterior(x_cand, observation_noise=False)
-
-                ei_true = calculate_EI_GP(gp_model, x_hist, y_hist, x_cand, log=False)
-                arrs_and_labels_to_plot.append((ei_true, "True GP"))
-
-                if plot_map:
-                    ei_map = calculate_EI_GP(gp_model, x_hist, y_hist, x_cand, fit_params=True, log=False)
-                    arrs_and_labels_to_plot.append((ei_map, "MAP GP"))
-            except NotImplementedError: # NotImplementedError: No mean transform provided.
-                plot_gp = False
-            
-            # Compute NN acquisition function
-            x_hist_nn, y_hist_nn, x_cand_nn, vals_cand_nn = item.to(nn_device).tuple_no_model
-            aq_fn = AcquisitionFunctionNetAcquisitionFunction.from_net(
-                nn_model, x_hist_nn, y_hist_nn, exponentiate=not policy_gradient, softmax=False)
-            ei_nn = aq_fn(x_cand_nn.unsqueeze(1)).cpu()
-            arrs_and_labels_to_plot.append((ei_nn, "NN"))
-
-            ax = axs[row, col]
-
-            arrs, labels = zip(*arrs_and_labels_to_plot)
-            arrs = standardize_arrs(arrs, group=group_standardization)
-            for arr, label in zip(arrs, labels):
-                sorted_arr = arr.detach().numpy().flatten()[sorted_indices]
-                ax.plot(sorted_x_cand, sorted_arr, label=label)
-            
-            # Plot training points as black stars
-            ax.plot(x_hist, y_hist, 'b*', label=f'Observed Data')
-
-            ax.plot(x_cand_original, vals_cand, 'ro', markersize=1, label=f'Candidate points')
-            
-            if plot_gp:
-                plot_gp_posterior(
-                    ax, posterior_true, x_cand, x_hist, y_hist, 'b', name='True')
-
-            # ax.set_title(f"History: {x_hist.size(0)}")
-            ax.set_xlim(min_x, max_x)
+            # Get the GP model
+            gp_model = item.model if item.has_model else None
+            plot_nn_vs_gp_acquisition_function_1d(
+                ax=axs[row, col], x_hist=x_hist, y_hist=y_hist, x_cand=x_cand,
+                x_cand_original=x_cand_original, vals_cand=vals_cand,
+                lamda=lamda, gp_model=gp_model, nn_model=nn_model, method=method,
+                min_x=min_x, max_x=max_x, plot_map=plot_map,
+                nn_device=nn_device, group_standardization=group_standardization
+            )
     
     # Add a single legend for all plots
     handles, labels = axs[0, 0].get_legend_handles_labels()
@@ -295,6 +260,108 @@ def plot_nn_vs_gp_acquisition_function_1d_grid(
     fig.subplots_adjust(wspace=0.2, hspace=0.2)
     
     return fig, axs
+
+
+def plot_nn_vs_gp_acquisition_function_1d(
+        ax, x_hist, y_hist, x_cand,
+        gp_model: GPyTorchModel, nn_model:AcquisitionFunctionNet,
+        method:str, min_x:float=0., max_x:float=1.,
+        x_cand_original=None, vals_cand=None,
+        lamda:float=0.01,  # for Gittins
+        plot_map:bool=False, nn_device:Optional[torch.device]=None,
+        group_standardization:Optional[bool]=None):
+    r"""Plot the acquisition function of a neural network and a GP.
+    
+    Args:
+        ax: The axis to plot on.
+        x_hist: The history of x values. shape: `n_hist x d`
+        y_hist: The history of y values. shape: `n_hist x n_hist_out`
+        x_cand: The candidate x values. shape: `n_cand_plot x d`
+        gp_model: The GP model to use.
+        nn_model: The neural network model to use.
+        method: The method to use for the acquisition function.
+        min_x: The minimum x value to plot.
+        max_x: The maximum x value to plot.
+        x_cand_original: The original candidate x values. shape: `n_cand_dataset x d`
+        vals_cand: The original candidate y values. shape: `n_cand_dataset x 1` (usually)
+        plot_map: Whether to plot the MAP GP acquisition function.
+        nn_device: The device to use for the neural network.
+        group_standardization: Whether to standardize the acquisition functions together.
+    """
+    arrs_and_labels_to_plot = []
+
+    # Compute GP EI acquisition function
+    if gp_model is not None:
+        try:
+            gp_model.set_train_data_with_transforms(
+                x_hist, y_hist, strict=False, train=False)
+            posterior_true = gp_model.posterior(x_cand, observation_noise=False)
+
+            if method == 'mse_ei' or method == 'policy_gradient':
+                kwargs = dict(log=True)
+                fnc = calculate_EI_GP
+            elif method == 'gittins':
+                kwargs = dict(lambda_cand=torch.tensor(lamda))
+                fnc = calculate_gi_gp
+            else:
+                raise NotImplementedError(f"Unknown method {method}")
+
+            af_true = fnc(gp_model, x_hist, y_hist, x_cand, **kwargs)
+            arrs_and_labels_to_plot.append((af_true, "True GP"))
+
+            if plot_map:
+                af_map = fnc(gp_model, x_hist, y_hist, x_cand, **kwargs,
+                                            fit_params=True, mle=False)
+                arrs_and_labels_to_plot.append((af_map, "MAP GP"))
+            
+            plot_gp = True
+        except NotImplementedError:
+            # NotImplementedError can happen when:
+            # -- Outcome transform computations are not implemented.
+            # -- The GP AF value for the method is not implemented.
+            plot_gp = False
+    else:
+        plot_gp = False
+    
+    # Compute NN acquisition function
+    x_hist_nn = x_hist.to(nn_device)
+    y_hist_nn = y_hist.to(nn_device)
+    x_cand_nn = x_cand.to(nn_device)
+    if method == 'mse_ei' or method == 'policy_gradient':
+        kwargs = dict(exponentiate=True, softmax=False)
+    else:
+        kwargs = {}
+    aq_fn = AcquisitionFunctionNetAcquisitionFunction.from_net(
+        nn_model, x_hist_nn, y_hist_nn, **kwargs)
+    ei_nn = aq_fn(x_cand_nn.unsqueeze(1)).cpu()
+    arrs_and_labels_to_plot.append((ei_nn, "NN"))
+    
+    # Sort the x_cand and arrs
+    sorted_indices = np.argsort(x_cand.detach().numpy().flatten())
+    sorted_x_cand = x_cand.detach().numpy().flatten()[sorted_indices]
+
+    arrs, labels = zip(*arrs_and_labels_to_plot)
+    arrs = standardize_arrs(arrs, group=group_standardization)
+    for arr, label in zip(arrs, labels):
+        sorted_arr = arr.detach().numpy().flatten()[sorted_indices]
+        ax.plot(sorted_x_cand, sorted_arr, label=label)
+    
+    # Plot training points as black stars
+    ax.plot(x_hist, y_hist, 'b*', label=f'History points')
+
+    if x_cand_original is not None and vals_cand is not None:
+        ax.plot(x_cand_original, vals_cand[:, 0],
+                'ro', markersize=1, label=f'Candidate points')
+    elif not (x_cand_original is None and vals_cand is None):
+        raise ValueError("Either both or neither of x_cand_original and vals_cand "
+                         "should be provided")
+    
+    if plot_gp:
+        plot_gp_posterior(
+            ax, posterior_true, x_cand, x_hist, y_hist, 'b', name='True')
+
+    # ax.set_title(f"History: {x_hist.size(0)}")
+    ax.set_xlim(min_x, max_x)
 
 
 BLUE = '#1f77b4'

@@ -13,7 +13,7 @@ from botorch.posteriors import GPyTorchPosterior, Posterior, TransformedPosterio
 from botorch.exceptions import UnsupportedError
 from botorch.acquisition.analytic import ExpectedImprovement, LogExpectedImprovement, _log_ei_helper
 from typing import Optional
-from utils.utils import pad_tensor, remove_priors, add_priors
+from utils.utils import fit_model, pad_tensor, remove_priors, add_priors
 from utils.nn_utils import check_xy_dims
 
 torch.set_default_dtype(torch.double)
@@ -24,8 +24,8 @@ DEBUG = False
 
 
 def calculate_EI_GP(model: SingleTaskGP, X_hist: Tensor, y_hist: Tensor,
-                    X: Tensor, y: Optional[Tensor]=None, fit_params=False,
-                    use_priors=True, log=False):
+                    X: Tensor, y: Optional[Tensor]=None, log=False,
+                    fit_params=False, mle=False):
     """Calculate the exact Expected Improvements at `n_eval` points,
     given `N` histories each of length `n_train`.
 
@@ -38,10 +38,10 @@ def calculate_EI_GP(model: SingleTaskGP, X_hist: Tensor, y_hist: Tensor,
         y: True values of y corresponding to the X, of shape `(N, n_eval)`
             or `(N, n_eval, 1)`
         fit_params: whether to fit parameters before calculating EI
-        use_priors: whether to use the model's prior when fitting parameters.
-            If False, the model's prior will be removed before fitting and then
+        mle: whether remove the model's prior when fitting parameters.
+            If True, the model's prior will be removed before fitting and then
             re-added after fitting, so that the MLE estimate is done.
-            If True, the model's prior will be used as the prior for fitting,
+            If False, the model's prior will be used as the prior for fitting,
             making the estimate MAP.
 
     Returns:
@@ -113,7 +113,7 @@ def calculate_EI_GP(model: SingleTaskGP, X_hist: Tensor, y_hist: Tensor,
         model.set_train_data_with_transforms(X_hist, y_hist, strict=False, train=fit_params)
 
     if fit_params:
-        if not use_priors: # remove priors for MLE
+        if mle: # remove priors for MLE
             named_priors_tuple_list = remove_priors(model)
 
         if hasattr(model, "initial_params"):
@@ -122,7 +122,7 @@ def calculate_EI_GP(model: SingleTaskGP, X_hist: Tensor, y_hist: Tensor,
         mll = ExactMarginalLogLikelihood(model.likelihood, model)
         fit_gpytorch_mll(mll)
 
-        if not use_priors: # add back the priors
+        if mle: # add back the priors
             add_priors(named_priors_tuple_list)
     
     # try:
@@ -212,14 +212,20 @@ def calculate_EI_GP_padded_batch(x_hist, y_hist, x_cand, hist_mask, cand_mask,
 
         # shape (n_cand_i, 1)
         ei_value = calculate_EI_GP(models[i], x_hist_i, y_hist_i, x_cand_i,
-                                   fit_params=fit_params, use_priors=not mle)
+                                   fit_params=fit_params, mle=mle)
         # shape (n_cand, 1)
         ei_value_padded = pad_tensor(ei_value, n_cand, 0, add_mask=False)
         ei_values.append(ei_value_padded)
     return torch.stack(ei_values) # shape (batch_size, n_cand)
 
 
-def calculate_gi_gp(model: GPyTorchModel,
+def _safe_log(x):
+    if x is None:
+        return None
+    return torch.where(x > 0, torch.log(x), torch.zeros_like(x))
+
+
+def calculate_gi_gp_already_fit(model: GPyTorchModel,
                     x_cand:Tensor,
                     lambda_cand:Tensor,
                     cost_cand:Optional[Tensor]=None):
@@ -286,27 +292,10 @@ def calculate_gi_gp(model: GPyTorchModel,
     return gi_normal(lc, mean_y, sigma_y)
 
 
-def safe_log(x):
-    if x is None:
-        return None
-    return torch.where(x > 0, torch.log(x), torch.zeros_like(x))
-
-
-def fit_model(model, x_hist, y_hist, fit_params, mle):
-    # reset the data in the model to be this data
-    model.set_train_data_with_transforms(x_hist, y_hist, strict=False, train=fit_params)
-
-    if fit_params:
-        if mle: # remove priors for MLE
-            named_priors_tuple_list = remove_priors(model)
-
-        if hasattr(model, "initial_params"):
-            model.initialize(**model.initial_params)
-        mll = ExactMarginalLogLikelihood(model.likelihood, model)
-        fit_gpytorch_mll(mll)
-
-        if mle: # add back the priors
-            add_priors(named_priors_tuple_list)
+def calculate_gi_gp(model, x_hist, y_hist, x_cand, lambda_cand,
+             cost_cand=None, fit_params=False, mle=False):
+    fit_model(model, x_hist, y_hist, fit_params, mle)
+    return calculate_gi_gp_already_fit(model, x_cand, lambda_cand, cost_cand)
 
 
 def calculate_gi_gp_padded_batch(
@@ -384,7 +373,7 @@ def calculate_gi_gp_padded_batch(
             raise ValueError("cost_hist must be specified if 2-output model")
         cost_hist = check_xy_dims(x_hist, cost_hist, "x_hist", "cost_hist", expected_y_dim=1)
         if not is_log:
-            cost_hist = safe_log(cost_hist)
+            cost_hist = _safe_log(cost_hist)
         y_hist = torch.cat((y_hist, cost_hist), dim=-1)
     elif cost_hist is not None:
         raise ValueError("cost_hist should not be specified if 1-output model")
@@ -409,9 +398,11 @@ def calculate_gi_gp_padded_batch(
             cost_cand_i = None if cost_cand is None else cost_cand_i[:n_cand_i]
 
         model_i = models[i]
-        fit_model(model_i, x_hist_i, y_hist_i, fit_params, mle)
-
-        gi_value = calculate_gi_gp(model_i, x_cand_i, lambda_cand_i, cost_cand_i)
+        
+        gi_value = calculate_gi_gp(
+            model_i, x_hist_i, y_hist_i, x_cand_i, lambda_cand_i, cost_cand_i,
+            fit_params=fit_params, mle=mle)
+        
         gi_value_padded = pad_tensor(gi_value, n_cand, 0, add_mask=False)
         gi_values.append(gi_value_padded)
 
@@ -446,7 +437,7 @@ def _ei_helper_numpy(u):
     return _phi_numpy(u) + u * _Phi_numpy(u)
 
 def _ei_helper_inverse(v: Tensor) -> Tensor:
-    v = v.cpu()
+    v = v.detach().cpu()
     if not torch.is_tensor(v):
         raise ValueError("v should be a torch tensor")
     log_v = torch.log(v).numpy()

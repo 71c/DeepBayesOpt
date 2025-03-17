@@ -4,9 +4,13 @@ import os
 import pstats
 from typing import Optional
 
+import torch
+
+from bo_experiments_gp import get_lamda_for_bo_of_nn
+from gp_acquisition_dataset import create_train_test_gp_acq_datasets_helper
 from utils.experiments.experiment_config_utils import get_config_options_list
-from utils.plot_utils import add_plot_args, create_plot_directory, plot_acquisition_function_net_training_history_ax, plot_dict_to_str, save_figures_from_nested_structure
-from utils.utils import dict_to_str, group_by, group_by_nested_attrs, load_json, save_json
+from utils.plot_utils import add_plot_args, create_plot_directory, plot_acquisition_function_net_training_history_ax, plot_dict_to_str, plot_nn_vs_gp_acquisition_function_1d, save_figures_from_nested_structure
+from utils.utils import DEVICE, dict_to_str, group_by, group_by_nested_attrs, load_json, save_json
 
 from nn_af.acquisition_function_net_save_utils import load_nn_acqf
 from train_acqf import add_train_acqf_args, cmd_opts_nn_to_model_and_info_name, get_cmd_options_train_acqf
@@ -48,6 +52,10 @@ ATTR_NAME_TO_TITLE = {
 }
 
 
+N_HISTORY = 4
+N_CANDIDATES_PLOT = 2_000
+
+
 def get_plot_ax_train_acqf_func(get_result_func):
     def train_acqf_plot_ax(
             plot_config,
@@ -61,7 +69,7 @@ def get_plot_ax_train_acqf_func(get_result_func):
 
         results = info['results']
         training_history_data = results['training_history_data']
-        model = results['model']
+        nn_model = results['model']
 
         if attr_name == "0_training_history_train_test":
             plot_acquisition_function_net_training_history_ax(
@@ -72,7 +80,31 @@ def get_plot_ax_train_acqf_func(get_result_func):
                 ax, training_history_data, plot_maxei=False, plot_name=plot_name,
                 plot_log_regret=True)
         elif attr_name == "2_af_plot":
-            pass # TODO
+            aq_dataset = results['dataset']
+            cfg = info['config']
+
+            it = iter(aq_dataset)
+            item = next(it)
+            try:
+                while item.x_hist.shape[0] != N_HISTORY:
+                    item = next(it)
+            except StopIteration:
+                raise ValueError("No item with the right number of history points.")
+            
+            # Get the data to plot
+            x_hist, y_hist, x_cand, vals_cand = item.tuple_no_model
+            x_cand_original = x_cand
+            x_cand = torch.linspace(0, 1, N_CANDIDATES_PLOT).unsqueeze(1)
+            # Get the GP model
+            gp_model = item.model if item.has_model else None
+            plot_nn_vs_gp_acquisition_function_1d(
+                ax=ax, x_hist=x_hist, y_hist=y_hist, x_cand=x_cand,
+                x_cand_original=x_cand_original, vals_cand=vals_cand,
+                lamda=get_lamda_for_bo_of_nn(cfg['lamda'], cfg['lamda_min'], cfg['lamda_max']),
+                gp_model=gp_model, nn_model=nn_model, method=cfg['method'],
+                min_x=0.0, max_x=1.0, plot_map=False,
+                nn_device=DEVICE, group_standardization=None
+            )
         else:
             raise ValueError(f"Unknown attribute name: {attr_name}")
     
@@ -100,8 +132,10 @@ def main():
         (cmd_dataset, cmd_opts_dataset,
          cmd_nn_train, cmd_opts_nn) = get_cmd_options_train_acqf(cfg)
         
-        model_and_info_name = cmd_opts_nn_to_model_and_info_name(cmd_opts_nn)
+        (args_nn, af_dataset_configs, pre_model, model_and_info_name, models_path
+        ) = cmd_opts_nn_to_model_and_info_name(cmd_opts_nn)
 
+        # Get the model (with the weights)
         try:
             model, model_path = load_nn_acqf(
                 model_and_info_name,
@@ -110,13 +144,18 @@ def main():
             # If the model is not found, skip this iteration
             continue
         
+        # Get the dataset
+        (train_aq_dataset, test_aq_dataset, small_test_aq_dataset
+         ) = create_train_test_gp_acq_datasets_helper(args_nn, af_dataset_configs)
+        
         training_history_data = load_json(
             os.path.join(model_path, 'training_history_data.json'))
 
         existing_cfgs.append(cfg)
         results_list.append({
             'training_history_data': training_history_data,
-            'model': model
+            'model': model,
+            'dataset': test_aq_dataset
         })
     
     # Remove all the prefixes
@@ -234,7 +273,8 @@ def main():
             attr_name = cfg['attr_name']
             return {
                 'attr_name': attr_name,
-                'results': results
+                'results': results,
+                'config': cfg
             }
 
         train_acqf_plot_ax = get_plot_ax_train_acqf_func(get_result)

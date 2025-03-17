@@ -72,17 +72,10 @@ def _gp_bo_jobs_spec_and_cfgs(
         if nn_options['training.method'] == 'gittins':
             # then there will be lambda value(s) specified
             lamda = nn_options.get('training.lamda_config.lamda')
-            if lamda is None:
-                # then it is trained with a range of lamda values
-                lamda_min = nn_options['training.lamda_config.lamda_min']
-                lamda_max = nn_options['training.lamda_config.lamda_max']
-                log_min, log_max = math.log10(lamda_min), math.log10(lamda_max)
-                # We will test with the average
-                log_lamda = 0.5 * (log_min + log_max)
-                lamda = 10**log_lamda
-            else:
-                # then it is trained with a fixed value of lamda
-                pass
+            lamda_min = nn_options.get('training.lamda_config.lamda_min')
+            lamda_max = nn_options.get('training.lamda_config.lamda_max')
+            
+            lamda = get_lamda_for_bo_of_nn(lamda, lamda_min, lamda_max)
             gp_options_dict[gp_options_str]['lamda_vals'].add(lamda)
         else:
             lamda = None
@@ -90,7 +83,8 @@ def _gp_bo_jobs_spec_and_cfgs(
         (cmd_dataset, cmd_opts_dataset,
          cmd_nn_train, cmd_opts_nn) = get_cmd_options_train_acqf(nn_options)
         
-        model_and_info_name = cmd_opts_nn_to_model_and_info_name(cmd_opts_nn)
+        (args_nn, af_dataset_configs, pre_model, model_and_info_name, models_path
+        ) = cmd_opts_nn_to_model_and_info_name(cmd_opts_nn)
 
         all_new_cmds_this_nn = []
         for bo_loop_args in bo_loop_args_list:
@@ -169,6 +163,20 @@ def _gp_bo_jobs_spec_and_cfgs(
             'gpu': False
         }
     return jobs_spec, new_bo_configs, existing_bo_configs_and_results
+
+
+def get_lamda_for_bo_of_nn(lamda, lamda_min, lamda_max):
+    if lamda is not None:
+        # Then it is trained with a fixed value of lamda
+        return lamda
+    if lamda_min is None or lamda_max is None:
+        assert lamda_min is None and lamda_max is None
+        return None
+    # Trained with a range of lamda values
+    log_min, log_max = math.log10(lamda_min), math.log10(lamda_max)
+    # We will test with the average
+    log_lamda = 0.5 * (log_min + log_max)
+    return 10**log_lamda
 
 
 def get_bo_experiments_parser(train=True):
