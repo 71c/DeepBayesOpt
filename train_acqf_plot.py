@@ -52,7 +52,7 @@ ATTR_NAME_TO_TITLE = {
 }
 
 
-N_HISTORY = 4
+N_HISTORY = 10
 N_CANDIDATES_PLOT = 2_000
 
 
@@ -81,7 +81,6 @@ def get_plot_ax_train_acqf_func(get_result_func):
                 plot_log_regret=True)
         elif attr_name == "2_af_plot":
             aq_dataset = results['dataset']
-            cfg = info['config']
 
             it = iter(aq_dataset)
             item = next(it)
@@ -97,14 +96,20 @@ def get_plot_ax_train_acqf_func(get_result_func):
             x_cand = torch.linspace(0, 1, N_CANDIDATES_PLOT).unsqueeze(1)
             # Get the GP model
             gp_model = item.model if item.has_model else None
+
+            cfg = info['config']
+
+            lamda = get_lamda_for_bo_of_nn(
+                    cfg.get('lamda'), cfg.get('lamda_min'), cfg.get('lamda_max'))
             plot_nn_vs_gp_acquisition_function_1d(
                 ax=ax, x_hist=x_hist, y_hist=y_hist, x_cand=x_cand,
-                x_cand_original=x_cand_original, vals_cand=vals_cand,
-                lamda=get_lamda_for_bo_of_nn(cfg['lamda'], cfg['lamda_min'], cfg['lamda_max']),
+                # x_cand_original=x_cand_original, vals_cand=vals_cand,
+                lamda=lamda,
                 gp_model=gp_model, nn_model=nn_model, method=cfg['method'],
                 min_x=0.0, max_x=1.0, plot_map=False,
                 nn_device=DEVICE, group_standardization=None
             )
+            ax.set_title("Acquisition function plot")
         else:
             raise ValueError(f"Unknown attribute name: {attr_name}")
     
@@ -176,7 +181,7 @@ def main():
     assert all(len(v) == 1 for v in gr.values())
 
     # Folder name
-    save_dir = create_plot_directory(args.plots_name, args.plots_group_name)
+    save_dir = create_plot_directory(args.plots_name, args.plots_group_name, is_bo=False)
 
     if CPROFILE:
         pr = cProfile.Profile()

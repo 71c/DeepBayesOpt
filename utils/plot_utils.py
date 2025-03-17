@@ -154,7 +154,8 @@ def plot_gp_posterior(ax, posterior, test_x, train_x, train_y, color, name=None)
     # Plot posterior means as blue line
     ax.plot(test_x, mean, color, label=f'Mean{extension}')
     # Shade between the lower and upper confidence bounds
-    ax.fill_between(test_x, lower, upper, color=color, alpha=0.5, label=f'Confidence{extension}')
+    ax.fill_between(test_x, lower, upper,
+                    color=color, alpha=0.3, label=f'Confidence{extension}')
 
 # decided actually don't want to use this
 normal = dist.Normal(0, 1)
@@ -214,17 +215,16 @@ def plot_nn_vs_gp_acquisition_function_1d_grid(
         plot_map: Whether to plot the MAP GP acquisition function.
         nn_device: The device to use for the neural network.
         group_standardization: Whether to standardize the acquisition functions together.
-        Default is to standardize them together if policy_gradient is False,
-        and not standardize them together if policy_gradient is True.
+        Default is to not standardize them together (group_standardization=False)
+        if method='policy_gradient' 
+        standardize them together (preserve their relaive values)
+        (group_standardization=True) otherwise.
         Setting this to True makes it so they can be compared on the same scale,
         which is applicable if predicting the improvement with MSE, but not
         if using policy gradient.
     """
     if lamda is None:
         lamda = 0.01
-
-    if group_standardization is None:
-        group_standardization = method == 'mse_ei'
 
     fig, axs = plt.subplots(nrows=nrows, ncols=ncols, figsize=(2.5*ncols, 2.5*nrows),
                             sharex=True, sharey=False)
@@ -244,7 +244,8 @@ def plot_nn_vs_gp_acquisition_function_1d_grid(
                 x_cand_original=x_cand_original, vals_cand=vals_cand,
                 lamda=lamda, gp_model=gp_model, nn_model=nn_model, method=method,
                 min_x=min_x, max_x=max_x, plot_map=plot_map,
-                nn_device=nn_device, group_standardization=group_standardization
+                nn_device=nn_device, group_standardization=group_standardization,
+                give_legend=False
             )
     
     # Add a single legend for all plots
@@ -269,7 +270,9 @@ def plot_nn_vs_gp_acquisition_function_1d(
         x_cand_original=None, vals_cand=None,
         lamda:float=0.01,  # for Gittins
         plot_map:bool=False, nn_device:Optional[torch.device]=None,
-        group_standardization:Optional[bool]=None):
+        group_standardization:Optional[bool]=None,
+        give_legend=True,
+        plot_data=True):
     r"""Plot the acquisition function of a neural network and a GP.
     
     Args:
@@ -288,6 +291,9 @@ def plot_nn_vs_gp_acquisition_function_1d(
         nn_device: The device to use for the neural network.
         group_standardization: Whether to standardize the acquisition functions together.
     """
+    if group_standardization is None:
+        group_standardization = method != 'policy_gradient'
+
     arrs_and_labels_to_plot = []
 
     # Compute GP EI acquisition function
@@ -297,7 +303,9 @@ def plot_nn_vs_gp_acquisition_function_1d(
                 x_hist, y_hist, strict=False, train=False)
             posterior_true = gp_model.posterior(x_cand, observation_noise=False)
 
-            if method == 'mse_ei' or method == 'policy_gradient':
+            use_ei = method == 'mse_ei' or method == 'policy_gradient'
+            
+            if use_ei:
                 kwargs = dict(log=True)
                 fnc = calculate_EI_GP
             elif method == 'gittins':
@@ -307,12 +315,17 @@ def plot_nn_vs_gp_acquisition_function_1d(
                 raise NotImplementedError(f"Unknown method {method}")
 
             af_true = fnc(gp_model, x_hist, y_hist, x_cand, **kwargs)
-            arrs_and_labels_to_plot.append((af_true, "True GP"))
+
+            if use_ei:
+                af_true = torch.exp(af_true)
+            
+            arrs_and_labels_to_plot.append(
+                (af_true, {"label": "True GP", "color": "red"}))
 
             if plot_map:
                 af_map = fnc(gp_model, x_hist, y_hist, x_cand, **kwargs,
                                             fit_params=True, mle=False)
-                arrs_and_labels_to_plot.append((af_map, "MAP GP"))
+                arrs_and_labels_to_plot.append((af_map, {"label": "MAP GP"}))
             
             plot_gp = True
         except NotImplementedError:
@@ -334,20 +347,22 @@ def plot_nn_vs_gp_acquisition_function_1d(
     aq_fn = AcquisitionFunctionNetAcquisitionFunction.from_net(
         nn_model, x_hist_nn, y_hist_nn, **kwargs)
     ei_nn = aq_fn(x_cand_nn.unsqueeze(1)).cpu()
-    arrs_and_labels_to_plot.append((ei_nn, "NN"))
+    arrs_and_labels_to_plot.append((ei_nn, {"label": "NN", "color": ORANGE}))
     
     # Sort the x_cand and arrs
     sorted_indices = np.argsort(x_cand.detach().numpy().flatten())
     sorted_x_cand = x_cand.detach().numpy().flatten()[sorted_indices]
 
     arrs, labels = zip(*arrs_and_labels_to_plot)
-    arrs = standardize_arrs(arrs, group=group_standardization)
+    if plot_data and method != 'gittins':
+        arrs = standardize_arrs(arrs, group=group_standardization)
     for arr, label in zip(arrs, labels):
         sorted_arr = arr.detach().numpy().flatten()[sorted_indices]
-        ax.plot(sorted_x_cand, sorted_arr, label=label)
-    
-    # Plot training points as black stars
-    ax.plot(x_hist, y_hist, 'b*', label=f'History points')
+        ax.plot(sorted_x_cand, sorted_arr, **label)
+
+    if plot_data:
+        # Plot training points as black stars
+        ax.plot(x_hist, y_hist, 'b*', label=f'History points')
 
     if x_cand_original is not None and vals_cand is not None:
         ax.plot(x_cand_original, vals_cand[:, 0],
@@ -356,12 +371,15 @@ def plot_nn_vs_gp_acquisition_function_1d(
         raise ValueError("Either both or neither of x_cand_original and vals_cand "
                          "should be provided")
     
-    if plot_gp:
+    if plot_data and plot_gp:
         plot_gp_posterior(
             ax, posterior_true, x_cand, x_hist, y_hist, 'b', name='True')
 
     # ax.set_title(f"History: {x_hist.size(0)}")
     ax.set_xlim(min_x, max_x)
+
+    if give_legend:
+        ax.legend()
 
 
 BLUE = '#1f77b4'
@@ -671,7 +689,10 @@ def _get_figure_from_nested_structure(
     if this_level_name == "line":
         n_rows = 1
         n_cols = 1
+
+        # irrelevant:
         sharey = False
+        sharex = False
     elif this_level_name == "row":
         n_rows = len(plot_config)
         if next_level_names[0] == "col":
@@ -693,26 +714,32 @@ def _get_figure_from_nested_structure(
             if "attr_name" in this_attrs_group:
                 # The plot attribute is varied with each row.
                 sharey = "row" # each subplot row will share an x- or y-axis.
+                sharex = "row"
             elif "attr_name" in next_attrs_groups[0]:
                 # The plot attribute is varied with each column.
                 sharey = "col" # each subplot column will share an x- or y-axis.
+                sharex = "col"
             else:
                 sharey = True
+                sharex = True
         else:
             n_cols = 1
             sharey = "attr_name" not in this_attrs_group
+            sharex = "attr_name" not in this_attrs_group
     elif this_level_name == "col":
         n_rows = 1
         n_cols = len(plot_config)
         sharey = "attr_name" not in this_attrs_group
+        sharex = "attr_name" not in this_attrs_group
     else:
         raise ValueError
     
     fig, axes = plt.subplots(n_rows, n_cols,
                              figsize=(width * n_cols, height * n_rows),
-                             sharex=True, sharey=sharey,
+                             sharex=sharex,
+                             sharey=sharey,
                              squeeze=False
-                             )
+                            )
     
     if this_level_name == "line":
         plot_ax_func(plot_config=plot_config, ax=axes[0, 0], plot_name=figure_name,
@@ -881,7 +908,7 @@ def add_plot_args(parser):
     )
 
 
-def create_plot_directory(plots_name=None, plots_group_name=None):
+def create_plot_directory(plots_name=None, plots_group_name=None, is_bo=False):
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     parts = [timestamp]
     if plots_name is not None:
@@ -889,7 +916,7 @@ def create_plot_directory(plots_name=None, plots_group_name=None):
     folder_name = "_".join(parts)
     pp = [PLOTS_DIR] + (
         [plots_group_name] if plots_group_name else []
-    ) + [BO_PLOTS_FOLDER, folder_name]
+    ) + ([BO_PLOTS_FOLDER] if is_bo else []) + [folder_name]
     save_dir = os.path.join(*pp)
     print(f"Saving plots to {save_dir}")
     return save_dir

@@ -10,7 +10,7 @@ from botorch.models.gp_regression import SingleTaskGP
 # from botorch.models.transforms.outcome import Power
 
 from utils.utils import (
-    dict_to_hash, get_gp, get_kernel, get_standardized_exp_transform,
+    dict_to_hash, dict_to_str, get_gp, get_kernel, get_standardized_exp_transform,
     get_uniform_randint_generator, get_loguniform_randint_generator,
     get_lengths_from_proportions)
 from utils.constants import DATASETS_DIR
@@ -668,6 +668,8 @@ def get_gp_acquisition_dataset_configs(args: argparse.Namespace, device=None):
     }
 
 
+
+_DATA_CACHE = {}
 def create_train_test_gp_acq_datasets_helper(
         args: argparse.Namespace,
         gp_af_dataset_configs,
@@ -701,10 +703,19 @@ def create_train_test_gp_acq_datasets_helper(
         lambda_max=lamda_max
     )
 
-    (train_aq_dataset, test_aq_dataset,
-     small_test_aq_dataset) = create_train_and_test_gp_acquisition_datasets(
+    all_kwargs = dict(
         **dataset_kwargs, **other_kwargs,
-        check_cached=check_cached, load_dataset=load_dataset)
+        check_cached=check_cached, load_dataset=load_dataset
+    )
+
+    info_str = dict_to_str(all_kwargs, include_space=False)
+    if info_str in _DATA_CACHE:
+        return _DATA_CACHE[info_str]
+
+    ret = create_train_and_test_gp_acquisition_datasets(**all_kwargs)
+    _DATA_CACHE[info_str] = ret
+
+    train_aq_dataset, test_aq_dataset, small_test_aq_dataset = ret
 
     if not check_cached:
         if train_aq_dataset is not None:
@@ -746,7 +757,7 @@ def create_train_test_gp_acq_datasets_helper(
                 print(f"{name} type: {type(dataset)}")
                 print(f"{name} n_out_cand: {next(iter(dataset)).vals_cand.size(-1)}")
 
-    return train_aq_dataset, test_aq_dataset, small_test_aq_dataset
+    return ret
 
     # for item in train_aq_dataset.base_dataset:
     #     print(item.y_values.mean(), item.y_values.std(), item.y_values.shape)

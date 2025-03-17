@@ -160,7 +160,7 @@ def main():
         })
 
     # Folder name
-    save_dir = create_plot_directory(args.plots_name, args.plots_group_name)
+    save_dir = create_plot_directory(args.plots_name, args.plots_group_name, is_bo=True)
     
     if CPROFILE:
         pr = cProfile.Profile()
