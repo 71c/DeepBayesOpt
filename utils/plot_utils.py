@@ -416,7 +416,7 @@ def plot_acquisition_function_net_training_history_ax(
     
     if plot_log_regret:
         if gp_test_stat is None:
-            raise ValueError("Need to have GP test stat to plot log regret")
+            raise ValueError("Need to have GP test stat to plot regret")
         to_plot = {
             'lines': [
                 {
@@ -425,10 +425,11 @@ def plot_acquisition_function_net_training_history_ax(
                     'color': ORANGE
                 }
             ],
-            'title': f'Test {stat_name} vs Epochs (log regret)',
+            'title': f'Test {stat_name} vs Epochs (regret)',
             'xlabel': 'Epochs',
             'ylabel': f'{stat_name} regret',
-            'log_scale': True
+            'log_scale_x': True,
+            'log_scale_y': True
         }
     else:
         to_plot = {
@@ -447,7 +448,8 @@ def plot_acquisition_function_net_training_history_ax(
             'title': f'Train and Test {stat_name} vs Epochs',
             'xlabel': 'Epochs',
             'ylabel': stat_name,
-            'log_scale': False
+            'log_scale_x': True,
+            'log_scale_y': True
         }
 
         if gp_test_stat is not None:
@@ -486,7 +488,9 @@ def plot_acquisition_function_net_training_history_ax(
     ax.set_ylabel(to_plot['ylabel'])
     ax.legend()
     ax.grid(True)
-    if to_plot['log_scale']:
+    if to_plot['log_scale_x']:
+        ax.set_xscale('log')
+    if to_plot['log_scale_y']:
         ax.set_yscale('log')
 
 

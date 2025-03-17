@@ -16,7 +16,7 @@ python bo_experiments_gp_status.py --nn_base_config config/train_acqf.yml --nn_e
 NN_CFG="--nn_base_config config/train_acqf.yml --nn_experiment_config config/train_acqf_experiment_1dim_big.yml";
 BO_CFG="--bo_base_config config/bo_config.yml --bo_experiment_config config/bo_config_experiment_big.yml --n_gp_draws 16 --seed 8";
 SLURM_CFG="--sweep_name test_100iter_1dim_maxhistory20_big --mail adj53@cornell.edu --gpu_gres gpu:1";
-PLOTS_CFG="--plots_group_name 1dim_maxhistory20_big --use_rows --use_cols"
+PLOTS_CFG="--plots_group_name 1dim_maxhistory20_big --use_rows --use_cols";
 BO_PLOTS_CFG="--center_stat mean --interval_of_center --plots_name results_100iter"
 
 python bo_experiments_gp_status.py $NN_CFG $BO_CFG
