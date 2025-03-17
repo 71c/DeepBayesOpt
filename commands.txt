@@ -1,0 +1,11 @@
+     python bo_experiments_gp.py --nn_base_config config/train_acqf.yml --nn_experiment_config config/train_acqf_experiment_1dim.yml --bo_base_config config/bo_config.yml --bo_experiment_config config/bo_config_experiment_2.yml --n_gp_draws 16 --seed 8 --sweep_name test_100iter_1dim_maxhistory20 --mail adj53@cornell.edu --gpu_gres gpu:1
+python bo_experiments_gp_plot.py --nn_base_config config/train_acqf.yml --nn_experiment_config config/train_acqf_experiment_1dim.yml --bo_base_config config/bo_config.yml --bo_experiment_config config/bo_config_experiment_2.yml --n_gp_draws 16 --seed 8 --use_rows --use_cols --center_stat mean --interval_of_center --plots_group_name test_1dim_maxhistory20 --plots_name results_100iter
+       python train_acqf_plot.py --nn_base_config config/train_acqf.yml --nn_experiment_config config/train_acqf_experiment_1dim.yml --plots_group_name test_1dim_maxhistory20 --use_rows --use_cols
+
+
+
+
+     python bo_experiments_gp.py --nn_base_config config/train_acqf.yml --nn_experiment_config config/train_acqf_experiment_1dim_big.yml --bo_base_config config/bo_config.yml --bo_experiment_config config/bo_config_experiment_big.yml --n_gp_draws 16 --seed 8 --sweep_name test_100iter_1dim_maxhistory20_big --mail adj53@cornell.edu --gpu_gres gpu:1
+python bo_experiments_gp_plot.py --nn_base_config config/train_acqf.yml --nn_experiment_config config/train_acqf_experiment_1dim_big.yml --bo_base_config config/bo_config.yml --bo_experiment_config config/bo_config_experiment_big.yml --n_gp_draws 16 --seed 8 --center_stat mean --interval_of_center --plots_group_name 1dim_maxhistory20_big --plots_name results_100iter --use_rows --use_cols
+       python train_acqf_plot.py --nn_base_config config/train_acqf.yml --nn_experiment_config config/train_acqf_experiment_1dim_big.yml --plots_group_name 1dim_maxhistory20_big --use_rows --use_cols
+

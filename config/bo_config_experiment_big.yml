@@ -1,0 +1,22 @@
+parameters:
+  n_iter:
+    value: 100
+  n_initial_samples:
+    value: 1
+  num_restarts:
+    values: [40, 80, 160, 320]
+  raw_samples:
+    values: [3200, 32000]
+  gen_candidates:
+    values: all
+    recurse: true
+  maxiter:
+    value: 15000
+  ftol:
+    value: 2.2204460492503131e-09 # factr = 1e7; ftol = factr * numpy.finfo(float).eps
+  gtol:
+    value: 1.e-5
+  maxfun:
+    value: 15000
+  maxls:
+    value: 20
