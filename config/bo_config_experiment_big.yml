@@ -4,7 +4,7 @@ parameters:
   n_initial_samples:
     value: 1
   num_restarts:
-    values: [40, 80, 160, 320]
+    values: [40, 113, 320]
   raw_samples:
     values: [3200, 32000]
   gen_candidates:

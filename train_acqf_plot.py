@@ -42,7 +42,10 @@ PLOTS_CONFIG_MULTIPLE = [
 ]
 
 ATTR_GROUPS = [
-    ["0_training_history_train_test", "1_training_history_test_log_regret", "2_af_plot"]
+    ["0_training_history_train_test", "1_training_history_test_log_regret", "2_af_plot"],
+    ["0_training_history_train_test", "1_training_history_test_log_regret"],
+    ["1_training_history_test_log_regret"],
+    ["2_af_plot"]
 ]
 
 ATTR_NAME_TO_TITLE = {
