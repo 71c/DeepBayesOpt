@@ -1,11 +1,18 @@
+from sys import stderr
 from typing import Optional
 import subprocess
 import os
 import argparse
 from datetime import datetime
+import math
 
 from utils.constants import JOB_ARRAY_SUB_PATH, SWEEPS_DIR
+from utils.experiments.experiment_config_utils import CONFIG_DIR
 from utils.utils import dict_to_cmd_args, save_json
+
+# scontrol show config | grep -E 'MaxArraySize'
+# it says 1001 but 1001 doesn't work, so it looks like 1000 is the max
+MAX_ARRAY_SIZE = 1000
 
 
 def add_slurm_args(parser):
@@ -40,6 +47,23 @@ def submit_jobs_sweep_from_args(jobs_spec, args):
         gpu_gres=args.gpu_gres,
         mail=args.mail
     )
+ 
+
+def _split_jobs_spec(jobs_spec):
+    """Split jobs_spec into chunks of size MAX_ARRAY_SIZE."""
+    ret = {}
+    for job_name, job_spec in jobs_spec.items():
+        n_commands = len(job_spec["commands"])
+        if n_commands > MAX_ARRAY_SIZE:
+            n_chunks = math.ceil(n_commands / MAX_ARRAY_SIZE)
+            for i in range(n_chunks):
+                chunk_name = f"{job_name}_{i+1}"
+                chunk_spec = job_spec.copy()
+                chunk_spec["commands"] = job_spec["commands"][i*MAX_ARRAY_SIZE:(i+1)*MAX_ARRAY_SIZE]
+                ret[chunk_name] = chunk_spec
+        else:
+            ret[job_name] = job_spec
+    return ret
 
 
 def _submit_dependent_jobs(
@@ -53,13 +77,18 @@ def _submit_dependent_jobs(
     # (i.e. if jobs_spec is empty)
     if not jobs_spec:
         return
+    
+    # Split jobs_spec into chunks of size MAX_ARRAY_SIZE
+    jobs_spec = _split_jobs_spec(jobs_spec)
 
     logs_dir = os.path.join(sweep_dir, "logs")
     config_dir = os.path.join(sweep_dir, "config")
     os.makedirs(logs_dir, exist_ok=True)
     os.makedirs(config_dir, exist_ok=True)
     save_json(vars(args), os.path.join(sweep_dir, "args.json"))
+
     save_json(jobs_spec, os.path.join(sweep_dir, "dependencies.json"), indent=4)
+    save_json(jobs_spec, os.path.join(CONFIG_DIR, "dependencies.json"), indent=4)
 
     job_ids = {}
 
@@ -125,13 +154,14 @@ def _submit_dependent_jobs(
         print(" ".join(args))
         result = subprocess.run(
             args,
-            stdout=subprocess.PIPE,
+            capture_output=True,
             text=True
         )
         output = result.stdout.strip()
         if result.returncode != 0:
             cmd = " ".join(args)
-            raise RuntimeError(f"Failed to submit job\n {cmd}\nOutput:\n{output}")
+            stderr = result.stderr
+            raise RuntimeError(f"Failed to submit job\n {cmd}\nOutput:\n{output}\nError:\n{stderr}")
         job_id = output.split()[-1]
         job_ids[job_name] = job_id
         return job_id

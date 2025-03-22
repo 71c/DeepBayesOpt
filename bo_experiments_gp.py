@@ -285,7 +285,6 @@ def main():
     print(f"Number of new BO configs: {len(new_cfgs)}")
     print(f"Number of existing BO configs: {len(existing_cfgs_and_results)}")
 
-    save_json(jobs_spec, os.path.join(CONFIG_DIR, "dependencies.json"), indent=4)
     submit_jobs_sweep_from_args(jobs_spec, args)
 
 

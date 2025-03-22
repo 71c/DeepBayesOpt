@@ -13,17 +13,50 @@ from train_acqf import MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN
 
 CPROFILE = False
 
+
+
+# PRE = [
+#     ["nn.layer_width", "nn.train_samples_size", "gen_candidates"]
+# ]
+
+# ATTR_A = ["nn.batch_size"]
+# ATTR_B = ["nn.learning_rate"]
+
+# POST = [
+#     ["lamda", "gp_af", "nn.method"],
+#     ["objective.gp_seed"]
+# ]
+
+
+
+# PRE = [
+#     ["nn.train_samples_size"],
+#     ["nn.learning_rate", "nn.lr_scheduler"]
+# ]
+
+# ATTR_A = ["gen_candidates"]
+# ATTR_B = ["raw_samples", "num_restarts"]
+
+# POST = [
+#     ["lamda", "gp_af", "nn.method"],
+#     ["objective.gp_seed"]
+# ]
+
+
 PRE = [
-    ["nn.layer_width", "nn.train_samples_size", "gen_candidates"]
+    ["gen_candidates"],
+    ["nn.train_samples_size"],
+    ["nn.learning_rate", "nn.lr_scheduler"]
 ]
 
-ATTR_A = ["nn.batch_size"]
-ATTR_B = ["nn.learning_rate"]
+ATTR_A = ["raw_samples"]
+ATTR_B = ["num_restarts"]
 
 POST = [
     ["lamda", "gp_af", "nn.method"],
     ["objective.gp_seed"]
 ]
+
 
 PLOTS_CONFIG_SINGLE = [
     *PRE,
