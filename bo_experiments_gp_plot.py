@@ -24,7 +24,7 @@ CPROFILE = False
 
 # POST = [
 #     ["lamda", "gp_af", "nn.method"],
-#     ["objective.gp_seed"]
+#     ["bo_seed"]
 # ]
 
 
@@ -39,7 +39,7 @@ CPROFILE = False
 
 # POST = [
 #     ["lamda", "gp_af", "nn.method"],
-#     ["objective.gp_seed"]
+#     ["bo_seed"]
 # ]
 
 
@@ -54,7 +54,7 @@ ATTR_B = ["num_restarts"]
 
 POST = [
     ["lamda", "gp_af", "nn.method"],
-    ["objective.gp_seed"]
+    ["bo_seed"]
 ]
 
 

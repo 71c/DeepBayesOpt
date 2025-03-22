@@ -1,6 +1,5 @@
 import argparse
 import math
-import os
 from typing import Optional
 import cProfile, pstats
 import torch
@@ -17,13 +16,17 @@ CPROFILE = False
 
 
 def _generate_bo_commands(
-        seeds: list[int], objective_args, bo_policy_args, gp_af_args):
+        seeds: list[int], objective_args, bo_policy_args, gp_af_args,
+        single_objective=False):
     new_bo_comma = []
     new_bo_conf = []
     existing_bo_conf_and_results = []
+    seed0 = seeds[0]
     for seed in seeds:
-        objective_args_ = {**objective_args, 'gp_seed': seed}
-        bo_policy_args_ = {**bo_policy_args, 'bo_seed': seed}
+        bo_seed = seed
+        gp_seed = seed0 if single_objective else seed
+        objective_args_ = {**objective_args, 'gp_seed': gp_seed}
+        bo_policy_args_ = {**bo_policy_args, 'bo_seed': bo_seed}
         bo_config = dict(
             objective_args=objective_args_,
             bo_policy_args=bo_policy_args_,
@@ -47,7 +50,7 @@ def _generate_bo_commands(
 
 def _gp_bo_jobs_spec_and_cfgs(
         options_list, bo_loop_args_list, bo_loop_args_list_random_search,
-        seeds, always_train=False):
+        seeds, single_objective=False, always_train=False):
     gp_options_dict = {}
 
     new_bo_configs = []
@@ -93,7 +96,8 @@ def _gp_bo_jobs_spec_and_cfgs(
                 objective_args=gp_options,
                 bo_policy_args={**bo_loop_args, 'lamda': lamda,
                                 'nn_model_name': model_and_info_name},
-                gp_af_args={}
+                gp_af_args={},
+                single_objective=single_objective
             )
             all_new_cmds_this_nn.extend(new_cmds)
             new_bo_configs.extend(new_cfgs)
@@ -139,7 +143,8 @@ def _gp_bo_jobs_spec_and_cfgs(
                         seeds,
                         objective_args=gp_options,
                         bo_policy_args={**bo_loop_args, **extra_bo_policy_args},
-                        gp_af_args=gp_af_args
+                        gp_af_args=gp_af_args,
+                        single_objective=single_objective
                     )
                     non_nn_bo_commands.extend(new_cmds)
                     new_bo_configs.extend(new_cfgs)
@@ -151,7 +156,8 @@ def _gp_bo_jobs_spec_and_cfgs(
                 seeds,
                 objective_args=gp_options,
                 bo_policy_args={**bo_loop_args, 'random_search': True},
-                gp_af_args={}
+                gp_af_args={},
+                single_objective=single_objective
             )
             non_nn_bo_commands.extend(new_cmds)
             new_bo_configs.extend(new_cfgs)
@@ -184,10 +190,19 @@ def get_bo_experiments_parser(train=True):
     
     objectives_group = parser.add_argument_group("Objective functions and seed")
     objectives_group.add_argument(
-        '--n_gp_draws', 
+        '--n_seeds', 
         type=int,
         required=True,
-        help='The number of draws of GP objective functions per set of GP params.'
+        help='The number of replicates to run per BO method'
+    )
+    objectives_group.add_argument(
+        '--single_objective',
+        action='store_true',
+        help='If single_objective=True, then only one GP objective function is drawn '
+        'per set of GP params, and n_seeds replicates are run for that same objective '
+        'function, each with a different BO seed. Otherwise, n_seeds GP objective '
+        'functions are drawn per set of GP params, and for each of these, the BO '
+        'seed is set to be the same as the GP seed.'
     )
     objectives_group.add_argument(
         '--seed',
@@ -237,7 +252,7 @@ def generate_gp_bo_job_specs(args: argparse.Namespace,
     # Set seed again for reproducibility
     torch.manual_seed(args.seed)
     # Set a seed for each round of GP function draw + BO loop
-    seeds = torch.randint(0, 2**63-1, (args.n_gp_draws,), dtype=torch.int64).tolist()
+    seeds = torch.randint(0, 2**63-1, (args.n_seeds,), dtype=torch.int64).tolist()
 
     if CPROFILE:
         pr = cProfile.Profile()
@@ -245,7 +260,9 @@ def generate_gp_bo_job_specs(args: argparse.Namespace,
     
     jobs_spec, new_cfgs, existing_cfgs_and_results = _gp_bo_jobs_spec_and_cfgs(
         nn_options_list, bo_options_list, bo_options_list_random_search,
-        seeds, always_train=getattr(args, 'always_train', False)
+        seeds,
+        single_objective=args.single_objective,
+        always_train=getattr(args, 'always_train', False)
     )
 
     if CPROFILE:
@@ -287,8 +304,6 @@ def main():
 
     submit_jobs_sweep_from_args(jobs_spec, args)
 
-
-# e.g. python bo_experiments_gp.py --base_config config/train_acqf.yml --experiment_config config/train_acqf_experiment_test2.yml --mail adj53@cornell.edu --n_gp_draws 4 --seed 8 --sweep_name test-alon --n_iter 30 --n_initial_samples 1
 
 if __name__ == "__main__":
     main()

@@ -35,6 +35,12 @@ def add_slurm_args(parser):
         help='email address to send Slurm notifications to. '
               'If not specified, no notifications are sent.'
     )
+    parser.add_argument(
+        '--no_submit',
+        action='store_true',
+        help='If specified, do not submit jobs, but only save dependencies.json so '
+                'that you can see what would be submitted.'
+    )
 
 
 def submit_jobs_sweep_from_args(jobs_spec, args):
@@ -45,7 +51,8 @@ def submit_jobs_sweep_from_args(jobs_spec, args):
         jobs_spec=jobs_spec,
         args=args,
         gpu_gres=args.gpu_gres,
-        mail=args.mail
+        mail=args.mail,
+        no_submit=args.no_submit
     )
  
 
@@ -72,14 +79,18 @@ def _submit_dependent_jobs(
         args: argparse.Namespace,
         gpu_gres: str = "gpu:a100:1", # e.g. "gpu:a100:1" or "gpu:1"
         mail:Optional[str]=None,
+        no_submit:bool=False
     ):
-    # Don't create unnecessary directories if there are no jobs to submit
-    # (i.e. if jobs_spec is empty)
-    if not jobs_spec:
-        return
-    
     # Split jobs_spec into chunks of size MAX_ARRAY_SIZE
     jobs_spec = _split_jobs_spec(jobs_spec)
+
+    save_json(jobs_spec, os.path.join(CONFIG_DIR, "dependencies.json"), indent=4)
+
+    # Don't create unnecessary directories if there are no jobs to submit
+    # (i.e. if jobs_spec is empty)
+    # Also don't submit if no_submit is True
+    if not jobs_spec or no_submit:
+        return
 
     logs_dir = os.path.join(sweep_dir, "logs")
     config_dir = os.path.join(sweep_dir, "config")
@@ -88,7 +99,6 @@ def _submit_dependent_jobs(
     save_json(vars(args), os.path.join(sweep_dir, "args.json"))
 
     save_json(jobs_spec, os.path.join(sweep_dir, "dependencies.json"), indent=4)
-    save_json(jobs_spec, os.path.join(CONFIG_DIR, "dependencies.json"), indent=4)
 
     job_ids = {}
 

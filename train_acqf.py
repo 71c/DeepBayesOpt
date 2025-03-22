@@ -58,7 +58,8 @@ def get_cmd_options_train_acqf(options: dict[str, Any]):
             # method=policy_gradient
             'include_alpha', 'learn_alpha', 'initial_alpha', 'alpha_increment',
             # method=gittins
-            'gi_loss_normalization', 'lamda_min', 'lamda_max', 'lamda',
+            'gi_loss_normalization',
+            # 'lamda_min', 'lamda_max', 'lamda', # already in cmd_opts_acquisition_dataset
             # method=mse_ei
             'learn_tau', 'initial_tau', 'softplus_batchnorm',
             'softplus_batchnorm_momentum', 'positive_linear_at_end',
