@@ -6,28 +6,28 @@ parameters:
   lengthscale:
     value: 0.05
   method:
-    values: ['gittins', 'mse_ei']
+    value: gittins
   gi_loss_normalization:
     value: normal
   lamda:
     value: 1.00e-02
   train_samples_size:
-    values: [100, 1000, 10000]
+    value: 10000
   layer_width:
     value: 300
   epochs:
-    value: 1000
+    value: 5000
   learning_rate:
-    values: [3.00e-07, 1.00e-05, 3.00e-04, 1.00e-02]
+    value: 3.00e-04
   batch_size:
     value: 512
   lr_scheduler:
     values: [null, 'ReduceLROnPlateau']
   lr_scheduler_patience:
-    value: 15
+    value: 50
   lr_scheduler_factor:
-    value: 0.1
+    value: 0.3
   early_stopping:
     value: true
   patience:
-    value: 60
+    value: 250

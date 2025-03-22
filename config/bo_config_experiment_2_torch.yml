@@ -1,0 +1,13 @@
+parameters:
+  n_iter:
+    value: 100
+  n_initial_samples:
+    value: 1
+  num_restarts:
+    value: 80
+  raw_samples:
+    value: 3200
+  gen_candidates:
+    value: torch
+  maxiter:
+    value: 15000
