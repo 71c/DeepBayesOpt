@@ -3,7 +3,6 @@ from typing import Any, Callable, Type, Optional, List, Union
 import copy
 import os
 import time
-from json.decoder import JSONDecodeError
 
 from tqdm import tqdm, trange
 import matplotlib.pyplot as plt
@@ -398,10 +397,10 @@ class OptimizationResultsSingleMethod:
         self.objectives = objectives
         self.n_functions = len(objectives)
         self.verbose = verbose
-        
+
         if initial_points.dim() != 3:
             raise ValueError("initial_points must be a 3D tensor of shape "
-                            "(n_trials_per_function, n_initial_samples, dim)")
+                             "(n_trials_per_function, n_initial_samples, dim)")
         self.initial_points = initial_points
         self.n_trials_per_function = initial_points.size(0)
 
@@ -417,7 +416,7 @@ class OptimizationResultsSingleMethod:
         if objective_names is not None and len(objective_names) != self.n_functions:
             raise ValueError("objective_names must have the same length as objectives.")
         self.objective_names = objective_names
-        
+
         if len(seeds) != self.n_trials_per_function:
             raise ValueError("seeds must be a list of length n_trials_per_function.")
         self.seeds = seeds
@@ -445,7 +444,7 @@ class OptimizationResultsSingleMethod:
                 "nn_model_name must not be provided if not using NNAcquisitionOptimizer.")
 
         self.results_name = results_name
-    
+
         self.save_dir = save_dir
         if save_dir is not None:
             if objective_names is None:
@@ -454,7 +453,7 @@ class OptimizationResultsSingleMethod:
             self._cached_results = result_cache
             self._func_results_to_save = [{} for _ in range(self.n_functions)]
             os.makedirs(save_dir, exist_ok=True)
-        
+
             info_kwargs = dict(include_priors=False, hash_gpytorch_modules=False)
             opt_config_json = convert_to_json_serializable(opt_config, **info_kwargs)
             extra_fn_configs = [
@@ -475,10 +474,10 @@ class OptimizationResultsSingleMethod:
             ]
             self.trial_configs_str = list(map(dict_to_hash, trial_configs_list))
             self.trial_configs = dict(zip(self.trial_configs_str, trial_configs_list))
-        
+
         self._trial_indices_not_cached = [[] for _ in range(self.n_functions)]
         self._results = [[None for _ in range(self.n_trials_per_function)]
-                   for _ in range(self.n_functions)]
+                         for _ in range(self.n_functions)]
         for func_index in range(self.n_functions):
             for trial_index in range(self.n_trials_per_function):
                 cached_trial_result = self._get_cached_trial_result(
@@ -487,95 +486,42 @@ class OptimizationResultsSingleMethod:
                     self._trial_indices_not_cached[func_index].append(trial_index)
                 else:
                     self._results[func_index][trial_index] = cached_trial_result
-        
+
         self.n_trials_to_run_per_func = [
             len(trial_indices_not_cached_func)
             for trial_indices_not_cached_func in self._trial_indices_not_cached]
-        
+
         self.n_funcs_to_optimize = sum(x > 0 for x in self.n_trials_to_run_per_func)
 
     def __len__(self):
         return self.n_functions
 
-    def _results_fname(self, func_name: str):
-        return os.path.join(self.save_dir, f'{func_name}.json')
-
-    def _validate_loaded_data(self, func_results: dict):
-        """Make sure the loaded results are consistent with the current
-        configuration"""
-        try:
-            # Check that the trial configs are consistent
-            trial_configs_dict = func_results['trial_configs']
-            for trial_config_str, trial_config in trial_configs_dict.items():
-                if trial_config_str in self.trial_configs:
-                    assert trial_config == self.trial_configs[trial_config_str]
-                else:
-                    assert trial_config_str == dict_to_hash(trial_config)
-
-            # Check that the optimization configurations are consistent
-            results_dict = func_results['results']
-            for func_opt_config_str, opt_results in results_dict.items():
-                opt_config = opt_results['opt_config']
-                if func_opt_config_str in self.func_opt_configs:
-                    assert opt_config == self.func_opt_configs[func_opt_config_str]
-                else:
-                    assert func_opt_config_str == dict_to_hash(opt_config)
-                
-                for trial_config_str in opt_results['trials']:
-                    assert trial_config_str in trial_configs_dict
-        except AssertionError as e:
-            raise RuntimeError(
-                "Loaded results are inconsistent with current configuration.") from e
-        except KeyError as e:
-            raise RuntimeError("Loaded results are missing keys!") from e
-
-    def _get_func_results(self, func_name: str, reload_result: bool) -> dict:
-        if reload_result or func_name not in self._cached_results:
-            try:
-                func_results = load_json(self._results_fname(func_name))
-                self._validate_loaded_data(func_results)
-                self._cached_results[func_name] = func_results
-            except FileNotFoundError:
-                if func_name not in self._cached_results:
-                    self._cached_results[func_name] = {
-                        'trial_configs': {}, 'results': {}}
-            except JSONDecodeError as e:
-                raise RuntimeError("Error decoding json!") from e
-
-        return self._cached_results[func_name]
-
     def _get_cached_trial_result(self, func_index: int, trial_index: int,
                                  return_result: bool=True):
         if self.save_dir is None:
-            # print("Returning None because self.save_dir is None")
             return None
         func_name = self.objective_names[func_index]
-        func_results = self._get_func_results(func_name, reload_result=False)
-        results_dict = func_results['results']
-        
         func_opt_config_str = self.func_opt_configs_str[func_index]
-        if func_opt_config_str not in results_dict:
-            # print(f"{func_name=}, {func_opt_config_str=}, {func_name=}, {results_dict.keys()=}")
-            # print("Returning None because func_opt_config_str not in results_dict")
-            # print()
-            return None
-        trials_dict = results_dict[func_opt_config_str]['trials']
-        
         trial_config_str = self.trial_configs_str[trial_index]
-        if trial_config_str not in trials_dict:
-            # print("Returning None because trial_config_str not in trials_dict")
-            return None
-        
-        if return_result:
-            return json_serializable_to_numpy(trials_dict[trial_config_str])
-        else:
-            return True
-    
+        key = (func_name, func_opt_config_str, trial_config_str)
+        try:
+            trial_result = self._cached_results[key]
+        except KeyError:
+            data_path = os.path.join(
+                self.save_dir, func_name, "results",
+                func_opt_config_str, "trials", trial_config_str + ".json")
+            try:
+                trial_result = load_json(data_path)
+                self._cached_results[key] = trial_result
+            except FileNotFoundError:
+                return None
+        return json_serializable_to_numpy(trial_result) if return_result else True
+
     def _get_trial_result(self, func_index: int, trial_index: int, verbose=False):
         trial_result = None
         if self.save_dir is not None:
             trial_result = self._get_cached_trial_result(func_index, trial_index)
-        
+
         if trial_result is None:
             torch.manual_seed(self.seeds[trial_index])
             optimizer = self.optimizer_class(
@@ -588,44 +534,60 @@ class OptimizationResultsSingleMethod:
             trial_result = optimizer.get_stats()
             if self.save_dir is not None:
                 h = self.trial_configs_str[trial_index]
-                self._func_results_to_save[func_index][h] = convert_to_json_serializable(trial_result)
-        
+                self._func_results_to_save[func_index][h] = \
+                    convert_to_json_serializable(trial_result)
+
         return trial_result
 
     def _save_func_results(self, func_index: int):
         if self.save_dir is None:
             return
-        
+
         new_trial_results_dict = self._func_results_to_save[func_index]
         if not new_trial_results_dict:
             return
-        
+
         func_name = self.objective_names[func_index]
-        func_results = self._get_func_results(func_name, reload_result=True)
-        
-        results_dict = func_results['results']
         func_opt_config_str = self.func_opt_configs_str[func_index]
-        if func_opt_config_str not in results_dict:
-            results_dict[func_opt_config_str] = {
-                'opt_config': self.func_opt_configs[func_opt_config_str],
-                'trials': new_trial_results_dict
-            }
-        else:
-            func_opt_res = results_dict[func_opt_config_str]
-            func_opt_res['trials'].update(new_trial_results_dict)
+
+        # func dir
+        func_dir = os.path.join(self.save_dir, func_name)
+        os.makedirs(func_dir, exist_ok=True)
         
+        # Save any new trial configs
+        trial_configs_dir = os.path.join(func_dir, "trial_configs")
+        os.makedirs(trial_configs_dir, exist_ok=True)
         for trial_config_str in new_trial_results_dict:
-            if trial_config_str not in func_results['trial_configs']:
-                func_results['trial_configs'][trial_config_str] = self.trial_configs[trial_config_str]
+            trial_config_path = os.path.join(trial_configs_dir, trial_config_str + ".json")
+            if not os.path.exists(trial_config_path):
+                save_json(self.trial_configs[trial_config_str], trial_config_path, indent=4)
         
-        # Probably doesn't matter but it doesn't hurt
+        # Save results in separate files under results directory
+        results_dir = os.path.join(func_dir, "results")
+        opt_config_dir = os.path.join(results_dir, func_opt_config_str)
+        os.makedirs(opt_config_dir, exist_ok=True)
+        
+        # Save opt_config if it doesn't exist
+        opt_config_path = os.path.join(opt_config_dir, "opt_config.json")
+        opt_config = self.func_opt_configs[func_opt_config_str]
+        try:
+            existing_opt_config = load_json(opt_config_path)
+            assert existing_opt_config == opt_config
+        except FileNotFoundError:
+            save_json(opt_config, opt_config_path, indent=4)
+        
+        # Save new trial results
+        trials_dir = os.path.join(opt_config_dir, "trials")
+        os.makedirs(trials_dir, exist_ok=True)
+        for trial_config_str, trial_result in new_trial_results_dict.items():
+            trial_file_path = os.path.join(trials_dir, trial_config_str + ".json")
+            save_json(trial_result, trial_file_path, indent=4)
+        
         self._func_results_to_save[func_index] = {}
 
-        save_json(func_results, self._results_fname(func_name), indent=4)
-    
     def add_pbar(self, pbar):
         self.pbar = pbar
-    
+
     def n_opts_to_run(self):
         ret = 0
         for func_index in range(self.n_functions):
@@ -647,7 +609,7 @@ class OptimizationResultsSingleMethod:
         results = self._results
 
         prefix = f"{self.results_name}: " if self.results_name is not None else ""
-        
+
         if n_funcs_to_optimize > 0:
             if n_funcs_to_optimize > 1:
                 desc = f"{prefix}Optimizing {n_funcs_to_optimize} functions"
@@ -656,11 +618,11 @@ class OptimizationResultsSingleMethod:
             else:
                 print(f"{prefix}: Optimizing 1 function")
                 verbose = True
-        
+
         for func_index in range(self.n_functions):
             trial_indices_not_cached_func = trial_indices_not_cached[func_index]
             results_func = results[func_index]
-            
+
             if trial_indices_not_cached_func:
                 n_cached = self.n_trials_per_function - len(trial_indices_not_cached_func)
                 if n_cached > 0:
@@ -668,7 +630,7 @@ class OptimizationResultsSingleMethod:
                             f"{len(trial_indices_not_cached_func)} trials to optimize.")
                 else:
                     desc = f"{prefix}  Optimizing function {func_index+1}"
-                
+
                 it = trial_indices_not_cached_func
                 if len(it) > 1:
                     it = tqdm(it, desc=desc)
@@ -679,24 +641,11 @@ class OptimizationResultsSingleMethod:
                         func_index, trial_index, verbose=verbose)
                     if hasattr(self, 'pbar'):
                         self.pbar.update(1)
-                    
+
                 self._save_func_results(func_index)
 
                 if n_funcs_to_optimize > 1:
                     pbar.update(1)
-
-            # # n_trials_per_function x 1+n_iter x 1
-            # function_best_y_data = np.array([r['best_y'] for r in results_func])
-            # # n_trials_per_function x 1+n_iter x dim
-            # function_best_x_data = np.array([r['best_x'] for r in results_func])
-            # function_time_data = np.array([r['time'] for r in results_func])
-            # function_process_time_data = np.array([r['process_time'] for r in results_func])
-            # result = {
-            #     'best_y': function_best_y_data,
-            #     'best_x': function_best_x_data,
-            #     'time': function_time_data,
-            #     'process_time': function_process_time_data
-            # }
 
             result = aggregate_stats_list(results_func)
 
@@ -704,9 +653,9 @@ class OptimizationResultsSingleMethod:
                 func_name = self.objective_names[func_index]
             else:
                 func_name = f"Function_{func_index}"
-            
+
             yield func_name, result
-        
+
         if n_funcs_to_optimize > 1:
             pbar.close()
 
