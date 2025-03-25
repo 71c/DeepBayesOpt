@@ -1287,7 +1287,10 @@ def _group_by_nested_attrs(items: List[dict[K, Any]],
     for idx in indices:
         item = items[idx]
         d = {k: item[k] for k in initial_attrs if k in item}
-        d = {k: v for k, v in d.items() if v is not None}
+        
+        # d = {k: v for k, v in d.items() if v is not None}
+        d = {k: str(v) if v is None else v for k, v in d.items()}
+        
         # if not d:
         #     # counts = group_by(
         #     #     item.keys(),
@@ -1301,6 +1304,7 @@ def _group_by_nested_attrs(items: List[dict[K, Any]],
         #     #       f"description {key} as it is different from the others "
         #     #       f"{highest_mismatch_count}/{len(items)} times.")
         #     key = ""
+        
         key = dict_to_str_func(d)
         if set(d.keys()) == initial_attrs:
             if key in initial_grouped_items:
@@ -1370,13 +1374,18 @@ def group_by_nested_attrs(items: List[dict[K, Any]],
     constant_keys = {k for k in keys if len(vals_dict[k]) == 1}
     constant_keys -= {"nn.method", "gp_af"}
 
+    # print(f"{attrs_groups_list=}")
+    # print(f"{constant_keys=}")
+
     attrs_groups_list = [z - constant_keys for z in attrs_groups_list]
     attrs_groups_list = [z for z in attrs_groups_list if len(z) != 0]
-    if len(attrs_groups_list) == 0:
-        raise ValueError("No attributes to group by")
-    
-    ret = _group_by_nested_attrs(items, attrs_groups_list, dict_to_str_func)
-    
+    # if len(attrs_groups_list) == 0:
+    #     raise ValueError("No attributes to group by")
+
+    ret = _group_by_nested_attrs(
+        items, [set()] if len(attrs_groups_list) == 0 else attrs_groups_list,
+        dict_to_str_func)
+
     nonconstant_keys = set()
     keys_in_all = {u for u in keys}
 
@@ -1421,8 +1430,6 @@ def group_by_nested_attrs(items: List[dict[K, Any]],
     return _group_by_nested_attrs(
         items, attrs_groups_list, dict_to_str_func,
         return_single=True), attrs_groups_list
-
-
 
 
 def pad_tensor(vec, length, dim, add_mask=False):
