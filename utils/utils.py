@@ -1288,8 +1288,8 @@ def _group_by_nested_attrs(items: List[dict[K, Any]],
         item = items[idx]
         d = {k: item[k] for k in initial_attrs if k in item}
         
-        # d = {k: v for k, v in d.items() if v is not None}
-        d = {k: str(v) if v is None else v for k, v in d.items()}
+        d = {k: v for k, v in d.items() if v is not None}
+        # d = {k: str(v) if v is None else v for k, v in d.items()}
         
         # if not d:
         #     # counts = group_by(
