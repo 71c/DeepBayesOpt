@@ -97,7 +97,19 @@ def get_plot_ax_train_acqf_func(get_result_func):
             # Get the data to plot
             x_hist, y_hist, x_cand, vals_cand = item.tuple_no_model
             x_cand_original = x_cand
-            x_cand = torch.linspace(0, 1, N_CANDIDATES_PLOT).unsqueeze(1)
+            dimension = x_hist.size(1)
+            x_cand_varying_component = torch.linspace(0, 1, N_CANDIDATES_PLOT)
+            varying_index = 0
+            if dimension == 1:
+                # N_CANDIDATES_PLOT x 1
+                x_cand = x_cand_varying_component.unsqueeze(1)
+            else:
+                torch.manual_seed(0)
+                random_x = torch.rand(dimension)
+                # N_CANDIDATES_PLOT x dimension
+                x_cand = random_x.repeat(N_CANDIDATES_PLOT, 1)
+                x_cand[:, varying_index] = x_cand_varying_component
+
             # Get the GP model
             gp_model = item.model if item.has_model else None
 
@@ -111,7 +123,8 @@ def get_plot_ax_train_acqf_func(get_result_func):
                 lamda=lamda,
                 gp_model=gp_model, nn_model=nn_model, method=cfg['method'],
                 min_x=0.0, max_x=1.0, plot_map=False,
-                nn_device=DEVICE, group_standardization=None
+                nn_device=DEVICE, group_standardization=None,
+                varying_index=varying_index
             )
             ax.set_title("Acquisition function plot")
         else:

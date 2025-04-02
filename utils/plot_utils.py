@@ -272,7 +272,8 @@ def plot_nn_vs_gp_acquisition_function_1d(
         plot_map:bool=False, nn_device:Optional[torch.device]=None,
         group_standardization:Optional[bool]=None,
         give_legend=True,
-        plot_data=True):
+        plot_data=True,
+        varying_index=0):
     r"""Plot the acquisition function of a neural network and a GP.
     
     Args:
@@ -291,8 +292,13 @@ def plot_nn_vs_gp_acquisition_function_1d(
         nn_device: The device to use for the neural network.
         group_standardization: Whether to standardize the acquisition functions together.
     """
+    dimension = x_hist.size(1)
+
     if group_standardization is None:
         group_standardization = method != 'policy_gradient'
+    
+    if dimension != 1:
+        plot_data = False
 
     arrs_and_labels_to_plot = []
 
@@ -327,7 +333,7 @@ def plot_nn_vs_gp_acquisition_function_1d(
                                             fit_params=True, mle=False)
                 arrs_and_labels_to_plot.append((af_map, {"label": "MAP GP"}))
             
-            plot_gp = True
+            plot_gp = dimension == 1
         except NotImplementedError:
             # NotImplementedError can happen when:
             # -- Outcome transform computations are not implemented.
@@ -350,8 +356,9 @@ def plot_nn_vs_gp_acquisition_function_1d(
     arrs_and_labels_to_plot.append((ei_nn, {"label": "NN", "color": ORANGE}))
     
     # Sort the x_cand and arrs
-    sorted_indices = np.argsort(x_cand.detach().numpy().flatten())
-    sorted_x_cand = x_cand.detach().numpy().flatten()[sorted_indices]
+    x_cand_plot_component = x_cand[:, varying_index].detach().numpy().flatten()
+    sorted_indices = np.argsort(x_cand_plot_component)
+    sorted_x_cand = x_cand_plot_component[sorted_indices]
 
     arrs, labels = zip(*arrs_and_labels_to_plot)
     if plot_data and method != 'gittins':
@@ -365,8 +372,9 @@ def plot_nn_vs_gp_acquisition_function_1d(
         ax.plot(x_hist, y_hist, 'b*', label=f'History points')
 
     if x_cand_original is not None and vals_cand is not None:
-        ax.plot(x_cand_original, vals_cand[:, 0],
-                'ro', markersize=1, label=f'Candidate points')
+        if dimension == 1:
+            ax.plot(x_cand_original, vals_cand[:, 0],
+                    'ro', markersize=1, label=f'Candidate points')
     elif not (x_cand_original is None and vals_cand is None):
         raise ValueError("Either both or neither of x_cand_original and vals_cand "
                          "should be provided")

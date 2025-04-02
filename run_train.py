@@ -179,7 +179,7 @@ def run_train(cmd_args: Optional[Sequence[str]]=None):
     ######################## Plot performance of model #############################
     ######################## (old useless code)
     # TODO: Fix the below code to work with Gittins index
-    plot_stuff = True
+    plot_stuff = False
     if plot_stuff:
         n_candidates = 2_000
         plot_map = False
@@ -213,8 +213,9 @@ def run_train(cmd_args: Optional[Sequence[str]]=None):
 
             x_cand = torch.rand(n_candidates, args.dimension)
 
+            kwargs = dict(exponentiate=True, softmax=False) if args.method == "mse_ei" else dict()
             aq_fn = AcquisitionFunctionNetAcquisitionFunction.from_net(
-            model, x_hist_nn, y_hist_nn, exponentiate=(args.method == 'mse_ei'), softmax=False)
+                model, x_hist_nn, y_hist_nn, **kwargs)
             ei_nn = aq_fn(x_cand.to(DEVICE).unsqueeze(1))
 
             ei_true = calculate_EI_GP(gp_model, x_hist, y_hist, x_cand, log=False)
