@@ -46,6 +46,17 @@ SEEDS_CFG="--n_seeds 16 --single_objective";
 PLOTS_GROUP_NAME="8dim_maxhistory100_gittins_big_2";
 BO_PLOTS_NAME="results_100iter";
 
+# EI experiment in 1D: train many epochs with 3e-4 learning rate
+SEED=8;
+NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_ei_many_epochs.yml";
+BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
+SWEEP_NAME="100iter_1dim_maxhistory20_ei_many_epochs";
+SEEDS_CFG="--n_seeds 32 --single_objective";
+PLOTS_GROUP_NAME="1dim_maxhistory20_ei_many_epochs";
+BO_PLOTS_NAME="results_100iter";
+
+
+
 NN_CFG="--nn_base_config config/train_acqf.yml --nn_experiment_config $NN_EXPERIMENT_CFG";
 BO_CFG="--bo_base_config config/bo_config.yml --bo_experiment_config $BO_EXPERIMENT_CFG --seed $SEED $SEEDS_CFG";
 SLURM_CFG="--sweep_name $SWEEP_NAME --mail adj53@cornell.edu --gpu_gres gpu:1";

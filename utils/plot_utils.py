@@ -272,7 +272,6 @@ def plot_nn_vs_gp_acquisition_function_1d(
         plot_map:bool=False, nn_device:Optional[torch.device]=None,
         group_standardization:Optional[bool]=None,
         give_legend=True,
-        plot_data=True,
         varying_index=0):
     r"""Plot the acquisition function of a neural network and a GP.
     
@@ -294,11 +293,13 @@ def plot_nn_vs_gp_acquisition_function_1d(
     """
     dimension = x_hist.size(1)
 
-    if group_standardization is None:
-        group_standardization = method != 'policy_gradient'
+    plot_data = method == 'gittins' # could change this
     
     if dimension != 1:
         plot_data = False
+    
+    if group_standardization is None:
+        group_standardization = method != 'policy_gradient'
 
     arrs_and_labels_to_plot = []
 

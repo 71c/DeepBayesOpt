@@ -177,7 +177,7 @@ def main():
                  for k, v in MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN[nn_model_name].items()
                  }
             )
-            # bo_policy_args.pop('nn_model_name')
+            bo_policy_args.pop('nn_model_name')
         
         if 'random_search' in bo_policy_args:
             random_search = bo_policy_args.pop('random_search')

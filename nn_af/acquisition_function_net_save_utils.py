@@ -174,12 +174,12 @@ def _save_nn_acqf_configs(
 
     all_info_json = {
         'model': model.get_info_dict(),
-        'training_config': training_config,
         'function_samples_config': function_samples_config_json,
         'acquisition_dataset_config': acquisition_dataset_config,
         'n_points_config': n_points_config,
         'dataset_transform_config': dataset_transform_config_json,
-        'model_sampler': model_sampler_json
+        'model_sampler': model_sampler_json,
+        'training_config': training_config
     }
     # all_info_json = _remove_none_and_false(all_info_json)
     all_info_hash = dict_to_hash(all_info_json)

@@ -22,6 +22,7 @@ from botorch.exceptions import UnsupportedError
 from gpytorch.mlls import ExactMarginalLogLikelihood
 
 from bayesopt.random_gp_function import RandomGPFunction
+from nn_af.acquisition_function_net_save_utils import load_nn_acqf, load_nn_acqf_configs
 from utils.utils import (
     add_outcome_transform, aggregate_stats_list, combine_nested_dicts,
     convert_to_json_serializable, dict_to_hash, json_serializable_to_numpy,
@@ -84,7 +85,9 @@ class BayesianOptimizer(ABC):
     
     def get_stats(self):
         return {
+            'y': self.y.numpy(),
             'best_y': self.best_y_history.numpy(),
+            'x': self.x.numpy(),
             'best_x': self.best_x_history.numpy(),
             'time': self.time_history.numpy(),
             'process_time': self.process_time_history.numpy()
@@ -438,7 +441,15 @@ class OptimizationResultsSingleMethod:
                     "nn_model_name must be provided when saving "
                     "NNAcquisitionOptimizer results (save_dir is not None).")
             opt_config.pop('model')
-            opt_config['nn_model_name'] = nn_model_name
+
+            # opt_config['nn_model_name'] = nn_model_name
+
+            opt_config['nn_acqf'] = {
+                'name': nn_model_name,
+                'model': load_nn_acqf(nn_model_name, load_weights=False).get_info_dict(),
+                **load_nn_acqf_configs(nn_model_name)
+            }
+            
         elif nn_model_name is not None:
             raise ValueError(
                 "nn_model_name must not be provided if not using NNAcquisitionOptimizer.")
