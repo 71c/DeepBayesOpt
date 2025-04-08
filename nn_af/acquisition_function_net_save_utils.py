@@ -77,36 +77,46 @@ def load_nn_acqf(
 
 def load_nn_acqf_configs(model_and_info_folder_name: str):
     model_and_info_path = os.path.join(MODELS_DIR, model_and_info_folder_name)
+    
     function_samples_config = load_json(
         os.path.join(model_and_info_path, "function_samples_config.json"))
+    acquisition_dataset_config = load_json(
+        os.path.join(model_and_info_path, "acquisition_dataset_config.json"))
+    n_points_config = load_json(
+        os.path.join(model_and_info_path, "n_points_config.json"))
+    
+    dataset_transform_config = load_json(
+        os.path.join(model_and_info_path, "dataset_transform_config.json"))
+    if dataset_transform_config['outcome_transform'] is not None:
+        dataset_transform_config['outcome_transform'] = torch.load(
+            os.path.join(model_and_info_path, "outcome_transform.pt"))
+    
     model_sampler = RandomModelSampler.load(
         os.path.join(model_and_info_path, "model_sampler"))
     if function_samples_config['models'] is not None:
         function_samples_config['models'] = model_sampler.initial_models
         function_samples_config['model_probabilities'] = model_sampler.model_probabilities
         assert model_sampler.randomize_params == function_samples_config['randomize_params']
-    acquisition_dataset_config = load_json(
-        os.path.join(model_and_info_path, "acquisition_dataset_config.json"))
-    n_points_config = load_json(
-        os.path.join(model_and_info_path, "n_points_config.json"))
-
-    dataset_transform_config = load_json(
-        os.path.join(model_and_info_path, "dataset_transform_config.json"))
-    if dataset_transform_config['outcome_transform'] is not None:
-        dataset_transform_config['outcome_transform'] = torch.load(
-            os.path.join(model_and_info_path, "outcome_transform.pt"))
-
+    
     training_config = load_json(
         os.path.join(model_and_info_path, "training_config.json"))
-
-    return {
+    
+    af_dataset_config = {
         "function_samples_config": function_samples_config,
         "acquisition_dataset_config": acquisition_dataset_config,
         "n_points_config": n_points_config,
-        "dataset_transform_config": dataset_transform_config,
-        "model_sampler": model_sampler,
-        "training_config": training_config
+        "dataset_transform_config": dataset_transform_config
     }
+
+    all_info_json, model_sampler = json_serialize_nn_acqf_configs(
+        training_config=training_config,
+        af_dataset_config=af_dataset_config,
+        hash_gpytorch_modules=False
+    )
+    del all_info_json['function_samples_config']['models']
+    del all_info_json['function_samples_config']['model_probabilities']
+    del all_info_json['function_samples_config']['randomize_params']
+    return all_info_json
 
 
 def get_nn_af_args_configs_model_paths_from_cmd_args(
@@ -144,11 +154,10 @@ def get_nn_af_args_configs_model_paths_from_cmd_args(
             model, model_and_info_folder_name, models_path)
 
 
-def _save_nn_acqf_configs(
-        model: AcquisitionFunctionNet,
+def json_serialize_nn_acqf_configs(
         training_config: dict[str, Any],
         af_dataset_config: dict[str, dict[str, Any]],
-        save:bool=True
+        hash_gpytorch_modules:bool=True
     ):
     function_samples_config = af_dataset_config["function_samples_config"]
     acquisition_dataset_config = af_dataset_config["acquisition_dataset_config"]
@@ -169,19 +178,37 @@ def _save_nn_acqf_configs(
             'model_probabilities': model_sampler.model_probabilities,
             'randomize_params': model_sampler.randomize_params
         },
-        include_priors=True, hash_gpytorch_modules=True,
+        include_priors=True, hash_gpytorch_modules=hash_gpytorch_modules,
         hash_include_str=False, hash_str=True)
 
     all_info_json = {
-        'model': model.get_info_dict(),
+        # af_dataset_config
         'function_samples_config': function_samples_config_json,
         'acquisition_dataset_config': acquisition_dataset_config,
         'n_points_config': n_points_config,
         'dataset_transform_config': dataset_transform_config_json,
         'model_sampler': model_sampler_json,
+        
         'training_config': training_config
     }
     # all_info_json = _remove_none_and_false(all_info_json)
+
+    return all_info_json, model_sampler
+
+
+def _save_nn_acqf_configs(
+        model: AcquisitionFunctionNet,
+        training_config: dict[str, Any],
+        af_dataset_config: dict[str, dict[str, Any]],
+        save:bool=True
+    ):
+
+    all_info_json, model_sampler = json_serialize_nn_acqf_configs(
+        training_config=training_config,
+        af_dataset_config=af_dataset_config
+    )
+    all_info_json['model'] = model.get_info_dict()
+    
     all_info_hash = dict_to_hash(all_info_json)
     model_and_info_folder_name = os.path.join(MODELS_VERSION, f"model_{all_info_hash}")
     model_and_info_path = os.path.join(MODELS_DIR, model_and_info_folder_name)
@@ -203,6 +230,9 @@ def _save_nn_acqf_configs(
                 os.path.join(model_and_info_path, "training_config.json"))
 
         # Save GP dataset config
+        function_samples_config_json = all_info_json['function_samples_config']
+        acquisition_dataset_config = all_info_json['acquisition_dataset_config']
+        n_points_config = all_info_json['n_points_config']
         save_json(function_samples_config_json,
                 os.path.join(model_and_info_path, "function_samples_config.json"))
         save_json(acquisition_dataset_config,
@@ -213,6 +243,8 @@ def _save_nn_acqf_configs(
             os.path.join(model_and_info_path, "model_sampler"))
 
         # Save dataset transform config
+        dataset_transform_config_json = all_info_json['dataset_transform_config']
+        dataset_transform_config = af_dataset_config['dataset_transform_config']
         save_json(dataset_transform_config_json,
                 os.path.join(model_and_info_path, "dataset_transform_config.json"))
         outcome_transform = dataset_transform_config['outcome_transform']

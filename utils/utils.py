@@ -1015,7 +1015,6 @@ def convert_to_json_serializable(data,
                                  hash_gpytorch_modules=True,
                                  hash_include_str=True,
                                  hash_str=False):
-    
     if isinstance(data, dict):
         return {k: convert_to_json_serializable(
             v, include_priors, hash_gpytorch_modules, hash_include_str, hash_str)

@@ -446,7 +446,7 @@ class OptimizationResultsSingleMethod:
 
             opt_config['nn_acqf'] = {
                 'name': nn_model_name,
-                'model': load_nn_acqf(nn_model_name, load_weights=False).get_info_dict(),
+                'model': optimizer_kwargs['model'].get_info_dict(),
                 **load_nn_acqf_configs(nn_model_name)
             }
             

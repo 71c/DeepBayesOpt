@@ -2,32 +2,26 @@ parameters:
   max_history:
     value: 20
   dimension:
-    value: 8
+    value: 1
   lengthscale:
-    value: 0.49
+    value: 0.05
   method:
-    value: gittins
-  gi_loss_normalization:
-    value: normal
-  lamda:
-    value: 1.00e-02
+    value: mse_ei
   train_samples_size:
     value: 10000
   layer_width:
     value: 300
   epochs:
-    value: 2500
+    value: 7500
   learning_rate:
-    values: [3.00e-07, 1.00e-05, 3.00e-04, 1.00e-02]
+    value: 3.00e-04
   batch_size:
     value: 512
   lr_scheduler:
     values: [null, 'ReduceLROnPlateau']
   lr_scheduler_patience:
-    value: 150
+    value: 500
   lr_scheduler_factor:
-    value: 0.3
+    value: 0.5
   early_stopping:
-    value: true
-  patience:
-    value: 1500
+    value: false
