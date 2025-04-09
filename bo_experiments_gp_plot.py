@@ -18,39 +18,33 @@ CPROFILE = False
 # PRE = [
 #     ["nn.layer_width", "nn.train_samples_size", "gen_candidates"]
 # ]
-
 # ATTR_A = ["nn.batch_size"]
 # ATTR_B = ["nn.learning_rate"]
-
-# POST = [
-#     ["lamda", "gp_af", "nn.method"],
-#     ["bo_seed"]
-# ]
-
 
 
 # PRE = [
 #     ["nn.train_samples_size"],
 #     ["nn.learning_rate", "nn.lr_scheduler"]
 # ]
-
 # ATTR_A = ["gen_candidates"]
 # ATTR_B = ["raw_samples", "num_restarts"]
 
-# POST = [
-#     ["lamda", "gp_af", "nn.method"],
-#     ["bo_seed"]
+
+# PRE = [
+#     ["gen_candidates"],
+#     ["nn.train_samples_size"],
+#     ["nn.learning_rate", "nn.lr_scheduler"]
 # ]
+# ATTR_A = ["raw_samples"]
+# ATTR_B = ["num_restarts"]
 
 
 PRE = [
-    ["gen_candidates"],
-    ["nn.train_samples_size"],
-    ["nn.learning_rate", "nn.lr_scheduler"]
+    ["nn.layer_width", "nn.train_samples_size", "gen_candidates"]
 ]
+ATTR_A = ["nn.lr_scheduler"]
+ATTR_B = ["nn.learning_rate"]
 
-ATTR_A = ["raw_samples"]
-ATTR_B = ["num_restarts"]
 
 POST = [
     ["lamda", "gp_af", "nn.method"],

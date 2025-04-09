@@ -426,11 +426,15 @@ def plot_acquisition_function_net_training_history_ax(
     if plot_log_regret:
         if gp_test_stat is None:
             raise ValueError("Need to have GP test stat to plot regret")
+        # regret_data = np.abs(test_stat - gp_test_stat)
+        regret_data = test_stat - gp_test_stat
+        regret_data = -regret_data if regret_data[0] < 0 else regret_data
+        # regret_data = np.maximum(differences, 1e-15)
         to_plot = {
             'lines': [
                 {
                     'label': 'Regret (NN)',
-                    'data': np.abs(test_stat - gp_test_stat),
+                    'data': regret_data,
                     'color': ORANGE
                 }
             ],
