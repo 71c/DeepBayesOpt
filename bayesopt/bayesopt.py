@@ -544,8 +544,8 @@ class OptimizationResultsSingleMethod:
             optimizer.optimize(self.n_iter, verbose=verbose)
             trial_result = optimizer.get_stats()
             if self.save_dir is not None:
-                h = self.trial_configs_str[trial_index]
-                self._func_results_to_save[func_index][h] = \
+                trial_config_str = self.trial_configs_str[trial_index]
+                self._func_results_to_save[func_index][trial_config_str] = \
                     convert_to_json_serializable(trial_result)
 
         return trial_result
@@ -593,6 +593,7 @@ class OptimizationResultsSingleMethod:
         for trial_config_str, trial_result in new_trial_results_dict.items():
             trial_file_path = os.path.join(trials_dir, trial_config_str + ".json")
             save_json(trial_result, trial_file_path, indent=4)
+            print(f"Saved trial result to {trial_file_path}")
         
         self._func_results_to_save[func_index] = {}
 
@@ -657,15 +658,25 @@ class OptimizationResultsSingleMethod:
 
                 if n_funcs_to_optimize > 1:
                     pbar.update(1)
-
-            result = aggregate_stats_list(results_func)
-
+            
             if self.objective_names is not None:
                 func_name = self.objective_names[func_index]
+                func_dir = os.path.join(self.save_dir, func_name)
+                results_dir = os.path.join(func_dir, "results")
+                func_opt_config_str = self.func_opt_configs_str[func_index]
+                opt_config_dir = os.path.join(results_dir, func_opt_config_str)
+                trials_dir = os.path.join(opt_config_dir, "trials")
+                
+                for trial_index in range(self.n_trials_per_function):
+                    trial_config_str = self.trial_configs_str[trial_index]
+                    trial_file_path = os.path.join(trials_dir, trial_config_str + ".json")
+                    print(f"Trial result saved to {trial_file_path}")
             else:
                 func_name = f"Function_{func_index}"
 
-            yield func_name, result
+            result = aggregate_stats_list(results_func)
+
+            yield func_name, trials_dir, result
 
         if n_funcs_to_optimize > 1:
             pbar.close()

@@ -1,9 +1,12 @@
 from collections import defaultdict
 from functools import cache
 import math
+import os
 from typing import Any
 import argparse
 import yaml
+
+import matplotlib.pyplot as plt
 
 import torch
 from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprovement
@@ -596,9 +599,29 @@ def main():
         raise ValueError("NN model not trained")
     
     # Perform the optimization. Don't do anything with the results here
-    for func_name, func_result in optimization_results:
+    for func_name, trials_dir, func_result in optimization_results:
         # There should be just one loop through this since there is just one function
         pass
+        
+        # print(f"Function name: {func_name}")
+        # print(f"Trials dir: {trials_dir}")
+        # # print(f"Function result: {func_result}")
+        
+        # x = func_result['x']
+        # assert x.shape[0] == 1 # only one BO loop seed
+        # x = x[0] # shape (n_iterations, dimension)
+        # x_first_component = x[:, 0]
+        
+        # # Plot a scatter plot
+        # plt.scatter(range(len(x_first_component)), x_first_component)
+        # plt.xlabel('Iteration Number')
+        # plt.ylabel('X Value')
+        # plt.title('Scatter Plot of X Value vs Iteration Number')
+
+        # trial_config_str = optimization_results.trial_configs_str[0]
+        # plot_path = os.path.join(trials_dir, trial_config_str + ".pdf")
+        # plt.savefig(plot_path)
+        # plt.close()
 
     # print(f"{objective_args=}")
     # print(f"{bo_policy_args=}")
