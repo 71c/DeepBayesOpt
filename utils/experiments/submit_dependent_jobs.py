@@ -143,7 +143,7 @@ def _submit_dependent_jobs(
             "error": os.path.join(logs_dir, f"{job_name}_%j.err"),
             "requeue": True,
             "array": f"1-{n_commands}",
-            # "mem": "40gb" # server memory requested (per node)
+            "mem": "32gb" # server memory requested (per node)
         }
         if mail is not None:
             sbatch_args_dict['mail-type'] = 'ALL'
