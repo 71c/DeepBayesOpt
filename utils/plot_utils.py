@@ -617,6 +617,9 @@ def get_plot_ax_bo_stats_vs_iteration_func(get_result_func):
             attr_name_to_title: dict[str, str] = {},
             **plot_kwargs):
         attr_names = set()
+
+        # print(f"{plot_config=}, {plot_name=}")
+        # exit()
         
         for legend_name, data in plot_config.items():
             this_ids = []

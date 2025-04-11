@@ -233,6 +233,8 @@ def main():
             add_extra_index=-2 # -2 is the "line" level
         )
 
+        # new_attrs_groups_list.insert(-1, None)
+
         n_groups = len(new_attrs_groups_list)
         if n_groups < 2:
             raise ValueError(
@@ -245,7 +247,8 @@ def main():
         # script_config.pop("nn_experiment_config")
         script_config["nn_train_and_bo_config"] = refined_config
         script_config["plots_config"] = [
-            sorted(list(group)) for group in new_attrs_groups_list]
+            group if group is None else sorted(list(group))
+            for group in new_attrs_groups_list]
         
         # SPECIAL
         script_config["gp_af_names"] = list(GP_AF_DICT)
@@ -287,8 +290,8 @@ def main():
 
         print("Plotting configuration:")
         for level_name, attrs in zip(level_names, new_attrs_groups_list):
-            if attrs:
-                print(f"  {level_name}: {attrs}")
+            # if attrs:
+            print(f"  {level_name}: {attrs}")
 
         save_json(plot_config, "config/plot_config.json", indent=2)
 

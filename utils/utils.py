@@ -1353,7 +1353,7 @@ def group_by_nested_attrs(items: List[dict[K, Any]],
                         dict_to_str_func=dict_to_str,
                         add_extra_index=-1):
     if not are_all_disjoint(attrs_groups_list):
-        raise ValueError("Attributes in the groups are not disjoint")    
+        raise ValueError("Attributes in the groups are not disjoint")
     keys = set().union(*[set(item.keys()) for item in items])
     
     for attrs in attrs_groups_list:
