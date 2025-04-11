@@ -621,7 +621,9 @@ def get_plot_ax_bo_stats_vs_iteration_func(get_result_func):
         for legend_name, data in plot_config.items():
             this_ids = []
             this_data = []
-            for v in data["items"].values():
+            # sorted(data["items"].items(), key=lambda x: x[0])
+            for k, v in data["items"].items():
+                # print(f"{k=}, {v=}")
                 data_index = v["items"]
                 if isinstance(data_index, list):
                     print([get_result_func(i) for i in data_index])
@@ -632,7 +634,8 @@ def get_plot_ax_bo_stats_vs_iteration_func(get_result_func):
                     attr_name = info['attr_name']
                     attr_names.add(attr_name)
                     val = info[attr_name]
-                    if attr_name == 'best_y':
+                    if attr_name in {'best_y', 'y', 'x', 'best_x'}:
+                        # For x vals, get the first component (if dim > 1)
                         assert len(val.shape) == 2 and val.shape[1] == 1
                         val = val[:, 0]
                     else:
@@ -641,20 +644,26 @@ def get_plot_ax_bo_stats_vs_iteration_func(get_result_func):
                     val_id = f"{info['index']}_{attr_name}"
                     this_ids.append(val_id)
                     this_data.append(val)
-            
+                        
             if len(this_ids) == 0:
                 continue
+            
+            if attr_name == 'x':
+                # Only plot one seed
+                x_vals = this_data[0]
+                ax.scatter(range(len(x_vals)), x_vals,
+                           label=legend_name, s=2, alpha=0.5)
+            else:
+                center, lower, upper = _get_error_lines(
+                    this_ids, this_data,
+                    alpha=plot_kwargs['alpha'],
+                    interval_of_center=plot_kwargs['interval_of_center'],
+                    center_stat=plot_kwargs['center_stat'],
+                    assume_normal=plot_kwargs['assume_normal']
+                )
 
-            center, lower, upper = _get_error_lines(
-                this_ids, this_data,
-                alpha=plot_kwargs['alpha'],
-                interval_of_center=plot_kwargs['interval_of_center'],
-                center_stat=plot_kwargs['center_stat'],
-                assume_normal=plot_kwargs['assume_normal']
-            )
-
-            plot_error_bars(ax, center, lower, upper,
-                            label=legend_name, shade=plot_kwargs['shade'])
+                plot_error_bars(ax, center, lower, upper,
+                                label=legend_name, shade=plot_kwargs['shade'])
         
         if len(attr_names) > 1:
             raise ValueError(f"Expected just one attribute to plot but got {attr_names=}")

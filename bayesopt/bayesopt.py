@@ -667,12 +667,13 @@ class OptimizationResultsSingleMethod:
                 opt_config_dir = os.path.join(results_dir, func_opt_config_str)
                 trials_dir = os.path.join(opt_config_dir, "trials")
                 
-                for trial_index in range(self.n_trials_per_function):
-                    trial_config_str = self.trial_configs_str[trial_index]
-                    trial_file_path = os.path.join(trials_dir, trial_config_str + ".json")
-                    print(f"Trial result saved to {trial_file_path}")
+                # for trial_index in range(self.n_trials_per_function):
+                #     trial_config_str = self.trial_configs_str[trial_index]
+                #     trial_file_path = os.path.join(trials_dir, trial_config_str + ".json")
+                #     print(f"Trial result saved to {trial_file_path}")
             else:
                 func_name = f"Function_{func_index}"
+                trials_dir = None
 
             result = aggregate_stats_list(results_func)
 

@@ -70,7 +70,9 @@ ATTR_GROUPS = [
     ["best_y", "mean_eval_process_time", "process_time", "n_evals"],
     ["process_time"],
     ["mean_eval_process_time"],
-    ["best_y"]
+    ["best_y"],
+    ["x"],
+    ["best_y", "x"]
 ]
 
 ATTR_NAME_TO_TITLE = {
@@ -79,7 +81,8 @@ ATTR_NAME_TO_TITLE = {
     "time": "Time",
     "n_evals": "Number of AF evaluations by optimize_acqf",
     "mean_eval_process_time": "Mean time to evaluate AF in optimize_acqf",
-    "optimize_process_time": "Time spent optimizing"
+    "optimize_process_time": "Time spent optimizing",
+    "x": "x"
 }
 
 
@@ -157,7 +160,7 @@ def main():
 
     # Extract results
     results_list = [
-        {k: v[0, :] for k, v in next(iter(r))[1].items()}
+        {k: v[0, :] for k, v in next(iter(r))[2].items()}
         for r in existing_results
     ]
 
