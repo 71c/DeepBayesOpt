@@ -151,7 +151,7 @@ def _submit_dependent_jobs(
         if job_spec["gpu"]:
             sbatch_args_dict['partition'] = 'gpu'
             sbatch_args_dict['gres'] = job_spec.get("gpu_gres", gpu_gres)
-            sbatch_args_dict['mem'] = "20gb"
+            # sbatch_args_dict['mem'] = "20gb"
         else:
             # sbatch_args_dict['partition'] = 'frazier'
             sbatch_args_dict['mem'] = '4gb'
