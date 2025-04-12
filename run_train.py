@@ -88,6 +88,7 @@ def run_train(cmd_args: Optional[Sequence[str]]=None):
         optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate,
                                     #  weight_decay=1e-2
                                     )
+        # optimizer = torch.optim.SGD(model.parameters(), lr=args.learning_rate, momentum=0.9)
         # optimizer = torch.optim.RMSprop(model.parameters(), lr=learning_rate)
 
         training_history_data = train_acquisition_function_net(

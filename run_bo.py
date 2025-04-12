@@ -327,9 +327,7 @@ def _get_sobol_samples_and_bounds(bo_seed, n_initial_samples, dimension):
     return init_x, bounds
 
 
-_BO_CACHE = {}
-
-def run_bo(objective_args: dict[str, Any],
+def pre_run_bo(objective_args: dict[str, Any],
            bo_policy_args: dict[str, Any],
            gp_af_args: dict[str, Any],
            load_weights: bool=True):
@@ -369,6 +367,10 @@ def run_bo(objective_args: dict[str, Any],
             if v is not None:
                 raise ValueError(
                     f"Cannot specify {GP_AF_NAME_PREFIX}_{k} if not using a GP AF")
+    
+    # Just a hack for working with the plotting code
+    if gp_af == 'random search':
+        gp_af = None
 
     af_options = {}
     
@@ -526,8 +528,36 @@ def run_bo(objective_args: dict[str, Any],
             optimizer_class = NNAcquisitionOptimizer
         else:
             raise ValueError(f"Must either specify {GP_AF_NAME_PREFIX}, specify nn_model_name, or set random_search=True")
-
+    
     results_name = dict_to_str(results_print_data, include_space=True)
+    return {
+        'dimension': dimension,
+        'objective_fn': objective_fn,
+        'optimizer_class': optimizer_class,
+        'objective_name': objective_name,
+        'results_name': results_name,
+        'af_options': af_options
+    }
+
+
+_BO_CACHE = {}
+
+def run_bo(objective_args: dict[str, Any],
+           bo_policy_args: dict[str, Any],
+           gp_af_args: dict[str, Any],
+           load_weights: bool=True):
+    
+    stuff = pre_run_bo(
+        objective_args, bo_policy_args, gp_af_args, load_weights=load_weights)
+    if stuff is None:
+        return None
+    
+    dimension = stuff['dimension']
+    objective_fn = stuff['objective_fn']
+    optimizer_class = stuff['optimizer_class']
+    objective_name = stuff['objective_name']
+    results_name = stuff['results_name']
+    af_options = stuff['af_options']
     
     bo_seed = bo_policy_args['bo_seed']
     

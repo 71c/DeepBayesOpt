@@ -143,7 +143,7 @@ def _submit_dependent_jobs(
             "error": os.path.join(logs_dir, f"{job_name}_%j.err"),
             "requeue": True,
             "array": f"1-{n_commands}",
-            "mem": "32gb" # server memory requested (per node)
+            "mem": "64gb" # server memory requested (per node)
         }
         if mail is not None:
             sbatch_args_dict['mail-type'] = 'ALL'
@@ -154,7 +154,7 @@ def _submit_dependent_jobs(
             # sbatch_args_dict['mem'] = "20gb"
         else:
             # sbatch_args_dict['partition'] = 'frazier'
-            sbatch_args_dict['mem'] = '4gb'
+            sbatch_args_dict['mem'] = '8gb'
         if dependency_job_ids:
             dependency_flag = 'afterok:' + ':'.join(dependency_job_ids)
             sbatch_args_dict['dependency'] = dependency_flag

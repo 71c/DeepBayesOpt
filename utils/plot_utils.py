@@ -618,9 +618,6 @@ def get_plot_ax_bo_stats_vs_iteration_func(get_result_func):
             **plot_kwargs):
         attr_names = set()
 
-        # print(f"{plot_config=}, {plot_name=}")
-        # exit()
-        
         for legend_name, data in plot_config.items():
             this_ids = []
             this_data = []
@@ -688,6 +685,30 @@ def get_plot_ax_bo_stats_vs_iteration_func(get_result_func):
 
         ax.set_title(plot_name)
         ax.legend()
+    
+    return ret
+
+
+# TODO: Write this function
+def get_plot_ax_af_iterations_func(get_result_func):
+    def ret(plot_config: dict,
+            ax,
+            plot_name: Optional[str]=None,
+            attr_name_to_title: dict[str, str] = {},
+            **plot_kwargs):
+        # print(f"{plot_config=}, {plot_name=}, {attr_name_to_title=}, {plot_kwargs=}")
+        # exit()
+
+        for k, v in plot_config.items():
+            data_index = v["items"]
+            if isinstance(data_index, list):
+                print([get_result_func(i) for i in data_index])
+                raise ValueError
+
+            info = get_result_func(data_index)
+
+            # if 'nn_model' not in info:
+            #     print({k: v for k, v in info.items() if k != 'results'})
     
     return ret
 
@@ -845,8 +866,6 @@ def save_figures_from_nested_structure(
             )
     elif this_level_name == "fname":        
         info_dict = {}
-        # print(f"{plot_config=}")
-        # exit()
         for fname_desc, data in plot_config.items():
             items = data["items"]
             if "vals" in data:
@@ -910,7 +929,7 @@ def plot_dict_to_str(d):
         for k, v in d.items()
     ]
     items = sorted(items)
-    return ", ".join([item[1] for item in items])
+    return ", ".join([str(item[1]) for item in items])
 
 
 def add_plot_args(parser):

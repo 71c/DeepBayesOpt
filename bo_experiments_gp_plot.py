@@ -1,13 +1,14 @@
 import os
 import cProfile, pstats
 
-from utils.plot_utils import create_plot_directory
+from nn_af.acquisition_function_net_save_utils import load_nn_acqf
+from utils.plot_utils import create_plot_directory, get_plot_ax_af_iterations_func
 from utils.utils import dict_to_str, group_by, group_by_nested_attrs, save_json
 from utils.plot_utils import add_plot_args, get_plot_ax_bo_stats_vs_iteration_func, plot_dict_to_str, save_figures_from_nested_structure
 from utils.experiments.experiment_config_utils import CONFIG_DIR
 
 from bo_experiments_gp import get_bo_experiments_parser, generate_gp_bo_job_specs
-from run_bo import GP_AF_DICT, get_arg_names
+from run_bo import GP_AF_DICT, get_arg_names, pre_run_bo
 from train_acqf import MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN
 
 
@@ -67,12 +68,13 @@ PLOTS_CONFIG_MULTIPLE = [
 
 # "optimize_process_time"
 ATTR_GROUPS = [
-    ["best_y", "mean_eval_process_time", "process_time", "n_evals"],
-    ["process_time"],
-    ["mean_eval_process_time"],
-    ["best_y"],
-    ["x"],
-    ["best_y", "x"]
+    ["per_iteration_decisions"],
+    # ["best_y", "mean_eval_process_time", "process_time", "n_evals"],
+    # ["process_time"],
+    # ["mean_eval_process_time"],
+    # ["best_y"],
+    # ["x"],
+    # ["best_y", "x"]
 ]
 
 ATTR_NAME_TO_TITLE = {
@@ -174,17 +176,16 @@ def main():
                  for k, v in MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN[nn_model_name].items()
                  }
             )
-            bo_policy_args.pop('nn_model_name')
         
         if 'random_search' in bo_policy_args:
-            random_search = bo_policy_args.pop('random_search')
+            random_search = bo_policy_args['random_search']
             if random_search:
                 item['gp_af_args']['gp_af'] = 'random search'
 
         reformatted_configs.append({
             **{k if k == 'dimension' else f'objective.{k}': v
                for k, v in item['objective_args'].items()},
-            **bo_policy_args,
+            **{k: v for k, v in bo_policy_args.items() if k != 'random_search'},
             **{k if k == 'gp_af' else f'gp_af.{k}': v
                for k, v in item['gp_af_args'].items()}
         })
@@ -206,25 +207,39 @@ def main():
 
     all_keys = set().union(*[set(result.keys()) for result in results_list])
     for attr_names in ATTR_GROUPS:
-        attr_names = [a for a in attr_names if a in all_keys]
         print(f"\n-----------------------------------------------------\n{attr_names=}")
 
+        if attr_names == ["per_iteration_decisions"]:
+            plot_af_iterations = True
+        else:
+            plot_af_iterations = False
+            attr_names = [a for a in attr_names if a in all_keys]
+        
         if len(attr_names) == 1:
             attrs_groups_list = PLOTS_CONFIG_SINGLE
         else:
             attrs_groups_list = PLOTS_CONFIG_MULTIPLE
         
         attrs_groups_list = [set(group) for group in attrs_groups_list]
-        if len(attrs_groups_list) >= 3:
-            # Right before the one before "line" (-2) level
-            attrs_groups_list.insert(-3, {"attr_name"})
+        
+        if plot_af_iterations:
+            attrs_groups_list.insert(-1, {"attr_name"})
+            attr_names = list(range(50))
         else:
-            # Right before "line" (-2) level
-            attrs_groups_list.insert(-2, {"attr_name"})
+            if len(attrs_groups_list) >= 3:
+                # Right before the one before "line" (-2) level
+                attrs_groups_list.insert(-3, {"attr_name"})
+            else:
+                # Right before "line" (-2) level
+                attrs_groups_list.insert(-2, {"attr_name"})
         
         this_reformatted_configs = [{**cfg, 'attr_name': name, 'index': i}
              for name in attr_names
              for i, cfg in enumerate(reformatted_configs)]
+        if not plot_af_iterations:
+            for cfg in this_reformatted_configs:
+                if "nn_model_name" in cfg:
+                    cfg.pop("nn_model_name")
 
         plot_config, new_attrs_groups_list = group_by_nested_attrs(
             this_reformatted_configs,
@@ -233,7 +248,8 @@ def main():
             add_extra_index=-2 # -2 is the "line" level
         )
 
-        # new_attrs_groups_list.insert(-1, None)
+        if plot_af_iterations:
+            new_attrs_groups_list.insert(-1, None)
 
         n_groups = len(new_attrs_groups_list)
         if n_groups < 2:
@@ -253,10 +269,13 @@ def main():
         # SPECIAL
         script_config["gp_af_names"] = list(GP_AF_DICT)
 
+        use_rows = False if plot_af_iterations else args.use_rows
+        use_cols = False if plot_af_iterations else args.use_cols
+
         levels_to_add = ["random", "line"]
-        if args.use_cols:
+        if use_cols:
             levels_to_add.append("col")
-        if args.use_rows:
+        if use_rows:
             levels_to_add.append("row")
 
         levels_reversed = levels_to_add[:n_groups]
@@ -273,7 +292,7 @@ def main():
         elif len(levels_reversed) < n_groups:
             levels_reversed.extend(['folder'] * (n_groups - len(levels_reversed)))
 
-        save_dir_this_attrs = os.path.join(save_dir, "-".join(attr_names))
+        save_dir_this_attrs = os.path.join(save_dir, "-".join(map(str, attr_names)))
         print(f"Saving plots to {save_dir_this_attrs}")
         
         # Add folder level
@@ -295,27 +314,61 @@ def main():
 
         save_json(plot_config, "config/plot_config.json", indent=2)
 
-        def get_result(index):
-            cfg = this_reformatted_configs[index]
-            idx = cfg['index']
-            results = results_list[idx]
-            attr_name = cfg['attr_name']
-            
-            bo_policy_args = existing_cfgs[idx]['bo_policy_args']
-            
-            if attr_name in results:
+        if plot_af_iterations:
+            def get_result(index):
+                cfg = this_reformatted_configs[index]
+                idx = cfg['index']
+                results = results_list[idx]
+                attr_name = cfg['attr_name']
+                
+                bo_policy_args = existing_cfgs[idx]['bo_policy_args']
+                
                 ret = {
-                    attr_name: results[attr_name],
+                    'results': results,
                     'attr_name': attr_name,
                     'index': idx
                 }
                 if 'nn_model_name' in bo_policy_args:
-                    ret['nn_model_name'] = bo_policy_args['nn_model_name']
+                    nn = load_nn_acqf(bo_policy_args['nn_model_name'],
+                                        return_model_path=False,
+                                        load_weights=True,
+                                        verbose=False)
+                    ret['nn_model'] = nn
+                else:
+                    c = existing_cfgs[idx]
+                    stuff = pre_run_bo(c['objective_args'], c['bo_policy_args'],
+                                       c['gp_af_args'])
+                    af_options = stuff['af_options']
+                    if not af_options: # Random Search
+                        return None
+                    ret['gp_model'] = af_options['optimizer_kwargs_per_function'][0]['model']
+                    ret['af_class'] = af_options['acquisition_function_class']
+                    ret['fit_params'] = af_options['fit_params']
                 return ret
-            return None
 
-        plot_ax_func = get_plot_ax_bo_stats_vs_iteration_func(get_result)
-        
+            plot_ax_func = get_plot_ax_af_iterations_func(get_result)
+        else:
+            def get_result(index):
+                cfg = this_reformatted_configs[index]
+                idx = cfg['index']
+                results = results_list[idx]
+                attr_name = cfg['attr_name']
+                
+                # bo_policy_args = existing_cfgs[idx]['bo_policy_args']
+                
+                if attr_name in results:
+                    ret = {
+                        attr_name: results[attr_name],
+                        'attr_name': attr_name,
+                        'index': idx
+                    }
+                    # if 'nn_model_name' in bo_policy_args:
+                    #     ret['nn_model_name'] = bo_policy_args['nn_model_name']
+                    return ret
+                return None
+
+            plot_ax_func = get_plot_ax_bo_stats_vs_iteration_func(get_result)
+
         save_figures_from_nested_structure(
             plot_config,
             plot_ax_func,
