@@ -393,9 +393,10 @@ def plot_nn_vs_gp_acquisition_function_1d(
         arrs_and_fit_methods_to_plot.append((ei_nn, "nn"))
     
     # Sort the x_cand and arrs
-    x_cand_plot_component = x_cand[:, varying_index].detach().numpy().flatten()
+    x_cand_plot_component = x_cand[:, varying_index].detach().numpy()
     sorted_indices = np.argsort(x_cand_plot_component)
-    sorted_x_cand = x_cand_plot_component[sorted_indices]
+    sorted_x_cand = x_cand.detach().numpy()[sorted_indices]
+    sorted_x_cand_plot_component = x_cand_plot_component[sorted_indices]
 
     arrs, fit_methods = zip(*arrs_and_fit_methods_to_plot)
     if plot_data_y and method != 'gittins':
@@ -403,7 +404,12 @@ def plot_nn_vs_gp_acquisition_function_1d(
     for arr, fit_method in zip(arrs, fit_methods):
         label = _FIT_METHOD_TO_INFO[fit_method]
         sorted_arr = arr[sorted_indices]
-        ax.plot(sorted_x_cand, sorted_arr, **label)
+        ax.plot(sorted_x_cand_plot_component, sorted_arr, **label)
+    
+    if objective is not None:
+        objective_vals = objective(
+            torch.from_numpy(sorted_x_cand)
+        )[:, 0].detach().numpy()
 
     if plot_data_y or plot_data_x:
         x_hist_varying_index = x_hist[:, varying_index]
@@ -412,11 +418,8 @@ def plot_nn_vs_gp_acquisition_function_1d(
                     markersize=10.0, label='History points')
             if objective is not None:
                 # Plot the objective function
-                objective_vals = objective(x_hist)
-                print(f"{objective_vals=}")
-                exit()
-                ax.plot(x_cand_plot_component, objective(x_hist),
-                        'r--', label='Objective function')
+                ax.plot(sorted_x_cand_plot_component, objective_vals,
+                        'k--', label='Objective function')
         if plot_data_x:
             # yvals = torch.full_like(x_hist_varying_index, constant_y_hist_val)
             # ax.plot(x_hist_varying_index, yvals, 'b*', label='History points')
@@ -425,6 +428,11 @@ def plot_nn_vs_gp_acquisition_function_1d(
                 if i == 0:
                     kk['label'] = 'History points'
                 ax.axvline(xval, **kk)
+        
+    if objective is not None:
+        argmax_objective = np.argmax(objective_vals)
+        ax.axvline(sorted_x_cand_plot_component[argmax_objective],
+                   color='k', linestyle='-', label='Max objective')
 
     if x_cand_original is not None and vals_cand is not None:
         if dimension == 1:

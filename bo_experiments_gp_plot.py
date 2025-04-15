@@ -369,7 +369,7 @@ def main():
                     'lamda_max': cfg.get('nn.lamda_max'),
                     'objective_gp': stuff.get('objective_gp'),
                     'objective_octf': stuff.get('objective_octf'),
-                    'objective_fn': stuff['objective_fn']
+                    'objective': stuff['objective_fn']
                 }
                 
                 if 'nn_model_name' in bo_policy_args:
