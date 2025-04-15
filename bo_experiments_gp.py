@@ -1,9 +1,9 @@
 import argparse
-import math
 from typing import Optional
 import cProfile, pstats
 import torch
 
+from nn_af.acquisition_function_net_save_utils import get_lamda_for_bo_of_nn
 from utils.utils import dict_to_str, group_by, save_json
 from utils.experiments.experiment_config_utils import CONFIG_DIR, add_config_args, get_config_options_list
 from utils.experiments.submit_dependent_jobs import add_slurm_args, submit_jobs_sweep_from_args
@@ -169,20 +169,6 @@ def _gp_bo_jobs_spec_and_cfgs(
             'gpu': False
         }
     return jobs_spec, new_bo_configs, existing_bo_configs_and_results
-
-
-def get_lamda_for_bo_of_nn(lamda, lamda_min, lamda_max):
-    if lamda is not None:
-        # Then it is trained with a fixed value of lamda
-        return lamda
-    if lamda_min is None or lamda_max is None:
-        assert lamda_min is None and lamda_max is None
-        return None
-    # Trained with a range of lamda values
-    log_min, log_max = math.log10(lamda_min), math.log10(lamda_max)
-    # We will test with the average
-    log_lamda = 0.5 * (log_min + log_max)
-    return 10**log_lamda
 
 
 def get_bo_experiments_parser(train=True):

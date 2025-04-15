@@ -97,5 +97,5 @@ BO_PLOTS_CFG="--center_stat mean --interval_of_center --plots_name $BO_PLOTS_NAM
 python bo_experiments_gp_status.py $NN_CFG $BO_CFG
        python bo_experiments_gp.py $NN_CFG $BO_CFG $SLURM_CFG
        python bo_experiments_gp.py $NN_CFG $BO_CFG $SLURM_CFG --no_submit
-  python bo_experiments_gp_plot.py $NN_CFG $BO_CFG $PLOTS_CFG $BO_PLOTS_CFG
+  python bo_experiments_gp_plot.py $NN_CFG $BO_CFG $PLOTS_CFG $BO_PLOTS_CFG --n_iterations 40
          python train_acqf_plot.py $NN_CFG         $PLOTS_CFG

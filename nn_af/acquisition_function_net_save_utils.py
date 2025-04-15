@@ -1,4 +1,5 @@
 from functools import cache
+import math
 import os
 from typing import Any, Sequence, Optional
 import torch
@@ -66,9 +67,8 @@ def load_nn_acqf(
         except FileNotFoundError:
             raise ValueError(f"No best model found: {best_model_fname_json_path} not found")
         best_model_path = os.path.join(model_path, best_model_fname)
-        if verbose:
-            print(f"Loading best weights from {best_model_path}")
-        model.load_state_dict(_get_state_dict(best_model_path))
+        
+        model.load_state_dict(_get_state_dict(best_model_path, verbose=verbose))
 
     if return_model_path:
         return model, model_path
@@ -196,6 +196,20 @@ def json_serialize_nn_acqf_configs(
     return all_info_json, model_sampler
 
 
+def get_lamda_for_bo_of_nn(lamda, lamda_min, lamda_max):
+    if lamda is not None:
+        # Then it is trained with a fixed value of lamda
+        return lamda
+    if lamda_min is None or lamda_max is None:
+        assert lamda_min is None and lamda_max is None
+        return None
+    # Trained with a range of lamda values
+    log_min, log_max = math.log10(lamda_min), math.log10(lamda_max)
+    # We will test with the average
+    log_lamda = 0.5 * (log_min + log_max)
+    return 10**log_lamda
+
+
 def _save_nn_acqf_configs(
         model: AcquisitionFunctionNet,
         training_config: dict[str, Any],
@@ -255,9 +269,15 @@ def _save_nn_acqf_configs(
     return model_and_info_folder_name, models_path
 
 
-@cache
-def _get_state_dict(weights_path: str):
-    return torch.load(weights_path)
+_CACHED_WEIGHTS = {}
+def _get_state_dict(weights_path: str, verbose: bool=True):
+    if weights_path in _CACHED_WEIGHTS:
+        return _CACHED_WEIGHTS[weights_path]
+    if verbose:
+        print(f"Loading best weights from {weights_path}")
+    ret = torch.load(weights_path)
+    _CACHED_WEIGHTS[weights_path] = ret
+    return ret
 
 
 @cache

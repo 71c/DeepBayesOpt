@@ -3,6 +3,7 @@ from typing import Any, Callable, Type, Optional, List, Union
 import copy
 import os
 import time
+import math
 
 from tqdm import tqdm, trange
 import matplotlib.pyplot as plt
@@ -20,9 +21,10 @@ from botorch.sampling.pathwise import draw_kernel_feature_paths
 from botorch.models.transforms.outcome import Standardize
 from botorch.exceptions import UnsupportedError
 from gpytorch.mlls import ExactMarginalLogLikelihood
+from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprovement
 
 from bayesopt.random_gp_function import RandomGPFunction
-from nn_af.acquisition_function_net_save_utils import load_nn_acqf, load_nn_acqf_configs
+from nn_af.acquisition_function_net_save_utils import load_nn_acqf_configs
 from utils.utils import (
     add_outcome_transform, aggregate_stats_list, combine_nested_dicts,
     convert_to_json_serializable, dict_to_hash, json_serializable_to_numpy,
@@ -32,7 +34,7 @@ from utils.plot_utils import plot_optimization_trajectories_error_bars
 from datasets.dataset_with_models import RandomModelSampler
 from nn_af.acquisition_function_net import (
     AcquisitionFunctionNet, AcquisitionFunctionNetModel,
-    AcquisitionFunctionNetAcquisitionFunction)
+    AcquisitionFunctionNetAcquisitionFunction, ExpectedImprovementAcquisitionFunctionNet)
 
 
 class BayesianOptimizer(ABC):
@@ -224,19 +226,19 @@ class SimpleAcquisitionOptimizer(BayesianOptimizer):
         }
 
     @abstractmethod
-    def get_acquisition_function(self) -> AcquisitionFunction:
+    def get_acquisition_function(self, **extra_kwargs) -> AcquisitionFunction:
         """Get the acquisition function to be optimized for the next iteration
         """
         pass  # pragma: no cover
 
     def get_new_point(self):
-        acq_function = TimeLogAcquisitionFunction(
+        self._acq_function = TimeLogAcquisitionFunction(
             self.get_acquisition_function()
         )
         start_p = time.process_time()
         start = time.time()
         new_point, new_point_acquisition_val = optimize_acqf(
-            acq_function=acq_function,
+            acq_function=self._acq_function,
             bounds=self.bounds,
             q=1,
             num_restarts=self.num_restarts,
@@ -251,7 +253,8 @@ class SimpleAcquisitionOptimizer(BayesianOptimizer):
         self._optimize_process_times.append(end_p - start_p)
         self._optimize_times.append(end - start)
         self._acq_history.append(new_point_acquisition_val.item())
-        self._optimize_stats_history.append(acq_function.get_stats())
+        
+        self._optimize_stats_history.append(self._acq_function.get_stats())
         return new_point.detach()
 
 
@@ -289,13 +292,14 @@ class ModelAcquisitionOptimizer(SimpleAcquisitionOptimizer):
         """Get the model for giving to the acquisition function"""
         pass  # pragma: no cover
     
-    def get_acquisition_function(self) -> AcquisitionFunction:
+    def get_acquisition_function(self, **extra_kwargs) -> AcquisitionFunction:
         model = self.get_model()
         acqf_kwargs = {**self.acqf_kwargs}
         if 'best_f' in self._acquisition_args:
             acqf_kwargs['best_f'] = self.best_f
         if 'maximize' in self._acquisition_args:
             acqf_kwargs['maximize'] = self.maximize
+        acqf_kwargs.update(extra_kwargs)
         return self.acquisition_function_class(model, **acqf_kwargs)
 
 
@@ -320,7 +324,27 @@ class NNAcquisitionOptimizer(ModelAcquisitionOptimizer):
             **acqf_kwargs
         )
         self.model = model
+        
+        if isinstance(model, ExpectedImprovementAcquisitionFunctionNet):
+            self._is_ei = True
+            self._acq_history_exponentiated = []
+        else:
+            self._is_ei = False
     
+    def get_new_point(self):
+        new_point = super().get_new_point()
+        if self._is_ei:
+            exponentiated_af = self.get_acquisition_function(exponentiate=True)
+            new_point_acquisition_val = exponentiated_af(new_point)
+            self._acq_history_exponentiated.append(new_point_acquisition_val.item())
+        return new_point
+
+    def get_stats(self):
+        stats = super().get_stats()
+        if self._is_ei:
+            stats['acqf_value_exponentiated'] = self._acq_history_exponentiated.numpy()
+        return stats
+
     def get_model(self):
         # Assumed that the NN was trained to maximize... so this hack should probably work
         y = self.y if self.maximize else -self.y
@@ -367,6 +391,32 @@ class GPAcquisitionOptimizer(ModelAcquisitionOptimizer):
                 remove_priors(model)
         
         self.model = model
+
+        if issubclass(acquisition_function_class, LogExpectedImprovement):
+            self._is_ei = True
+            self._is_log = True
+            self._acq_history_exponentiated = []
+        elif issubclass(acquisition_function_class, ExpectedImprovement):
+            self._is_ei = True
+            self._is_log = False
+            self._acq_history_exponentiated = []
+        else:
+            self._is_ei = False
+    
+    def get_new_point(self):
+        new_point = super().get_new_point()
+        if self._is_ei:
+            new_point_acquisition_val = self._acq_history[-1]
+            if self._is_log:
+                new_point_acquisition_val = math.exp(new_point_acquisition_val)
+            self._acq_history_exponentiated.append(new_point_acquisition_val)
+        return new_point
+
+    def get_stats(self):
+        stats = super().get_stats()
+        if self._is_ei:
+            stats['acqf_value_exponentiated'] = self._acq_history_exponentiated.numpy()
+        return stats
     
     def get_model(self):
         if self.fit_params:

@@ -6,10 +6,10 @@ from typing import Optional
 
 import torch
 
-from bo_experiments_gp import get_lamda_for_bo_of_nn
+from nn_af.acquisition_function_net_save_utils import get_lamda_for_bo_of_nn
 from gp_acquisition_dataset import create_train_test_gp_acq_datasets_helper
 from utils.experiments.experiment_config_utils import get_config_options_list
-from utils.plot_utils import add_plot_args, create_plot_directory, plot_acquisition_function_net_training_history_ax, plot_dict_to_str, plot_nn_vs_gp_acquisition_function_1d, save_figures_from_nested_structure
+from utils.plot_utils import N_CANDIDATES_PLOT, add_plot_args, create_plot_directory, plot_acquisition_function_net_training_history_ax, plot_dict_to_str, plot_nn_vs_gp_acquisition_function_1d, save_figures_from_nested_structure
 from utils.utils import DEVICE, dict_to_str, group_by, group_by_nested_attrs, load_json, save_json
 
 from nn_af.acquisition_function_net_save_utils import load_nn_acqf
@@ -57,7 +57,7 @@ ATTR_NAME_TO_TITLE = {
 
 
 N_HISTORY = 10
-N_CANDIDATES_PLOT = 2_000
+
 
 
 def get_plot_ax_train_acqf_func(get_result_func):
@@ -122,7 +122,8 @@ def get_plot_ax_train_acqf_func(get_result_func):
                 # x_cand_original=x_cand_original, vals_cand=vals_cand,
                 lamda=lamda,
                 gp_model=gp_model, nn_model=nn_model, method=cfg['method'],
-                min_x=0.0, max_x=1.0, plot_map=False,
+                gp_fit_methods=['exact'],
+                min_x=0.0, max_x=1.0,
                 nn_device=DEVICE, group_standardization=None,
                 varying_index=varying_index
             )

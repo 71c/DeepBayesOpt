@@ -38,7 +38,7 @@ OBJECTIVE_NAME_PREFIX = "objective"
 
 GP_AF_DICT = {
     'LogEI': LogExpectedImprovement,
-    # 'EI': ExpectedImprovement,
+    'EI': ExpectedImprovement,
     'gittins': StableGittinsIndex
 }
 
@@ -536,7 +536,9 @@ def pre_run_bo(objective_args: dict[str, Any],
         'optimizer_class': optimizer_class,
         'objective_name': objective_name,
         'results_name': results_name,
-        'af_options': af_options
+        'af_options': af_options,
+        'objective_gp': objective_gp,
+        'objective_octf': objective_octf
     }
 
 

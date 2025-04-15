@@ -8,7 +8,7 @@ import os
 import cProfile, pstats
 from datetime import datetime
 
-from bo_experiments_gp import get_lamda_for_bo_of_nn
+from nn_af.acquisition_function_net_save_utils import get_lamda_for_bo_of_nn
 from utils.exact_gp_computations import calculate_EI_GP
 from utils.utils import DEVICE, load_json, save_json
 from utils.plot_utils import (

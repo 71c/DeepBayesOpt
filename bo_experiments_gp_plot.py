@@ -12,7 +12,7 @@ from run_bo import GP_AF_DICT, get_arg_names, pre_run_bo
 from train_acqf import MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN
 
 
-CPROFILE = False
+CPROFILE = True
 
 
 
@@ -66,15 +66,18 @@ PLOTS_CONFIG_MULTIPLE = [
     *POST
 ]
 
+PER_ITERATION_DECISIONS_SPLIT_INTO_FOLDERS = True
+ONE_FIGURE = True
+
 # "optimize_process_time"
 ATTR_GROUPS = [
     ["per_iteration_decisions"],
     # ["best_y", "mean_eval_process_time", "process_time", "n_evals"],
     # ["process_time"],
     # ["mean_eval_process_time"],
-    # ["best_y"],
-    # ["x"],
-    # ["best_y", "x"]
+    ["best_y"],
+    ["x"],
+    ["best_y", "x"]
 ]
 
 ATTR_NAME_TO_TITLE = {
@@ -132,6 +135,12 @@ def main():
      bo_experiment_config_name) = get_bo_experiments_parser(train=False)
     add_plot_args(parser)
     interval_group = add_plot_interval_args(parser)
+    parser.add_argument(
+        '--n_iterations',
+        type=int,
+        default=40,
+        help='Number of iterations to plot'
+    )
     
     ## Parse arguments
     args = parser.parse_args()
@@ -193,9 +202,6 @@ def main():
     # Folder name
     save_dir = create_plot_directory(args.plots_name, args.plots_group_name, is_bo=True)
     
-    if CPROFILE:
-        pr = cProfile.Profile()
-        pr.enable()
     
     script_plot_kwargs = dict(
         sharey=True,
@@ -207,6 +213,10 @@ def main():
 
     all_keys = set().union(*[set(result.keys()) for result in results_list])
     for attr_names in ATTR_GROUPS:
+        if CPROFILE:
+            pr = cProfile.Profile()
+            pr.enable()
+
         print(f"\n-----------------------------------------------------\n{attr_names=}")
 
         if attr_names == ["per_iteration_decisions"]:
@@ -223,8 +233,14 @@ def main():
         attrs_groups_list = [set(group) for group in attrs_groups_list]
         
         if plot_af_iterations:
-            attrs_groups_list.insert(-1, {"attr_name"})
-            attr_names = list(range(50))
+            if PER_ITERATION_DECISIONS_SPLIT_INTO_FOLDERS:
+                if ONE_FIGURE:
+                    attrs_groups_list.insert(-2, {"attr_name"})
+                else:
+                    attrs_groups_list.insert(-1, {"attr_name"})
+            else:
+                attrs_groups_list.insert(-1, {"attr_name"})
+            attr_names = list(range(args.n_iterations))
         else:
             if len(attrs_groups_list) >= 3:
                 # Right before the one before "line" (-2) level
@@ -235,7 +251,9 @@ def main():
         
         this_reformatted_configs = [{**cfg, 'attr_name': name, 'index': i}
              for name in attr_names
-             for i, cfg in enumerate(reformatted_configs)]
+             for i, cfg in enumerate(reformatted_configs)
+             if not (plot_af_iterations and cfg.get('gp_af') == 'random search')
+        ]
         if not plot_af_iterations:
             for cfg in this_reformatted_configs:
                 if "nn_model_name" in cfg:
@@ -248,8 +266,17 @@ def main():
             add_extra_index=-2 # -2 is the "line" level
         )
 
-        if plot_af_iterations:
-            new_attrs_groups_list.insert(-1, None)
+        if plot_af_iterations and PER_ITERATION_DECISIONS_SPLIT_INTO_FOLDERS:
+            if ONE_FIGURE:
+                use_rows = True
+                use_cols = False
+            else:
+                new_attrs_groups_list.insert(-1, None)
+                use_rows = False
+                use_cols = False
+        else:
+            use_rows = args.use_rows
+            use_cols = args.use_cols
 
         n_groups = len(new_attrs_groups_list)
         if n_groups < 2:
@@ -269,10 +296,16 @@ def main():
         # SPECIAL
         script_config["gp_af_names"] = list(GP_AF_DICT)
 
-        use_rows = False if plot_af_iterations else args.use_rows
-        use_cols = False if plot_af_iterations else args.use_cols
-
-        levels_to_add = ["random", "line"]
+        if plot_af_iterations:
+            if PER_ITERATION_DECISIONS_SPLIT_INTO_FOLDERS:
+                if ONE_FIGURE:
+                    levels_to_add = ["line"]
+                else:
+                    levels_to_add = ["random", "line"]
+            else:
+                levels_to_add = ["line"]
+        else:
+            levels_to_add = ["random", "line"]
         if use_cols:
             levels_to_add.append("col")
         if use_rows:
@@ -320,30 +353,54 @@ def main():
                 idx = cfg['index']
                 results = results_list[idx]
                 attr_name = cfg['attr_name']
+
+                c = existing_cfgs[idx]
                 
-                bo_policy_args = existing_cfgs[idx]['bo_policy_args']
+                bo_policy_args = c['bo_policy_args']
                 
+                stuff = pre_run_bo(c['objective_args'], c['bo_policy_args'],
+                                       c['gp_af_args'])
                 ret = {
                     'results': results,
                     'attr_name': attr_name,
-                    'index': idx
+                    'index': idx,
+                    'lamda': cfg.get('lamda'),
+                    'lamda_min': cfg.get('nn.lamda_min'),
+                    'lamda_max': cfg.get('nn.lamda_max'),
+                    'objective_gp': stuff.get('objective_gp'),
+                    'objective_octf': stuff.get('objective_octf'),
+                    'objective_fn': stuff['objective_fn']
                 }
+                
                 if 'nn_model_name' in bo_policy_args:
+                    # print(f"{c=}")
+                    # print()
+                    # print(f"{cfg=}")
+                    # print()
+                    # print(f"{stuff=}")
+                    # exit()
                     nn = load_nn_acqf(bo_policy_args['nn_model_name'],
                                         return_model_path=False,
                                         load_weights=True,
                                         verbose=False)
                     ret['nn_model'] = nn
+                    ret['method'] = bo_policy_args['nn.method'] # == cfg['nn.method']
+                    # return None
                 else:
-                    c = existing_cfgs[idx]
-                    stuff = pre_run_bo(c['objective_args'], c['bo_policy_args'],
-                                       c['gp_af_args'])
+                    # print(f"{c=}")
+                    # print()
+                    # print(f"{cfg=}")
+                    # print()
+                    # print(f"{stuff=}")
+                    # exit()
                     af_options = stuff['af_options']
                     if not af_options: # Random Search
                         return None
                     ret['gp_model'] = af_options['optimizer_kwargs_per_function'][0]['model']
-                    ret['af_class'] = af_options['acquisition_function_class']
-                    ret['fit_params'] = af_options['fit_params']
+                    # ret['af_class'] = af_options['acquisition_function_class']
+                    # ret['fit_params'] = af_options['fit_params']
+                    ret['gp_af'] = cfg['gp_af'] # == c['gp_af_args']['gp_af'] e.g. "LogEI"
+                    ret['gp_af_fit'] = cfg['gp_af.fit'] # == c['gp_af_args']['fit'] e.g. "exact"
                 return ret
 
             plot_ax_func = get_plot_ax_af_iterations_func(get_result)
@@ -369,6 +426,13 @@ def main():
 
             plot_ax_func = get_plot_ax_bo_stats_vs_iteration_func(get_result)
 
+        
+        this_script_plot_kwargs = {**script_plot_kwargs}
+        if plot_af_iterations and PER_ITERATION_DECISIONS_SPLIT_INTO_FOLDERS \
+                and ONE_FIGURE:
+            this_script_plot_kwargs["aspect"] = 3.0
+            # this_script_plot_kwargs["scale"] = 0.87
+
         save_figures_from_nested_structure(
             plot_config,
             plot_ax_func,
@@ -376,14 +440,16 @@ def main():
             level_names,
             attr_name_to_title=ATTR_NAME_TO_TITLE,
             base_folder=save_dir_this_attrs,
-            **script_plot_kwargs
+            print_pbar=True,
+            **this_script_plot_kwargs
         )
 
-    if CPROFILE:
-        pr.disable()
-        with open('stats_output_plots.txt', 'w') as s:
-            ps = pstats.Stats(pr, stream=s).sort_stats(pstats.SortKey.CUMULATIVE)
-            ps.print_stats()
+        if CPROFILE:
+            pr.disable()
+            output_path = os.path.join(save_dir_this_attrs, 'cprofile_stats.txt')
+            with open(output_path, 'w') as s:
+                ps = pstats.Stats(pr, stream=s).sort_stats(pstats.SortKey.CUMULATIVE)
+                ps.print_stats()
 
 if __name__ == "__main__":
     main()

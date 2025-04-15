@@ -1,19 +1,33 @@
+import copy
 from datetime import datetime
+import logging
 import os
 from typing import Literal, Optional, List
+import warnings
+
+from tqdm import tqdm
 import numpy as np
 import scipy.stats as stats
+from scipy.special import softplus
 from matplotlib import pyplot as plt
+
 import torch
 from torch import Tensor
 import torch.distributions as dist
 from botorch.models.gpytorch import GPyTorchModel
+from linear_operator.utils.warnings import NumericalWarning
+
+from nn_af.acquisition_function_net_save_utils import get_lamda_for_bo_of_nn
 from utils.constants import BO_PLOTS_FOLDER
 from datasets.acquisition_dataset import AcquisitionDataset
-from nn_af.acquisition_function_net import AcquisitionFunctionNet, AcquisitionFunctionNetAcquisitionFunction
+from nn_af.acquisition_function_net import AcquisitionFunctionNet, AcquisitionFunctionNetAcquisitionFunction, ExpectedImprovementAcquisitionFunctionNet
 from utils.constants import PLOTS_DIR
 from utils.exact_gp_computations import calculate_EI_GP, calculate_gi_gp
-from utils.utils import dict_to_str, iterate_nested, save_json
+from utils.utils import DEVICE, add_outcome_transform, dict_to_str, iterate_nested, save_json
+
+
+BLUE = '#1f77b4'
+ORANGE = '#ff7f0e'
 
 
 def _calculate_center_and_interval(
@@ -195,9 +209,10 @@ def plot_nn_vs_gp_acquisition_function_1d_grid(
         aq_dataset:AcquisitionDataset, nn_model:AcquisitionFunctionNet, plot_name:str,
         n_candidates:int, nrows:int, ncols:int,
         method:str,
+        gp_fit_methods: list[Literal['map', 'mle', 'exact']]=['exact'],
         min_x:float=0., max_x:float=1.,
         lamda:Optional[float]=None,  # for Gittins
-        plot_map:bool=False, nn_device:Optional[torch.device]=None,
+        nn_device:Optional[torch.device]=None,
         group_standardization:Optional[bool]=None):
     """Plot the acquisition function of a neural network and a GP on a grid of
       1D functions.
@@ -212,7 +227,7 @@ def plot_nn_vs_gp_acquisition_function_1d_grid(
         ncols: The number of columns of plots.
         min_x: The minimum x value to plot.
         max_x: The maximum x value to plot.
-        plot_map: Whether to plot the MAP GP acquisition function.
+        gp_fit_methods: The GP fit methods to use.
         nn_device: The device to use for the neural network.
         group_standardization: Whether to standardize the acquisition functions together.
         Default is to not standardize them together (group_standardization=False)
@@ -243,7 +258,8 @@ def plot_nn_vs_gp_acquisition_function_1d_grid(
                 ax=axs[row, col], x_hist=x_hist, y_hist=y_hist, x_cand=x_cand,
                 x_cand_original=x_cand_original, vals_cand=vals_cand,
                 lamda=lamda, gp_model=gp_model, nn_model=nn_model, method=method,
-                min_x=min_x, max_x=max_x, plot_map=plot_map,
+                gp_fit_methods=gp_fit_methods,
+                min_x=min_x, max_x=max_x,
                 nn_device=nn_device, group_standardization=group_standardization,
                 give_legend=False
             )
@@ -263,16 +279,29 @@ def plot_nn_vs_gp_acquisition_function_1d_grid(
     return fig, axs
 
 
+_FIT_METHOD_TO_INFO = {
+    'exact': {"label": "True GP", "color": "green"},
+    'map': {"label": "MAP GP", "color": "red"},
+    'mle': {"label": "MLE GP", "color": "blue"},
+    'nn': {"label": "NN", "color": ORANGE},
+}
+
 def plot_nn_vs_gp_acquisition_function_1d(
         ax, x_hist, y_hist, x_cand,
-        gp_model: GPyTorchModel, nn_model:AcquisitionFunctionNet,
-        method:str, min_x:float=0., max_x:float=1.,
+        gp_model: Optional[GPyTorchModel],
+        nn_model: Optional[AcquisitionFunctionNet],
+        method:str,
+        gp_fit_methods: list[Literal['map', 'mle', 'exact']]=['exact'],
+        min_x:float=0., max_x:float=1.,
         x_cand_original=None, vals_cand=None,
         lamda:float=0.01,  # for Gittins
-        plot_map:bool=False, nn_device:Optional[torch.device]=None,
+        nn_device:Optional[torch.device]=None,
         group_standardization:Optional[bool]=None,
         give_legend=True,
-        varying_index=0):
+        varying_index=0,
+        log_ei=True,
+        constant_y_hist_val=0.0,
+        objective=None):
     r"""Plot the acquisition function of a neural network and a GP.
     
     Args:
@@ -287,33 +316,28 @@ def plot_nn_vs_gp_acquisition_function_1d(
         max_x: The maximum x value to plot.
         x_cand_original: The original candidate x values. shape: `n_cand_dataset x d`
         vals_cand: The original candidate y values. shape: `n_cand_dataset x 1` (usually)
-        plot_map: Whether to plot the MAP GP acquisition function.
         nn_device: The device to use for the neural network.
         group_standardization: Whether to standardize the acquisition functions together.
     """
     dimension = x_hist.size(1)
 
-    plot_data = method == 'gittins' # could change this
+    plot_data_y = method == 'gittins' # could change this
+    plot_data_x = True
     
-    if dimension != 1:
-        plot_data = False
+    # if dimension != 1:
+    #     plot_data_y = False
     
     if group_standardization is None:
         group_standardization = method != 'policy_gradient'
 
-    arrs_and_labels_to_plot = []
+    arrs_and_fit_methods_to_plot = []
 
     # Compute GP EI acquisition function
     if gp_model is not None:
         try:
-            gp_model.set_train_data_with_transforms(
-                x_hist, y_hist, strict=False, train=False)
-            posterior_true = gp_model.posterior(x_cand, observation_noise=False)
-
             use_ei = method == 'mse_ei' or method == 'policy_gradient'
-            
             if use_ei:
-                kwargs = dict(log=True)
+                kwargs = dict(log=log_ei)
                 fnc = calculate_EI_GP
             elif method == 'gittins':
                 kwargs = dict(lambda_cand=torch.tensor(lamda))
@@ -321,18 +345,29 @@ def plot_nn_vs_gp_acquisition_function_1d(
             else:
                 raise NotImplementedError(f"Unknown method {method}")
 
-            af_true = fnc(gp_model, x_hist, y_hist, x_cand, **kwargs)
+            for j, fit_method in enumerate(gp_fit_methods):
+                gp_model_ = copy.deepcopy(gp_model)
+                gp_model_.set_train_data_with_transforms(
+                    x_hist, y_hist, strict=False, train=False)
+                if j == 0:
+                    posterior = gp_model_.posterior(x_cand, observation_noise=False)
 
-            if use_ei:
-                af_true = torch.exp(af_true)
+                if fit_method == 'exact':
+                    kk = dict(fit_params=False, mle=False)
+                elif fit_method == 'mle':
+                    kk = dict(fit_params=True, mle=True)
+                elif fit_method == 'map':
+                    kk = dict(fit_params=True, mle=False)
+                else:
+                    raise ValueError(f"Unknown fit method {fit_method}")
+                af = fnc(gp_model_, x_hist, y_hist, x_cand, **kwargs, **kk)
+
+                if use_ei and log_ei:
+                    af = torch.exp(af)
+                
+                af = af.detach().numpy()
             
-            arrs_and_labels_to_plot.append(
-                (af_true, {"label": "True GP", "color": "red"}))
-
-            if plot_map:
-                af_map = fnc(gp_model, x_hist, y_hist, x_cand, **kwargs,
-                                            fit_params=True, mle=False)
-                arrs_and_labels_to_plot.append((af_map, {"label": "MAP GP"}))
+                arrs_and_fit_methods_to_plot.append((af, fit_method))
             
             plot_gp = dimension == 1
         except NotImplementedError:
@@ -343,34 +378,53 @@ def plot_nn_vs_gp_acquisition_function_1d(
     else:
         plot_gp = False
     
-    # Compute NN acquisition function
-    x_hist_nn = x_hist.to(nn_device)
-    y_hist_nn = y_hist.to(nn_device)
-    x_cand_nn = x_cand.to(nn_device)
-    if method == 'mse_ei' or method == 'policy_gradient':
-        kwargs = dict(exponentiate=True, softmax=False)
-    else:
-        kwargs = {}
-    aq_fn = AcquisitionFunctionNetAcquisitionFunction.from_net(
-        nn_model, x_hist_nn, y_hist_nn, **kwargs)
-    ei_nn = aq_fn(x_cand_nn.unsqueeze(1)).cpu()
-    arrs_and_labels_to_plot.append((ei_nn, {"label": "NN", "color": ORANGE}))
+    if nn_model is not None:
+        # Compute NN acquisition function
+        x_hist_nn = x_hist.to(nn_device)
+        y_hist_nn = y_hist.to(nn_device)
+        x_cand_nn = x_cand.to(nn_device)
+        if method == 'mse_ei' or method == 'policy_gradient':
+            kwargs = dict(exponentiate=True, softmax=False)
+        else:
+            kwargs = {}
+        aq_fn = AcquisitionFunctionNetAcquisitionFunction.from_net(
+            nn_model, x_hist_nn, y_hist_nn, **kwargs)
+        ei_nn = aq_fn(x_cand_nn.unsqueeze(1)).detach().cpu().numpy()
+        arrs_and_fit_methods_to_plot.append((ei_nn, "nn"))
     
     # Sort the x_cand and arrs
     x_cand_plot_component = x_cand[:, varying_index].detach().numpy().flatten()
     sorted_indices = np.argsort(x_cand_plot_component)
     sorted_x_cand = x_cand_plot_component[sorted_indices]
 
-    arrs, labels = zip(*arrs_and_labels_to_plot)
-    if plot_data and method != 'gittins':
+    arrs, fit_methods = zip(*arrs_and_fit_methods_to_plot)
+    if plot_data_y and method != 'gittins':
         arrs = standardize_arrs(arrs, group=group_standardization)
-    for arr, label in zip(arrs, labels):
-        sorted_arr = arr.detach().numpy().flatten()[sorted_indices]
+    for arr, fit_method in zip(arrs, fit_methods):
+        label = _FIT_METHOD_TO_INFO[fit_method]
+        sorted_arr = arr[sorted_indices]
         ax.plot(sorted_x_cand, sorted_arr, **label)
 
-    if plot_data:
-        # Plot training points as black stars
-        ax.plot(x_hist, y_hist, 'b*', label=f'History points')
+    if plot_data_y or plot_data_x:
+        x_hist_varying_index = x_hist[:, varying_index]
+        if plot_data_y:
+            ax.plot(x_hist_varying_index, y_hist[:, 0], 'b*',
+                    markersize=10.0, label='History points')
+            if objective is not None:
+                # Plot the objective function
+                objective_vals = objective(x_hist)
+                print(f"{objective_vals=}")
+                exit()
+                ax.plot(x_cand_plot_component, objective(x_hist),
+                        'r--', label='Objective function')
+        if plot_data_x:
+            # yvals = torch.full_like(x_hist_varying_index, constant_y_hist_val)
+            # ax.plot(x_hist_varying_index, yvals, 'b*', label='History points')
+            for i, xval in enumerate(x_hist_varying_index):
+                kk = dict(ymin=0, ymax=1, color='blue', alpha=0.5)
+                if i == 0:
+                    kk['label'] = 'History points'
+                ax.axvline(xval, **kk)
 
     if x_cand_original is not None and vals_cand is not None:
         if dimension == 1:
@@ -380,19 +434,25 @@ def plot_nn_vs_gp_acquisition_function_1d(
         raise ValueError("Either both or neither of x_cand_original and vals_cand "
                          "should be provided")
     
-    if plot_data and plot_gp:
+    if plot_data_y and plot_gp:
+        fit_method = gp_fit_methods[0]
+        fit_method_info = _FIT_METHOD_TO_INFO[fit_method]
         plot_gp_posterior(
-            ax, posterior_true, x_cand, x_hist, y_hist, 'b', name='True')
+            ax, posterior, x_cand, x_hist, y_hist,
+            color=fit_method_info['color'],
+            name=f'GP posterior (fit={fit_method_info["label"]})')
 
-    # ax.set_title(f"History: {x_hist.size(0)}")
-    ax.set_xlim(min_x, max_x)
+    ax.set_xlim(min_x - 0.02 * (max_x - min_x), max_x + 0.02 * (max_x - min_x))
 
     if give_legend:
-        ax.legend()
+        ax.legend(loc='upper right')
+    
+    ax.set_xlabel('x')
+    ax.set_ylabel('Acquisition function value')
+    ax.set_title(f'Acquisition function ({method})')
+    ax.grid(True)
 
-
-BLUE = '#1f77b4'
-ORANGE = '#ff7f0e'
+    return arrs, fit_methods
 
 
 def plot_acquisition_function_net_training_history_ax(
@@ -435,7 +495,7 @@ def plot_acquisition_function_net_training_history_ax(
                 {
                     'label': 'Regret (NN)',
                     'data': regret_data,
-                    'color': ORANGE
+                    'color': _FIT_METHOD_TO_INFO['nn']['color']
                 }
             ],
             'title': f'Test {stat_name} vs Epochs (regret)',
@@ -455,7 +515,7 @@ def plot_acquisition_function_net_training_history_ax(
                 {
                     'label': 'Test (NN)',
                     'data': test_stat,
-                    'color': ORANGE
+                    'color': _FIT_METHOD_TO_INFO['nn']['color']
                 }
             ],
             'title': f'Train and Test {stat_name} vs Epochs',
@@ -621,9 +681,7 @@ def get_plot_ax_bo_stats_vs_iteration_func(get_result_func):
         for legend_name, data in plot_config.items():
             this_ids = []
             this_data = []
-            # sorted(data["items"].items(), key=lambda x: x[0])
             for k, v in data["items"].items():
-                # print(f"{k=}, {v=}")
                 data_index = v["items"]
                 if isinstance(data_index, list):
                     print([get_result_func(i) for i in data_index])
@@ -689,27 +747,182 @@ def get_plot_ax_bo_stats_vs_iteration_func(get_result_func):
     return ret
 
 
-# TODO: Write this function
+N_CANDIDATES_PLOT = 2_000
+LOGSCALE_EI_AF_ITERATIONS_PLOTS = True
+
+
 def get_plot_ax_af_iterations_func(get_result_func):
     def ret(plot_config: dict,
             ax,
             plot_name: Optional[str]=None,
             attr_name_to_title: dict[str, str] = {},
             **plot_kwargs):
-        # print(f"{plot_config=}, {plot_name=}, {attr_name_to_title=}, {plot_kwargs=}")
-        # exit()
 
-        for k, v in plot_config.items():
-            data_index = v["items"]
-            if isinstance(data_index, list):
-                print([get_result_func(i) for i in data_index])
-                raise ValueError
-
-            info = get_result_func(data_index)
-
-            # if 'nn_model' not in info:
-            #     print({k: v for k, v in info.items() if k != 'results'})
+        scale = plot_kwargs.get("scale", 1.0)
+        s_default = scale * 120.0
     
+        k, v = next(iter(plot_config.items()))
+        data_index = v["items"]
+        if isinstance(data_index, list):
+            print([get_result_func(i) for i in data_index])
+            raise ValueError
+
+        info = get_result_func(data_index)
+        if info is None:
+            return False
+        
+        gp_af = info.get('gp_af')
+        log_ei = True
+        if 'nn_model' in info:
+            nn_model = info['nn_model']
+            method = info['method'] # like, 'policy_gradient', 'mse_ei', 'gittins'
+            if info['objective_gp'] is not None:
+                gp_model = info['objective_gp']
+                if info['objective_octf'] is not None:
+                    add_outcome_transform(gp_model, info['objective_octf'])
+                gp_fit_methods = ['exact']
+            else:
+                gp_model = None
+                gp_fit_methods = [] # doesn't matter
+        else:
+            nn_model = None
+            gp_model = info['gp_model']
+            
+            # af_class = info['af_class']
+            # fit_params = info['fit_params']
+            
+            # This is hacky...hopefully later code will be better
+            if gp_af == 'LogEI':
+                method = 'mse_ei'
+                log_ei = True
+            elif gp_af == 'EI':
+                method = 'mse_ei'
+                log_ei = False
+            elif gp_af == 'gittins':
+                method = 'gittins'
+            else:
+                raise ValueError(f"Unknown gp_af {gp_af}")
+            gp_fit_methods = [info['gp_af_fit']]
+        
+        results = info['results']
+        all_x_hist = torch.from_numpy(results['x']) # shape (1+n_iterations, dimension)
+        all_y_hist = torch.from_numpy(results['y'])
+        n_iterations = len(all_x_hist) - 1
+        iteration_index = info['attr_name']
+        if not (0 <= iteration_index <= n_iterations - 1):
+            raise ValueError(f"Invalid iteration index {iteration_index} for "
+                                f"{n_iterations=}")
+        x_hist = all_x_hist[:iteration_index + 1]
+        y_hist = all_y_hist[:iteration_index + 1]
+        x_chosen = all_x_hist[iteration_index + 1]
+
+        dimension = x_hist.size(1)
+
+        x_cand_varying_component = torch.linspace(0, 1, N_CANDIDATES_PLOT)
+        varying_index = 0
+        if dimension == 1:
+            # N_CANDIDATES_PLOT x 1
+            x_cand = x_cand_varying_component.unsqueeze(1)
+        else:
+            x_fixed = x_chosen # Might also want to consider random x
+            # N_CANDIDATES_PLOT x dimension
+            x_cand = x_fixed.repeat(N_CANDIDATES_PLOT, 1)
+            x_cand[:, varying_index] = x_cand_varying_component
+        
+        lamda = get_lamda_for_bo_of_nn(
+                info.get('lamda'), info.get('lamda_min'), info.get('lamda_max'))
+
+        # shape (n_iterations,)
+        acqf_values = results.get('acqf_value_exponentiated')
+        if acqf_values is None:
+            acqf_values = results['acqf_value']
+            # This is a hack to get the exponentiated value from old results
+            # when using the expected improvement acquisition function.
+            if nn_model is not None:
+                if isinstance(nn_model, ExpectedImprovementAcquisitionFunctionNet):
+                    # Assume that the NN uses softplus to make values positive.
+                    acqf_values = softplus(acqf_values)
+            elif gp_af == 'LogEI':
+                acqf_values = np.exp(acqf_values)
+        
+        ymax = np.max(acqf_values)
+        # ymin = 0.0 if method == 'mse_ei' else np.min(acqf_values)
+        ymin = None
+        if method == 'mse_ei' and LOGSCALE_EI_AF_ITERATIONS_PLOTS:
+            ax.set_yscale('log')
+            # ymin = 1e-9 if nn_model is not None else 1e-14
+            if nn_model is not None:
+                ymin = 1e-14
+            else:
+                # ymin = np.min(acqf_values[acqf_values > 0])
+                ymin = 1e-40
+            log_ymax = np.log10(ymax)
+            log_ymin = np.log10(ymin)
+            ymax = 10**(log_ymax + 0.1 * (log_ymax - log_ymin))
+            ymin = 10**(log_ymin - 0.1 * (log_ymax - log_ymin))
+
+            ymax_mid = 10**(log_ymax + 0.05 * (log_ymax - log_ymin))
+            constant_y_hist_val = ymax_mid
+        else:
+            current_ymin, current_ymax = ax.get_ylim()
+            ymax = ymax + 0.1 * (ymax - current_ymin)
+            constant_y_hist_val = 0.0
+        
+        arrs, fit_methods = plot_nn_vs_gp_acquisition_function_1d(
+            ax=ax, x_hist=x_hist, y_hist=y_hist, x_cand=x_cand,
+            lamda=lamda,
+            gp_model=gp_model, nn_model=nn_model, method=method,
+            gp_fit_methods=gp_fit_methods,
+            min_x=0.0, max_x=1.0,
+            nn_device=DEVICE, group_standardization=None,
+            varying_index=varying_index,
+            log_ei=log_ei,
+            give_legend=False,
+            constant_y_hist_val=constant_y_hist_val,
+            objective=info.get('objective')
+        )
+        fit_method_to_af_vals = dict(zip(fit_methods, arrs))
+
+        fit_method = gp_fit_methods[0] if nn_model is None else 'nn'
+        
+        acqf_value_chosen = acqf_values[iteration_index]
+        fit_method_info =  _FIT_METHOD_TO_INFO[fit_method]
+        af_color = fit_method_info['color']
+        if nn_model is not None:
+            for fit_method_gp in gp_fit_methods:
+                af_vals_gp = fit_method_to_af_vals[fit_method_gp]
+                af_argmax_gp = np.argmax(af_vals_gp)
+                acqf_value_chosen_gp = af_vals_gp[af_argmax_gp]
+                x_chosen_gp = x_cand[af_argmax_gp]
+                fit_method_gp_info = _FIT_METHOD_TO_INFO[fit_method_gp]
+                ax.scatter(x_chosen_gp[varying_index], acqf_value_chosen_gp,
+                            color=fit_method_gp_info['color'],
+                            label=f'Max point ({fit_method_gp_info["label"]})',
+                            marker='x', s=s_default)
+
+        ax.scatter(
+            x_chosen[varying_index], acqf_value_chosen,
+            color=af_color, s=0.35 * s_default,
+            label=f"Chosen point ({fit_method_info['label']})")
+        
+        af_vals_plot = fit_method_to_af_vals[fit_method]
+        af_argmax = np.argmax(af_vals_plot)
+        x_chosen_max = x_cand[af_argmax]
+        acqf_value_chosen_max = af_vals_plot[af_argmax]
+        ax.scatter(x_chosen_max[varying_index], acqf_value_chosen_max,
+                    color=af_color, s=s_default, marker='x',
+                    label=f"Max point ({fit_method_info['label']})")
+        
+        plot_title = f"{plot_name} -- {gp_af if nn_model is None else method} acquisition function (iteration {iteration_index+1})"
+        ax.set_title(plot_title)
+
+        ax.set_ylim(bottom=ymin, top=ymax)
+
+        # ax.legend(loc='lower right') # loc='upper right', loc='best'
+        ax.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+
+        return True
+
     return ret
 
 
@@ -720,6 +933,7 @@ def _get_figure_from_nested_structure(
         attrs_groups_list: list[Optional[set]],
         level_names: list[str],
         figure_name: str,
+        pbar=None,
         **plot_kwargs):
     this_attrs_group = attrs_groups_list[0]
     next_attrs_groups = attrs_groups_list[1:]
@@ -774,7 +988,13 @@ def _get_figure_from_nested_structure(
                 sharex = True
         else:
             n_cols = 1
-            sharey = "attr_name" not in this_attrs_group
+            if "attr_name" in this_attrs_group:
+                sharey = False
+            else:
+                if 'nn.method' in this_attrs_group or 'gp_af' in this_attrs_group:
+                    sharey = False
+                else:
+                    sharey = True
             sharex = "attr_name" not in this_attrs_group
     elif this_level_name == "col":
         n_rows = 1
@@ -783,24 +1003,27 @@ def _get_figure_from_nested_structure(
         sharex = "attr_name" not in this_attrs_group
     else:
         raise ValueError
-    
+
     fig, axes = plt.subplots(n_rows, n_cols,
                              figsize=(width * n_cols, height * n_rows),
-                             sharex=sharex,
-                             sharey=sharey,
-                             squeeze=False
-                            )
+                             sharex=sharex, sharey=sharey, squeeze=False)
+
+    def _plot_ax_func(*args, **kwargs):
+        plot_ax_func(*args, **kwargs)
+        if pbar is not None:
+            pbar.update(1)
     
     if this_level_name == "line":
-        plot_ax_func(plot_config=plot_config, ax=axes[0, 0], plot_name=figure_name,
-                     attr_name_to_title=attr_name_to_title,
-                     **plot_kwargs)
+        _plot_ax_func(plot_config=plot_config, ax=axes[0, 0], plot_name=figure_name,
+                      attr_name_to_title=attr_name_to_title, **plot_kwargs)
     else:
         fig.suptitle(figure_name, fontsize=16, fontweight='bold')
         
         sorted_plot_config_items = list(sorted(
             plot_config.items(),
-            key=lambda x: list(sorted(x[1]["vals"].items()))
+            key=lambda x: sorted(
+                [_plot_key_value_to_str(k, v) for k, v in x[1]["vals"].items()]
+            )
         ))
         
         if row_and_col:
@@ -808,9 +1031,9 @@ def _get_figure_from_nested_structure(
                 row_items = row_data["items"]
                 for subplot_name, subplot_data in row_items.items():
                     col = col_name_to_col_index[subplot_name]
-                    plot_ax_func(plot_config=subplot_data["items"], ax=axes[row, col],
-                                 plot_name=None,  attr_name_to_title=attr_name_to_title,
-                                 **plot_kwargs)
+                    _plot_ax_func(plot_config=subplot_data["items"], ax=axes[row, col],
+                                  plot_name=None, attr_name_to_title=attr_name_to_title,
+                                  **plot_kwargs)
             row_names = [x[0] for x in sorted_plot_config_items]
             add_headers(fig, row_headers=row_names, col_headers=col_names)
         elif this_level_name == "row" or this_level_name == "col":
@@ -820,17 +1043,98 @@ def _get_figure_from_nested_structure(
             else:
                 axs = axes[:, 0]
 
+            row_names = [x[0] for x in sorted_plot_config_items]
             for ax, (subplot_name, subplot_data) in zip(axs, sorted_plot_config_items):
-                plot_ax_func(plot_config=subplot_data["items"], ax=ax,
-                             plot_name=subplot_name,
-                             attr_name_to_title=attr_name_to_title,
-                             **plot_kwargs)
+                _plot_ax_func(plot_config=subplot_data["items"], ax=ax,
+                              plot_name=subplot_name,
+                              attr_name_to_title=attr_name_to_title, **plot_kwargs)
         else:
             raise ValueError
 
     fig.tight_layout()
 
     return fig
+
+
+def _save_figures_from_nested_structure(
+        plot_config: dict,
+        plot_ax_func,
+        attrs_groups_list: list[Optional[set]],
+        level_names: list[str],
+        base_folder='',
+        attr_name_to_title: dict[str, str] = {},
+        pbar=None,
+        **plot_kwargs):
+    # Create the directory
+    os.makedirs(base_folder, exist_ok=True)
+
+    # Create a specific logger
+    logger = logging.getLogger(base_folder)
+    logger.setLevel(logging.WARNING)
+    # Create a file handler for the logger
+    file_handler = logging.FileHandler(os.path.join(base_folder, "warnings.log"))
+    # Create a formatter and add it to the handler
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    file_handler.setFormatter(formatter)
+    # Add the handler to the logger
+    logger.addHandler(file_handler)
+
+    with warnings.catch_warnings(record=True) as caught_warnings:
+        # https://docs.python.org/3/library/warnings.html#the-warnings-filter
+        # "default": print the first occurrence of matching warnings for each location
+        # (module + line number) where the warning is issued
+        warnings.simplefilter("default", category=NumericalWarning)
+
+        this_attrs_group = attrs_groups_list[0]
+        next_attrs_groups = attrs_groups_list[1:]
+        this_level_name = level_names[0]
+        next_level_names = level_names[1:]
+
+        if this_attrs_group:
+            save_json({"attrs": list(this_attrs_group)},
+                        os.path.join(base_folder, "attrs.json"), indent=2)
+
+        if this_level_name == "folder":
+            for folder_name, data in plot_config.items():
+                items = data["items"]
+                dirname = os.path.join(base_folder, folder_name)
+                
+                if "vals" in data:
+                    save_json(data["vals"], os.path.join(dirname, "vals.json"), indent=2)
+
+                _save_figures_from_nested_structure(
+                    items, plot_ax_func, next_attrs_groups, next_level_names,
+                    base_folder=dirname,
+                    attr_name_to_title=attr_name_to_title,
+                    pbar=pbar,
+                    **plot_kwargs
+                )
+        elif this_level_name == "fname":
+            info_dict = {}
+            for fname_desc, data in plot_config.items():
+                items = data["items"]
+                if "vals" in data:
+                    info_dict[fname_desc] = data["vals"]
+
+                fig = _get_figure_from_nested_structure(
+                    items, plot_ax_func, attr_name_to_title, next_attrs_groups,
+                    next_level_names, fname_desc, pbar=pbar, **plot_kwargs)
+                
+                fname = f"{fname_desc}.pdf"
+                fpath = os.path.join(base_folder, fname)
+                fig.savefig(fpath, dpi=300, format='pdf', bbox_inches='tight')
+                plt.close(fig)
+            
+            if info_dict:
+                save_json(info_dict,
+                        os.path.join(base_folder, "vals_per_figure.json"), indent=2)
+        else:
+            raise ValueError
+
+        # Log the caught warnings using the specific logger
+        for w in caught_warnings:
+            logger.warning(
+                warnings.formatwarning(w.message, w.category, w.filename, w.lineno))
 
 
 def save_figures_from_nested_structure(
@@ -840,62 +1144,62 @@ def save_figures_from_nested_structure(
         level_names: list[str],
         base_folder='',
         attr_name_to_title: dict[str, str] = {},
+        print_pbar=True,
         **plot_kwargs):
-    this_attrs_group = attrs_groups_list[0]
-    next_attrs_groups = attrs_groups_list[1:]
-    this_level_name = level_names[0]
-    next_level_names = level_names[1:]
+    n_plots = _count_num_plots(plot_config)
+    pbar = tqdm(total=n_plots, desc="Saving figures") if print_pbar else None
+    _save_figures_from_nested_structure(
+        plot_config, plot_ax_func, attrs_groups_list, level_names,
+        base_folder=base_folder,
+        attr_name_to_title=attr_name_to_title,
+        pbar=pbar,
+        **plot_kwargs
+    )
+    if print_pbar:
+        pbar.close()
 
-    if this_attrs_group:
-        save_json({"attrs": list(this_attrs_group)},
-                    os.path.join(base_folder, "attrs.json"), indent=2)
 
-    if this_level_name == "folder":
-        for folder_name, data in plot_config.items():
-            items = data["items"]
-            dirname = os.path.join(base_folder, folder_name)
-            
-            if "vals" in data:
-                save_json(data["vals"], os.path.join(dirname, "vals.json"), indent=2)
-
-            save_figures_from_nested_structure(
-                items, plot_ax_func, next_attrs_groups, next_level_names,
-                base_folder=dirname,
-                attr_name_to_title=attr_name_to_title,
-                **plot_kwargs
-            )
-    elif this_level_name == "fname":        
-        info_dict = {}
-        for fname_desc, data in plot_config.items():
-            items = data["items"]
-            if "vals" in data:
-                info_dict[fname_desc] = data["vals"]
-
-            fig = _get_figure_from_nested_structure(
-                items, plot_ax_func, attr_name_to_title, next_attrs_groups,
-                next_level_names, fname_desc, **plot_kwargs)
-            
-            fname = f"{fname_desc}.pdf"
-            fpath = os.path.join(base_folder, fname)
-            fig.savefig(fpath, dpi=300, format='pdf', bbox_inches='tight')
-            plt.close(fig)
-        
-        if info_dict:
-            save_json(info_dict,
-                      os.path.join(base_folder, "vals_per_figure.json"), indent=2)
-    else:
-        raise ValueError
+def _count_num_plots(plot_config):
+    # Count the number of plots in the plot_config
+    n_plots = 0
+    for k, v in plot_config.items():
+        items = v["items"]
+        if isinstance(items, dict):
+            itemss = [v["items"] for v in items.values()]
+            if all(isinstance(i, dict) for i in itemss):
+                n_plots += _count_num_plots(items)
+            elif any(isinstance(i, dict) for i in itemss):
+                raise ValueError("Invalid plot config")
+            else:
+                n_plots += 1
+        else:
+            raise RuntimeError("This should not happen")
+    return n_plots
 
 
 def _plot_key_value_to_str(k, v):
     if k == "attr_name":
         return (2, v)
+    priority = 1
+    if k == "gp_af":
+        if v == "EI" or v == "LogEI":
+            priority = 1.1
+        else:
+            priority = 1.2
+    if k == "nn.method":
+        if v == "mse_ei":
+            priority = 1.1
+        else:
+            priority = 1.2
     if k != "nn.lamda" and k.startswith("nn."):
         k = k[3:]
-    return (1, f"{k}={v}")
+    
+    return (priority, f"{k}={v}")
 
 
 def plot_dict_to_str(d):
+    d_items = list(d.items())
+    d_items.sort(key=lambda kv: _plot_key_value_to_str(*kv))
     for key_name, prefix, plot_name in [
         ("nn.method", "nn.", "NN, method="),
         ("method", "", "method="),
@@ -904,7 +1208,7 @@ def plot_dict_to_str(d):
         if key_name in d:
             d_method = {}
             d_non_method = {}
-            for k, v in d.items():
+            for k, v in d_items:
                 if k == key_name:
                     continue
                 if k.startswith(prefix):
@@ -926,9 +1230,8 @@ def plot_dict_to_str(d):
     
     items = [
         _plot_key_value_to_str(k, v)
-        for k, v in d.items()
+        for k, v in d_items
     ]
-    items = sorted(items)
     return ", ".join([str(item[1]) for item in items])
 
 
