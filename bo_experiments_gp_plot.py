@@ -53,18 +53,7 @@ POST = [
 ]
 
 
-PLOTS_CONFIG_SINGLE = [
-    *PRE,
-    ATTR_A,
-    ATTR_B,
-    *POST
-]
-
-PLOTS_CONFIG_MULTIPLE = [
-    *PRE,
-    [*ATTR_A, *ATTR_B],
-    *POST
-]
+PUT_ATTR_A_INTO_LINE = True
 
 PER_ITERATION_DECISIONS_SPLIT_INTO_FOLDERS = True
 ONE_FIGURE = True
@@ -85,6 +74,22 @@ if INCLUDE_TIMES:
         ["process_time"],
         ["mean_eval_process_time"]
     ]
+
+
+
+if PUT_ATTR_A_INTO_LINE:
+    POST[0] += ATTR_A
+    ATTR_A = []
+
+PLOTS_CONFIG_SINGLE = [*PRE] + \
+    ([] if len(ATTR_A) == 0 else [ATTR_A]) + \
+    ([] if len(ATTR_B) == 0 else [ATTR_B]) + [*POST]
+
+PLOTS_CONFIG_MULTIPLE = [
+    *PRE,
+    [*ATTR_A, *ATTR_B],
+    *POST
+]
 
 ATTR_NAME_TO_TITLE = {
     "best_y": "Best function value",

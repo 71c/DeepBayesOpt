@@ -845,7 +845,12 @@ def get_plot_ax_bo_stats_vs_iteration_func(get_result_func):
                     val = info[attr_name]
                     if attr_name in {'best_y', 'y', 'x', 'best_x'}:
                         # For x vals, get the first component (if dim > 1)
-                        assert len(val.shape) == 2 and val.shape[1] == 1
+                        if len(val.shape) != 2:
+                            raise ValueError(f"Expected 2D array, but got {val.shape=}")
+                        if attr_name in {'best_y', 'y'} and val.shape[1] != 1:
+                            raise ValueError(
+                                f"Expected {attr_name} to have shape (n_seeds, 1), "
+                                f"but got {val.shape=}")
                         val = val[:, 0]
                     else:
                         assert len(val.shape) == 1
@@ -1178,7 +1183,10 @@ def _get_figure_from_nested_structure(
         sorted_plot_config_items = list(sorted(
             plot_config.items(),
             key=lambda x: sorted(
-                [_plot_key_value_to_str(k, v) for k, v in x[1]["vals"].items()]
+                [
+                    (k, v) # _plot_key_value_to_str(k, v)
+                    for k, v in x[1]["vals"].items()
+                ]
             )
         ))
         
