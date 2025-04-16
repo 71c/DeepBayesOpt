@@ -38,7 +38,7 @@ OBJECTIVE_NAME_PREFIX = "objective"
 
 GP_AF_DICT = {
     'LogEI': LogExpectedImprovement,
-    'EI': ExpectedImprovement,
+    # 'EI': ExpectedImprovement,
     'gittins': StableGittinsIndex
 }
 

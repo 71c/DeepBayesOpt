@@ -68,17 +68,23 @@ PLOTS_CONFIG_MULTIPLE = [
 
 PER_ITERATION_DECISIONS_SPLIT_INTO_FOLDERS = True
 ONE_FIGURE = True
+PLOT_ALL_SEEDS = False
+
+INCLUDE_TIMES = False
 
 # "optimize_process_time"
 ATTR_GROUPS = [
     ["per_iteration_decisions"],
-    # ["best_y", "mean_eval_process_time", "process_time", "n_evals"],
-    # ["process_time"],
-    # ["mean_eval_process_time"],
     ["best_y"],
     ["x"],
     ["best_y", "x"]
 ]
+if INCLUDE_TIMES:
+    ATTR_GROUPS += [
+        ["best_y", "mean_eval_process_time", "process_time", "n_evals"],
+        ["process_time"],
+        ["mean_eval_process_time"]
+    ]
 
 ATTR_NAME_TO_TITLE = {
     "best_y": "Best function value",
@@ -234,7 +240,7 @@ def main():
         
         if plot_af_iterations:
             if PER_ITERATION_DECISIONS_SPLIT_INTO_FOLDERS:
-                if ONE_FIGURE:
+                if ONE_FIGURE and not PLOT_ALL_SEEDS:
                     attrs_groups_list.insert(-2, {"attr_name"})
                 else:
                     attrs_groups_list.insert(-1, {"attr_name"})
@@ -258,6 +264,15 @@ def main():
             for cfg in this_reformatted_configs:
                 if "nn_model_name" in cfg:
                     cfg.pop("nn_model_name")
+        
+        if plot_af_iterations and not PLOT_ALL_SEEDS and not ONE_FIGURE:
+            last = attrs_groups_list[-1]
+            attrs_groups_list = attrs_groups_list[:-1]
+            if PLOT_ALL_SEEDS:
+                idx = -1
+            else:
+                idx = -2
+            attrs_groups_list.insert(idx, last)
 
         plot_config, new_attrs_groups_list = group_by_nested_attrs(
             this_reformatted_configs,
@@ -266,12 +281,16 @@ def main():
             add_extra_index=-2 # -2 is the "line" level
         )
 
+        if plot_af_iterations and PLOT_ALL_SEEDS:
+            new_attrs_groups_list.append(None)
+
         if plot_af_iterations and PER_ITERATION_DECISIONS_SPLIT_INTO_FOLDERS:
             if ONE_FIGURE:
                 use_rows = True
                 use_cols = False
             else:
-                new_attrs_groups_list.insert(-1, None)
+                if not PLOT_ALL_SEEDS:
+                    new_attrs_groups_list.insert(-1, None)
                 use_rows = False
                 use_cols = False
         else:
@@ -301,7 +320,10 @@ def main():
                 if ONE_FIGURE:
                     levels_to_add = ["line"]
                 else:
-                    levels_to_add = ["random", "line"]
+                    if PLOT_ALL_SEEDS:
+                        levels_to_add = ["line"]
+                    else:
+                        levels_to_add = ["random", "line"]
             else:
                 levels_to_add = ["line"]
         else:
@@ -441,6 +463,7 @@ def main():
             attr_name_to_title=ATTR_NAME_TO_TITLE,
             base_folder=save_dir_this_attrs,
             print_pbar=True,
+            all_seeds=not plot_af_iterations or PLOT_ALL_SEEDS,
             **this_script_plot_kwargs
         )
 

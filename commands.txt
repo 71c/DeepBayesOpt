@@ -83,7 +83,8 @@ PLOTS_GROUP_NAME="8dim_maxhistory20_gittins_good_2";
 BO_PLOTS_NAME="results_100iter";
 
 
-# a100|a6000|6000ada|a5000
+SEEDS_CFG="--n_seeds 6 --single_objective";
+
 
 NN_CFG="--nn_base_config config/train_acqf.yml --nn_experiment_config $NN_EXPERIMENT_CFG";
 BO_CFG="--bo_base_config config/bo_config.yml --bo_experiment_config $BO_EXPERIMENT_CFG --seed $SEED $SEEDS_CFG";
@@ -92,10 +93,12 @@ PLOTS_CFG="--plots_group_name $PLOTS_GROUP_NAME --use_rows --use_cols";
 
 BO_PLOTS_CFG="--center_stat mean --interval_of_center --plots_name $BO_PLOTS_NAME --assume_normal"
 BO_PLOTS_CFG="--center_stat mean --interval_of_center --plots_name $BO_PLOTS_NAME"
+BO_PLOTS_CFG="--center_stat median --interval_of_center --plots_name $BO_PLOTS_NAME"
+BO_PLOTS_CFG="--plots_name $BO_PLOTS_NAME"
 
 
 python bo_experiments_gp_status.py $NN_CFG $BO_CFG
        python bo_experiments_gp.py $NN_CFG $BO_CFG $SLURM_CFG
        python bo_experiments_gp.py $NN_CFG $BO_CFG $SLURM_CFG --no_submit
-  python bo_experiments_gp_plot.py $NN_CFG $BO_CFG $PLOTS_CFG $BO_PLOTS_CFG --n_iterations 40
+  python bo_experiments_gp_plot.py $NN_CFG $BO_CFG $PLOTS_CFG $BO_PLOTS_CFG --n_iterations 25
          python train_acqf_plot.py $NN_CFG         $PLOTS_CFG

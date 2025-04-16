@@ -10,6 +10,8 @@ import numpy as np
 import scipy.stats as stats
 from scipy.special import softplus
 from matplotlib import pyplot as plt
+from matplotlib.colors import Normalize, to_rgba_array
+from matplotlib.colors import to_rgb
 
 import torch
 from torch import Tensor
@@ -650,6 +652,147 @@ def add_headers(
             )
 
 
+# def plot_bo_histogram_spectrogram(
+#         ax, arr, bins=50, vmin=None, vmax=None, cmap='viridis', log_scale=True):
+#     """
+#     Plots a spectrogram-like heatmap where each column is a histogram 
+#     (over the values across seeds) at a given iteration.
+    
+#     Parameters:
+#     - ax: matplotlib axis to plot on.
+#     - arr: numpy array of shape (n_seeds, n_iter)
+#     - bins: number of bins or a sequence of bin edges for the histograms
+#     - vmin, vmax: optional color scale limits
+#     - cmap: colormap to use
+#     """
+#     n_seeds, n_iter = arr.shape
+    
+#     # Compute histogram for each column (iteration)
+#     if isinstance(bins, int):
+#         bin_edges = np.histogram_bin_edges(arr, bins=bins)
+#     else:
+#         bin_edges = np.asarray(bins)
+#     bin_centers = 0.5 * (bin_edges[1:] + bin_edges[:-1])
+#     n_bins = len(bin_centers)
+    
+#     hist_matrix = np.zeros((n_bins, n_iter))
+
+#     for i in range(n_iter):
+#         hist, _ = np.histogram(arr[:, i], bins=bin_edges)
+#         hist_matrix[:, i] = hist
+    
+#     if log_scale:
+#         hist_matrix = np.log1p(hist_matrix)
+    
+#     # Plot as image: rows = bins (y), cols = iterations (x)
+#     im = ax.imshow(
+#         hist_matrix,
+#         aspect='auto',
+#         origin='lower',
+#         extent=[0, n_iter, bin_edges[0], bin_edges[-1]],
+#         cmap=cmap,
+#         vmin=vmin,
+#         vmax=vmax,
+#     )
+#     return im  # You can use this to attach a colorbar later if desired
+
+
+
+
+# def plot_bo_histogram_spectrogram(
+#     ax, arr, bins=50, log_scale=True, max_alpha=0.8, cmap='viridis', zorder=0
+# ):
+#     """
+#     Plots a semi-transparent spectrogram-like heatmap where each column is a histogram 
+#     of the values at a given iteration. Designed to be overlayable.
+
+#     Parameters:
+#     - ax: matplotlib axis
+#     - arr: np.array of shape (n_seeds, n_iter)
+#     - bins: number of bins or sequence of bin edges
+#     - log_scale: whether to apply log1p to frequency counts
+#     - max_alpha: maximum alpha/opacity for highest frequency bin
+#     - cmap: colormap name
+#     - zorder: z-order for layering (optional)
+#     """
+#     n_seeds, n_iter = arr.shape
+
+#     # Get bins
+#     if isinstance(bins, int):
+#         bin_edges = np.histogram_bin_edges(arr, bins=bins)
+#     else:
+#         bin_edges = np.asarray(bins)
+#     bin_centers = 0.5 * (bin_edges[1:] + bin_edges[:-1])
+#     n_bins = len(bin_centers)
+
+#     # Fill histogram matrix
+#     hist_matrix = np.zeros((n_bins, n_iter))
+#     for i in range(n_iter):
+#         hist, _ = np.histogram(arr[:, i], bins=bin_edges)
+#         hist_matrix[:, i] = hist
+
+#     if log_scale:
+#         hist_matrix = np.log1p(hist_matrix)
+
+#     # Normalize for alpha blending
+#     norm = Normalize(vmin=0, vmax=np.max(hist_matrix) if np.max(hist_matrix) > 0 else 1)
+#     normalized = norm(hist_matrix)
+
+#     # Convert colormap to RGBA
+#     # cmap_func = plt.get_cmap(cmap)
+#     # rgba_img = cmap_func(normalized)  # shape: (n_bins, n_iter, 4)
+#     # rgba_img[..., -1] *= normalized * max_alpha  # Scale alpha channel
+#     # rgba_img[hist_matrix == 0] = [1, 1, 1, 0]     # Fully transparent where count == 0
+
+#     if not hasattr(ax, 'cycler'):
+#         prop_cycle = plt.rcParams['axes.prop_cycle']
+#         ax.cycler = prop_cycle()
+#     color = next(ax.cycler)['color']
+#     rgb_array = np.array(to_rgb(color)) # shape: (3,)
+#     rgba_img = np.zeros((n_bins, n_iter, 4), dtype=float)
+#     rgba_img[..., :3] = rgb_array  # RGB channels
+#     rgba_img[..., 3] = normalized * max_alpha  # Alpha channel
+    
+#     # Plot with imshow
+#     ax.imshow(
+#         rgba_img,
+#         aspect='auto',
+#         origin='lower',
+#         extent=[0, n_iter, bin_edges[0], bin_edges[-1]],
+#         zorder=zorder,
+#     )
+
+
+def plot_bo_violin(ax, arr, color='#1f77b4', alpha=0.5, width=0.8):
+    """
+    Plots vertical violin plots over iterations.
+
+    Parameters:
+    - ax: matplotlib axis
+    - arr: np.array of shape (n_seeds, n_iter)
+    - color: color of the violins (hex string or color name)
+    - alpha: transparency level (0 = transparent, 1 = opaque)
+    - width: width of each violin
+    """
+    n_seeds, n_iter = arr.shape
+    positions = np.arange(n_iter)
+
+    parts = ax.violinplot(
+        [arr[:, i] for i in range(n_iter)],
+        positions=positions,
+        widths=width,
+        showmeans=False,
+        showmedians=False,
+        showextrema=False
+    )
+
+    # Set color and transparency
+    for body in parts['bodies']:
+        body.set_facecolor(color)
+        body.set_edgecolor(color)
+        body.set_alpha(alpha)
+
+
 _ERROR_LINES_CACHE = {}
 def _get_error_lines(
         ids: list,
@@ -718,7 +861,7 @@ def get_plot_ax_bo_stats_vs_iteration_func(get_result_func):
                 # Only plot one seed
                 x_vals = this_data[0]
                 ax.scatter(range(len(x_vals)), x_vals,
-                           label=legend_name, s=2, alpha=0.5)
+                           label=legend_name, s=4, alpha=0.5)
             else:
                 center, lower, upper = _get_error_lines(
                     this_ids, this_data,
@@ -727,9 +870,10 @@ def get_plot_ax_bo_stats_vs_iteration_func(get_result_func):
                     center_stat=plot_kwargs['center_stat'],
                     assume_normal=plot_kwargs['assume_normal']
                 )
-
                 plot_error_bars(ax, center, lower, upper,
                                 label=legend_name, shade=plot_kwargs['shade'])
+
+                # plot_bo_violin(ax, np.array(this_data))
         
         if len(attr_names) > 1:
             raise ValueError(f"Expected just one attribute to plot but got {attr_names=}")
@@ -769,8 +913,12 @@ def get_plot_ax_af_iterations_func(get_result_func):
         scale = plot_kwargs.get("scale", 1.0)
         s_default = scale * 120.0
     
-        k, v = next(iter(plot_config.items()))
-        data_index = v["items"]
+        if type(plot_config) is int:
+            data_index = plot_config
+        else:
+            k, v = next(iter(plot_config.items()))
+            data_index = v["items"]
+        
         if isinstance(data_index, list):
             print([get_result_func(i) for i in data_index])
             raise ValueError
@@ -1153,8 +1301,10 @@ def save_figures_from_nested_structure(
         base_folder='',
         attr_name_to_title: dict[str, str] = {},
         print_pbar=True,
+        all_seeds=True,
         **plot_kwargs):
-    n_plots = _count_num_plots(plot_config)
+    n_plots = _count_num_plots(
+        plot_config, all_seeds=all_seeds)
     pbar = tqdm(total=n_plots, desc="Saving figures") if print_pbar else None
     _save_figures_from_nested_structure(
         plot_config, plot_ax_func, attrs_groups_list, level_names,
@@ -1167,21 +1317,28 @@ def save_figures_from_nested_structure(
         pbar.close()
 
 
-def _count_num_plots(plot_config):
+def _count_num_plots(plot_config, all_seeds=True):
     # Count the number of plots in the plot_config
     n_plots = 0
     for k, v in plot_config.items():
         items = v["items"]
-        if isinstance(items, dict):
-            itemss = [v["items"] for v in items.values()]
-            if all(isinstance(i, dict) for i in itemss):
-                n_plots += _count_num_plots(items)
-            elif any(isinstance(i, dict) for i in itemss):
-                raise ValueError("Invalid plot config")
+
+        if all_seeds:
+            if isinstance(items, dict):
+                n_plots += _count_num_plots(items, all_seeds=all_seeds)
             else:
                 n_plots += 1
         else:
-            raise RuntimeError("This should not happen")
+            if isinstance(items, dict):
+                itemss = [v["items"] for v in items.values()]
+                if all(isinstance(i, dict) for i in itemss):
+                    n_plots += _count_num_plots(items, all_seeds=all_seeds)
+                elif any(isinstance(i, dict) for i in itemss):
+                    raise ValueError("Invalid plot config")
+                else:
+                    n_plots += 1
+            else:
+                raise RuntimeError("This should not happen")
     return n_plots
 
 

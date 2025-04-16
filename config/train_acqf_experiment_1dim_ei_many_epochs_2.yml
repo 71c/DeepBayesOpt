@@ -18,7 +18,7 @@ parameters:
   batch_size:
     value: 512
   lr_scheduler:
-    values: [null, 'ReduceLROnPlateau']
+    values: [null] # [null, 'ReduceLROnPlateau']
   lr_scheduler_patience:
     value: 1000
   lr_scheduler_factor:
