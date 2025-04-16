@@ -1,3 +1,4 @@
+import copy
 import os
 import cProfile, pstats
 
@@ -40,10 +41,16 @@ CPROFILE = True
 # ATTR_B = ["num_restarts"]
 
 
+# PRE = [
+#     ["nn.layer_width", "nn.train_samples_size", "gen_candidates"]
+# ]
+# ATTR_A = ["nn.lr_scheduler"]
+# ATTR_B = ["nn.learning_rate"]
+
 PRE = [
-    ["nn.layer_width", "nn.train_samples_size", "gen_candidates"]
+    ["nn.layer_width", "nn.train_samples_size", "gen_candidates", "nn.lr_scheduler"]
 ]
-ATTR_A = ["nn.lr_scheduler"]
+ATTR_A = ["nn.lr_scheduler_patience", "nn.lr_scheduler_factor"]
 ATTR_B = ["nn.learning_rate"]
 
 
@@ -51,9 +58,6 @@ POST = [
     ["lamda", "gp_af", "nn.method"],
     ["bo_seed"]
 ]
-
-
-PUT_ATTR_A_INTO_LINE = True
 
 PER_ITERATION_DECISIONS_SPLIT_INTO_FOLDERS = True
 ONE_FIGURE = True
@@ -75,21 +79,6 @@ if INCLUDE_TIMES:
         ["mean_eval_process_time"]
     ]
 
-
-
-if PUT_ATTR_A_INTO_LINE:
-    POST[0] += ATTR_A
-    ATTR_A = []
-
-PLOTS_CONFIG_SINGLE = [*PRE] + \
-    ([] if len(ATTR_A) == 0 else [ATTR_A]) + \
-    ([] if len(ATTR_B) == 0 else [ATTR_B]) + [*POST]
-
-PLOTS_CONFIG_MULTIPLE = [
-    *PRE,
-    [*ATTR_A, *ATTR_B],
-    *POST
-]
 
 ATTR_NAME_TO_TITLE = {
     "best_y": "Best function value",
@@ -236,10 +225,22 @@ def main():
             plot_af_iterations = False
             attr_names = [a for a in attr_names if a in all_keys]
         
+        post = copy.deepcopy(POST)
+        attr_a = copy.deepcopy(ATTR_A)
+        put_attr_a_into_line = plot_af_iterations
+        if put_attr_a_into_line:
+            post[0] += attr_a
+            attr_a = []
         if len(attr_names) == 1:
-            attrs_groups_list = PLOTS_CONFIG_SINGLE
+            attrs_groups_list = [*PRE] + \
+            ([] if len(attr_a) == 0 else [attr_a]) + \
+            ([] if len(ATTR_B) == 0 else [ATTR_B]) + [*post]
         else:
-            attrs_groups_list = PLOTS_CONFIG_MULTIPLE
+            attrs_groups_list = [
+                *PRE,
+                [*attr_a, *ATTR_B],
+                *post
+            ]
         
         attrs_groups_list = [set(group) for group in attrs_groups_list]
         

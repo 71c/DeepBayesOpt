@@ -38,6 +38,8 @@ parameters:
         value: 1
       max_history:
         value: 100
+      samples_addition_amount:
+        value: 5
   architecture:
     parameters:
       layer_width:

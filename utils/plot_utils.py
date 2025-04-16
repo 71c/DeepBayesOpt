@@ -362,6 +362,7 @@ def plot_nn_vs_gp_acquisition_function_1d(
                     kk = dict(fit_params=True, mle=False)
                 else:
                     raise ValueError(f"Unknown fit method {fit_method}")
+
                 af = fnc(gp_model_, x_hist, y_hist, x_cand, **kwargs, **kk)
 
                 if use_ei and log_ei:

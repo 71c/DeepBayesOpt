@@ -32,7 +32,7 @@ def get_cmd_options_train_acqf(options: dict[str, Any]):
         **{
             k: options.get(k)
             for k in [
-                'min_history', 'max_history',
+                'min_history', 'max_history', 'samples_addition_amount',
                 'lamda_min', 'lamda_max', 'lamda'
             ]
         }

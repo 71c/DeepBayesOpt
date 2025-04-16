@@ -83,13 +83,21 @@ SEEDS_CFG="--n_seeds 32 --single_objective";
 PLOTS_GROUP_NAME="8dim_maxhistory20_gittins_good_2";
 BO_PLOTS_NAME="results_100iter";
 
+# Gittins experiment in 8D: experiment with dataset size
+SEED=8;
+NN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_gittins_dataset_size.yml";
+BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
+SWEEP_NAME="100iter_8dim_maxhistory20_gittins_dataset_size";
+SEEDS_CFG="--n_seeds 32 --single_objective";
+PLOTS_GROUP_NAME="8dim_maxhistory20_gittins_dataset_size";
+BO_PLOTS_NAME="results_100iter";
+
 
 SEEDS_CFG="--n_seeds 6 --single_objective";
 
-
 NN_CFG="--nn_base_config config/train_acqf.yml --nn_experiment_config $NN_EXPERIMENT_CFG";
 BO_CFG="--bo_base_config config/bo_config.yml --bo_experiment_config $BO_EXPERIMENT_CFG --seed $SEED $SEEDS_CFG";
-SLURM_CFG="--sweep_name $SWEEP_NAME --mail adj53@cornell.edu --gpu_gres gpu:a6000:1"; 
+SLURM_CFG="--sweep_name $SWEEP_NAME --mail adj53@cornell.edu --gpu_gres gpu:1"; 
 PLOTS_CFG="--plots_group_name $PLOTS_GROUP_NAME --use_rows --use_cols";
 
 BO_PLOTS_CFG="--center_stat mean --interval_of_center --plots_name $BO_PLOTS_NAME --assume_normal"

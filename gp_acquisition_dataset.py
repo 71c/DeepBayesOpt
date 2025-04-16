@@ -121,7 +121,9 @@ def create_gp_acquisition_dataset(
         
         # n_datapoints_kwargs
         loguniform=True, pre_offset=None,
-        min_history=None, max_history=None, n_candidates=None,
+        min_history=None, max_history=None,
+        samples_addition_amount=None,
+        n_candidates=None,
         min_n_candidates=None, max_points=None,
 
         # Only used for Gittins index training
@@ -179,12 +181,15 @@ def create_gp_acquisition_dataset(
             min_history = 1
         if max_history is None:
             max_history = 8
+        if samples_addition_amount is None:
+            samples_addition_amount = 5
         if n_candidates is None:
             n_candidates = 50
         if fix_n_samples:
             n_datapoints_kwargs = dict(
                 loguniform=False, pre_offset=None,
-                min_history=max_history + 5, max_history=max_history + 5,
+                min_history=max_history + samples_addition_amount,
+                max_history=max_history + samples_addition_amount,
                 n_candidates=n_candidates)
         else:
             n_datapoints_kwargs = dict(
@@ -382,7 +387,7 @@ def create_gp_acquisition_dataset(
     return aq_dataset
 
 
-def create_train_and_test_gp_acquisition_datasets(
+def _create_train_and_test_gp_acquisition_datasets(
         train_samples_size:int,
         train_acquisition_size:int,
         fix_train_samples_dataset:bool,
@@ -421,6 +426,7 @@ def create_train_and_test_gp_acquisition_datasets(
         loguniform:bool=True, pre_offset:Optional[float]=None, fix_n_candidates:bool=True,
         train_n_candidates:Optional[int]=None, test_n_candidates:Optional[int]=None,
         min_history:Optional[int]=None, max_history:Optional[int]=None,
+        samples_addition_amount:Optional[int]=None,
         min_n_candidates:Optional[int]=None, max_points:Optional[int]=None,
         
         fix_n_samples:Optional[bool]=None,
@@ -438,9 +444,13 @@ def create_train_and_test_gp_acquisition_datasets(
         print(f"Small test proportion of train + small test: {small_test_proportion_of_train_and_small_test:.4f}")
 
     if fix_n_candidates:
+        if samples_addition_amount is None:
+            samples_addition_amount = 5
         train_n_points_kwargs = dict(min_history=min_history, max_history=max_history,
-                                    n_candidates=train_n_candidates)
+                                     samples_addition_amount=samples_addition_amount,
+                                     n_candidates=train_n_candidates)
         test_n_points_kwargs = dict(min_history=min_history, max_history=max_history,
+                                    samples_addition_amount=samples_addition_amount,
                                     n_candidates=test_n_candidates)
     else:
         train_n_points_kwargs = dict(min_n_candidates=min_n_candidates, max_points=max_points)
@@ -641,6 +651,10 @@ def get_gp_acquisition_dataset_configs(args: argparse.Namespace, device=None):
             max_history=args.max_history,
             **n_points_config
         )
+        if args.samples_addition_amount is None:
+            args.samples_addition_amount = 5
+        if args.samples_addition_amount != 5:
+            n_points_config['samples_addition_amount'] = args.samples_addition_amount
     else:
         # If fix_n_candidates is False, then the following are used:
         n_points_config = dict(
@@ -712,7 +726,7 @@ def create_train_test_gp_acq_datasets_helper(
     if info_str in _DATA_CACHE:
         return _DATA_CACHE[info_str]
 
-    ret = create_train_and_test_gp_acquisition_datasets(**all_kwargs)
+    ret = _create_train_and_test_gp_acquisition_datasets(**all_kwargs)
     _DATA_CACHE[info_str] = ret
 
     train_aq_dataset, test_aq_dataset, small_test_aq_dataset = ret
@@ -884,10 +898,17 @@ def add_gp_acquisition_dataset_args(parser):
         help='Maximum number of history points.',
         required=True
     )
+    parser.add_argument(
+        '--samples_addition_amount',
+        type=int,
+        help='Number of samples to add to the history points.'
+    )
 
 
 def create_train_test_gp_acq_datasets_from_args(
         args, check_cached=False, load_dataset=True):
+    if args.samples_addition_amount is None:
+        raise ValueError("samples_addition_amount should be specified.")
     gp_af_dataset_configs = get_gp_acquisition_dataset_configs(
          args, device=GP_GEN_DEVICE)
     (train_aq_dataset,
