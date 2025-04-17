@@ -47,11 +47,18 @@ CPROFILE = True
 # ATTR_A = ["nn.lr_scheduler"]
 # ATTR_B = ["nn.learning_rate"]
 
-PRE = [
-    ["nn.layer_width", "nn.train_samples_size", "gen_candidates", "nn.lr_scheduler"]
-]
-ATTR_A = ["nn.lr_scheduler_patience", "nn.lr_scheduler_factor"]
-ATTR_B = ["nn.learning_rate"]
+
+# PRE = [
+#     ["nn.layer_width", "nn.train_samples_size", "gen_candidates", "nn.lr_scheduler"]
+# ]
+# ATTR_A = ["nn.lr_scheduler_patience", "nn.lr_scheduler_factor"]
+# ATTR_B = ["nn.learning_rate"]
+
+
+# For 8dim_maxhistory20_gittins_dataset_size
+PRE = []
+ATTR_A = ["nn.train_samples_size"]
+ATTR_B = ["nn.samples_addition_amount"]
 
 
 POST = [

@@ -19,12 +19,17 @@ from train_acqf import add_train_acqf_args, cmd_opts_nn_to_model_and_info_name, 
 CPROFILE = False
 
 
-PRE = [
-    ["layer_width", "train_samples_size"]
-]
+# PRE = [
+#     ["layer_width", "train_samples_size"]
+# ]
+# ATTR_A = ["batch_size"]
+# ATTR_B = ["learning_rate"]
 
-ATTR_A = ["batch_size"]
-ATTR_B = ["learning_rate"]
+# For 8dim_maxhistory20_gittins_dataset_size
+PRE = []
+ATTR_A = ["train_samples_size"]
+ATTR_B = ["samples_addition_amount"]
+
 
 POST = [] # No "line" level yet
 
@@ -42,11 +47,12 @@ PLOTS_CONFIG_MULTIPLE = [
 ]
 
 ATTR_GROUPS = [
-    ["0_training_history_train_test", "1_training_history_test_log_regret", "2_af_plot"],
-    ["0_training_history_train_test", "2_af_plot"],
-    ["0_training_history_train_test", "1_training_history_test_log_regret"],
-    ["1_training_history_test_log_regret"],
-    ["2_af_plot"]
+    # ["0_training_history_train_test", "1_training_history_test_log_regret", "2_af_plot"],
+    # ["0_training_history_train_test", "2_af_plot"],
+    # ["0_training_history_train_test", "1_training_history_test_log_regret"],
+    ["0_training_history_train_test"],
+    # ["1_training_history_test_log_regret"],
+    # ["2_af_plot"]
 ]
 
 ATTR_NAME_TO_TITLE = {
