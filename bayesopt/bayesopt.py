@@ -208,6 +208,11 @@ class SimpleAcquisitionOptimizer(BayesianOptimizer):
         return torch.tensor(self._acq_history)
 
     @property
+    def acq_history_exponentiated(self):
+        # Raises AttributeError if not exist
+        return torch.tensor(self._acq_history_exponentiated)
+
+    @property
     def optimize_process_times(self):
         return torch.tensor(self._optimize_process_times)
 
@@ -217,13 +222,18 @@ class SimpleAcquisitionOptimizer(BayesianOptimizer):
     
     def get_stats(self):
         optimize_stats_ = aggregate_stats_list(self._optimize_stats_history)
-        return {
+        ret = {
             **super().get_stats(),
             **optimize_stats_,
             'acqf_value': self.acq_history.numpy(),
             'optimize_process_time': self.optimize_process_times.numpy(),
             'optimize_time': self.optimize_times.numpy()
         }
+        try:
+            ret['acqf_value_exponentiated'] = self.acq_history_exponentiated.numpy()
+        except AttributeError:
+            pass
+        return ret
 
     @abstractmethod
     def get_acquisition_function(self, **extra_kwargs) -> AcquisitionFunction:
@@ -339,12 +349,6 @@ class NNAcquisitionOptimizer(ModelAcquisitionOptimizer):
             self._acq_history_exponentiated.append(new_point_acquisition_val.item())
         return new_point
 
-    def get_stats(self):
-        stats = super().get_stats()
-        if self._is_ei:
-            stats['acqf_value_exponentiated'] = self._acq_history_exponentiated.numpy()
-        return stats
-
     def get_model(self):
         # Assumed that the NN was trained to maximize... so this hack should probably work
         y = self.y if self.maximize else -self.y
@@ -412,12 +416,6 @@ class GPAcquisitionOptimizer(ModelAcquisitionOptimizer):
             self._acq_history_exponentiated.append(new_point_acquisition_val)
         return new_point
 
-    def get_stats(self):
-        stats = super().get_stats()
-        if self._is_ei:
-            stats['acqf_value_exponentiated'] = self._acq_history_exponentiated.numpy()
-        return stats
-    
     def get_model(self):
         if self.fit_params:
             self.model.train()
