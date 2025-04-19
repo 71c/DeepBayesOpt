@@ -23,7 +23,7 @@ def add_slurm_args(parser):
         help='Name of the sweep.'
     )
     parser.add_argument(
-        '--gpu_gres',
+        '--gres',
         type=str,
         help='GPU resource specification for Slurm. e.g., "gpu:a100:1" or "gpu:1". '
               'Default is "gpu:a100:1".',
@@ -50,7 +50,7 @@ def submit_jobs_sweep_from_args(jobs_spec, args):
         sweep_dir=sweep_dir,
         jobs_spec=jobs_spec,
         args=args,
-        gpu_gres=args.gpu_gres,
+        gres=args.gres,
         mail=args.mail,
         no_submit=args.no_submit
     )
@@ -77,7 +77,7 @@ def _submit_dependent_jobs(
         sweep_dir: str,
         jobs_spec: dict,
         args: argparse.Namespace,
-        gpu_gres: str = "gpu:a100:1", # e.g. "gpu:a100:1" or "gpu:1"
+        gres: str = "gpu:a100:1", # e.g. "gpu:a100:1" or "gpu:1"
         mail:Optional[str]=None,
         no_submit:bool=False
     ):
@@ -145,12 +145,13 @@ def _submit_dependent_jobs(
             "array": f"1-{n_commands}",
             "mem": "64gb" # server memory requested (per node)
         }
+        sbatch_args_dict['time'] = job_spec.get("time", "48:00:00")
         if mail is not None:
             sbatch_args_dict['mail-type'] = 'ALL'
             sbatch_args_dict['mail-user'] = mail
         if job_spec["gpu"]:
             sbatch_args_dict['partition'] = 'gpu'
-            sbatch_args_dict['gres'] = job_spec.get("gpu_gres", gpu_gres)
+            sbatch_args_dict['gres'] = job_spec.get("gres", gres)
             # sbatch_args_dict['mem'] = "20gb"
         else:
             # sbatch_args_dict['partition'] = 'frazier'

@@ -1,5 +1,5 @@
 import argparse
-from typing import Optional
+from typing import Any, Optional
 import cProfile, pstats
 import torch
 
@@ -50,7 +50,8 @@ def _generate_bo_commands(
 
 def _gp_bo_jobs_spec_and_cfgs(
         options_list, bo_loop_args_list, bo_loop_args_list_random_search,
-        seeds, single_objective=False, always_train=False):
+        seeds, single_objective=False, always_train=False,
+        dependents_slurm_options:dict[str, Any]={}):
     gp_options_dict = {}
 
     new_bo_configs = []
@@ -110,7 +111,8 @@ def _gp_bo_jobs_spec_and_cfgs(
         jobs_spec = create_dependency_structure_train_acqf(
             options_list,
             dependents_list=nn_bo_loop_commands_list,
-            always_train=always_train)
+            always_train=always_train,
+            dependents_slurm_options=dependents_slurm_options)
     else:
         jobs_spec = {}
 
@@ -214,7 +216,8 @@ def generate_gp_bo_job_specs(args: argparse.Namespace,
                              nn_base_config: str,
                              bo_base_config: str,
                              nn_experiment_config: Optional[str]=None,
-                             bo_experiment_config: Optional[str]=None):
+                             bo_experiment_config: Optional[str]=None,
+                             dependents_slurm_options:dict[str, Any]={}):
     bo_options_list, bo_refined_config = get_config_options_list(
         bo_base_config, bo_experiment_config)
 
@@ -248,7 +251,8 @@ def generate_gp_bo_job_specs(args: argparse.Namespace,
         nn_options_list, bo_options_list, bo_options_list_random_search,
         seeds,
         single_objective=args.single_objective,
-        always_train=getattr(args, 'always_train', False)
+        always_train=getattr(args, 'always_train', False),
+        dependents_slurm_options=dependents_slurm_options
     )
 
     if CPROFILE:
@@ -282,7 +286,12 @@ def main():
             nn_base_config=getattr(args, nn_base_config_name),
             nn_experiment_config=getattr(args, nn_experiment_config_name),
             bo_base_config=getattr(args, bo_base_config_name),
-            bo_experiment_config=getattr(args, bo_experiment_config_name)
+            bo_experiment_config=getattr(args, bo_experiment_config_name),
+            dependents_slurm_options={
+                "gpu": True,
+                "gres": "gpu:1",
+                "time": "2:00:00",
+            }
         )
     
     print(f"Number of new BO configs: {len(new_cfgs)}")

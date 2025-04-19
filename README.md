@@ -75,7 +75,7 @@ The following command automatically runs all of the BO loops of both the NNs and
 
 An example command is as follows:
 ```bash
-python bo_experiments_gp.py --nn_base_config config/train_acqf.yml --nn_experiment_config config/train_acqf_experiment_test_simple.yml --bo_base_config config/bo_config.yml --n_gp_draws 8 --seed 8 --sweep_name preliminary-test-small --mail adj53@cornell.edu --gpu_gres gpu:1
+python bo_experiments_gp.py --nn_base_config config/train_acqf.yml --nn_experiment_config config/train_acqf_experiment_test_simple.yml --bo_base_config config/bo_config.yml --n_gp_draws 8 --seed 8 --sweep_name preliminary-test-small --mail adj53@cornell.edu --gres gpu:1
 ```
 
 ### Arguments
@@ -96,7 +96,7 @@ Alternatively, you can use `config/train_acqf_experiment_test_simple.yml` to jus
 #### SLURM-based job submission
 - `--sweep_name` is the name of the "sweep" (in Weights and Biases terminology). In this case, it just corresponds to the name of the directory where the err and out files, and other information about the experiment submission, will be saved.
 - `--mail` is the email address to send a notification to when the job is done (optional).
-- `--gpu_gres` is the GPU resource to request. In this case, it is requesting one GPU. (Also optional.)
+- `--gres` is the GPU resource to request. In this case, it is requesting one GPU. (Also optional.)
 
 Other arguments like partition and time may be added to the script if necessary.
 
@@ -136,7 +136,7 @@ Note that in the above command, the parameters `lamda_max` and `lamda_min` are u
 Run `python train_acqf.py --help` for the description of the arguments.
 An example command is as follows:
 ```bash
-python train_acqf.py --nn_base_config config/train_acqf.yml --nn_experiment_config config/train_acqf_experiment_test_simple.yml --sweep_name preliminary-test-small-train --mail adj53@cornell.edu --gpu_gres gpu:1
+python train_acqf.py --nn_base_config config/train_acqf.yml --nn_experiment_config config/train_acqf_experiment_test_simple.yml --sweep_name preliminary-test-small-train --mail adj53@cornell.edu --gres gpu:1
 ```
 This will train multiple neural networks with different hyperparameters and save the models.
 

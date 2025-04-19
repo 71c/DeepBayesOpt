@@ -1,7 +1,6 @@
 #!/bin/bash
 #SBATCH -n 1                                 # Total number of cores (tasks) requested (1 by default)
 #SBATCH --get-user-env                       # retrieve the users login environment
-#SBATCH -t 120:00:00                          # Time limit (hh:mm:ss)
 
 commands_file=$1
 command=$(sed -n "${SLURM_ARRAY_TASK_ID}p" $commands_file)

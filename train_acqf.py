@@ -106,7 +106,8 @@ NO_NN_ID = "dep-nn"
 def create_dependency_structure_train_acqf(
         options_list:list[dict[str, Any]],
         dependents_list:Optional[list[list[str]]]=None,
-        always_train=False):
+        always_train=False,
+        dependents_slurm_options:dict[str, Any]={}):
     r"""Create a command dependency structure for training acquisition function NNs.
     Includes dataset generation commands and NN training commands.
     Only includes dataset generation commands for datasets that are not cached."""
@@ -197,8 +198,7 @@ def create_dependency_structure_train_acqf(
                         "job_name": nn_list_id,
                         "index": nn_train_cmd_index
                     }],
-                    "gpu": True,
-                    "gpu_gres": "gpu:1"
+                    **dependents_slurm_options
                 }
         else:
             # Do not add the NN train command
@@ -209,8 +209,7 @@ def create_dependency_structure_train_acqf(
                 if NO_NN_ID not in ret:
                     ret[NO_NN_ID] = {
                         "commands": [],
-                        "gpu": True,
-                        "gpu_gres": "gpu:1"
+                        **dependents_slurm_options
                     }
                 for cmd in depdendent_commands:
                     ret[NO_NN_ID]["commands"].append(cmd)
