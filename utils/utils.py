@@ -46,7 +46,6 @@ from torch.nn import ModuleList
 from botorch.models.model import Model
 from botorch.models.gp_regression import SingleTaskGP
 from botorch.models.gpytorch import GPyTorchModel, BatchedMultiOutputGPyTorchModel
-from botorch.acquisition.analytic import _ei_helper
 
 
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
