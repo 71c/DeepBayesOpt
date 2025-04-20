@@ -139,9 +139,8 @@ def _submit_dependent_jobs(
         n_commands = len(job_spec["commands"])
         sbatch_args_dict = {
             "job-name": job_name,
-            "output": os.path.join(logs_dir, f"{job_name}_%j.out"),
-            "error": os.path.join(logs_dir, f"{job_name}_%j.err"),
-            "requeue": True,
+            "output": os.path.join(logs_dir, f"{job_name}-j%j-A%A_a%a.out"),
+            "error": os.path.join(logs_dir, f"{job_name}_j%j-A%A_a%a.err"),
             "array": f"1-{n_commands}",
             "mem": "64gb" # server memory requested (per node)
         }
@@ -161,7 +160,8 @@ def _submit_dependent_jobs(
             sbatch_args_dict['dependency'] = dependency_flag
         
         sbatch_args = dict_to_cmd_args(sbatch_args_dict, equals=True)
-        args = ["sbatch"] + sbatch_args + [JOB_ARRAY_SUB_PATH, commands_list_fpath]
+        args = ["sbatch"] + sbatch_args + [
+            JOB_ARRAY_SUB_PATH, commands_list_fpath, sweep_dir]
         print(" ".join(args))
         result = subprocess.run(
             args,

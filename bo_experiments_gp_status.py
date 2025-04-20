@@ -1,4 +1,3 @@
-from utils.experiments.submit_dependent_jobs import add_slurm_args
 from bo_experiments_gp import generate_gp_bo_job_specs, get_bo_experiments_parser
 
 
