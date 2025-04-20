@@ -139,7 +139,7 @@ def _submit_dependent_jobs(
         n_commands = len(job_spec["commands"])
         sbatch_args_dict = {
             "job-name": job_name,
-            "output": os.path.join(logs_dir, f"{job_name}-j%j-A%A_a%a.out"),
+            "output": os.path.join(logs_dir, f"{job_name}_j%j-A%A_a%a.out"),
             "error": os.path.join(logs_dir, f"{job_name}_j%j-A%A_a%a.err"),
             "array": f"1-{n_commands}",
             "mem": "64gb" # server memory requested (per node)
