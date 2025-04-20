@@ -1,12 +1,9 @@
 from collections import defaultdict
 from functools import cache
 import math
-import os
 from typing import Any
 import argparse
 import yaml
-
-import matplotlib.pyplot as plt
 
 import torch
 from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprovement

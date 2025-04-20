@@ -289,15 +289,13 @@ def main():
             bo_experiment_config=getattr(args, bo_experiment_config_name),
             dependents_slurm_options={
                 "gpu": True,
-                "gres": "gpu:h100:1",
+                "gres": "gpu:1",
                 "time": "2:00:00",
             }
         )
     
     print(f"Number of new BO configs: {len(new_cfgs)}")
     print(f"Number of existing BO configs: {len(existing_cfgs_and_results)}")
-
-    jobs_spec["dep-nn"]["commands"] = jobs_spec["dep-nn"]["commands"][:12]
 
     submit_jobs_sweep_from_args(jobs_spec, args)
 

@@ -5,18 +5,6 @@
 
 # Number of times to requeue the job if it fails
 MAX_RETRIES=3
-# This function can optionally be called when the job fails
-requeue_job_and_exit () {
-    if [ "$attempt" -le "$MAX_RETRIES" ]; then
-        echo "Requeuing..."
-        echo "$((attempt + 1))" > "$attempt_file"
-        scontrol requeue "$SLURM_JOB_ID"
-    else
-        echo "Max requeue attempts (${MAX_RETRIES}) reached, giving up."
-        rm -f "$attempt_file"
-    fi
-    exit 1
-}
 
 # Store Job ID, Array Job ID, and Array Task ID in a string variable
 # Version 1: j%j-A%A_a%a
@@ -35,13 +23,29 @@ attempt_file="${sweep_dir}/attempt-$JOB_DESC.txt"
 eval "$(/share/apps/anaconda3/2022.10/bin/conda shell.bash hook)"
 conda activate alon2
 
-# attempt number of this job
+# Attempt number of this job
 if [ -f "$attempt_file" ]; then
     attempt=$(cat "$attempt_file")
 else
     attempt=1
 fi
-echo "Attempt $attempt"
+
+echo "Executing command: $command"
+echo "Attempt: $attempt"
+echo ""
+
+# This function can optionally be called when the job fails
+requeue_job_and_exit () {
+    if [ "$attempt" -le "$MAX_RETRIES" ]; then
+        echo "Requeuing..."
+        echo "$((attempt + 1))" > "$attempt_file"
+        scontrol requeue "$SLURM_JOB_ID"
+    else
+        echo "Max requeue attempts (${MAX_RETRIES}) reached, giving up."
+        rm -f "$attempt_file"
+    fi
+    exit 1
+}
 
 # Debugging CUDA availability
 # store the output of nvidia-smi, or the empty string if there is no gpu
@@ -79,7 +83,8 @@ echo "$err" >&2
 # Check if the command was successful
 if [ "$exit_code" -ne 0 ]; then
     # If the command failed, log the error
-    echo "Command failed with exit code $exit_code: $command"
+    echo "" >&2
+    echo "[Command failed with exit code $exit_code.]" >&2
     fails_dir="${sweep_dir}/failed"
     mkdir -p "$fails_dir"
     echo "$err" > "${fails_dir}/${JOB_DESC}-attempt${attempt}-exit${exit_code}.err"
