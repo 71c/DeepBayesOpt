@@ -15,10 +15,25 @@ JOB_DESC="j${SLURM_JOB_ID}-A${SLURM_ARRAY_JOB_ID}_a${SLURM_ARRAY_TASK_ID}"
 # Obtain these variables from the command line
 commands_file=$1
 sweep_dir=$2
+mail=$3
+
+echo "commands_file: $commands_file"
+echo "sweep_dir: $sweep_dir"
+echo "mail: $mail"
+
+send_email_notification() {
+    local subject="$1"
+    local message="$2"
+    if [ -n "$mail" ]; then
+        # Use the mail command to send an email
+        echo "$message" | mail -s "$subject" "$mail"
+    fi
+}
 
 # Define these varaibles
 command=$(sed -n "${SLURM_ARRAY_TASK_ID}p" $commands_file)
 attempt_file="${sweep_dir}/attempt-$JOB_DESC.txt"
+fails_dir="${sweep_dir}/failed"
 
 # Load the conda environment
 eval "$(/share/apps/anaconda3/2022.10/bin/conda shell.bash hook)"
@@ -37,14 +52,33 @@ echo ""
 
 # This function can optionally be called when the job fails
 requeue_job_and_exit () {
+    # Create email content
+    local email_subject="Job ${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID} failed"
+    local email_message=""
+
     if [ "$attempt" -le "$MAX_RETRIES" ]; then
+        email_message="Job $JOB_DESC failed on attempt $attempt. Requeuing attempt $((attempt + 1)) of $MAX_RETRIES."
         echo "Requeuing..."
         echo "$((attempt + 1))" > "$attempt_file"
         scontrol requeue "$SLURM_JOB_ID"
     else
+        email_message="Job $JOB_DESC failed after $MAX_RETRIES attempts. Giving up."
         echo "Max requeue attempts (${MAX_RETRIES}) reached, giving up."
         rm -f "$attempt_file"
     fi
+
+    if [ -n "$out" ] || [  -n "$err" ]; then
+        email_message="${email_message}
+Please check ${fail_name}.err and ${fail_name}.log for details:
+
+out:
+$out
+
+err:
+$err"
+    fi
+
+    send_email_notification "$email_subject" "$email_message"
     exit 1
 }
 
@@ -54,17 +88,28 @@ requeue_job_and_exit () {
 nvidia_smi_output=$(nvidia-smi 2> /dev/null)
 # -n tells whether a variable is nonempty (-z is the opposite, tells whether it's empty)
 if [ -n "$nvidia_smi_output" ]; then
-    echo "Host: $(hostname)"
-    echo "Partition: $SLURM_JOB_PARTITION"
-    echo "GPU devices (CUDA_VISIBLE_DEVICES): $CUDA_VISIBLE_DEVICES"
-    echo "nvidia-smi output:"
-    echo "$nvidia_smi_output"
-
+    message="Host: $(hostname)
+Partition: $SLURM_JOB_PARTITION
+GPU devices (CUDA_VISIBLE_DEVICES): $CUDA_VISIBLE_DEVICES
+nvidia-smi output:
+$nvidia_smi_output"
     unavail=$(python -c "import torch;print('' if torch.cuda.is_available() else 'CUDA is not available!')")
     if [ -n "$unavail" ]; then
         echo "$unavail"
         python -c "import torch; print(f'Torch CUDA version: {torch.version.cuda}')"
+        err="$unavail"
+        out="$message
+$unavail"
+        echo "$out"
+        echo "$err" >&2
+        
+        mkdir -p "$fails_dir"
+        fail_name="${fails_dir}/${JOB_DESC}-attempt${attempt}-exit1"
+        echo "$err" > "${fail_name}.err"
+        echo "$out" > "${fail_name}.out"
         requeue_job_and_exit
+    else
+        echo "$message"
     fi
 fi
 
@@ -81,6 +126,8 @@ rm "$out_file" "$err_file"
 echo "$out"
 echo "$err" >&2
 
+fail_name="${fails_dir}/${JOB_DESC}-attempt${attempt}-exit${exit_code}"
+
 # Check if the command was successful
 if [ "$exit_code" -eq 0 ]; then
     echo "Command succeeded"
@@ -88,14 +135,32 @@ else
     echo "" >&2
     echo "[Command failed with exit code $exit_code.]" >&2
     
-    fails_dir="${sweep_dir}/failed"
     mkdir -p "$fails_dir"
-    name="${fails_dir}/${JOB_DESC}-attempt${attempt}-exit${exit_code}"
-    echo "$err" > "${name}.err"
-    echo "$out" > "${name}.out"
+    echo "$err" > "${fail_name}.err"
+    echo "$out" > "${fail_name}.out"
+
+    email_subject="Job ${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID} failed with exit code $exit_code"
+    email_message="Job $JOB_DESC failed with exit code $exit_code."
+    
+    if [ -n "$out" ] || [  -n "$err" ]; then
+        email_message="${email_message}
+Please check ${fail_name}.err and ${fail_name}.log for details:
+
+out:
+$out
+
+err:
+$err"
+    fi
 
     if [ "$exit_code" -eq 1 ]; then
         echo "Command failed with exit code 1. This is likely a user error. Not requeuing."
+        echo "Please check ${fail_name}.err and ${fail_name}.out for details."
+
+        send_email_notification "$email_subject - CANCELING JOB ARRAY" "$email_message Canceling job array."
+
+        echo "Canceling the job array ${SLURM_ARRAY_JOB_ID}_*."
+        scancel "${SLURM_ARRAY_JOB_ID}"
     else
         echo "Command failed with exit code $exit_code. Attempting to requeue the job."
         requeue_job_and_exit

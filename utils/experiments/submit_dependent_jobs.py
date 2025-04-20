@@ -162,6 +162,8 @@ def _submit_dependent_jobs(
         sbatch_args = dict_to_cmd_args(sbatch_args_dict, equals=True)
         args = ["sbatch"] + sbatch_args + [
             JOB_ARRAY_SUB_PATH, commands_list_fpath, sweep_dir]
+        if mail is not None:
+            args += [mail]
         print(" ".join(args))
         result = subprocess.run(
             args,
