@@ -101,6 +101,16 @@ SEEDS_CFG="--n_seeds 16 --single_objective";
 PLOTS_GROUP_NAME="8dim_maxhistory20_big";
 BO_PLOTS_NAME="results_100iter";
 
+# Experiment in 8D: experiment with reducing layer width and adding weight decay,
+# and with dataset size
+SEED=8;
+NN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_gittins_regularization.yml";
+BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
+SWEEP_NAME="100iter_8dim_maxhistory20_gittins_regularization";
+SEEDS_CFG="--n_seeds 16 --single_objective";
+PLOTS_GROUP_NAME="8dim_maxhistory20_gittins_regularization";
+BO_PLOTS_NAME="results_100iter";
+
 
 SEEDS_CFG="--n_seeds 6 --single_objective";
 

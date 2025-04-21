@@ -55,6 +55,8 @@ def get_cmd_options_train_acqf(options: dict[str, Any]):
             # learning rate scheduler
             'lr_scheduler', 'lr_scheduler_patience', 'lr_scheduler_factor',
             'lr_scheduler_min_lr', 'lr_scheduler_cooldown',
+            # weight decay
+            'weight_decay',
             # method=policy_gradient
             'include_alpha', 'learn_alpha', 'initial_alpha', 'alpha_increment',
             # method=gittins

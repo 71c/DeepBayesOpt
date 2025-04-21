@@ -56,15 +56,41 @@ CPROFILE = True
 
 
 # For 8dim_maxhistory20_gittins_dataset_size
-PRE = []
+# PRE = []
+# ATTR_A = ["nn.train_samples_size"]
+# ATTR_B = ["nn.samples_addition_amount"]
+
+
+# For 8dim_maxhistory20_big
+## First version:
+PRE = [
+    ["objective.lengthscale"],
+    ["nn.learning_rate"]
+]
 ATTR_A = ["nn.train_samples_size"]
 ATTR_B = ["nn.samples_addition_amount"]
-
-
 POST = [
-    ["lamda", "gp_af", "nn.method"],
+    ["lamda", "gp_af", "nn.method", "nn.lr_scheduler"],
     ["bo_seed"]
 ]
+## Second version:
+# PRE = [
+#     ["objective.lengthscale"],
+#     ["nn.train_samples_size"]
+# ]
+# ATTR_A = ["nn.samples_addition_amount"]
+# ATTR_B = ["nn.learning_rate"]
+# POST = [
+#     ["lamda", "gp_af", "nn.method", "nn.lr_scheduler"],
+#     ["bo_seed"]
+# ]
+
+
+# Default POST:
+# POST = [
+#     ["lamda", "gp_af", "nn.method"],
+#     ["bo_seed"]
+# ]
 
 PER_ITERATION_DECISIONS_SPLIT_INTO_FOLDERS = True
 ONE_FIGURE = True
@@ -74,7 +100,7 @@ INCLUDE_TIMES = False
 
 # "optimize_process_time"
 ATTR_GROUPS = [
-    ["per_iteration_decisions"],
+    # ["per_iteration_decisions"],
     ["best_y"],
     ["x"],
     ["best_y", "x"]
@@ -146,7 +172,7 @@ def main():
         '--n_iterations',
         type=int,
         default=40,
-        help='Number of iterations to plot'
+        help='Number of iterations to plot for the acquisition function animation'
     )
     
     ## Parse arguments

@@ -90,6 +90,8 @@ parameters:
               - value: false
       learning_rate:
         values: [3.e-3, 3.e-4]
+      weight_decay:
+        value: null
       batch_size:
         values: [32, 128]
       epochs:

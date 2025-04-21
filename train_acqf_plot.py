@@ -26,7 +26,17 @@ CPROFILE = False
 # ATTR_B = ["learning_rate"]
 
 # For 8dim_maxhistory20_gittins_dataset_size
-PRE = []
+# PRE = []
+# ATTR_A = ["train_samples_size"]
+# ATTR_B = ["samples_addition_amount"]
+
+
+# For 8dim_maxhistory20_big
+PRE = [
+    ["objective.lengthscale"],
+    ["method"],
+    ["learning_rate", "lr_scheduler"]
+]
 ATTR_A = ["train_samples_size"]
 ATTR_B = ["samples_addition_amount"]
 
@@ -90,7 +100,7 @@ def get_plot_ax_train_acqf_func(get_result_func):
                 ax, training_history_data, plot_maxei=False, plot_name=plot_name,
                 plot_log_regret=True)
         elif attr_name == "2_af_plot":
-            aq_dataset = results['dataset']
+            aq_dataset = results['dataset_getter']()
 
             it = iter(aq_dataset)
             item = next(it)
@@ -157,7 +167,8 @@ def main():
     # Get all the configs for which we have results, and the corresponding results
     existing_cfgs = []
     results_list = []
-    for cfg in all_cfgs_list:
+    caches = [None for _ in range(len(all_cfgs_list))]
+    for i, cfg in enumerate(all_cfgs_list):
         (cmd_dataset, cmd_opts_dataset,
          cmd_nn_train, cmd_opts_nn) = get_cmd_options_train_acqf(cfg)
         
@@ -174,8 +185,14 @@ def main():
             continue
         
         # Get the dataset
-        (train_aq_dataset, test_aq_dataset, small_test_aq_dataset
-         ) = create_train_test_gp_acq_datasets_helper(args_nn, af_dataset_configs)
+        def create_dataset_func():
+            cached = caches[i]
+            if cached is not None:
+                return cached
+            (train_aq_dataset, test_aq_dataset, small_test_aq_dataset
+            ) = create_train_test_gp_acq_datasets_helper(args_nn, af_dataset_configs)
+            caches[i] = test_aq_dataset
+            return test_aq_dataset
         
         training_history_data = load_json(
             os.path.join(model_path, 'training_history_data.json'))
@@ -184,7 +201,7 @@ def main():
         results_list.append({
             'training_history_data': training_history_data,
             'model': model,
-            'dataset': test_aq_dataset
+            'dataset_getter': create_dataset_func
         })
     
     # Remove all the prefixes

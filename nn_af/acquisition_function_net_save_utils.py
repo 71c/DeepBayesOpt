@@ -530,7 +530,10 @@ def _get_training_config(args: argparse.Namespace):
             lr_scheduler_factor=args.lr_scheduler_factor,
             lr_scheduler_min_lr=args.lr_scheduler_min_lr,
             lr_scheduler_cooldown=args.lr_scheduler_cooldown)
-
+    if args.weight_decay is not None:
+        training_config = dict(
+            **training_config,
+            weight_decay=args.weight_decay)
     return training_config
 
 
@@ -617,6 +620,11 @@ def _get_run_train_parser():
         type=int,
         required=True,
         help='Batch size for training the model'
+    )
+    training_group.add_argument(
+        '--weight_decay',
+        type=float,
+        help='Weight decay for training the model'
     )
     training_group.add_argument(
         '--epochs',

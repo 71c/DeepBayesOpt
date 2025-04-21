@@ -85,9 +85,10 @@ def run_train(cmd_args: Optional[Sequence[str]]=None):
         
         print(f"learning rate: {args.learning_rate}, batch size: {args.batch_size}")
         print(f"dimension: {args.dimension}, lengthscale: {args.lengthscale}")
-        optimizer = torch.optim.Adam(model.parameters(), lr=args.learning_rate,
-                                    #  weight_decay=1e-2
-                                    )
+        weight_decay = 0.0 if args.weight_decay is None else args.weight_decay
+        c = torch.optim.AdamW if weight_decay > 0 else torch.optim.Adam
+        optimizer = c(model.parameters(), lr=args.learning_rate,
+                        weight_decay=weight_decay)
         # optimizer = torch.optim.SGD(model.parameters(), lr=args.learning_rate, momentum=0.9)
         # optimizer = torch.optim.RMSprop(model.parameters(), lr=learning_rate)
 
