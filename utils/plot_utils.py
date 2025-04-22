@@ -1128,7 +1128,13 @@ def _get_figure_from_nested_structure(
             for v in plot_config.values():
                 for kk, vv in v["items"].items():
                     if kk not in key_to_data:
-                        key_to_data[kk] = list(sorted(vv["vals"].items()))
+                        tmp = [
+                            (a,
+                             0 if b is None or b == "None" else 1,
+                             b)
+                            for a, b in vv["vals"].items()
+                        ]
+                        key_to_data[kk] = list(sorted(tmp))
 
             col_names = list(sorted(key_to_data.keys(),
                                     key=lambda u: key_to_data[u]))

@@ -12,23 +12,25 @@ parameters:
   lamda:
     value: 1.00e-02
   train_samples_size:
-    values: [640]
+    values: [2560]
   samples_addition_amount:
-    values: [250, 4000] # 16000
+    values: [4000]
   test_samples_size:
     value: 1000
   test_expansion_factor:
     value: 100
   layer_width:
-    values: [75, 150, 300]
+    values: [8, 32, 108] # 505, 5089, 50005 parameters
+  dropout:
+    values: [null, 0.2, 0.7]
   epochs:
     value: 10000
   learning_rate:
-    values: [3.00e-04, 1.73e-03]
+    values: [5.20e-05, 3.00e-04, 1.73e-03]
   batch_size:
     value: 512
   weight_decay:
-    values: [null, 1.00e-04, 1.00e-02]
+    values: [null, 1.00e-04, 1.00e-02, 1.00]
   lr_scheduler:
     values: [null, 'ReduceLROnPlateau']
   lr_scheduler_patience:

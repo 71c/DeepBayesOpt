@@ -86,6 +86,18 @@ POST = [
 # ]
 
 
+# For 8dim_maxhistory20_gittins_regularization
+PRE = [
+    ["nn.samples_addition_amount"]
+]
+ATTR_A = ["nn.layer_width"]
+ATTR_B = ["nn.weight_decay"]
+POST = [
+    ["lamda", "gp_af", "nn.method", "nn.learning_rate", "nn.lr_scheduler"],
+    ["bo_seed"]
+]
+
+
 # Default POST:
 # POST = [
 #     ["lamda", "gp_af", "nn.method"],

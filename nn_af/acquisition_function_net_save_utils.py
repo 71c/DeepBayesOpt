@@ -335,8 +335,6 @@ def _parse_af_train_cmd_args(cmd_args:Optional[Sequence[str]]=None):
             args.num_heads = 4
         if args.num_layers is None:
             args.num_layers = 2
-        if args.dropout is None:
-            args.dropout = 0.0
 
     lamda_given = args.lamda is not None
     lamda_min_given = args.lamda_min is not None
@@ -388,7 +386,7 @@ def _get_model(args: argparse.Namespace):
 
             activation_at_end_pointnet=True,
             layer_norm_pointnet=False,
-            dropout_pointnet=None,
+            dropout_pointnet=args.dropout,
             activation_pointnet="relu",
 
             include_best_y=False,
@@ -400,7 +398,7 @@ def _get_model(args: argparse.Namespace):
             hidden_dim=args.layer_width,
             num_heads=args.num_heads,
             num_layers=args.num_layers,
-            dropout=args.dropout,
+            dropout=0.0 if args.dropout is None else args.dropout,
             include_best_y=False,
             input_xcand_to_final_mlp=True,
         )
@@ -412,7 +410,7 @@ def _get_model(args: argparse.Namespace):
         activation="relu",
         layer_norm_before_end=False,
         layer_norm_at_end=False,
-        dropout=None,
+        dropout=args.dropout,
     )
 
     if args.method == 'gittins':
@@ -585,6 +583,11 @@ def _get_run_train_parser():
         required=True,
         help='Type of NN architecture to use: "pointnet" or "transformer".'
     )
+    nn_architecture_group.add_argument(
+        '--dropout',
+        type=float,
+        help='Dropout rate. Default is None.'
+    )
     # Optional transformer-specific arguments
     nn_architecture_group.add_argument(
         '--num_heads',
@@ -595,11 +598,6 @@ def _get_run_train_parser():
         '--num_layers',
         type=int,
         help='(Transformer only) Number of transformer encoder layers. Default is 2.'
-    )
-    nn_architecture_group.add_argument(
-        '--dropout',
-        type=float,
-        help='(Transformer only) Dropout rate for transformer layers. Default is None.'
     )
 
     ############################ Training settings #####################################

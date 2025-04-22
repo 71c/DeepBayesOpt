@@ -6,7 +6,7 @@ from typing import Optional
 
 import torch
 
-from nn_af.acquisition_function_net_save_utils import get_lamda_for_bo_of_nn
+from nn_af.acquisition_function_net_save_utils import get_lamda_for_bo_of_nn, nn_acqf_is_trained
 from gp_acquisition_dataset import create_train_test_gp_acq_datasets_helper
 from utils.experiments.experiment_config_utils import get_config_options_list
 from utils.plot_utils import N_CANDIDATES_PLOT, add_plot_args, create_plot_directory, plot_acquisition_function_net_training_history_ax, plot_dict_to_str, plot_nn_vs_gp_acquisition_function_1d, save_figures_from_nested_structure
@@ -32,13 +32,22 @@ CPROFILE = False
 
 
 # For 8dim_maxhistory20_big
+# PRE = [
+#     ["objective.lengthscale"],
+#     ["method"],
+#     ["learning_rate", "lr_scheduler"]
+# ]
+# ATTR_A = ["train_samples_size"]
+# ATTR_B = ["samples_addition_amount"]
+
+
+# For 8dim_maxhistory20_gittins_regularization
 PRE = [
-    ["objective.lengthscale"],
-    ["method"],
+    ["samples_addition_amount"],
     ["learning_rate", "lr_scheduler"]
 ]
-ATTR_A = ["train_samples_size"]
-ATTR_B = ["samples_addition_amount"]
+ATTR_A = ["layer_width"]
+ATTR_B = ["weight_decay"]
 
 
 POST = [] # No "line" level yet
@@ -61,8 +70,8 @@ ATTR_GROUPS = [
     # ["0_training_history_train_test", "2_af_plot"],
     # ["0_training_history_train_test", "1_training_history_test_log_regret"],
     ["0_training_history_train_test"],
-    # ["1_training_history_test_log_regret"],
-    # ["2_af_plot"]
+    ["1_training_history_test_log_regret"],
+    ["2_af_plot"]
 ]
 
 ATTR_NAME_TO_TITLE = {
@@ -176,11 +185,11 @@ def main():
         ) = cmd_opts_nn_to_model_and_info_name(cmd_opts_nn)
 
         # Get the model (with the weights)
-        try:
+        if nn_acqf_is_trained(model_and_info_name):
             model, model_path = load_nn_acqf(
                 model_and_info_name,
                 return_model_path=True, load_weights=True, verbose=False)
-        except FileNotFoundError:
+        else:
             # If the model is not found, skip this iteration
             continue
         
