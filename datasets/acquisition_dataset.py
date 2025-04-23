@@ -103,7 +103,8 @@ class AcquisitionDatasetBatch(TupleWithModel):
 
 @staticmethod
 def _collate_train_acquisition_function_samples(
-    samples_list, has_models, cached_pads=False):
+    samples_list, has_models, cached_pads=False,
+    batch_transform=None):
     give_improvements = samples_list[0].give_improvements
     for x in samples_list:
         if not isinstance(x, AcquisitionDatasetModelItem):
@@ -156,9 +157,12 @@ def _collate_train_acquisition_function_samples(
 
         # print(f"{x_hist.shape=}, {y_hist.shape=}, {x_cand.shape=}, {vals_cand.shape=}, hist_mask.shape={hist_mask.shape if hist_mask is not None else None}, cand_mask.shape={cand_mask.shape if cand_mask is not None else None}")
 
-    return AcquisitionDatasetBatch(
+    ret = AcquisitionDatasetBatch(
         x_hist, y_hist, x_cand, vals_cand, hist_mask, cand_mask,
         model=models_list, give_improvements=give_improvements)
+    if batch_transform is not None:
+        ret = batch_transform(ret)
+    return ret
 
 
 def _make_mask(mask_shape, mask_index, n_ones, device):
@@ -178,7 +182,8 @@ def _make_mask(mask_shape, mask_index, n_ones, device):
 
 # get_dataloader is a method of AcquisitionDataset
 def _get_dataloader(self, batch_size=32, shuffle=None,
-                   cache_pads:Optional[bool]=None, **kwargs):
+                   cache_pads:Optional[bool]=None, batch_transform=None,
+                   **kwargs):
     """Returns a DataLoader object for the dataset.
 
     Args:
@@ -252,7 +257,8 @@ def _get_dataloader(self, batch_size=32, shuffle=None,
 
     collate_fn = partial(self._collate_train_acquisition_function_samples,
                         has_models=self.has_models,
-                        cached_pads=self._has_cached_pads)
+                        cached_pads=self._has_cached_pads,
+                        batch_transform=batch_transform)
 
     return DataLoader(self, batch_size=batch_size, shuffle=shuffle,
                         collate_fn=collate_fn, **kwargs)
@@ -794,12 +800,39 @@ class CostAwareAcquisitionDataset(
             
             vals_cand = torch.cat((vals_cand, log_lambdas), dim=1)
 
+            t = [item.x_hist, item.y_hist, item.x_cand, vals_cand]
             if item.has_model:
-                yield AcquisitionDatasetModelItem(
-                    item.x_hist, item.y_hist, item.x_cand, vals_cand,
-                    item.model, item.model_params,
-                    give_improvements=item.give_improvements)
+                t += [item.model, item.model_params]
+            yield AcquisitionDatasetModelItem(
+                *t, give_improvements=item.give_improvements)
+    
+    def get_dataloader(self, batch_size=32, shuffle=None,
+                   cache_pads:Optional[bool]=None, batch_transform=None,
+                   **kwargs):
+        def _batch_transform(batch: AcquisitionDatasetBatch) -> AcquisitionDatasetBatch:
+            vals_cand = batch.vals_cand # shape (batch_size, n_cand, some number)
+            this_batchsize = vals_cand.size(0)
+            n_cand = vals_cand.size(1)
+            if self.lambda_max is None:
+                log_lambdas = torch.full(
+                    (this_batchsize, n_cand, 1), self._log_lambda_min,
+                    dtype=vals_cand.dtype, device=vals_cand.device)
             else:
-                yield AcquisitionDatasetModelItem(
-                    item.x_hist, item.y_hist, item.x_cand, vals_cand,
-                    give_improvements=item.give_improvements)
+                log_lambdas = torch.rand(
+                    this_batchsize, n_cand, 1, dtype=vals_cand.dtype,
+                    device=vals_cand.device) * self._log_lambda_diff + self._log_lambda_min
+            vals_cand = torch.cat((vals_cand, log_lambdas), dim=2)
+            k = dict(give_improvements=batch.give_improvements)
+            if batch.has_model:
+                k['model'] = batch.model
+            ret = AcquisitionDatasetBatch(
+                batch.x_hist, batch.y_hist, batch.x_cand, vals_cand,
+                batch.hist_mask, batch.cand_mask, **k)
+            if batch_transform is not None:
+                ret = batch_transform(ret)
+            return ret
+
+        return self.base_dataset.get_dataloader(
+            batch_size=batch_size, shuffle=shuffle,
+            cache_pads=cache_pads, batch_transform=_batch_transform,
+            **kwargs)

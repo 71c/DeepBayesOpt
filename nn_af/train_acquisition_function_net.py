@@ -876,6 +876,7 @@ def split_nn_stats(stats):
             non_nn_stats[stat_name] = nn_stats.pop(stat_name)
     return nn_stats, non_nn_stats
 
+FIX_TRAIN_DATA_EACH_EPOCH = False
 
 def train_acquisition_function_net(
         nn_model: AcquisitionFunctionNet,
@@ -981,7 +982,8 @@ def train_acquisition_function_net(
     # fixed, then with these two runs through it, the data will be different.
     # But we'd like to have the stats of during training vs after training
     # directly comparable, so we will freeze the data with each epoch.
-    fix_train_dataset_each_epoch = get_train_stats_after_training and not train_dataset.data_is_fixed
+    need_fix_train_data = get_train_stats_after_training and not train_dataset.data_is_fixed
+    fix_train_dataset_each_epoch = need_fix_train_data and FIX_TRAIN_DATA_EACH_EPOCH
 
     # Due to this, need to explicitly set the default value here because train_or_test_loop
     # won't get it right because we'll fix the data even though it isn't fixed
@@ -990,6 +992,10 @@ def train_acquisition_function_net(
 
     if not fix_train_dataset_each_epoch:
         train_dataloader = train_dataset.get_dataloader(batch_size=batch_size, drop_last=False)
+    
+    if need_fix_train_data and not FIX_TRAIN_DATA_EACH_EPOCH:
+        train_dataset_eval_dataloader = train_dataset.fix_samples(lazy=False) \
+                .get_dataloader(batch_size=batch_size, drop_last=False, cache_pads=True)
     
     if save_incremental_best_models and save_dir is None:
         raise ValueError("Need to specify save_dir if save_incremental_best_models=True")
@@ -1074,8 +1080,12 @@ def train_acquisition_function_net(
                             print_dataset_ei=(train_n_cand > 1))
 
         if get_train_stats_after_training:
+            if need_fix_train_data and not FIX_TRAIN_DATA_EACH_EPOCH:
+                dl = train_dataset_eval_dataloader
+            else:
+                dl = train_dataloader
             train_stats['after_training'] = train_or_test_loop(
-                train_dataloader, nn_model, train=False,
+                dl, nn_model, train=False,
                 nn_device=nn_device, method=method,
                 verbose=verbose, desc=f"Epoch {t+1} compute train stats",
                 gi_loss_normalization=gi_loss_normalization,
