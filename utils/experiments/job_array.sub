@@ -2,6 +2,7 @@
 #SBATCH -n 1                          # Total number of cores (tasks) requested (1 by default)
 #SBATCH --get-user-env                # retrieve the users login environment
 #SBATCH --requeue                     # requeue the job if it fails
+#SBATCH --exclude=jjs533-compute-01   # Exclude this node from the job because it got cuda problems with the H100
 
 # Number of times to requeue the job if it fails
 MAX_RETRIES=3
