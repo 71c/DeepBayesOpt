@@ -994,8 +994,13 @@ def train_acquisition_function_net(
         train_dataloader = train_dataset.get_dataloader(batch_size=batch_size, drop_last=False)
     
     if need_fix_train_data and not FIX_TRAIN_DATA_EACH_EPOCH:
-        train_dataset_eval_dataloader = train_dataset.fix_samples(lazy=False) \
-                .get_dataloader(batch_size=batch_size, drop_last=False, cache_pads=True)
+        if test_during_training:
+            num = len(small_test_dataset)
+        else:
+            num = None
+        train_dataset_eval_dataloader = train_dataset \
+            .fix_samples(n_realizations=num, lazy=False) \
+            .get_dataloader(batch_size=batch_size, drop_last=False, cache_pads=True)
     
     if save_incremental_best_models and save_dir is None:
         raise ValueError("Need to specify save_dir if save_incremental_best_models=True")
