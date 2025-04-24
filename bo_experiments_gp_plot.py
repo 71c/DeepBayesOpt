@@ -63,16 +63,16 @@ CPROFILE = True
 
 # For 8dim_maxhistory20_big
 ## First version:
-PRE = [
-    ["objective.lengthscale"],
-    ["nn.learning_rate"]
-]
-ATTR_A = ["nn.train_samples_size"]
-ATTR_B = ["nn.samples_addition_amount"]
-POST = [
-    ["lamda", "gp_af", "nn.method", "nn.lr_scheduler"],
-    ["bo_seed"]
-]
+# PRE = [
+#     ["objective.lengthscale"],
+#     ["nn.learning_rate"]
+# ]
+# ATTR_A = ["nn.train_samples_size"]
+# ATTR_B = ["nn.samples_addition_amount"]
+# POST = [
+#     ["lamda", "gp_af", "nn.method", "nn.lr_scheduler"],
+#     ["bo_seed"]
+# ]
 ## Second version:
 # PRE = [
 #     ["objective.lengthscale"],
@@ -86,11 +86,22 @@ POST = [
 # ]
 
 
-# For 8dim_maxhistory20_gittins_regularization
+# # For 8dim_maxhistory20_gittins_regularization
+# PRE = [
+#     ["nn.samples_addition_amount"]
+# ]
+# ATTR_A = ["nn.layer_width"]
+# ATTR_B = ["nn.weight_decay"]
+# POST = [
+#     ["lamda", "gp_af", "nn.method", "nn.learning_rate", "nn.lr_scheduler"],
+#     ["bo_seed"]
+# ]
+
+# For 8dim_maxhistory20_gittins_regularization_2
 PRE = [
-    ["nn.samples_addition_amount"]
+    ["nn.layer_width"]
 ]
-ATTR_A = ["nn.layer_width"]
+ATTR_A = ["nn.dropout"]
 ATTR_B = ["nn.weight_decay"]
 POST = [
     ["lamda", "gp_af", "nn.method", "nn.learning_rate", "nn.lr_scheduler"],

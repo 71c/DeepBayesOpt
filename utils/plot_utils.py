@@ -1190,9 +1190,11 @@ def _get_figure_from_nested_structure(
         sorted_plot_config_items = list(sorted(
             plot_config.items(),
             key=lambda x: sorted(
-                [
-                    (k, v) # _plot_key_value_to_str(k, v)
-                    for k, v in x[1]["vals"].items()
+                [# _plot_key_value_to_str(a, b)
+                    (a,
+                     0 if b is None or b == "None" else 1,
+                     b)
+                    for a, b in x[1]["vals"].items()
                 ]
             )
         ))

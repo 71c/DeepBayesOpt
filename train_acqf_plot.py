@@ -42,11 +42,19 @@ CPROFILE = False
 
 
 # For 8dim_maxhistory20_gittins_regularization
+# PRE = [
+#     ["samples_addition_amount"],
+#     ["learning_rate", "lr_scheduler"]
+# ]
+# ATTR_A = ["layer_width"]
+# ATTR_B = ["weight_decay"]
+
+# For 8dim_maxhistory20_gittins_regularization_2
 PRE = [
-    ["samples_addition_amount"],
+    ["layer_width"],
     ["learning_rate", "lr_scheduler"]
 ]
-ATTR_A = ["layer_width"]
+ATTR_A = ["dropout"]
 ATTR_B = ["weight_decay"]
 
 
@@ -71,7 +79,7 @@ ATTR_GROUPS = [
     # ["0_training_history_train_test", "1_training_history_test_log_regret"],
     ["0_training_history_train_test"],
     ["1_training_history_test_log_regret"],
-    ["2_af_plot"]
+    # ["2_af_plot"]
 ]
 
 ATTR_NAME_TO_TITLE = {
@@ -82,7 +90,6 @@ ATTR_NAME_TO_TITLE = {
 
 
 N_HISTORY = 10
-
 
 
 def get_plot_ax_train_acqf_func(get_result_func):
