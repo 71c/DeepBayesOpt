@@ -121,7 +121,7 @@ PLOTS_GROUP_NAME="8dim_maxhistory20_gittins_regularization_2";
 BO_PLOTS_NAME="results_100iter";
 
 # Experiment in 8D: more experimenting with regularization (now dropout too) -- gittins & EI
-# Submitted on Thursday April 24, 2:28PM
+# Submitted 2025-04-24 19:18:07
 SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_regularization.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";

@@ -14,7 +14,6 @@ def get_training_stats(logs_dir):
     times = {}
     losses = {}
     for filepath in glob.glob(os.path.join(logs_dir, 'nn*.out')):
-        filename = os.path.basename(filepath)
         this_losses = []
         with open(filepath, 'r') as f:
             for line in f:
@@ -23,13 +22,13 @@ def get_training_stats(logs_dir):
                     this_losses.append(float(match.group(1)))
                 match = pattern_training_time.search(line)
                 if match:
-                    times[filename] = float(match.group(1))
+                    times[filepath] = float(match.group(1))
                     break
         
         if this_losses:
             # Get the best loss
             best_loss = min(this_losses)
-            losses[filename] = best_loss
+            losses[filepath] = best_loss
     return times, losses
 
 
@@ -63,11 +62,12 @@ if __name__ == "__main__":
     
     if losses:
         print("\nLosses:")
-        for filename, loss in sorted(losses.items(), key=lambda x: x[1]):
-            print(f"{filename}: {loss:.6f}")
+        for filepath, loss in sorted(losses.items(), key=lambda x: x[1]):
+            print(f"{filepath}: {loss:.6f}")
 
 
 # python get_training_stats.py data/sweeps/100iter_8dim_maxhistory20_big_20250417_194250/logs
 # python get_training_stats.py data/sweeps/100iter_8dim_maxhistory20_gittins_regularization_2_20250421_202615/logs
 # python get_training_stats.py data/sweeps/100iter_8dim_maxhistory20_gittins_regularization_2_20250422_221933/logs
 # python get_training_stats.py data/sweeps/100iter_8dim_maxhistory20_regularization_20250424_142837/logs
+# python get_training_stats.py data/sweeps/100iter_8dim_maxhistory20_regularization_20250424_191807/logs
