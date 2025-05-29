@@ -98,6 +98,7 @@ CPROFILE = True
 # ]
 
 # For 8dim_maxhistory20_gittins_regularization_2
+# and 8dim_maxhistory20_regularization
 PRE = [
     ["nn.layer_width"]
 ]
@@ -117,7 +118,7 @@ POST = [
 
 PER_ITERATION_DECISIONS_SPLIT_INTO_FOLDERS = True
 ONE_FIGURE = True
-PLOT_ALL_SEEDS = False
+PLOT_ALL_SEEDS = True
 
 INCLUDE_TIMES = False
 
@@ -125,8 +126,8 @@ INCLUDE_TIMES = False
 ATTR_GROUPS = [
     # ["per_iteration_decisions"],
     ["best_y"],
-    ["x"],
-    ["best_y", "x"]
+    # ["x"],
+    # ["best_y", "x"]
 ]
 if INCLUDE_TIMES:
     ATTR_GROUPS += [

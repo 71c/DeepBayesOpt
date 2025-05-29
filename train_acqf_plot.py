@@ -50,7 +50,9 @@ CPROFILE = False
 # ATTR_B = ["weight_decay"]
 
 # For 8dim_maxhistory20_gittins_regularization_2
+# and 8dim_maxhistory20_regularization
 PRE = [
+    ["nn.method"],
     ["layer_width"],
     ["learning_rate", "lr_scheduler"]
 ]
@@ -74,12 +76,12 @@ PLOTS_CONFIG_MULTIPLE = [
 ]
 
 ATTR_GROUPS = [
-    # ["0_training_history_train_test", "1_training_history_test_log_regret", "2_af_plot"],
-    # ["0_training_history_train_test", "2_af_plot"],
+    ["0_training_history_train_test", "1_training_history_test_log_regret", "2_af_plot"],
+    ["0_training_history_train_test", "2_af_plot"],
     # ["0_training_history_train_test", "1_training_history_test_log_regret"],
     ["0_training_history_train_test"],
     ["1_training_history_test_log_regret"],
-    # ["2_af_plot"]
+    ["2_af_plot"]
 ]
 
 ATTR_NAME_TO_TITLE = {

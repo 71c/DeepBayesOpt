@@ -130,12 +130,22 @@ SEEDS_CFG="--n_seeds 16 --single_objective";
 PLOTS_GROUP_NAME="8dim_maxhistory20_regularization";
 BO_PLOTS_NAME="results_100iter";
 
+# Simple experiment in 1D to test policy gradient method
+# after ignoring it for so long, and compare it to the other 2 methods
+SEED=8;
+NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_compare_3methods_initial.yml";
+BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
+SWEEP_NAME="100iter_1dim_compare_3methods_initial";
+SEEDS_CFG="--n_seeds 16 --single_objective";
+PLOTS_GROUP_NAME="1dim_maxhistory20_compare_3methods_initial";
+BO_PLOTS_NAME="results_100iter";
+
 
 SEEDS_CFG="--n_seeds 6 --single_objective";
 
 NN_CFG="--nn_base_config config/train_acqf.yml --nn_experiment_config $NN_EXPERIMENT_CFG";
 BO_CFG="--bo_base_config config/bo_config.yml --bo_experiment_config $BO_EXPERIMENT_CFG --seed $SEED $SEEDS_CFG";
-SLURM_CFG="--sweep_name $SWEEP_NAME --mail adj53@cornell.edu --gres gpu:1"; 
+SLURM_CFG="--sweep_name $SWEEP_NAME --mail adj53@cornell.edu --gres gpu:1";
 PLOTS_CFG="--plots_group_name $PLOTS_GROUP_NAME --use_rows --use_cols";
 
 BO_PLOTS_CFG="--center_stat mean --interval_of_center --plots_name $BO_PLOTS_NAME --assume_normal"
@@ -147,5 +157,5 @@ BO_PLOTS_CFG="--plots_name $BO_PLOTS_NAME"
 python bo_experiments_gp_status.py $NN_CFG $BO_CFG
        python bo_experiments_gp.py $NN_CFG $BO_CFG $SLURM_CFG
        python bo_experiments_gp.py $NN_CFG $BO_CFG $SLURM_CFG --no_submit
-  python bo_experiments_gp_plot.py $NN_CFG $BO_CFG $PLOTS_CFG $BO_PLOTS_CFG --n_iterations 25
+  python bo_experiments_gp_plot.py $NN_CFG $BO_CFG $PLOTS_CFG $BO_PLOTS_CFG --n_iterations 30
          python train_acqf_plot.py $NN_CFG         $PLOTS_CFG
