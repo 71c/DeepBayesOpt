@@ -335,7 +335,14 @@ class NNAcquisitionOptimizer(ModelAcquisitionOptimizer):
         )
         self.model = model
         
-        if isinstance(model, ExpectedImprovementAcquisitionFunctionNet):
+        if isinstance(model, ExpectedImprovementAcquisitionFunctionNet) \
+            and not model.includes_alpha:
+            # If it is ExpectedImprovementAcquisitionFunctionNet, then we could either
+            # be using MSE EI method or policy EI method.
+            # If the former, we want to keep track of the "exponentiated" AF values;
+            # if the latter, we don't need to. But since it's easier, let's just still
+            # keep track of it regardless as long as it doesn't give error because it's
+            # ok if we don't end up using it.
             self._is_ei = True
             self._acq_history_exponentiated = []
         else:

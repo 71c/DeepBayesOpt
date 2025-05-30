@@ -2,6 +2,7 @@ import copy
 from datetime import datetime
 import logging
 import os
+import sys
 from typing import Literal, Optional, List
 import warnings
 
@@ -470,7 +471,7 @@ def plot_acquisition_function_net_training_history_ax(
         ax, training_history_data, plot_maxei=False, plot_log_regret=False,
         plot_name=None):
     stats_epochs = training_history_data['stats_epochs']
-    stat_name =  'maxei' if plot_maxei else training_history_data['stat_name']
+    stat_name = 'maxei' if plot_maxei else training_history_data['stat_name']
     
     train_stat = np.array(
         [epoch['train']['after_training'][stat_name] for epoch in stats_epochs])
@@ -478,14 +479,13 @@ def plot_acquisition_function_net_training_history_ax(
     
     # Determine the GP test stat
     if stat_name == 'mse' or stat_name == 'maxei':
-        gp_prefix = 'true_gp_ei_'
+        gp_stat_name = 'true_gp_ei_' + stat_name
     elif stat_name == 'ei_softmax':
-        gp_prefix = 'true_gp_ei_maxei_'
+        gp_stat_name = 'true_gp_ei_maxei'
     elif stat_name.startswith('gittins_loss'):
-        gp_prefix = f'true_gp_gi_'
+        gp_stat_name = 'true_gp_gi_' + stat_name
     else:
         raise ValueError
-    gp_stat_name = gp_prefix + stat_name
     try:
         gp_test_stat = [epoch['test'][gp_stat_name] for epoch in stats_epochs]
         # Validate that all the values in `gp_test_stat` are the same:
@@ -496,7 +496,9 @@ def plot_acquisition_function_net_training_history_ax(
     
     if plot_log_regret:
         if gp_test_stat is None:
-            raise ValueError("Need to have GP test stat to plot regret")
+            s = stats_epochs[0]['test']
+            print(f"Fist test stats: {s}", file=sys.stderr)
+            raise ValueError(f"Need to have GP test stat '{gp_stat_name}' to plot regret")
         # regret_data = np.abs(test_stat - gp_test_stat)
         regret_data = test_stat - gp_test_stat
         regret_data = -regret_data if regret_data[0] < 0 else regret_data

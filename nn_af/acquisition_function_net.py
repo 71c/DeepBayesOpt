@@ -358,7 +358,7 @@ class AcquisitionFunctionHead(nn.Module, SaveableObject):
     def output_dim(self) -> int:
         r"""Returns the output dimension (dimension of the AF output)"""
         pass  # pragma: no cover
-    
+
     @abstractmethod
     def forward(self, features,
                 x_hist, y_hist, x_cand,
@@ -671,7 +671,7 @@ class AcquisitionFunctionNetFinalMLPSoftmaxExponentiate(AcquisitionFunctionNetFi
         return self.transform.softplus.beta
 
     @property
-    def includes_alpha(self):
+    def includes_alpha(self) -> bool:
         return self.transform.includes_alpha
     
     def _transform_acquisition_values(self, acquisition_values,
@@ -1375,7 +1375,8 @@ class ExpectedImprovementAcquisitionFunctionNet(AcquisitionFunctionNet):
         return self.base_model.af_head.get_beta()
 
     @property
-    def includes_alpha(self):
+    def includes_alpha(self) -> bool:
+        """Whether the acquisition function includes an alpha parameter."""
         return self.base_model.af_head.includes_alpha
     
     @property
