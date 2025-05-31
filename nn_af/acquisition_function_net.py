@@ -794,6 +794,8 @@ class AcquisitionFunctionBodyPointnetV1and2(
 
                  input_xcand_to_local_nn=True,
                  input_xcand_to_final_mlp=False,
+                
+                 subtract_x_cand_from_x_hist=False,
                  
                  activation_at_end_pointnet=True,
                  layer_norm_pointnet=False,
@@ -821,6 +823,9 @@ class AcquisitionFunctionBodyPointnetV1and2(
                 Whether to input the candidate points to the local neural network.
             input_xcand_to_final_mlp:
                 Whether to input the candidate points to the final MLP.
+            subtract_x_cand_from_x_hist:
+                Whether to subtract the candidate points from the historical points
+                before passing them to the local neural network.
             activation_at_end_pointnet (bool, default: True):
                 Whether to apply the activation function at the end of the PointNet.
             layer_norm_pointnet (bool, default: False):
@@ -839,11 +844,14 @@ class AcquisitionFunctionBodyPointnetV1and2(
 
         assert isinstance(n_pointnets, int) and n_pointnets >= 1
 
-        if not (input_xcand_to_local_nn or input_xcand_to_final_mlp):
-            raise ValueError("At least one of input_xcand_to_local_nn and "
-                             "input_xcand_to_final_mlp must be True.")
+        if not (input_xcand_to_local_nn or input_xcand_to_final_mlp \
+                or subtract_x_cand_from_x_hist):
+            raise ValueError("At least one of input_xcand_to_local_nn, "
+                             "input_xcand_to_final_mlp, or subtract_x_cand_from_x_hist "
+                              "must be True.")
         self.input_xcand_to_local_nn = input_xcand_to_local_nn
         self.input_xcand_to_final_mlp = input_xcand_to_final_mlp
+        self.subtract_x_cand_from_x_hist = subtract_x_cand_from_x_hist
 
         if not (isinstance(n_acqf_params, int) and n_acqf_params >= 0):
             raise ValueError("n_acqf_params should be a non-negative integer.")
@@ -878,6 +886,19 @@ class AcquisitionFunctionBodyPointnetV1and2(
                 (dimension + n_acqf_params if input_xcand_to_final_mlp else 0)
         self.dimension = dimension
         self.include_best_y = include_best_y
+    
+    def get_init_kwargs(self):
+        ## Oh wait, I just realized that this is not needed because
+        ## the AcquisitionFunctionNet body init params are stored explicitly
+        ## rather than them extracted from the AcquisitionFunctionBody.
+        ## (I wouldn't do it like this if I were to design it now, but it
+        ## is too late to change it now because want to keep the already saved models.)
+        ## But why not keep it like this just as an example -- it doesn't do anything.
+        ret = super().get_init_kwargs()
+        # Remove subtract_x_cand_from_x_hist if it is False
+        if not self.subtract_x_cand_from_x_hist:
+            ret.pop("subtract_x_cand_from_x_hist", None)
+        return ret
 
     @property
     def output_dim(self) -> int:
@@ -891,6 +912,51 @@ class AcquisitionFunctionBodyPointnetV1and2(
     def n_hist_out(self) -> int:
         return self._n_hist_out
     
+    # def forward(self, x_hist:Tensor, y_hist:Tensor, x_cand:Tensor,
+    #             acqf_params:Optional[Tensor]=None,
+    #             hist_mask:Optional[Tensor]=None,
+    #             cand_mask:Optional[Tensor]=None) -> Tensor:
+    #     y_hist = check_xy_dims(x_hist, y_hist, "x_hist", "y_hist",
+    #                            expected_y_dim=self.n_hist_out)
+    #     if self.include_best_y:
+    #         y_hist = concat_y_hist_with_best_y(y_hist, hist_mask, subtract=False)
+        
+    #     if self.n_acqf_params > 0:
+    #         if acqf_params is None:
+    #             raise ValueError("acqf_params must be provided if n_acqf_params > 0.")
+    #         if acqf_params.size(-1) != self.n_acqf_params:
+    #             raise ValueError(f"acqf_params should have {self.n_acqf_params} values.")
+    #         x_cand = torch.cat((x_cand, acqf_params), dim=-1)
+    #     elif acqf_params is not None:
+    #         raise ValueError("acqf_params should not be provided if n_acqf_params=0.")
+
+    #     if self.input_xcand_to_local_nn: # V2
+    #         # xy_hist_and_cand shape:
+    #         # (*, n_cand, n_hist, dimension+n_acqf_params+dimension+n_hist_out)
+    #         xy_hist, xy_hist_and_cand, mask = _get_xy_hist_and_cand(
+    #             x_hist, y_hist, x_cand, hist_mask)
+            
+    #         # shape (*, n_cand, encoded_history_dim)
+    #         out = self.history_encoder_net(xy_hist_and_cand, mask=mask, keepdim=False)
+    #         logger.debug(f"out.shape: {out.shape}")
+    #     else: # V1
+    #         xy_hist = torch.cat((x_hist, y_hist), dim=-1)
+    #         # shape (*, 1, encoded_history_dim)
+    #         out = self.history_encoder_net(xy_hist, mask=hist_mask, keepdim=True)
+            
+    #         ## Prepare input to the acquisition function network final dense layer
+    #         n_cand = x_cand.size(-2)
+    #         # shape (*, n_cand, encoded_history_dim)
+    #         out = expand_dim(out, -2, n_cand)
+    #         # Maybe neeed to match dimensions (?): (TODO: test this)
+    #         out = match_batch_shape(out, x_cand)
+        
+    #     if self.input_xcand_to_final_mlp: # V1
+    #         # shape (*, n_cand, dimension+n_acqf_params+encoded_history_dim)
+    #         out = torch.cat((x_cand, out), dim=-1)
+
+    #     return out
+
     def forward(self, x_hist:Tensor, y_hist:Tensor, x_cand:Tensor,
                 acqf_params:Optional[Tensor]=None,
                 hist_mask:Optional[Tensor]=None,
@@ -900,38 +966,68 @@ class AcquisitionFunctionBodyPointnetV1and2(
         if self.include_best_y:
             y_hist = concat_y_hist_with_best_y(y_hist, hist_mask, subtract=False)
         
+        n_hist = x_hist.size(-2)
+        n_cand = x_cand.size(-2)
+        
         if self.n_acqf_params > 0:
             if acqf_params is None:
                 raise ValueError("acqf_params must be provided if n_acqf_params > 0.")
             if acqf_params.size(-1) != self.n_acqf_params:
                 raise ValueError(f"acqf_params should have {self.n_acqf_params} values.")
-            x_cand = torch.cat((x_cand, acqf_params), dim=-1)
-        elif acqf_params is not None:
-            raise ValueError("acqf_params should not be provided if n_acqf_params=0.")
+            # x_cand = torch.cat((x_cand, acqf_params), dim=-1)
+        else:
+            if acqf_params is not None:
+                raise ValueError("acqf_params should not be provided if n_acqf_params=0.")
 
-        if self.input_xcand_to_local_nn: # V2
-            # xy_hist_and_cand shape:
-            # (*, n_cand, n_hist, dimension+n_acqf_params+dimension+n_hist_out)
-            xy_hist, xy_hist_and_cand, mask = _get_xy_hist_and_cand(
-                x_hist, y_hist, x_cand, hist_mask)
+        if self.input_xcand_to_local_nn or self.subtract_x_cand_from_x_hist:
+            # shape (*, n_cand, n_hist, dimension)
+            x_cand_expanded = expand_dim(x_cand.unsqueeze(-2), -2, n_hist)
+
+            # shape (*, n_cand, n_hist, dimension)
+            x_hist_expanded = expand_dim(x_hist.unsqueeze(-3), -3, n_cand)
+            
+            # shape (*, n_cand, n_hist, n_hist_out)
+            y_hist_expanded = expand_dim(y_hist.unsqueeze(-3), -3, n_cand)
+
+            if self.subtract_x_cand_from_x_hist:
+                x_hist_expanded = x_hist_expanded - x_cand_expanded
+            
+            inputs = [x_hist_expanded, y_hist_expanded]
+            if self.input_xcand_to_local_nn:
+                if self.n_acqf_params > 0:
+                    # shape (*, n_cand, n_hist, n_acqf_params)
+                    acqf_params_expanded = expand_dim(
+                        acqf_params.unsqueeze(-2), -2, n_hist)
+                    inputs = [acqf_params_expanded] + inputs
+                inputs = [x_cand_expanded] + inputs
+            
+            # shape (*, n_cand, n_hist, input_dim)
+            nn_input = torch.cat(inputs, dim=-1)
+
+            # hist_mask has shape (*, n_hist, 1), so need to expand to match.
+            # shape (*, n_cand, n_hist, 1)
+            mask = None if hist_mask is None \
+                else expand_dim(hist_mask.unsqueeze(-3), -3, n_cand)            
+            
             # shape (*, n_cand, encoded_history_dim)
-            out = self.history_encoder_net(xy_hist_and_cand, mask=mask, keepdim=False)
+            out = self.history_encoder_net(nn_input, mask=mask, keepdim=False)
             logger.debug(f"out.shape: {out.shape}")
-        else: # V1
+        else:
+            # shape (*, n_hist, dimension+n_hist_out)
             xy_hist = torch.cat((x_hist, y_hist), dim=-1)
             # shape (*, 1, encoded_history_dim)
             out = self.history_encoder_net(xy_hist, mask=hist_mask, keepdim=True)
-            
-            ## Prepare input to the acquisition function network final dense layer
-            n_cand = x_cand.size(-2)
+            # Prepare input to the acquisition function network final dense layer
             # shape (*, n_cand, encoded_history_dim)
             out = expand_dim(out, -2, n_cand)
-            # Maybe neeed to match dimensions (?): (TODO: test this)
-            out = match_batch_shape(out, x_cand)
         
-        if self.input_xcand_to_final_mlp: # V1
+        if self.input_xcand_to_final_mlp:
+            items = [x_cand]
+            if self.n_acqf_params > 0:
+                items += [acqf_params]
+            items += [out]
             # shape (*, n_cand, dimension+n_acqf_params+encoded_history_dim)
-            out = torch.cat((x_cand, out), dim=-1)
+            out = torch.cat(items, dim=-1)
 
         return out
 

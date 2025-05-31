@@ -49,9 +49,19 @@ parameters:
         value: null
       standardize_nn_history_outcomes:
         value: false
+      include_best_y:
+        values: [false, true]
       architecture: # TODO: Will change/improve this in the future
         values:
         - value: pointnet
+          parameters:
+            x_cand_input:
+              values:
+              - "local_and_final"
+              - "local_only"
+              - "final_only"
+              - "subtract-lossy"
+              - "subtract-local_only"
         - value: transformer
           parameters:
             num_heads:

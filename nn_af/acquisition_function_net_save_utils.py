@@ -335,6 +335,11 @@ def _parse_af_train_cmd_args(cmd_args:Optional[Sequence[str]]=None):
             args.num_heads = 4
         if args.num_layers is None:
             args.num_layers = 2
+        if args.x_cand_input is not None:
+            raise ValueError("x_cand_input should not be specified for transformer architecture")
+    elif args.architecture == 'pointnet':
+        if args.x_cand_input is None:
+            args.x_cand_input = 'local_and_final'
 
     lamda_given = args.lamda is not None
     lamda_min_given = args.lamda_min is not None
@@ -371,27 +376,58 @@ def _parse_af_train_cmd_args(cmd_args:Optional[Sequence[str]]=None):
     return args
 
 
+_POINTNET_X_CAND_INPUT_OPTIONS = {
+    "local_and_final": dict(
+        input_xcand_to_local_nn=True,
+        input_xcand_to_final_mlp=True
+    ),
+    "local_only": dict(
+        input_xcand_to_local_nn=True,
+        input_xcand_to_final_mlp=False
+    ),
+    "final_only": dict(
+        input_xcand_to_local_nn=False,
+        input_xcand_to_final_mlp=True
+    ),
+    "subtract-lossy": dict(
+        input_xcand_to_local_nn=False,
+        input_xcand_to_final_mlp=False,
+        subtract_x_cand_from_x_hist=True
+    ),
+    "subtract-local_only": dict(
+        input_xcand_to_local_nn=True,
+        input_xcand_to_final_mlp=False,
+        subtract_x_cand_from_x_hist=True
+    )
+}
+
+
 def _get_model(args: argparse.Namespace):
-    if args.architecture == "pointnet":
+    architecture = args.architecture
+    if architecture == "pointnet":
         body_cls = AcquisitionFunctionBodyPointnetV1and2
-        af_body_init_params = dict(
+        af_body_init_params_base = dict(
             dimension=args.dimension,
 
             history_enc_hidden_dims=[args.layer_width, args.layer_width],
             pooling="max",
             encoded_history_dim=args.layer_width,
 
-            input_xcand_to_local_nn=True,
-            input_xcand_to_final_mlp=True,
-
             activation_at_end_pointnet=True,
             layer_norm_pointnet=False,
             dropout_pointnet=args.dropout,
             activation_pointnet="relu",
 
-            include_best_y=False,
+            include_best_y=args.include_best_y,
             n_pointnets=1)
-    elif args.architecture == "transformer":
+        try:
+            more_params = _POINTNET_X_CAND_INPUT_OPTIONS[args.x_cand_input]
+        except KeyError:
+            raise ValueError(
+                f"Unknown x_cand_input option '{args.x_cand_input}' for PointNet. "
+                f"Available options are: {list(_POINTNET_X_CAND_INPUT_OPTIONS)}")
+        af_body_init_params = dict(**af_body_init_params_base, **more_params)
+    elif architecture == "transformer":
         body_cls = AcquisitionFunctionBodyTransformerNP
         af_body_init_params = dict(
             dimension=args.dimension,
@@ -399,11 +435,11 @@ def _get_model(args: argparse.Namespace):
             num_heads=args.num_heads,
             num_layers=args.num_layers,
             dropout=0.0 if args.dropout is None else args.dropout,
-            include_best_y=False,
+            include_best_y=args.include_best_y,
             input_xcand_to_final_mlp=True,
         )
     else:
-        ValueError(f"Unknown architecture {args.architecture}")
+        raise ValueError(f"Unknown architecture {architecture}")
     
     af_head_init_params = dict(
         hidden_dims=[args.layer_width, args.layer_width],
@@ -581,7 +617,19 @@ def _get_run_train_parser():
         type=str,
         choices=['pointnet', 'transformer'],
         required=True,
-        help='Type of NN architecture to use: "pointnet" or "transformer".'
+        help='Type of NN architecture to use.'
+    )
+    nn_architecture_group.add_argument(
+        '--x_cand_input',
+        type=str,
+        choices=list(_POINTNET_X_CAND_INPUT_OPTIONS),
+        help='(Only for PointNet) How to use x_cand as input to the NN. '
+             'Default is "local_and_final".'
+    )
+    nn_architecture_group.add_argument(
+        '--include_best_y',
+        action='store_true',
+        help='Whether to include the best y in the input to the NN. Default is False.'
     )
     nn_architecture_group.add_argument(
         '--dropout',

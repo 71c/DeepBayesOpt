@@ -42,7 +42,9 @@ def get_cmd_options_train_acqf(options: dict[str, Any]):
         k: options.get(k)
         for k in [
             'layer_width', 'standardize_nn_history_outcomes', 'architecture',
-            'num_heads', 'num_layers', 'dropout'
+            'x_cand_input', 'include_best_y',
+            'num_heads', 'num_layers',
+            'dropout'
         ]
     }
 

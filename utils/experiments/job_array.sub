@@ -87,7 +87,15 @@ Partition: $SLURM_JOB_PARTITION
 GPU devices (CUDA_VISIBLE_DEVICES): $CUDA_VISIBLE_DEVICES
 nvidia-smi output:
 $nvidia_smi_output"
-    unavail=$(python -c "import torch;print('' if torch.cuda.is_available() else 'CUDA is not available!')")
+    # The following variable is the empty string iff CUDA is both available AND usable.
+    # Otherwise, it either prints "CUDA is not available!" or raises an error.
+    unavail=$(python -c "
+import torch
+if torch.cuda.is_available():
+    torch.tensor([0.0], device='cuda')
+else:
+    print('CUDA not available')
+")
     if [ -n "$unavail" ]; then
         python -c "import torch; print(f'Torch CUDA version: {torch.version.cuda}')"
         err="$unavail"

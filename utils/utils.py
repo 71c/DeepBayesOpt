@@ -1915,12 +1915,17 @@ class SaveableObject(ABC):
         os.makedirs(folder, exist_ok=True)
         save_json(self.get_info_dict(), os.path.join(folder, "init.json"),
                   default=_default_json_SaveableObject)
+    
+    def get_init_kwargs(self) -> dict[str, Any]:
+        r"""Returns a dictionary of initialization parameters of the SaveableObject."""
+        return self._init_kwargs
 
     def get_info_dict(self) -> dict[str, Union[str, dict[str, Any]]]:
-        r"""Returns a dictionary representation of initialization parameters."""
+        r"""Returns a dictionary representation of initialization parameters
+        and class name."""
         return {
             "class_name": _get_class_name(self.__class__),
-            "kwargs": self._init_kwargs
+            "kwargs": self.get_init_kwargs()
         }
 
     @abstractmethod
