@@ -99,16 +99,24 @@ CPROFILE = True
 
 # For 8dim_maxhistory20_gittins_regularization_2
 # and 8dim_maxhistory20_regularization
-PRE = [
-    ["nn.layer_width"]
-]
-ATTR_A = ["nn.dropout"]
-ATTR_B = ["nn.weight_decay"]
+# PRE = [
+#     ["nn.layer_width"]
+# ]
+# ATTR_A = ["nn.dropout"]
+# ATTR_B = ["nn.weight_decay"]
+# POST = [
+#     ["lamda", "gp_af", "nn.method", "nn.learning_rate", "nn.lr_scheduler"],
+#     ["bo_seed"]
+# ]
+
+# For 1dim_compare_3methods_initial
+PRE = []
+ATTR_A = ["nn.method"]
+ATTR_B = []
 POST = [
-    ["lamda", "gp_af", "nn.method", "nn.learning_rate", "nn.lr_scheduler"],
+    ["lamda", "gp_af", "nn.learning_rate"],
     ["bo_seed"]
 ]
-
 
 # Default POST:
 # POST = [

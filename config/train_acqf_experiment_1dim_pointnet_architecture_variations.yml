@@ -1,0 +1,58 @@
+parameters:
+  max_history:
+    value: 20
+  dimension:
+    value: 1
+  lengthscale:
+    value: 0.05
+  method:
+    values: ['mse_ei', 'gittins']
+  gi_loss_normalization:
+    value: normal
+  lamda:
+    value: 1.00e-02
+  train_samples_size:
+    values: [2560]
+  samples_addition_amount:
+    values: [180]
+  test_samples_size:
+    value: 1000
+  test_expansion_factor:
+    value: 100
+  n_candidates:
+    value: 1
+  layer_width:
+    values: [32]   # [8, 32, 108] # 505, 5089, 50005 parameters
+  architecture:
+    value: pointnet
+  include_best_y:
+    values: [false, true]
+  x_cand_input:
+    values:
+    - "local_and_final"
+    - "local_only"
+    - "final_only"
+    - "subtract-lossy"
+    - "subtract-local_only"
+  epochs:
+    value: 4000
+  learning_rate:
+    values: [5.20e-05, 3.00e-04, 1.73e-03]
+  batch_size:
+    value: 512
+  dropout:
+    values: [null] # [null, 0.2, 0.7]
+  weight_decay:
+    values: [null] # [null, 1.00e-04, 1.00e-02, 1.00]
+  lr_scheduler:
+    values: [null] # [null, 'ReduceLROnPlateau']
+  lr_scheduler_patience:
+    value: 300
+  lr_scheduler_factor:
+    value: 0.5
+  early_stopping:
+    value: false
+  patience:
+    value: 1000
+  min_delta:
+    value: 1.00e-09

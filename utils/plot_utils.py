@@ -388,7 +388,7 @@ def plot_nn_vs_gp_acquisition_function_1d(
         y_hist_nn = y_hist.to(nn_device)
         x_cand_nn = x_cand.to(nn_device)
         if method == 'mse_ei' or method == 'policy_gradient':
-            kwargs = dict(exponentiate=True, softmax=False)
+            kwargs = dict(exponentiate=(method == 'mse_ei'), softmax=False)
         else:
             kwargs = {}
         aq_fn = AcquisitionFunctionNetAcquisitionFunction.from_net(
@@ -1114,6 +1114,12 @@ def _get_figure_from_nested_structure(
 
     row_and_col = False
     col_names = None
+
+    tmp_this = "attr_name" in this_attrs_group or "nn.method" in this_attrs_group \
+                or "method" in this_attrs_group or "gp_af" in this_attrs_group
+    tmp_next = "attr_name" in next_attrs_groups[0] or "nn.method" in next_attrs_groups[0] \
+                or "method" in next_attrs_groups[0] or "gp_af" in next_attrs_groups[0]
+
     if this_level_name == "line":
         n_rows = 1
         n_cols = 1
@@ -1145,11 +1151,15 @@ def _get_figure_from_nested_structure(
             for i, col_name in enumerate(col_names):
                 col_name_to_col_index[col_name] = i
             n_cols = len(col_names)
-            if "attr_name" in this_attrs_group:
-                # The plot attribute is varied with each row.
-                sharey = "row" # each subplot row will share an x- or y-axis.
-                sharex = "row"
-            elif "attr_name" in next_attrs_groups[0]:
+            if tmp_this:
+                if tmp_next:
+                    sharey = False
+                    sharex = False
+                else:
+                    # The plot attribute is varied with each row.
+                    sharey = "row" # each subplot row will share an x- or y-axis.
+                    sharex = "row"
+            elif tmp_next:
                 # The plot attribute is varied with each column.
                 sharey = "col" # each subplot column will share an x- or y-axis.
                 sharex = "col"
@@ -1158,19 +1168,13 @@ def _get_figure_from_nested_structure(
                 sharex = True
         else:
             n_cols = 1
-            if "attr_name" in this_attrs_group:
-                sharey = False
-            else:
-                if 'nn.method' in this_attrs_group or 'gp_af' in this_attrs_group:
-                    sharey = False
-                else:
-                    sharey = True
-            sharex = "attr_name" not in this_attrs_group
+            sharey = not tmp_this
+            sharex = not tmp_this
     elif this_level_name == "col":
         n_rows = 1
         n_cols = len(plot_config)
-        sharey = "attr_name" not in this_attrs_group
-        sharex = "attr_name" not in this_attrs_group
+        sharey = not tmp_this
+        sharex = not tmp_this
     else:
         raise ValueError
 

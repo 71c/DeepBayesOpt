@@ -136,8 +136,17 @@ SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_compare_3methods_initial.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_compare_3methods_initial";
-SEEDS_CFG="--n_seeds 16 --single_objective";
+SEEDS_CFG="--n_seeds 128 --single_objective";
 PLOTS_GROUP_NAME="1dim_maxhistory20_compare_3methods_initial";
+BO_PLOTS_NAME="results_100iter";
+
+# Initial experiment of PointNet architecture variations, 1D
+SEED=8;
+NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_architecture_variations.yml";
+BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
+SWEEP_NAME="100iter_1dim_pointnet_architecture_variations";
+SEEDS_CFG="--n_seeds 128 --single_objective";
+PLOTS_GROUP_NAME="1dim_pointnet_architecture_variations";
 BO_PLOTS_NAME="results_100iter";
 
 

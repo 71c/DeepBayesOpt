@@ -51,13 +51,18 @@ CPROFILE = False
 
 # For 8dim_maxhistory20_gittins_regularization_2
 # and 8dim_maxhistory20_regularization
-PRE = [
-    ["nn.method"],
-    ["layer_width"],
-    ["learning_rate", "lr_scheduler"]
-]
-ATTR_A = ["dropout"]
-ATTR_B = ["weight_decay"]
+# PRE = [
+#     ["nn.method"],
+#     ["layer_width"],
+#     ["learning_rate", "lr_scheduler"]
+# ]
+# ATTR_A = ["dropout"]
+# ATTR_B = ["weight_decay"]
+
+# For 1dim_compare_3methods_initial
+PRE = ["learning_rate"]
+ATTR_A = ["method"]
+ATTR_B = []
 
 
 POST = [] # No "line" level yet
