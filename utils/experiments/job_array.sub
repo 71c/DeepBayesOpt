@@ -81,6 +81,7 @@ $err"
 nvidia_smi_output=$(nvidia-smi 2> /dev/null)
 # -n tells whether a variable is nonempty (-z is the opposite, tells whether it's empty)
 if [ -n "$nvidia_smi_output" ]; then
+if [ "$nvidia_smi_output" != "No devices were found" ]; then
     out="$out
 Host: $(hostname)
 Partition: $SLURM_JOB_PARTITION
@@ -109,6 +110,7 @@ $unavail"
         echo "$err" >&2
         exit $exit_code
     fi
+fi
 fi
 
 echo "$out"
