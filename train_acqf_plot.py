@@ -60,9 +60,20 @@ CPROFILE = False
 # ATTR_B = ["weight_decay"]
 
 # For 1dim_compare_3methods_initial
-PRE = ["learning_rate"]
-ATTR_A = ["method"]
-ATTR_B = []
+# PRE = ["learning_rate"]
+# ATTR_A = ["method"]
+# ATTR_B = []
+
+# For 1dim_pointnet_architecture_variations
+# and 1dim_pointnet_architecture_variations_policy_gradient
+# and 8dim_pointnet_architecture_variations
+PRE = [
+    ["method"],
+    ["learning_rate"],
+    ["include_best_y"]
+]
+ATTR_A = []
+ATTR_B = ["x_cand_input"]
 
 
 POST = [] # No "line" level yet

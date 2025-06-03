@@ -79,38 +79,45 @@ $err"
 # store the output of nvidia-smi, or the empty string if there is no gpu
 # ("2> /dev/null" makes the stderr not outputted)
 nvidia_smi_output=$(nvidia-smi 2> /dev/null)
+
+
+
+
 # -n tells whether a variable is nonempty (-z is the opposite, tells whether it's empty)
-if [ -n "$nvidia_smi_output" ]; then
-if [ "$nvidia_smi_output" != "No devices were found" ]; then
-    out="$out
+if [[ -n "$nvidia_smi_output" && "$nvidia_smi_output" != "No devices were found" ]]; then
+
+
+out="$out
 Host: $(hostname)
 Partition: $SLURM_JOB_PARTITION
 GPU devices (CUDA_VISIBLE_DEVICES): $CUDA_VISIBLE_DEVICES
 nvidia-smi output:
 $nvidia_smi_output"
-    # The following variable is the empty string iff CUDA is both available AND usable.
-    # Otherwise, it either prints "CUDA is not available!" or raises an error.
-    unavail=$(python -c "
+
+# The following variable is the empty string iff CUDA is both available AND usable.
+# Otherwise, it either prints "CUDA is not available!" or raises an error.
+unavail=$(python -c "
 import torch
 if torch.cuda.is_available():
     torch.tensor([0.0], device='cuda')
 else:
     print('CUDA not available')
 ")
-    if [ -n "$unavail" ]; then
-        python -c "import torch; print(f'Torch CUDA version: {torch.version.cuda}')"
-        err="$unavail"
-        out="$out
+
+if [[ -n "$unavail" || "$nvidia_smi_output" =~ 'ERR' ]]; then
+    python -c "import torch; print(f'Torch CUDA version: {torch.version.cuda}')"
+    err="$unavail"
+    out="$out
 $unavail"
-        exit_code=1
-        requeue_job
-        fail_name="${FAIL_NAME_BASE}-exit${exit_code}"
-        log_failure "CUDA not available, Requeuing job"
-        echo "$out"
-        echo "$err" >&2
-        exit $exit_code
-    fi
+    exit_code=1
+    requeue_job
+    fail_name="${FAIL_NAME_BASE}-exit${exit_code}"
+    log_failure "CUDA not available, Requeuing job"
+    echo "$out"
+    echo "$err" >&2
+    exit $exit_code
 fi
+
 fi
 
 echo "$out"

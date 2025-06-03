@@ -398,6 +398,11 @@ _POINTNET_X_CAND_INPUT_OPTIONS = {
         input_xcand_to_local_nn=True,
         input_xcand_to_final_mlp=False,
         subtract_x_cand_from_x_hist=True
+    ),
+    "subtract-final_only": dict(
+        input_xcand_to_local_nn=False,
+        input_xcand_to_final_mlp=True,
+        subtract_x_cand_from_x_hist=True
     )
 }
 

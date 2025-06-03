@@ -167,6 +167,24 @@ SEEDS_CFG="--n_seeds 128 --single_objective";
 PLOTS_GROUP_NAME="8dim_pointnet_architecture_variations";
 BO_PLOTS_NAME="results_100iter";
 
+# Second experiment of PointNet architecture variations, 1D -- policy gradient
+SEED=8;
+NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_architecture_variations_policy_gradient_2.yml";
+BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
+SWEEP_NAME="100iter_1dim_pointnet_architecture_variations_policy_gradient_2";
+SEEDS_CFG="--n_seeds 128 --single_objective";
+PLOTS_GROUP_NAME="1dim_pointnet_architecture_variations_policy_gradient_2";
+BO_PLOTS_NAME="results_100iter";
+
+# Initial experiment of PointNet architecture variations, 8D -- policy gradient
+SEED=8;
+NN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_pointnet_architecture_variations_policy_gradient.yml";
+BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
+SWEEP_NAME="100iter_8dim_pointnet_architecture_variations_policy_gradient";
+SEEDS_CFG="--n_seeds 128 --single_objective";
+PLOTS_GROUP_NAME="8dim_pointnet_architecture_variations_policy_gradient";
+BO_PLOTS_NAME="results_100iter";
+
 
 SEEDS_CFG="--n_seeds 6 --single_objective";
 

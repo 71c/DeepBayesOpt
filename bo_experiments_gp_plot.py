@@ -110,9 +110,22 @@ CPROFILE = True
 # ]
 
 # For 1dim_compare_3methods_initial
-PRE = []
-ATTR_A = ["nn.method"]
-ATTR_B = []
+# PRE = []
+# ATTR_A = ["nn.method"]
+# ATTR_B = []
+# POST = [
+#     ["lamda", "gp_af", "nn.learning_rate"],
+#     ["bo_seed"]
+# ]
+
+# For 1dim_pointnet_architecture_variations
+# and 1dim_pointnet_architecture_variations_policy_gradient
+# and 8dim_pointnet_architecture_variations
+PRE = [
+    ["nn.method"]
+]
+ATTR_A = ["nn.include_best_y"]
+ATTR_B = ["nn.x_cand_input"]
 POST = [
     ["lamda", "gp_af", "nn.learning_rate"],
     ["bo_seed"]

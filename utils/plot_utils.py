@@ -480,10 +480,13 @@ def plot_acquisition_function_net_training_history_ax(
     # Determine the GP test stat
     if stat_name == 'mse' or stat_name == 'maxei':
         gp_stat_name = 'true_gp_ei_' + stat_name
+        is_loss = stat_name == 'mse'
     elif stat_name == 'ei_softmax':
         gp_stat_name = 'true_gp_ei_maxei'
+        is_loss = False
     elif stat_name.startswith('gittins_loss'):
         gp_stat_name = 'true_gp_gi_' + stat_name
+        is_loss = True
     else:
         raise ValueError
     try:
@@ -535,7 +538,7 @@ def plot_acquisition_function_net_training_history_ax(
             'xlabel': 'Epochs',
             'ylabel': stat_name,
             'log_scale_x': True,
-            'log_scale_y': True
+            'log_scale_y': is_loss
         }
 
         if gp_test_stat is not None:

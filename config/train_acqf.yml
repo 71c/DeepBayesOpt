@@ -62,6 +62,7 @@ parameters:
               - "final_only"
               - "subtract-lossy"
               - "subtract-local_only"
+              - "subtract-final_only"
         - value: transformer
           parameters:
             num_heads:
