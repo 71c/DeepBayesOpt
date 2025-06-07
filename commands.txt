@@ -185,6 +185,15 @@ SEEDS_CFG="--n_seeds 128 --single_objective";
 PLOTS_GROUP_NAME="8dim_pointnet_architecture_variations_policy_gradient";
 BO_PLOTS_NAME="results_100iter";
 
+# Experiment of PointNet architecture variations + dataset size, 1D
+SEED=8;
+NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_architecture_variations-dataset_size.yml";
+BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
+SWEEP_NAME="100iter_1dim_pointnet_architecture_variations-dataset_size";
+SEEDS_CFG="--n_seeds 64 --single_objective";
+PLOTS_GROUP_NAME="1dim_pointnet_architecture_variations-dataset_size";
+BO_PLOTS_NAME="results_100iter";
+
 
 SEEDS_CFG="--n_seeds 6 --single_objective";
 
