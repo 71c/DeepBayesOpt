@@ -211,3 +211,16 @@ This module implements the core Bayesian optimization loop. It includes:
 - `utils.py`: provides a comprehensive suite of helper functions and classes to support operations such as outcome transformations, kernel and model setup, JSON serialization, tensor padding, and various utility routines for managing data and configurations in Bayesian optimization experiments.
 - `nn_utils.py`: provides utility functions and custom PyTorch modules to build and manage neural network components, including dense layers, learnable positive parameters, custom softplus activations, and PointNet layers with various pooling strategies. It also includes helper routines for tensor dimension checking and masked softmax operations, along with embedded test cases for verification.
 - `plot_utils.py`: a few utility functions for plotting things.
+
+
+
+# How to add a new parameter to the experiments
+To add a new parameter to the experiments, you should at least add to `config/train_acqf.yml`.
+## Adding a new NN training parameter
+To add a new NN training parameter to the experiments,
+you will need to do the following:
+- Add the parameter to the function `get_cmd_options_train_acqf` in `train_acqf.py`
+- Modify the function `_parse_af_train_cmd_args` in `nn_af/acquisition_function_net_save_utils.py` as appropriate to parse the new parameter.
+- Add the parameter to `_get_run_train_parser` in `nn_af/acquisition_function_net_save_utils.py`.
+### Adding a NN architecture parameter
+If the NN training parameter is specifically a NN architecture parameter, then you will also need to modify `_get_model` in `nn_af/acquisition_function_net_save_utils.py`.

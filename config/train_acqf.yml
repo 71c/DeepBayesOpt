@@ -63,6 +63,8 @@ parameters:
               - "subtract-lossy"
               - "subtract-local_only"
               - "subtract-final_only"
+            encoded_history_dim: # This is K, the feature dimension
+              values: [null] # defaults to being the same as `layer_width`
         - value: transformer
           parameters:
             num_heads:

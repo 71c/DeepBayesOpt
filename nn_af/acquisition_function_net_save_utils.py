@@ -340,6 +340,8 @@ def _parse_af_train_cmd_args(cmd_args:Optional[Sequence[str]]=None):
     elif args.architecture == 'pointnet':
         if args.x_cand_input is None:
             args.x_cand_input = 'local_and_final'
+        if args.encoded_history_dim is None:
+            args.encoded_history_dim = args.layer_width
 
     lamda_given = args.lamda is not None
     lamda_min_given = args.lamda_min is not None
@@ -416,7 +418,7 @@ def _get_model(args: argparse.Namespace):
 
             history_enc_hidden_dims=[args.layer_width, args.layer_width],
             pooling="max",
-            encoded_history_dim=args.layer_width,
+            encoded_history_dim=args.encoded_history_dim,
 
             activation_at_end_pointnet=True,
             layer_norm_pointnet=False,
@@ -630,6 +632,12 @@ def _get_run_train_parser():
         choices=list(_POINTNET_X_CAND_INPUT_OPTIONS),
         help='(Only for PointNet) How to use x_cand as input to the NN. '
              'Default is "local_and_final".'
+    )
+    nn_architecture_group.add_argument(
+        '--encoded_history_dim',
+        type=int,
+        help=('(Only for PointNet) The feature dimension of the input to the NN. '
+            'Default is the same as layer_width.')
     )
     nn_architecture_group.add_argument(
         '--include_best_y',
