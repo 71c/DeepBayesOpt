@@ -2,6 +2,8 @@
 #SBATCH -n 1                          # Total number of cores (tasks) requested (1 by default)
 #SBATCH --get-user-env                # retrieve the users login environment
 #SBATCH --requeue                     # requeue the job if it fails
+#SBATCH --exclude=kuleshov-compute-01   # Exclude this node because it currently has CUDA errors
+#SBATCH --exclude=kuleshov-compute-03   # Exclude this node because it currently has CUDA errors
 
 # Number of times to requeue the job if it fails
 MAX_RETRIES=4

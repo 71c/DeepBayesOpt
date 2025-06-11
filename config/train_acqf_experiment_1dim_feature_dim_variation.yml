@@ -11,10 +11,10 @@ parameters:
     value: normal
   lamda:
     value: 1.00e-02
-  train_samples_size: # TODO: change to a single value
-    values: [40, 320, 2560]
-  samples_addition_amount: # TODO: change to a single value
-    values: [5, 30, 180]
+  train_samples_size:
+    values: [40]
+  samples_addition_amount:
+    values: [30]
   test_samples_size:
     value: 1000
   test_expansion_factor:
@@ -25,13 +25,17 @@ parameters:
     values: [8, 32]
   encoded_history_dim:
     values: [2, 8, 32, 128]
+  dropout:
+    values: [null, 0.2, 0.5]
+  weight_decay:
+    values: [null, 1.00e-04]
   architecture:
     value: pointnet
   include_best_y:
-    values: [false, true]
+    values: [true]
   x_cand_input:
     values:
-    - "subtract-lossy"
+    - "subtract-local_only"
   epochs:
     value: 4000
   learning_rate:

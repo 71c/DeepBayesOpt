@@ -67,8 +67,26 @@ CPROFILE = False
 # For 1dim_pointnet_architecture_variations
 # and 1dim_pointnet_architecture_variations_policy_gradient
 # and 8dim_pointnet_architecture_variations
+# PRE = [
+#     ["method"],
+#     ["learning_rate"],
+#     ["include_best_y"]
+# ]
+# ATTR_A = []
+# ATTR_B = ["x_cand_input"]
+
+# For 1dim_pointnet_architecture_variations-dataset_size
+# PRE = [
+#     ["x_cand_input"],
+#     ["learning_rate"],
+#     ["include_best_y"],
+#     ["train_samples_size"]
+# ]
+# ATTR_A = []
+# ATTR_B = ["samples_addition_amount"]
+
+# For 8dim_pointnet_architecture_variations_policy_gradient
 PRE = [
-    ["method"],
     ["learning_rate"],
     ["include_best_y"]
 ]

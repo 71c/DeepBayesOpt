@@ -121,15 +121,58 @@ CPROFILE = True
 # For 1dim_pointnet_architecture_variations
 # and 1dim_pointnet_architecture_variations_policy_gradient
 # and 8dim_pointnet_architecture_variations
+# PRE = [
+#     ["nn.method"]
+# ]
+# ATTR_A = ["nn.include_best_y"]
+# ATTR_B = ["nn.x_cand_input"]
+# POST = [
+#     ["lamda", "gp_af", "nn.learning_rate"],
+#     ["bo_seed"]
+# ]
+
+# For 1dim_pointnet_architecture_variations-dataset_size -- First version
+# PRE = [
+#     ["nn.x_cand_input"],
+#     ["nn.include_best_y"]
+# ]
+# ATTR_A = ["nn.train_samples_size"]
+# ATTR_B = ["nn.samples_addition_amount"]
+# POST = [
+#     ["lamda", "gp_af", "nn.learning_rate"],
+#     ["bo_seed"]
+# ]
+# # For 1dim_pointnet_architecture_variations-dataset_size -- Second version
+# PRE = [
+#     ["nn.train_samples_size"],
+#     ["nn.samples_addition_amount"]
+# ]
+# ATTR_A = ["nn.include_best_y"]
+# ATTR_B = ["nn.x_cand_input"]
+# POST = [
+#     ["lamda", "gp_af", "nn.learning_rate"],
+#     ["bo_seed"]
+# ]
+# For 1dim_pointnet_architecture_variations-dataset_size -- Third version
 PRE = [
-    ["nn.method"]
+    ["nn.learning_rate"],
+    ["nn.include_best_y"]
 ]
-ATTR_A = ["nn.include_best_y"]
-ATTR_B = ["nn.x_cand_input"]
+ATTR_A = ["nn.train_samples_size"]
+ATTR_B = ["nn.samples_addition_amount"]
 POST = [
-    ["lamda", "gp_af", "nn.learning_rate"],
+    ["lamda", "gp_af", "nn.x_cand_input"],
     ["bo_seed"]
 ]
+
+# For 8dim_pointnet_architecture_variations_policy_gradient
+# PRE = []
+# ATTR_A = ["nn.include_best_y"]
+# ATTR_B = ["nn.x_cand_input"]
+# POST = [
+#     ["lamda", "gp_af", "nn.learning_rate"],
+#     ["bo_seed"]
+# ]
 
 # Default POST:
 # POST = [

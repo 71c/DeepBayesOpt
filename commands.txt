@@ -132,6 +132,7 @@ BO_PLOTS_NAME="results_100iter";
 
 # Simple experiment in 1D to test policy gradient method
 # after ignoring it for so long, and compare it to the other 2 methods
+# -- in 2025-06-04 slides
 SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_compare_3methods_initial.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
@@ -141,6 +142,7 @@ PLOTS_GROUP_NAME="1dim_maxhistory20_compare_3methods_initial";
 BO_PLOTS_NAME="results_100iter";
 
 # Initial experiment of PointNet architecture variations, 1D
+# -- in 2025-06-04 slides
 SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_architecture_variations.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
@@ -150,6 +152,7 @@ PLOTS_GROUP_NAME="1dim_pointnet_architecture_variations";
 BO_PLOTS_NAME="results_100iter";
 
 # Initial experiment of PointNet architecture variations, 1D -- policy gradient
+# -- in 2025-06-04 slides
 SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_architecture_variations_policy_gradient.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
@@ -159,6 +162,7 @@ PLOTS_GROUP_NAME="1dim_pointnet_architecture_variations_policy_gradient";
 BO_PLOTS_NAME="results_100iter";
 
 # Initial experiment of PointNet architecture variations, 8D
+# -- in 2025-06-04 slides
 SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_pointnet_architecture_variations.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
@@ -167,7 +171,10 @@ SEEDS_CFG="--n_seeds 128 --single_objective";
 PLOTS_GROUP_NAME="8dim_pointnet_architecture_variations";
 BO_PLOTS_NAME="results_100iter";
 
+
 # Second experiment of PointNet architecture variations, 1D -- policy gradient
+# -- in 2025-06-11 slides
+# One NN currently in training left to complete and is still running after 3 days (I think); and some extra BO loops left
 SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_architecture_variations_policy_gradient_2.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
@@ -177,6 +184,8 @@ PLOTS_GROUP_NAME="1dim_pointnet_architecture_variations_policy_gradient_2";
 BO_PLOTS_NAME="results_100iter";
 
 # Initial experiment of PointNet architecture variations, 8D -- policy gradient
+# -- in 2025-06-11 slides
+# ALL DONE
 SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_pointnet_architecture_variations_policy_gradient.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
@@ -186,6 +195,7 @@ PLOTS_GROUP_NAME="8dim_pointnet_architecture_variations_policy_gradient";
 BO_PLOTS_NAME="results_100iter";
 
 # Experiment of PointNet architecture variations + dataset size, 1D
+# -- in 2025-06-11 slides
 SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_architecture_variations-dataset_size.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
@@ -193,6 +203,17 @@ SWEEP_NAME="100iter_1dim_pointnet_architecture_variations-dataset_size";
 SEEDS_CFG="--n_seeds 64 --single_objective";
 PLOTS_GROUP_NAME="1dim_pointnet_architecture_variations-dataset_size";
 BO_PLOTS_NAME="results_100iter";
+
+# Experiment of changing feature dimension of PointNet (keeping layer width the same), 1D
+# -- in 2025-06-11 slides (? maybe if I have time)
+SEED=8;
+NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_feature_dim_variation.yml";
+BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
+SWEEP_NAME="100iter_1dim_feature_dim_variation";
+SEEDS_CFG="--n_seeds 128 --single_objective";
+PLOTS_GROUP_NAME="1dim_feature_dim_variation";
+BO_PLOTS_NAME="results_100iter";
+
 
 
 SEEDS_CFG="--n_seeds 6 --single_objective";
