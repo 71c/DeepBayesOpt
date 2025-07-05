@@ -42,10 +42,6 @@ parameters:
     values: [5.20e-05, 3.00e-04, 1.73e-03]
   batch_size:
     value: 512
-  dropout:
-    values: [null]
-  weight_decay:
-    values: [null]
   lr_scheduler:
     values: [null]
   lr_scheduler_patience:

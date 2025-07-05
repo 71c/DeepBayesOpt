@@ -85,13 +85,31 @@ CPROFILE = False
 # ATTR_A = []
 # ATTR_B = ["samples_addition_amount"]
 
-# For 8dim_pointnet_architecture_variations_policy_gradient
+# # For 8dim_pointnet_architecture_variations_policy_gradient
+# PRE = [
+#     ["learning_rate"],
+#     ["include_best_y"]
+# ]
+# ATTR_A = []
+# ATTR_B = ["x_cand_input"]
+
+# For 1dim_pointnet_architecture_variations_policy_gradient_2
 PRE = [
+    ["layer_width"],
     ["learning_rate"],
     ["include_best_y"]
 ]
 ATTR_A = []
 ATTR_B = ["x_cand_input"]
+
+# For 1dim_feature_dim_variation -- bugged version where dropout and weight_decay are
+# not used
+# PRE = [
+#     ["learning_rate"],
+#     ["layer_width"]
+# ]
+# ATTR_A = []
+# ATTR_B = ["encoded_history_dim"]
 
 
 POST = [] # No "line" level yet
@@ -110,12 +128,14 @@ PLOTS_CONFIG_MULTIPLE = [
 ]
 
 ATTR_GROUPS = [
+    ["0_training_history_train_test"],
+
     ["0_training_history_train_test", "1_training_history_test_log_regret", "2_af_plot"],
     ["0_training_history_train_test", "2_af_plot"],
-    # ["0_training_history_train_test", "1_training_history_test_log_regret"],
-    ["0_training_history_train_test"],
     ["1_training_history_test_log_regret"],
-    ["2_af_plot"]
+    ["2_af_plot"],
+
+    # ["0_training_history_train_test", "1_training_history_test_log_regret"],
 ]
 
 ATTR_NAME_TO_TITLE = {
