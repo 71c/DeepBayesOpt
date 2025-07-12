@@ -141,7 +141,7 @@ def _submit_dependent_jobs(
             "job-name": job_name,
             "output": os.path.join(logs_dir, f"{job_name}_j%j-A%A_a%a.out"),
             "error": os.path.join(logs_dir, f"{job_name}_j%j-A%A_a%a.err"),
-            "array": f"1-{n_commands}%100", # %35
+            "array": f"1-{n_commands}%200", # %35
             "mem": "64gb" # server memory requested (per node)
         }
         sbatch_args_dict['time'] = job_spec.get("time", "96:00:00")

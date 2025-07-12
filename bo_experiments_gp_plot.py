@@ -186,26 +186,26 @@ CPROFILE = True
 #     ["bo_seed"]
 # ]
 # For 1dim_feature_dim_variation -- Second version
-# PRE = [
-#     ["nn.dropout"],
-#     ["nn.weight_decay"]
-# ]
-# ATTR_A = ["nn.layer_width"]
-# ATTR_B = ["nn.encoded_history_dim"]
-# POST = [
-#     ["lamda", "gp_af", "nn.learning_rate"],
-#     ["bo_seed"]
-# ]
-
-# For 1dim_feature_dim_variation -- bugged version where dropout and weight_decay are
-# not used
-PRE = []
+PRE = [
+    ["nn.dropout"],
+    ["nn.weight_decay"]
+]
 ATTR_A = ["nn.layer_width"]
 ATTR_B = ["nn.encoded_history_dim"]
 POST = [
     ["lamda", "gp_af", "nn.learning_rate"],
     ["bo_seed"]
 ]
+
+# For 1dim_feature_dim_variation -- bugged version where dropout and weight_decay are
+# not used
+# PRE = []
+# ATTR_A = ["nn.layer_width"]
+# ATTR_B = ["nn.encoded_history_dim"]
+# POST = [
+#     ["lamda", "gp_af", "nn.learning_rate"],
+#     ["bo_seed"]
+# ]
 
 # Default POST:
 # POST = [
