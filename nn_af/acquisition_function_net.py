@@ -817,7 +817,7 @@ class AcquisitionFunctionBodyPointnetV1and2(
                 hidden layer dimensions of the history encoder network.
                 Default is [256, 256].
             pooling (str): The pooling method used in the history encoder.
-                Must be either "max" or "sum". Default is "max".
+                Must be either "max", "mean", or "sum". Default is "max".
             encoded_history_dim (int): The dimensionality of the encoded history
                 representation. Default is 1024.
             input_xcand_to_local_nn:

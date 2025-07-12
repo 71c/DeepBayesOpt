@@ -559,7 +559,7 @@ def add_neg_inf_for_max(x, mask):
 
 
 POOLING_METHODS = {
-    "max", "sum", "fatmax",
+    "max", "mean", "sum", "fatmax",
     "experiment1", "experiment2", "experiment3"}
 class PointNetLayer(nn.Module):
     def __init__(self, input_dim: int, hidden_dims: Sequence[int]=[256, 256],
@@ -618,6 +618,13 @@ class PointNetLayer(nn.Module):
         # "global feature"
         if self.pooling == "sum":
             ret = torch.sum(local_features, dim=-2, keepdim=keepdim)
+        elif self.pooling == "mean":
+            if mask is None:
+                ret = torch.mean(local_features, dim=-2, keepdim=keepdim)
+            else:
+                # mean over the unmasked elements
+                ret = torch.sum(local_features, dim=-2, keepdim=keepdim) / \
+                    mask.sum(dim=-2, keepdim=keepdim)
         elif self.pooling == "max" or self.pooling == "fatmax":
             # This works for maxing. If ReLU is applied at the end, then
             # we could instead just use the one for summing.

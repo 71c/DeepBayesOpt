@@ -417,7 +417,7 @@ def _get_model(args: argparse.Namespace):
             dimension=args.dimension,
 
             history_enc_hidden_dims=[args.layer_width, args.layer_width],
-            pooling="max",
+            pooling=args.pooling,
             encoded_history_dim=args.encoded_history_dim,
 
             activation_at_end_pointnet=True,
@@ -650,6 +650,14 @@ def _get_run_train_parser():
         action='store_true',
         help=('Whether to subtract the best y from the history outcomes. '
               'Default is False.')
+    )
+    nn_architecture_group.add_argument(
+        '--pooling',
+        type=str,
+        choices=['max', 'mean', 'sum'],
+        help=('(Only for PointNet) The pooling method to use in the history encoder. '
+              'Default is "max".'),
+        default='max'
     )
     nn_architecture_group.add_argument(
         '--dropout',
