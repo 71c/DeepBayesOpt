@@ -313,6 +313,7 @@ def _get_gp_objective_things(objective_args):
     return objective_gp, objective_octf, objective_fn, objective_name
 
 
+@cache
 def _get_sobol_samples_and_bounds(bo_seed, n_initial_samples, dimension):
     bounds = torch.stack([torch.zeros(dimension), torch.ones(dimension)])
     torch.manual_seed(bo_seed)

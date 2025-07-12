@@ -75,6 +75,7 @@ def load_nn_acqf(
     return model
 
 
+@cache
 def load_nn_acqf_configs(model_and_info_folder_name: str):
     model_and_info_path = os.path.join(MODELS_DIR, model_and_info_folder_name)
     
@@ -97,6 +98,7 @@ def load_nn_acqf_configs(model_and_info_folder_name: str):
         function_samples_config['models'] = model_sampler.initial_models
         function_samples_config['model_probabilities'] = model_sampler.model_probabilities
         assert model_sampler.randomize_params == function_samples_config['randomize_params']
+        function_samples_config['model_sampler'] = model_sampler
     
     training_config = load_json(
         os.path.join(model_and_info_path, "training_config.json"))
@@ -164,11 +166,14 @@ def json_serialize_nn_acqf_configs(
     n_points_config = af_dataset_config["n_points_config"]
     dataset_transform_config = af_dataset_config["dataset_transform_config"]
 
-    model_sampler = RandomModelSampler(
-        models=function_samples_config["models"],
-        model_probabilities=function_samples_config["model_probabilities"],
-        randomize_params=function_samples_config["randomize_params"]
-    )
+    if 'model_sampler' in function_samples_config:
+        model_sampler = function_samples_config.pop('model_sampler')
+    else:
+        model_sampler = RandomModelSampler(
+            models=function_samples_config["models"],
+            model_probabilities=function_samples_config["model_probabilities"],
+            randomize_params=function_samples_config["randomize_params"]
+        )
 
     function_samples_config_json = convert_to_json_serializable(function_samples_config)
     dataset_transform_config_json = convert_to_json_serializable(dataset_transform_config)

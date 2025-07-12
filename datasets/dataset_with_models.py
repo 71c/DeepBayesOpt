@@ -69,7 +69,8 @@ class RandomModelSampler:
     """A class that samples a random model with random parameters from its prior
     from a list of models."""
     def __init__(self, models: List[SingleTaskGP],
-                 model_probabilities=None, randomize_params=True):
+                 model_probabilities=None, randomize_params=True,
+                 copy_models=True):
         """Initializes the RandomModelSampler instance.
 
         Args:
@@ -78,14 +79,16 @@ class RandomModelSampler:
             model_probabilities (Tensor, optional): 1D Tensor of probabilities
                 OF choosing each model. If None, then set to be uniform.
         """
-        models = models.copy()
+        if copy_models:
+            models = models.copy()
         initial_params_list = []
         for i in range(len(models)):
             if not isinstance(models[i], SingleTaskGP):
                 raise UnsupportedError(
                     f"models[{i}] should be a SingleTaskGP instance.")
 
-            if hasattr(models[i], "index") or hasattr(models[i], "initial_params"):
+            if copy_models and (
+                hasattr(models[i], "index") or hasattr(models[i], "initial_params")):
                 models[i] = copy.deepcopy(models[i])
             
             # Set the model indices as attributes so we can access them for
@@ -167,7 +170,8 @@ class RandomModelSampler:
         info = load_json(info_path)
 
         return cls(models, model_probabilities=info['model_probabilities'],
-                   randomize_params=info['randomize_params'])
+                   randomize_params=info['randomize_params'],
+                   copy_models=False)
 
 
 class ModelsWithParamsList:

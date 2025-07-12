@@ -547,7 +547,7 @@ class OptimizationResultsSingleMethod:
         for func_index in range(self.n_functions):
             for trial_index in range(self.n_trials_per_function):
                 cached_trial_result = self._get_cached_trial_result(
-                    func_index, trial_index)
+                    func_index, trial_index, return_result=False)
                 if cached_trial_result is None:
                     self._trial_indices_not_cached[func_index].append(trial_index)
                 else:
@@ -576,11 +576,14 @@ class OptimizationResultsSingleMethod:
             data_path = os.path.join(
                 self.save_dir, func_name, "results",
                 func_opt_config_str, "trials", trial_config_str + ".json")
-            try:
-                trial_result = load_json(data_path)
-                self._cached_results[key] = trial_result
-            except FileNotFoundError:
-                return None
+            if return_result:
+                try:
+                    trial_result = load_json(data_path)
+                    self._cached_results[key] = trial_result
+                except FileNotFoundError:
+                    return None
+            else:
+                return True if os.path.exists(data_path) else None
         return json_serializable_to_numpy(trial_result) if return_result else True
 
     def _get_trial_result(self, func_index: int, trial_index: int, verbose=False):
@@ -689,6 +692,12 @@ class OptimizationResultsSingleMethod:
         for func_index in range(self.n_functions):
             trial_indices_not_cached_func = trial_indices_not_cached[func_index]
             results_func = results[func_index]
+
+            for trial_index in range(self.n_trials_per_function):
+                if results_func[trial_index] == True:
+                    # We know it's there but didn't load the JSON yet
+                    results_func[trial_index] = self._get_cached_trial_result(
+                        func_index, trial_index, return_result=True)
 
             if trial_indices_not_cached_func:
                 n_cached = self.n_trials_per_function - len(trial_indices_not_cached_func)

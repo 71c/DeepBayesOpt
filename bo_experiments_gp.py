@@ -257,7 +257,7 @@ def generate_gp_bo_job_specs(args: argparse.Namespace,
 
     if CPROFILE:
         pr.disable()
-        with open('stats_output.txt', 'w') as s:
+        with open('stats_output-_gp_bo_jobs_spec_and_cfgs.txt', 'w') as s:
             ps = pstats.Stats(pr, stream=s).sort_stats(pstats.SortKey.CUMULATIVE)
             ps.print_stats()
     
