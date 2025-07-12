@@ -426,8 +426,12 @@ def _get_model(args: argparse.Namespace):
             activation_pointnet="relu",
 
             include_best_y=args.include_best_y,
-            subtract_best_y=args.subtract_best_y,
             n_pointnets=1)
+        # Only add this if it is True; that way it is backwards compatible
+        # with subtract_best_y not being an option (being False) previously.
+        # (subtract_best_y is False by default.)
+        if args.subtract_best_y:
+            af_body_init_params_base['subtract_best_y'] = True
         try:
             more_params = _POINTNET_X_CAND_INPUT_OPTIONS[args.x_cand_input]
         except KeyError:
