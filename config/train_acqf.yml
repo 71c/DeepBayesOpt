@@ -51,6 +51,8 @@ parameters:
         value: false
       include_best_y:
         values: [false, true]
+      subtract_best_y:
+        values: [false, true]
       architecture: # TODO: Will change/improve this in the future
         values:
         - value: pointnet

@@ -426,6 +426,7 @@ def _get_model(args: argparse.Namespace):
             activation_pointnet="relu",
 
             include_best_y=args.include_best_y,
+            subtract_best_y=args.subtract_best_y,
             n_pointnets=1)
         try:
             more_params = _POINTNET_X_CAND_INPUT_OPTIONS[args.x_cand_input]
@@ -643,6 +644,12 @@ def _get_run_train_parser():
         '--include_best_y',
         action='store_true',
         help='Whether to include the best y in the input to the NN. Default is False.'
+    )
+    nn_architecture_group.add_argument(
+        '--subtract_best_y',
+        action='store_true',
+        help=('Whether to subtract the best y from the history outcomes. '
+              'Default is False.')
     )
     nn_architecture_group.add_argument(
         '--dropout',

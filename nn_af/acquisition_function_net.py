@@ -803,6 +803,7 @@ class AcquisitionFunctionBodyPointnetV1and2(
                  activation_pointnet:str="relu",
 
                  include_best_y=False,
+                 subtract_best_y=False,
                  n_pointnets=1):
         """
         Args:
@@ -837,6 +838,9 @@ class AcquisitionFunctionBodyPointnetV1and2(
             include_best_y (bool, default: False):
                 Whether to include the best y value in the input to the local neural
                 network.
+            subtract_best_y (bool, default: False):
+                Whether to subtract the best y value from the historical y values
+                before passing them to the local neural network.
             n_pointnets (int, default: 1):
                 The number of PointNets to use. Default is 1.
         """
@@ -886,6 +890,7 @@ class AcquisitionFunctionBodyPointnetV1and2(
                 (dimension + n_acqf_params if input_xcand_to_final_mlp else 0)
         self.dimension = dimension
         self.include_best_y = include_best_y
+        self.subtract_best_y = subtract_best_y
     
     def get_init_kwargs(self):
         ## Oh wait, I just realized that this is not needed because
@@ -911,51 +916,6 @@ class AcquisitionFunctionBodyPointnetV1and2(
     @property
     def n_hist_out(self) -> int:
         return self._n_hist_out
-    
-    # def forward(self, x_hist:Tensor, y_hist:Tensor, x_cand:Tensor,
-    #             acqf_params:Optional[Tensor]=None,
-    #             hist_mask:Optional[Tensor]=None,
-    #             cand_mask:Optional[Tensor]=None) -> Tensor:
-    #     y_hist = check_xy_dims(x_hist, y_hist, "x_hist", "y_hist",
-    #                            expected_y_dim=self.n_hist_out)
-    #     if self.include_best_y:
-    #         y_hist = concat_y_hist_with_best_y(y_hist, hist_mask, subtract=False)
-        
-    #     if self.n_acqf_params > 0:
-    #         if acqf_params is None:
-    #             raise ValueError("acqf_params must be provided if n_acqf_params > 0.")
-    #         if acqf_params.size(-1) != self.n_acqf_params:
-    #             raise ValueError(f"acqf_params should have {self.n_acqf_params} values.")
-    #         x_cand = torch.cat((x_cand, acqf_params), dim=-1)
-    #     elif acqf_params is not None:
-    #         raise ValueError("acqf_params should not be provided if n_acqf_params=0.")
-
-    #     if self.input_xcand_to_local_nn: # V2
-    #         # xy_hist_and_cand shape:
-    #         # (*, n_cand, n_hist, dimension+n_acqf_params+dimension+n_hist_out)
-    #         xy_hist, xy_hist_and_cand, mask = _get_xy_hist_and_cand(
-    #             x_hist, y_hist, x_cand, hist_mask)
-            
-    #         # shape (*, n_cand, encoded_history_dim)
-    #         out = self.history_encoder_net(xy_hist_and_cand, mask=mask, keepdim=False)
-    #         logger.debug(f"out.shape: {out.shape}")
-    #     else: # V1
-    #         xy_hist = torch.cat((x_hist, y_hist), dim=-1)
-    #         # shape (*, 1, encoded_history_dim)
-    #         out = self.history_encoder_net(xy_hist, mask=hist_mask, keepdim=True)
-            
-    #         ## Prepare input to the acquisition function network final dense layer
-    #         n_cand = x_cand.size(-2)
-    #         # shape (*, n_cand, encoded_history_dim)
-    #         out = expand_dim(out, -2, n_cand)
-    #         # Maybe neeed to match dimensions (?): (TODO: test this)
-    #         out = match_batch_shape(out, x_cand)
-        
-    #     if self.input_xcand_to_final_mlp: # V1
-    #         # shape (*, n_cand, dimension+n_acqf_params+encoded_history_dim)
-    #         out = torch.cat((x_cand, out), dim=-1)
-
-    #     return out
 
     def forward(self, x_hist:Tensor, y_hist:Tensor, x_cand:Tensor,
                 acqf_params:Optional[Tensor]=None,
@@ -963,8 +923,13 @@ class AcquisitionFunctionBodyPointnetV1and2(
                 cand_mask:Optional[Tensor]=None) -> Tensor:
         y_hist = check_xy_dims(x_hist, y_hist, "x_hist", "y_hist",
                                expected_y_dim=self.n_hist_out)
-        if self.include_best_y:
-            y_hist = concat_y_hist_with_best_y(y_hist, hist_mask, subtract=False)
+        
+        if self.include_best_y or self.subtract_best_y:
+            best_f = get_best_y(y_hist, hist_mask).expand_as(y_hist)
+            if self.subtract_best_y:
+                y_hist = best_f - y_hist
+            if self.include_best_y:
+                y_hist = torch.cat((best_f, y_hist), dim=-1)
         
         n_hist = x_hist.size(-2)
         n_cand = x_cand.size(-2)
