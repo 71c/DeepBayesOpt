@@ -115,7 +115,7 @@ def plot_error_bars(
         center, lower, upper,
         label=None,
         shade=True):
-    x = range(len(center))
+    x = list(range(1, len(center)+1))
     if shade:
         ax.plot(x, center, label=label)
         ax.fill_between(x, lower, upper, alpha=0.3)
@@ -849,11 +849,11 @@ def get_plot_ax_bo_stats_vs_iteration_func(get_result_func):
                     attr_name = info['attr_name']
                     attr_names.add(attr_name)
                     val = info[attr_name]
-                    if attr_name in {'best_y', 'y', 'x', 'best_x'}:
+                    if attr_name in {'best_y', 'regret', 'y', 'x', 'best_x'}:
                         # For x vals, get the first component (if dim > 1)
                         if len(val.shape) != 2:
                             raise ValueError(f"Expected 2D array, but got {val.shape=}")
-                        if attr_name in {'best_y', 'y'} and val.shape[1] != 1:
+                        if attr_name in {'best_y', 'regret', 'y'} and val.shape[1] != 1:
                             raise ValueError(
                                 f"Expected {attr_name} to have shape (n_seeds, 1), "
                                 f"but got {val.shape=}")
@@ -883,7 +883,11 @@ def get_plot_ax_bo_stats_vs_iteration_func(get_result_func):
                 )
                 plot_error_bars(ax, center, lower, upper,
                                 label=legend_name, shade=plot_kwargs['shade'])
-
+                print(center, lower, upper)
+                # ax.set_xscale('log')
+                if attr_name == 'regret':
+                    ax.set_yscale('log')
+                    
                 # plot_bo_violin(ax, np.array(this_data))
         
         if len(attr_names) > 1:

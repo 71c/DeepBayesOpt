@@ -3,9 +3,11 @@ import os
 import cProfile, pstats
 
 from nn_af.acquisition_function_net_save_utils import load_nn_acqf
-from utils.plot_utils import create_plot_directory, get_plot_ax_af_iterations_func
+from utils.plot_utils import (
+    create_plot_directory, get_plot_ax_af_iterations_func, add_plot_args,
+    get_plot_ax_bo_stats_vs_iteration_func, plot_dict_to_str,
+    save_figures_from_nested_structure)
 from utils.utils import dict_to_str, group_by, group_by_nested_attrs, save_json
-from utils.plot_utils import add_plot_args, get_plot_ax_bo_stats_vs_iteration_func, plot_dict_to_str, save_figures_from_nested_structure
 from utils.experiments.experiment_config_utils import CONFIG_DIR
 
 from bo_experiments_gp import get_bo_experiments_parser, generate_gp_bo_job_specs
@@ -186,16 +188,16 @@ CPROFILE = True
 #     ["bo_seed"]
 # ]
 # For 1dim_feature_dim_variation -- Second version
-PRE = [
-    ["nn.dropout"],
-    ["nn.weight_decay"]
-]
-ATTR_A = ["nn.layer_width"]
-ATTR_B = ["nn.encoded_history_dim"]
-POST = [
-    ["lamda", "gp_af", "nn.learning_rate"],
-    ["bo_seed"]
-]
+# PRE = [
+#     ["nn.dropout"],
+#     ["nn.weight_decay"]
+# ]
+# ATTR_A = ["nn.layer_width"]
+# ATTR_B = ["nn.encoded_history_dim"]
+# POST = [
+#     ["lamda", "gp_af", "nn.learning_rate"],
+#     ["bo_seed"]
+# ]
 
 # For 1dim_feature_dim_variation -- bugged version where dropout and weight_decay are
 # not used
@@ -204,6 +206,30 @@ POST = [
 # ATTR_B = ["nn.encoded_history_dim"]
 # POST = [
 #     ["lamda", "gp_af", "nn.learning_rate"],
+#     ["bo_seed"]
+# ]
+
+# For 1dim_pointnet_architecture_variations-dataset_size-more_architectures
+# -- version 1
+PRE = [
+    ["nn.train_samples_size"],
+    ["nn.samples_addition_amount"]
+]
+ATTR_A = ["nn.x_cand_input"]
+ATTR_B = ["nn.include_best_y", "nn.subtract_best_y"]
+POST = [
+    ["lamda", "gp_af", "nn.pooling", "nn.learning_rate"],
+    ["bo_seed"]
+]
+# -- version 2
+# PRE = [
+#     ["nn.x_cand_input"],
+#     ["nn.include_best_y", "nn.subtract_best_y"]
+# ]
+# ATTR_A = ["nn.train_samples_size"]
+# ATTR_B =  ["nn.samples_addition_amount"]
+# POST = [
+#     ["lamda", "gp_af", "nn.pooling", "nn.learning_rate"],
 #     ["bo_seed"]
 # ]
 
@@ -222,7 +248,8 @@ INCLUDE_TIMES = False
 # "optimize_process_time"
 ATTR_GROUPS = [
     # ["per_iteration_decisions"],
-    ["best_y"],
+    # ["best_y"],
+    ["regret"],
     # ["x"],
     # ["best_y", "x"]
 ]
@@ -236,6 +263,7 @@ if INCLUDE_TIMES:
 
 ATTR_NAME_TO_TITLE = {
     "best_y": "Best function value",
+    "regret": "Regret",
     "process_time": "Process time",
     "time": "Time",
     "n_evals": "Number of AF evaluations by optimize_acqf",
@@ -355,7 +383,6 @@ def main():
 
     # Folder name
     save_dir = create_plot_directory(args.plots_name, args.plots_group_name, is_bo=True)
-    
     
     script_plot_kwargs = dict(
         sharey=True,

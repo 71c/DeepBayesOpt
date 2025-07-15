@@ -10,6 +10,7 @@ from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprove
 from botorch.utils.sampling import draw_sobol_samples
 from botorch.exceptions import UnsupportedError
 from botorch.generation.gen import gen_candidates_scipy, gen_candidates_torch
+from botorch.utils.sampling import optimize_posterior_samples
 
 from utils.utils import (add_outcome_transform, dict_to_cmd_args,
                          dict_to_fname_str, dict_to_str)
@@ -292,6 +293,18 @@ def _get_gp_objective_things_helper(
     return objective_gp, objective_fn, objective_name
 
 
+_objective_opt_cache = {}
+def _optimize_function(objective_fn, dimension, objective_name):
+    if objective_name in _objective_opt_cache:
+        return _objective_opt_cache[objective_name]
+    optimal_input, optimal_output = optimize_posterior_samples(
+        paths=objective_fn, bounds=_get_bounds(dimension),
+        maximize=True, raw_samples=8192, num_restarts=100)
+    _objective_opt_cache[objective_name] = (optimal_input, optimal_output)
+    print(f"Optimized {objective_name} with {optimal_input=}, {optimal_output=}")
+    return optimal_input, optimal_output
+
+
 def _get_gp_objective_things(objective_args):
     objective_gp, objective_fn, objective_name = _get_gp_objective_things_helper(
         dimension=objective_args['dimension'],
@@ -310,19 +323,25 @@ def _get_gp_objective_things(objective_args):
         objective_name = f'{objective_name}_{octf_str}'
         objective_fn = outcome_transform_function(objective_fn, objective_octf)
     
-    return objective_gp, objective_octf, objective_fn, objective_name
+    optimal_input, optimal_output = _optimize_function(
+        objective_fn, objective_args['dimension'], objective_name)
+    
+    return objective_gp, objective_octf, objective_fn, objective_name, optimal_output
+
+
+def _get_bounds(dimension):
+    return torch.stack([torch.zeros(dimension), torch.ones(dimension)])
 
 
 @cache
-def _get_sobol_samples_and_bounds(bo_seed, n_initial_samples, dimension):
-    bounds = torch.stack([torch.zeros(dimension), torch.ones(dimension)])
+def _get_sobol_samples(bo_seed, n_initial_samples, dimension):
     torch.manual_seed(bo_seed)
     init_x = draw_sobol_samples(
-        bounds=bounds,
+        bounds=_get_bounds(dimension),
         n=1, # Number of BO loops to do
         q=n_initial_samples # Number of sobol points
     )
-    return init_x, bounds
+    return init_x
 
 
 def pre_run_bo(objective_args: dict[str, Any],
@@ -346,9 +365,10 @@ def pre_run_bo(objective_args: dict[str, Any],
                     raise ValueError(f"Cannot specify {k} if {gen_candidates=} "
                                     f"(this is only for gen_candidates={tmp})")
 
-    (objective_gp, objective_octf,
-     objective_fn, objective_name) = _get_gp_objective_things(objective_args)
     dimension = objective_args['dimension']
+    (objective_gp, objective_octf, objective_fn,
+     objective_name, optimal_output) = _get_gp_objective_things(objective_args)
+    
     ############################# Determine the BO policy ##############################
     lamda = bo_policy_args.get('lamda', None)
     if lamda is not None and lamda <= 0:
@@ -531,6 +551,7 @@ def pre_run_bo(objective_args: dict[str, Any],
     return {
         'dimension': dimension,
         'objective_fn': objective_fn,
+        'optimal_output': optimal_output,
         'optimizer_class': optimizer_class,
         'objective_name': objective_name,
         'results_name': results_name,
@@ -561,14 +582,20 @@ def run_bo(objective_args: dict[str, Any],
     
     bo_seed = bo_policy_args['bo_seed']
     
-    init_x, bounds = _get_sobol_samples_and_bounds(
+    init_x = _get_sobol_samples(
         bo_seed, bo_policy_args['n_initial_samples'], dimension)
     
     # One seed per BO loop. Here, we have n=1 BO loops, so need just 1 seed.
     seeds = [bo_seed]
 
+    def objective_fn_(x):
+        out = objective_fn(x).detach() # remove gradients
+        out = out.unsqueeze(-1) # get to shape n x m where m=1 (m = number of outputs)
+        return out
+
     return OptimizationResultsSingleMethod(
-        objectives=[objective_fn],
+        objectives=[objective_fn_],
+        optimal_outputs=[stuff['optimal_output'].numpy()],
         initial_points=init_x,
         n_iter=bo_policy_args['n_iter'],
         seeds=seeds,
@@ -576,7 +603,9 @@ def run_bo(objective_args: dict[str, Any],
         objective_names=[objective_name],
         save_dir=RESULTS_DIR,
         results_name=results_name, # results_name is only used to print stuff out
-        dim=dimension, bounds=bounds, maximize=True,
+        dim=dimension,
+        bounds=_get_bounds(dimension),
+        maximize=True,
         verbose=True,
         result_cache=_BO_CACHE,
         **af_options

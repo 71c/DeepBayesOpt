@@ -444,6 +444,7 @@ class OptimizationResultsSingleMethod:
                  n_iter: int,
                  seeds: List[int],
                  optimizer_class: Type[BayesianOptimizer],
+                 optimal_outputs: Optional[List[Tensor]]=None,
                  optimizer_kwargs_per_function: Optional[List[dict]]=None,
                  objective_names: Optional[list[str]]=None,
                  nn_model_name: Optional[str]=None,
@@ -559,6 +560,8 @@ class OptimizationResultsSingleMethod:
 
         self.n_funcs_to_optimize = sum(x > 0 for x in self.n_trials_to_run_per_func)
 
+        self.optimal_outputs = optimal_outputs
+
     def __len__(self):
         return self.n_functions
 
@@ -584,7 +587,13 @@ class OptimizationResultsSingleMethod:
                     return None
             else:
                 return True if os.path.exists(data_path) else None
-        return json_serializable_to_numpy(trial_result) if return_result else True
+        if return_result:
+            result = json_serializable_to_numpy(trial_result)
+            if self.optimal_outputs is not None:
+                result['regret'] = self.optimal_outputs[func_index] - result['best_y']
+            return result
+        else:
+            return True
 
     def _get_trial_result(self, func_index: int, trial_index: int, verbose=False):
         trial_result = None
@@ -601,6 +610,8 @@ class OptimizationResultsSingleMethod:
             )
             optimizer.optimize(self.n_iter, verbose=verbose)
             trial_result = optimizer.get_stats()
+            if self.optimal_outputs is not None:
+                trial_result['regret'] = self.optimal_outputs[func_index] - trial_result['best_y']
             if self.save_dir is not None:
                 trial_config_str = self.trial_configs_str[trial_index]
                 self._func_results_to_save[func_index][trial_config_str] = \
@@ -979,6 +990,7 @@ def get_rff_function(gp, deepcopy=True, dimension=None, get_hash=False):
     remove_priors(gp)
     f = draw_kernel_feature_paths(
         gp, sample_shape=torch.Size(), num_features=4096)
+
     
     if get_hash:
         j = convert_to_json_serializable(f.state_dict())
@@ -995,9 +1007,8 @@ def get_rff_function(gp, deepcopy=True, dimension=None, get_hash=False):
             raise ValueError(
                 f"Incorrect input {x.shape}: should be of shape n x "
                 + (f"{dimension}" if dimension is not None else "d"))
-        out = f(x).detach()
+        out = f(x) #.detach()
         assert out.dim() == 1 and out.size(0) == x.size(0)
-        out = out.unsqueeze(-1) # get to shape n x m where m=1 (m = number of outputs)
         return out
 
     if get_hash:
