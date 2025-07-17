@@ -94,13 +94,13 @@ CPROFILE = False
 # ATTR_B = ["x_cand_input"]
 
 # For 1dim_pointnet_architecture_variations_policy_gradient_2
-PRE = [
-    ["layer_width"],
-    ["learning_rate"],
-    ["include_best_y"]
-]
-ATTR_A = []
-ATTR_B = ["x_cand_input"]
+# PRE = [
+#     ["layer_width"],
+#     ["learning_rate"],
+#     ["include_best_y"]
+# ]
+# ATTR_A = []
+# ATTR_B = ["x_cand_input"]
 
 # For 1dim_feature_dim_variation -- bugged version where dropout and weight_decay are
 # not used
@@ -111,6 +111,15 @@ ATTR_B = ["x_cand_input"]
 # ATTR_A = []
 # ATTR_B = ["encoded_history_dim"]
 
+# For 1dim_pointnet_architecture_variations-dataset_size-more_architectures
+PRE = [
+    ["train_samples_size", "samples_addition_amount"],
+    ["x_cand_input"],
+    ["learning_rate"],
+    ["pooling"],
+]
+ATTR_A = []
+ATTR_B = ["include_best_y", "subtract_best_y"]
 
 POST = [] # No "line" level yet
 

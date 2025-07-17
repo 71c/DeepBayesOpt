@@ -211,27 +211,27 @@ CPROFILE = True
 
 # For 1dim_pointnet_architecture_variations-dataset_size-more_architectures
 # -- version 1
-PRE = [
-    ["nn.train_samples_size"],
-    ["nn.samples_addition_amount"]
-]
-ATTR_A = ["nn.x_cand_input"]
-ATTR_B = ["nn.include_best_y", "nn.subtract_best_y"]
-POST = [
-    ["lamda", "gp_af", "nn.pooling", "nn.learning_rate"],
-    ["bo_seed"]
-]
-# -- version 2
 # PRE = [
-#     ["nn.x_cand_input"],
-#     ["nn.include_best_y", "nn.subtract_best_y"]
+#     ["nn.train_samples_size"],
+#     ["nn.samples_addition_amount"]
 # ]
-# ATTR_A = ["nn.train_samples_size"]
-# ATTR_B =  ["nn.samples_addition_amount"]
+# ATTR_A = ["nn.x_cand_input"]
+# ATTR_B = ["nn.include_best_y", "nn.subtract_best_y"]
 # POST = [
 #     ["lamda", "gp_af", "nn.pooling", "nn.learning_rate"],
 #     ["bo_seed"]
 # ]
+# -- version 2
+PRE = [
+    ["nn.x_cand_input"],
+    ["nn.include_best_y", "nn.subtract_best_y"]
+]
+ATTR_A = ["nn.train_samples_size"]
+ATTR_B =  ["nn.samples_addition_amount"]
+POST = [
+    ["lamda", "gp_af", "nn.pooling", "nn.learning_rate"],
+    ["bo_seed"]
+]
 
 # Default POST:
 # POST = [

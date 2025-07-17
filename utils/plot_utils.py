@@ -883,7 +883,6 @@ def get_plot_ax_bo_stats_vs_iteration_func(get_result_func):
                 )
                 plot_error_bars(ax, center, lower, upper,
                                 label=legend_name, shade=plot_kwargs['shade'])
-                print(center, lower, upper)
                 # ax.set_xscale('log')
                 if attr_name == 'regret':
                     ax.set_yscale('log')
