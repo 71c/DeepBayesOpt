@@ -338,8 +338,6 @@ def _parse_af_train_cmd_args(cmd_args:Optional[Sequence[str]]=None):
     if args.architecture == 'transformer':
         if args.num_heads is None:
             args.num_heads = 4
-        if args.num_layers is None:
-            args.num_layers = 2
         if args.x_cand_input is not None:
             raise ValueError("x_cand_input should not be specified for transformer architecture")
     elif args.architecture == 'pointnet':
@@ -416,12 +414,13 @@ _POINTNET_X_CAND_INPUT_OPTIONS = {
 
 def _get_model(args: argparse.Namespace):
     architecture = args.architecture
+    hidden_dims = [args.layer_width] * args.num_layers
     if architecture == "pointnet":
         body_cls = AcquisitionFunctionBodyPointnetV1and2
         af_body_init_params_base = dict(
             dimension=args.dimension,
 
-            history_enc_hidden_dims=[args.layer_width, args.layer_width],
+            history_enc_hidden_dims=hidden_dims,
             pooling=args.pooling,
             encoded_history_dim=args.encoded_history_dim,
 
@@ -459,7 +458,7 @@ def _get_model(args: argparse.Namespace):
         raise ValueError(f"Unknown architecture {architecture}")
     
     af_head_init_params = dict(
-        hidden_dims=[args.layer_width, args.layer_width],
+        hidden_dims=hidden_dims,
         activation="relu",
         layer_norm_before_end=False,
         layer_norm_at_end=False,
@@ -624,6 +623,12 @@ def _get_run_train_parser():
         help='The width of the NN layers.'
     )
     nn_architecture_group.add_argument(
+        '--num_layers',
+        type=int,
+        default=2,
+        help='Number of hidden layers. Default is 2.'
+    )
+    nn_architecture_group.add_argument(
         '--standardize_nn_history_outcomes',
         action='store_true',
         help=('Whether to standardize the history outcomes when computing the NN '
@@ -678,11 +683,6 @@ def _get_run_train_parser():
         '--num_heads',
         type=int,
         help='(Transformer only) Number of attention heads. Default is 4.'
-    )
-    nn_architecture_group.add_argument(
-        '--num_layers',
-        type=int,
-        help='(Transformer only) Number of transformer encoder layers. Default is 2.'
     )
 
     ############################ Training settings #####################################

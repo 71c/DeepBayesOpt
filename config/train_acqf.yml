@@ -45,6 +45,8 @@ parameters:
       layer_width:
         values: [100, 250, 500]
         value: 250
+      num_layers:
+        values: [2, 1]
       dropout:
         value: null
       standardize_nn_history_outcomes:
@@ -73,8 +75,6 @@ parameters:
           parameters:
             num_heads:
               value: 4
-            num_layers:
-              value: 2
   training:
     parameters:
       method:
