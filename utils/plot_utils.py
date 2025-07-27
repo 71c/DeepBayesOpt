@@ -469,7 +469,9 @@ def plot_nn_vs_gp_acquisition_function_1d(
 
 def plot_acquisition_function_net_training_history_ax(
         ax, training_history_data, plot_maxei=False, plot_log_regret=False,
-        plot_name=None):
+        plot_name=None, label='', strict_colors=True):
+    if label:
+        label = f' ({label})'
     stats_epochs = training_history_data['stats_epochs']
     stat_name = 'maxei' if plot_maxei else training_history_data['stat_name']
     
@@ -509,7 +511,7 @@ def plot_acquisition_function_net_training_history_ax(
         to_plot = {
             'lines': [
                 {
-                    'label': 'Regret (NN)',
+                    'label': 'Regret (NN)' + label,
                     'data': regret_data,
                     'color': _FIT_METHOD_TO_INFO['nn']['color']
                 }
@@ -524,12 +526,12 @@ def plot_acquisition_function_net_training_history_ax(
         to_plot = {
             'lines': [
                 {
-                    'label': 'Train (NN)',
+                    'label': 'Train (NN)' + label,
                     'data': train_stat,
                     'color': BLUE
                 },
                 {
-                    'label': 'Test (NN)',
+                    'label': 'Test (NN)' + label,
                     'data': test_stat,
                     'color': _FIT_METHOD_TO_INFO['nn']['color']
                 }
@@ -553,7 +555,9 @@ def plot_acquisition_function_net_training_history_ax(
 
     epochs = np.arange(1, len(train_stat) + 1)
 
-    line_properties = ['label', 'marker', 'linestyle', 'color']
+    line_properties = ['label', 'marker', 'linestyle']
+    if strict_colors:
+        line_properties.append('color')
 
     lines = to_plot.get('lines')
     if lines is not None:

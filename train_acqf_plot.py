@@ -112,16 +112,41 @@ CPROFILE = False
 # ATTR_B = ["encoded_history_dim"]
 
 # For 1dim_pointnet_architecture_variations-dataset_size-more_architectures
-PRE = [
-    ["train_samples_size", "samples_addition_amount"],
-    ["x_cand_input"],
-    ["learning_rate"],
-    ["pooling"],
-]
-ATTR_A = []
-ATTR_B = ["include_best_y", "subtract_best_y"]
+# PRE = [
+#     ["train_samples_size", "samples_addition_amount"],
+#     ["x_cand_input"],
+#     ["learning_rate"],
+#     ["pooling"],
+# ]
+# ATTR_A = []
+# ATTR_B = ["include_best_y", "subtract_best_y"]
 
-POST = [] # No "line" level yet
+# For 1dim_pointnet_model_size_variations-dataset_size
+# PRE = [
+#     ["train_samples_size", "samples_addition_amount"],
+#     ["pooling"],
+#     ["encoded_history_dim"],
+#     ["learning_rate"],
+# ]
+# ATTR_A = []
+# ATTR_B = ["num_layers", "layer_width"]
+
+# For 1dim_pointnet_model_size_variations-dataset_size
+PRE = [
+    ["pooling"],
+    ["train_samples_size", "samples_addition_amount"],
+    ["encoded_history_dim"]
+]
+ATTR_A = ["layer_width"]
+ATTR_B = ["num_layers"]
+
+POST = [
+    ["learning_rate"]
+]
+
+
+# POST = [] # No "line" level yet
+
 
 PLOTS_CONFIG_SINGLE = [
     *PRE,
@@ -137,12 +162,12 @@ PLOTS_CONFIG_MULTIPLE = [
 ]
 
 ATTR_GROUPS = [
-    ["0_training_history_train_test"],
+    # ["0_training_history_train_test"],
 
-    ["0_training_history_train_test", "1_training_history_test_log_regret", "2_af_plot"],
-    ["0_training_history_train_test", "2_af_plot"],
+    # ["0_training_history_train_test", "1_training_history_test_log_regret", "2_af_plot"],
+    # ["0_training_history_train_test", "2_af_plot"],
     ["1_training_history_test_log_regret"],
-    ["2_af_plot"],
+    # ["2_af_plot"],
 
     # ["0_training_history_train_test", "1_training_history_test_log_regret"],
 ]
@@ -162,9 +187,17 @@ def get_plot_ax_train_acqf_func(get_result_func):
             plot_config,
             ax,
             plot_name: Optional[str]=None,
+            label='',
+            strict_colors=True,
             **plot_kwargs):
         if not isinstance(plot_config, int):
-            raise ValueError("The plot config should be an int.")
+            # raise ValueError("The plot config should be an int.")
+            for label, value in plot_config.items():
+                train_acqf_plot_ax(
+                    value['items'], ax, plot_name=plot_name,
+                    label=label, strict_colors=False, **plot_kwargs)
+            return
+                
         info = get_result_func(plot_config)
         attr_name = info['attr_name']
 
@@ -175,11 +208,11 @@ def get_plot_ax_train_acqf_func(get_result_func):
         if attr_name == "0_training_history_train_test":
             plot_acquisition_function_net_training_history_ax(
                 ax, training_history_data, plot_maxei=False, plot_name=plot_name,
-                plot_log_regret=False)
+                plot_log_regret=False, label=label, strict_colors=strict_colors)
         elif attr_name == "1_training_history_test_log_regret":
             plot_acquisition_function_net_training_history_ax(
                 ax, training_history_data, plot_maxei=False, plot_name=plot_name,
-                plot_log_regret=True)
+                plot_log_regret=True, label=label, strict_colors=strict_colors)
         elif attr_name == "2_af_plot":
             aq_dataset = results['dataset_getter']()
 
@@ -348,7 +381,7 @@ def main():
         script_config["plots_config"] = [
             sorted(list(group)) for group in new_attrs_groups_list]
         
-        new_attrs_groups_list.append(None) # for the "line" level (just a dummy value)
+        # new_attrs_groups_list.append(None) # for the "line" level (just a dummy value)
 
         n_groups = len(new_attrs_groups_list)
         

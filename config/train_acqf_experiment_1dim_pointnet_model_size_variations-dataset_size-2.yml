@@ -1,0 +1,62 @@
+parameters:
+  max_history:
+    value: 20
+  dimension:
+    value: 1
+  lengthscale:
+    value: 0.05
+  method:
+    values: ['gittins']
+  gi_loss_normalization:
+    value: normal
+  lamda:
+    value: 1.00e-02
+  train_samples_size:
+    values: [320, 2560]
+  samples_addition_amount:
+    values: [180, 780]
+  test_samples_size:
+    value: 1000
+  test_expansion_factor:
+    value: 100
+  n_candidates:
+    value: 1
+  layer_width:
+    values: [8, 16, 32]
+  encoded_history_dim:
+    values: [8]
+  num_layers:
+    values: [2]
+  architecture:
+    value: pointnet
+  include_best_y:
+    values: [false]
+  subtract_best_y:
+    values: [false]
+  x_cand_input:
+    values:
+    - "subtract-lossy"
+  pooling:
+    values: ["max"]
+  epochs:
+    value: 12000
+  learning_rate:
+    values: [3.00e-04, 1.73e-03, 1.00e-2, 5.78e-02]
+  batch_size:
+    value: 512
+  dropout:
+    values: [null]
+  weight_decay:
+    values: [null]
+  lr_scheduler:
+    values: [null]
+  lr_scheduler_patience:
+    value: 300
+  lr_scheduler_factor:
+    value: 0.5
+  early_stopping:
+    value: true
+  patience:
+    value: 1500
+  min_delta:
+    value: 1.00e-09

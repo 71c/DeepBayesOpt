@@ -222,16 +222,51 @@ CPROFILE = True
 #     ["bo_seed"]
 # ]
 # -- version 2
+# PRE = [
+#     ["nn.x_cand_input"],
+#     ["nn.include_best_y", "nn.subtract_best_y"]
+# ]
+# ATTR_A = ["nn.train_samples_size"]
+# ATTR_B =  ["nn.samples_addition_amount"]
+# POST = [
+#     ["lamda", "gp_af", "nn.pooling", "nn.learning_rate"],
+#     ["bo_seed"]
+# ]
+# -- version 3
 PRE = [
     ["nn.x_cand_input"],
-    ["nn.include_best_y", "nn.subtract_best_y"]
+    ["nn.train_samples_size", "nn.samples_addition_amount"]
 ]
-ATTR_A = ["nn.train_samples_size"]
-ATTR_B =  ["nn.samples_addition_amount"]
+ATTR_A = ["nn.include_best_y"]
+ATTR_B = ["nn.subtract_best_y"]
 POST = [
     ["lamda", "gp_af", "nn.pooling", "nn.learning_rate"],
     ["bo_seed"]
 ]
+
+# For 1dim_pointnet_model_size_variations-dataset_size
+# PRE = [
+#     ["nn.train_samples_size"],
+#     ["nn.samples_addition_amount"]
+# ]
+# ATTR_A = ["nn.num_layers"]
+# ATTR_B =  ["nn.layer_width", "nn.encoded_history_dim"]
+# POST = [
+#     ["lamda", "gp_af", "nn.pooling", "nn.learning_rate"],
+#     ["bo_seed"]
+# ]
+# -- version 2
+# PRE = [
+#     ["nn.num_layers"],
+#     ["nn.layer_width", "nn.encoded_history_dim"]
+# ]
+# ATTR_A = ["nn.train_samples_size"]
+# ATTR_B =  ["nn.samples_addition_amount"]
+# POST = [
+#     ["lamda", "gp_af", "nn.pooling", "nn.learning_rate"],
+#     ["bo_seed"]
+# ]
+
 
 # Default POST:
 # POST = [
