@@ -56,8 +56,11 @@ def get_cmd_options_train_acqf(options: dict[str, Any]):
             # early stopping
             'early_stopping', 'patience', 'min_delta', 'cumulative_delta',
             # learning rate scheduler
+            ## ReduceLROnPlateau
             'lr_scheduler', 'lr_scheduler_patience', 'lr_scheduler_factor',
             'lr_scheduler_min_lr', 'lr_scheduler_cooldown',
+            ## power
+            'lr_scheduler_power', 'lr_scheduler_burnin',
             # weight decay
             'weight_decay',
             # method=policy_gradient

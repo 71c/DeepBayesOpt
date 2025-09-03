@@ -22,7 +22,7 @@ parameters:
   n_candidates:
     value: 1
   layer_width:
-    values: [32]
+    values: [24] # 16
   encoded_history_dim:
     values: [8]
   num_layers:
@@ -39,24 +39,30 @@ parameters:
   pooling:
     values: ["max"]
   epochs:
-    value: 12000
+    value: 16000
   learning_rate:
-    values: [3.00e-04, 1.73e-03, 1.00e-2, 5.78e-02]
+    values: [1.00e-2] # [1.00e-2, 1.00e-3]
   batch_size:
-    value: 8192
+    value: 512
   dropout:
     values: [null]
   weight_decay:
     values: [null]
   lr_scheduler:
-    values: [null]
+    values: ["power"] # [null, "power"]
+  lr_scheduler_power:
+    value: 0.4 # 0.6
+  lr_scheduler_burnin:
+    value: 100 # 200
   lr_scheduler_patience:
-    value: 300
+    value: 200
   lr_scheduler_factor:
-    value: 0.5
+    value: 0.03
+  lr_scheduler_min_lr:
+    value: 1.00e-4
   early_stopping:
     value: true
   patience:
-    value: 1500
+    value: 4000
   min_delta:
     value: 1.00e-09

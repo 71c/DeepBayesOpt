@@ -233,16 +233,16 @@ CPROFILE = True
 #     ["bo_seed"]
 # ]
 # -- version 3
-PRE = [
-    ["nn.x_cand_input"],
-    ["nn.train_samples_size", "nn.samples_addition_amount"]
-]
-ATTR_A = ["nn.include_best_y"]
-ATTR_B = ["nn.subtract_best_y"]
-POST = [
-    ["lamda", "gp_af", "nn.pooling", "nn.learning_rate"],
-    ["bo_seed"]
-]
+# PRE = [
+#     ["nn.x_cand_input"],
+#     ["nn.train_samples_size", "nn.samples_addition_amount"]
+# ]
+# ATTR_A = ["nn.include_best_y"]
+# ATTR_B = ["nn.subtract_best_y"]
+# POST = [
+#     ["lamda", "gp_af", "nn.pooling", "nn.learning_rate"],
+#     ["bo_seed"]
+# ]
 
 # For 1dim_pointnet_model_size_variations-dataset_size
 # PRE = [
@@ -266,6 +266,18 @@ POST = [
 #     ["lamda", "gp_af", "nn.pooling", "nn.learning_rate"],
 #     ["bo_seed"]
 # ]
+
+
+# For dim_pointnet_model_size_variations-dataset_size-2
+PRE = [
+    ["nn.samples_addition_amount"]
+]
+ATTR_A = ["nn.train_samples_size"]
+ATTR_B =  ["nn.layer_width"]
+POST = [
+    ["lamda", "gp_af", "nn.learning_rate"],
+    ["bo_seed"]
+]
 
 
 # Default POST:

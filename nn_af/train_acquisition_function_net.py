@@ -918,10 +918,14 @@ def train_acquisition_function_net(
 
         # learning rate scheduler
         lr_scheduler:Optional[str]=None,
+
         lr_scheduler_patience:int=10,
         lr_scheduler_factor:float=0.1,
         lr_scheduler_min_lr:float=1e-6,
         lr_scheduler_cooldown:int=0,
+
+        lr_scheduler_power:float=0.6,
+        lr_scheduler_burnin:int=1,
 
         use_maxei=False
     ):
@@ -1030,16 +1034,25 @@ def train_acquisition_function_net(
              if gi_loss_normalization is not None else "")
         negate = True
     
-    if lr_scheduler is not None:
-        if lr_scheduler != "ReduceLROnPlateau":
-            raise UnsupportedError(f"lr_scheduler '{lr_scheduler}' is not supported")
+    if lr_scheduler is None:
+        scheduler = None
+    elif lr_scheduler == "ReduceLROnPlateau":
         mode = "min" if negate else "max"
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
             optimizer, mode=mode, patience=lr_scheduler_patience,
             factor=lr_scheduler_factor, min_lr=lr_scheduler_min_lr,
             cooldown=lr_scheduler_cooldown)
+    elif lr_scheduler == "power":
+        scheduler = torch.optim.lr_scheduler.LambdaLR(
+            optimizer,
+            lr_lambda=lambda epoch: (
+                1 if epoch <= lr_scheduler_burnin
+                else (epoch + 1 - lr_scheduler_burnin) ** -lr_scheduler_power
+            )
+        )
     else:
-        scheduler = None
+        raise ValueError(f"Unknown lr_scheduler '{lr_scheduler}'")
+        
 
     training_history_data = {
         'stats_epochs': [],
@@ -1175,7 +1188,10 @@ def train_acquisition_function_net(
 
         # Learning rate scheduler
         if verbose and scheduler is not None:
-            scheduler.step(cur_score)
+            if lr_scheduler == "ReduceLROnPlateau":
+                scheduler.step(cur_score)
+            elif lr_scheduler == "power":
+                scheduler.step()
             _lr = scheduler.get_last_lr()
             assert len(_lr) == 1
             print(f"Learning rate: {_lr[0]}")

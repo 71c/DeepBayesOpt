@@ -131,15 +131,24 @@ CPROFILE = False
 # ATTR_A = []
 # ATTR_B = ["num_layers", "layer_width"]
 
-# For 1dim_pointnet_model_size_variations-dataset_size
-PRE = [
-    ["pooling"],
-    ["train_samples_size", "samples_addition_amount"],
-    ["encoded_history_dim"]
-]
-ATTR_A = ["layer_width"]
-ATTR_B = ["num_layers"]
+# # For 1dim_pointnet_model_size_variations-dataset_size
+# PRE = [
+#     ["pooling"],
+#     ["train_samples_size", "samples_addition_amount"],
+#     ["encoded_history_dim"]
+# ]
+# ATTR_A = ["layer_width"]
+# ATTR_B = ["num_layers"]
+# POST = [
+#     ["learning_rate"]
+# ]
 
+
+# For 1dim_pointnet_model_size_variations-dataset_size-2
+PRE = [
+]
+ATTR_A = ["train_samples_size", "samples_addition_amount"]
+ATTR_B = ["layer_width"]
 POST = [
     ["learning_rate"]
 ]

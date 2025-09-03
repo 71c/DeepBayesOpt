@@ -139,3 +139,9 @@ parameters:
               value: 0.0
             lr_scheduler_cooldown:
               value: 0
+        - value: power
+          parameters:
+            lr_scheduler_power:
+              value: 0.6
+            lr_scheduler_burnin:
+              value: 1

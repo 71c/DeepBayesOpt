@@ -333,8 +333,31 @@ def _parse_af_train_cmd_args(cmd_args:Optional[Sequence[str]]=None):
             raise ValueError("lr_scheduler_patience should be specified if lr_scheduler=ReduceLROnPlateau")
         if args.lr_scheduler_factor is None:
             raise ValueError("lr_scheduler_factor should be specified if lr_scheduler=ReduceLROnPlateau")
-        # lr_scheduler_min_lr and lr_scheduler_cooldown are optional (have defaults)
+        if args.lr_scheduler_min_lr is None:
+            args.lr_scheduler_min_lr = 0.0
+        if args.lr_scheduler_cooldown is None:
+            args.lr_scheduler_cooldown = 0
+    else:
+        if args.lr_scheduler_patience is not None:
+            raise ValueError("lr_scheduler_patience should not be specified if lr_scheduler != ReduceLROnPlateau")
+        if args.lr_scheduler_factor is not None:
+            raise ValueError("lr_scheduler_factor should not be specified if lr_scheduler != ReduceLROnPlateau")
+        if args.lr_scheduler_min_lr is not None:
+            raise ValueError("lr_scheduler_min_lr should not be specified if lr_scheduler != ReduceLROnPlateau")
+        if args.lr_scheduler_cooldown is not None:
+            raise ValueError("lr_scheduler_cooldown should not be specified if lr_scheduler != ReduceLROnPlateau")
     
+    if args.lr_scheduler == 'power':
+        if args.lr_scheduler_power is None:
+            raise ValueError("lr_scheduler_power should be specified if lr_scheduler=power")
+        if args.lr_scheduler_burnin is None:
+            raise ValueError("lr_scheduler_burnin should be specified if lr_scheduler=power")
+    else:
+        if args.lr_scheduler_power is not None:
+            raise ValueError("lr_scheduler_power should not be specified if lr_scheduler != power")
+        if args.lr_scheduler_burnin is not None:
+            raise ValueError("lr_scheduler_burnin should not be specified if lr_scheduler != power")
+        
     if args.architecture == 'transformer':
         if args.num_heads is None:
             args.num_heads = 4
@@ -580,6 +603,12 @@ def _get_training_config(args: argparse.Namespace):
             lr_scheduler_factor=args.lr_scheduler_factor,
             lr_scheduler_min_lr=args.lr_scheduler_min_lr,
             lr_scheduler_cooldown=args.lr_scheduler_cooldown)
+    elif args.lr_scheduler == 'power':
+        training_config = dict(
+            **training_config,
+            lr_scheduler=args.lr_scheduler,
+            lr_scheduler_power=args.lr_scheduler_power,
+            lr_scheduler_burnin=args.lr_scheduler_burnin)
     if args.weight_decay is not None:
         training_config = dict(
             **training_config,
@@ -741,7 +770,7 @@ def _get_run_train_parser():
     ### Learning rate scheduler
     training_group.add_argument(
         '--lr_scheduler',
-        choices=['ReduceLROnPlateau'],
+        choices=['ReduceLROnPlateau', 'power'],
         help='Use a learning rate scheduler. Default is to not use any.'
     )
     training_group.add_argument(
@@ -759,16 +788,26 @@ def _get_run_train_parser():
     training_group.add_argument(
         '--lr_scheduler_min_lr',
         type=float,
-        default=0.0,
         help=('A lower bound on the learning rate. Only used if '
               'lr_scheduler=ReduceLROnPlateau. Default is 0.0.')
     )
     training_group.add_argument(
         '--lr_scheduler_cooldown',
         type=int,
-        default=0,
         help='Number of epochs to wait before resuming normal operation after lr has '
              'been reduced. Only used if lr_scheduler=ReduceLROnPlateau. Default is 0.'
+    )
+    training_group.add_argument(
+        '--lr_scheduler_power',
+        type=float,
+        help=('Power for the power learning rate scheduler. Only used if '
+                'lr_scheduler=power. Default is 0.6.')
+    )
+    training_group.add_argument(
+        '--lr_scheduler_burnin',
+        type=int,
+        help=('Number of epochs to wait before starting to apply the power learning rate '
+                'scheduler. Only used if lr_scheduler=power. Default is 1.')
     )
     ### Evaluation metric
     training_group.add_argument(

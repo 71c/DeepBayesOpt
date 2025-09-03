@@ -1,5 +1,6 @@
 # Run like, e.g.,
 # python run_train.py --dimension 8 --test_expansion_factor 1 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_samples_size 5000 --test_n_candidates 1 --train_samples_size 10000 --train_acquisition_size 2000 --train_n_candidates 1 --batch_size 32 --early_stopping --epochs 200 --layer_width 100 --learning_rate 0.0003 --method gittins --min_delta 0.0 --gi_loss_normalization normal --patience 5 --lamda 0.001 --replacement
+from functools import lru_cache
 from typing import Optional, Sequence
 import torch
 import matplotlib.pyplot as plt
@@ -117,6 +118,8 @@ def run_train(cmd_args: Optional[Sequence[str]]=None):
             lr_scheduler_factor=args.lr_scheduler_factor,
             lr_scheduler_min_lr=args.lr_scheduler_min_lr,
             lr_scheduler_cooldown=args.lr_scheduler_cooldown,
+            lr_scheduler_power=args.lr_scheduler_power,
+            lr_scheduler_burnin=args.lr_scheduler_burnin,
             # evaluation metric
             use_maxei=args.use_maxei
         )
