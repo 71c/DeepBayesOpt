@@ -45,7 +45,7 @@ def get_cmd_options_train_acqf(options: dict[str, Any]):
             'architecture', 'include_best_y', 'subtract_best_y',
             'x_cand_input', 'encoded_history_dim', 'pooling',
             'num_heads', 'num_layers',
-            'dropout'
+            'dropout', 'max_history_input'
         ]
     }
 

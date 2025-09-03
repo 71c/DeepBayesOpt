@@ -12,7 +12,7 @@ from botorch.utils.transforms import t_batch_mode_transform, match_batch_shape
 from abc import abstractmethod
 from utils.utils import safe_issubclass, to_device, standardize_y_hist, SaveableObject
 from utils.nn_utils import (Dense, MultiLayerPointNet, PointNetLayer,
-                      SoftmaxOrSoftplusLayer, check_xy_dims, expand_dim)
+                      SoftmaxOrSoftplusLayer, add_neg_inf_for_max, check_xy_dims, expand_dim)
 
 import logging
 
@@ -804,7 +804,8 @@ class AcquisitionFunctionBodyPointnetV1and2(
 
                  include_best_y=False,
                  subtract_best_y=False,
-                 n_pointnets=1):
+                 n_pointnets=1,
+                 max_history_input=None,):
         """
         Args:
             dimension (int):
@@ -843,6 +844,9 @@ class AcquisitionFunctionBodyPointnetV1and2(
                 before passing them to the local neural network.
             n_pointnets (int, default: 1):
                 The number of PointNets to use. Default is 1.
+            max_history_input (int, optional):
+                The maximum number of historical points to consider. If None,
+                all historical points are used.
         """
         super().__init__()
 
@@ -891,6 +895,7 @@ class AcquisitionFunctionBodyPointnetV1and2(
         self.dimension = dimension
         self.include_best_y = include_best_y
         self.subtract_best_y = subtract_best_y
+        self.max_history_input = max_history_input
     
     def get_init_kwargs(self):
         ## Oh wait, I just realized that this is not needed because
@@ -900,9 +905,10 @@ class AcquisitionFunctionBodyPointnetV1and2(
         ## is too late to change it now because want to keep the already saved models.)
         ## But why not keep it like this just as an example -- it doesn't do anything.
         ret = super().get_init_kwargs()
-        # Remove subtract_x_cand_from_x_hist if it is False
         if not self.subtract_x_cand_from_x_hist:
             ret.pop("subtract_x_cand_from_x_hist", None)
+        if self.max_history_input is None:
+            ret.pop("max_history_input", None)
         return ret
 
     @property
@@ -939,25 +945,61 @@ class AcquisitionFunctionBodyPointnetV1and2(
                 raise ValueError("acqf_params must be provided if n_acqf_params > 0.")
             if acqf_params.size(-1) != self.n_acqf_params:
                 raise ValueError(f"acqf_params should have {self.n_acqf_params} values.")
-            # x_cand = torch.cat((x_cand, acqf_params), dim=-1)
         else:
             if acqf_params is not None:
                 raise ValueError("acqf_params should not be provided if n_acqf_params=0.")
-
-        if self.input_xcand_to_local_nn or self.subtract_x_cand_from_x_hist:
+        
+        if self.max_history_input is not None:
+            if hist_mask is None:
+                max_hist_length = n_hist
+            else:
+                max_hist_length = int(torch.sum(hist_mask, dim=-2).max().item())
+            must_truncate_history_length = max_hist_length > self.max_history_input
+        else:
+            must_truncate_history_length = False
+        
+        if self.input_xcand_to_local_nn or self.subtract_x_cand_from_x_hist \
+            or must_truncate_history_length:
             # shape (*, n_cand, n_hist, dimension)
             x_cand_expanded = expand_dim(x_cand.unsqueeze(-2), -2, n_hist)
 
             # shape (*, n_cand, n_hist, dimension)
             x_hist_expanded = expand_dim(x_hist.unsqueeze(-3), -3, n_cand)
-            
+
             # shape (*, n_cand, n_hist, n_hist_out)
             y_hist_expanded = expand_dim(y_hist.unsqueeze(-3), -3, n_cand)
 
-            if self.subtract_x_cand_from_x_hist:
-                x_hist_expanded = x_hist_expanded - x_cand_expanded
-            
-            inputs = [x_hist_expanded, y_hist_expanded]
+            # shape (*, n_cand, n_hist, 1)
+            hist_mask_expanded = None if hist_mask is None \
+                else expand_dim(hist_mask.unsqueeze(-3), -3, n_cand)
+
+        if must_truncate_history_length:
+            # shape (*, n_cand, n_hist, 1)
+            neg_squared_distances = -((x_hist_expanded - x_cand_expanded) ** 2).sum(dim=-1, keepdim=True)
+            if hist_mask is not None:
+                neg_squared_distances = add_neg_inf_for_max(neg_squared_distances, hist_mask_expanded)
+            # shape (*, n_cand, max_history_input, 1)
+            _, topk_indices = torch.topk(
+                neg_squared_distances, self.max_history_input, dim=-2)
+
+            n_hist = self.max_history_input
+            x_cand_expanded = expand_dim(x_cand.unsqueeze(-2), -2, n_hist)
+            x_hist_expanded = torch.gather(
+                x_hist_expanded, -2,
+                topk_indices.expand(*topk_indices.shape[:-1], x_hist_expanded.size(-1)))
+            y_hist_expanded = torch.gather(
+                y_hist_expanded, -2,
+                topk_indices.expand(*topk_indices.shape[:-1], y_hist_expanded.size(-1)))
+            hist_mask_expanded = None if hist_mask is None else torch.gather(
+                hist_mask_expanded, -2,
+                topk_indices.expand(*topk_indices.shape[:-1], hist_mask_expanded.size(-1)))
+
+        if self.input_xcand_to_local_nn or self.subtract_x_cand_from_x_hist \
+            or must_truncate_history_length:
+            inputs = [
+                x_hist_expanded - x_cand_expanded \
+                    if self.subtract_x_cand_from_x_hist else x_hist_expanded,
+                y_hist_expanded]
             if self.input_xcand_to_local_nn:
                 if self.n_acqf_params > 0:
                     # shape (*, n_cand, n_hist, n_acqf_params)
@@ -968,14 +1010,9 @@ class AcquisitionFunctionBodyPointnetV1and2(
             
             # shape (*, n_cand, n_hist, input_dim)
             nn_input = torch.cat(inputs, dim=-1)
-
-            # hist_mask has shape (*, n_hist, 1), so need to expand to match.
-            # shape (*, n_cand, n_hist, 1)
-            mask = None if hist_mask is None \
-                else expand_dim(hist_mask.unsqueeze(-3), -3, n_cand)            
             
             # shape (*, n_cand, encoded_history_dim)
-            out = self.history_encoder_net(nn_input, mask=mask, keepdim=False)
+            out = self.history_encoder_net(nn_input, mask=hist_mask_expanded, keepdim=False)
             logger.debug(f"out.shape: {out.shape}")
         else:
             # shape (*, n_hist, dimension+n_hist_out)

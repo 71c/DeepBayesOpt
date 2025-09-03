@@ -55,6 +55,8 @@ parameters:
         values: [false, true]
       subtract_best_y:
         values: [false, true]
+      max_history_input:
+        values: [null, 4]
       architecture: # TODO: Will change/improve this in the future
         values:
         - value: pointnet

@@ -801,6 +801,8 @@ def calculate_batch_improvement(y_hist_batch: torch.Tensor, y_cand_batch: Tensor
 
 
 def expand_dim(tensor, dim, k):
+    if tensor.size(dim) == k:
+        return tensor
     new_shape = list(tensor.shape)
     new_shape[dim] = k
     return tensor.expand(*new_shape)
@@ -1918,7 +1920,7 @@ class SaveableObject(ABC):
     
     def get_init_kwargs(self) -> dict[str, Any]:
         r"""Returns a dictionary of initialization parameters of the SaveableObject."""
-        return self._init_kwargs
+        return {**self._init_kwargs}
 
     def get_info_dict(self) -> dict[str, Union[str, dict[str, Any]]]:
         r"""Returns a dictionary representation of initialization parameters

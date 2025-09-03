@@ -459,6 +459,10 @@ def _get_model(args: argparse.Namespace):
         # (subtract_best_y is False by default.)
         if args.subtract_best_y:
             af_body_init_params_base['subtract_best_y'] = True
+        # Similarly for max_history_input:
+        if args.max_history_input is not None:
+            af_body_init_params_base['max_history_input'] = args.max_history_input
+        
         try:
             more_params = _POINTNET_X_CAND_INPUT_OPTIONS[args.x_cand_input]
         except KeyError:
@@ -693,6 +697,12 @@ def _get_run_train_parser():
         action='store_true',
         help=('Whether to subtract the best y from the history outcomes. '
               'Default is False.')
+    )
+    nn_architecture_group.add_argument(
+        '--max_history_input',
+        type=int,
+        help=('Maximum history size that the NN can take as input. Default is None, '
+                'which means no limit.')
     )
     nn_architecture_group.add_argument(
         '--pooling',
