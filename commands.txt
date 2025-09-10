@@ -215,7 +215,9 @@ PLOTS_GROUP_NAME="1dim_feature_dim_variation";
 BO_PLOTS_NAME="results_100iter";
 
 # Experiment of PointNet architecture variations + dataset size, 1D -- More architecture variations
-# Submitted 2025-07-12 5:30pm
+# This is "Architecture variation experiment 1" in 2025-07-19 presentation
+# vary dataset size; fix architecture size;
+# vary x_cand_input, pooling, include_best_y, subtract_best_y
 SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_architecture_variations-dataset_size-more_architectures.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
@@ -225,6 +227,7 @@ PLOTS_GROUP_NAME="1dim_pointnet_architecture_variations-dataset_size-more_archit
 BO_PLOTS_NAME="results_100iter";
 
 # Experiment of PointNet architecture size (layer width, # hidden layers, feature dimension), + dataset size
+# This is "Architecture variation experiment 2" in 2025-07-19 presentation
 SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_model_size_variations-dataset_size.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
@@ -254,6 +257,17 @@ PLOTS_GROUP_NAME="1dim_pointnet_big_dataset";
 BO_PLOTS_NAME="results_100iter";
 
 
+# Experiment of 1D PointNet PBGI: max_history_input (2, 4, 9, null), + dataset size
+# Created 2025-09-09
+SEED=8;
+NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet-max_history_input_variation-pbgi.yml";
+BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
+SWEEP_NAME="100iter_1dim_pointnet-max_history_input_variation-pbgi";
+SEEDS_CFG="--n_seeds 64 --single_objective";
+PLOTS_GROUP_NAME="1dim_pointnet-max_history_input_variation-pbgi";
+BO_PLOTS_NAME="results_100iter";
+
+
 SEEDS_CFG="--n_seeds 6 --single_objective";
 
 NN_CFG="--nn_base_config config/train_acqf.yml --nn_experiment_config $NN_EXPERIMENT_CFG";
@@ -270,5 +284,6 @@ BO_PLOTS_CFG="--plots_name $BO_PLOTS_NAME"
 python bo_experiments_gp_status.py $NN_CFG $BO_CFG
        python bo_experiments_gp.py $NN_CFG $BO_CFG $SLURM_CFG
        python bo_experiments_gp.py $NN_CFG $BO_CFG $SLURM_CFG --no_submit
+       python train_acqf.py $NN_CFG $SLURM_CFG
   python bo_experiments_gp_plot.py $NN_CFG $BO_CFG $PLOTS_CFG $BO_PLOTS_CFG --n_iterations 30
          python train_acqf_plot.py $NN_CFG         $PLOTS_CFG

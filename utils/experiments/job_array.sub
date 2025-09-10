@@ -77,6 +77,20 @@ $err"
     send_email_notification "$email_subject" "$email_message"
 }
 
+handle_gpu_error_and_exit() {
+    local error_message="$1"
+    local log_message="$2"
+    
+    err="$err
+$error_message"
+    requeue_job
+    fail_name="${FAIL_NAME_BASE}-exit${exit_code}"
+    log_failure "$log_message"
+    echo "$out"
+    echo "$err" >&2
+    exit $exit_code
+}
+
 # Debugging CUDA availability
 # store the output of nvidia-smi, or the empty string if there is no gpu
 # ("2> /dev/null" makes the stderr not outputted)
@@ -108,16 +122,10 @@ else:
 
 if [[ -n "$unavail" || "$nvidia_smi_output" =~ 'ERR' ]]; then
     python -c "import torch; print(f'Torch CUDA version: {torch.version.cuda}')"
-    err="$unavail"
     out="$out
 $unavail"
     exit_code=1
-    requeue_job
-    fail_name="${FAIL_NAME_BASE}-exit${exit_code}"
-    log_failure "CUDA not available, Requeuing job"
-    echo "$out"
-    echo "$err" >&2
-    exit $exit_code
+    handle_gpu_error_and_exit "$unavail" "CUDA not available, Requeuing job"
 fi
 
 fi
@@ -150,7 +158,28 @@ else
 
     fail_name="${FAIL_NAME_BASE}-exit${exit_code}"
 
-    if [ "$exit_code" -eq 1 ]; then
+    # Check for GPU-related errors that should be requeued even with exit code 1
+    gpu_error_patterns=(
+        "CUDA error: no kernel image is available for execution on the device"
+        "CUDA capability sm_[0-9]+ is not compatible with the current PyTorch installation"
+        "NVIDIA .* with CUDA capability sm_[0-9]+ is not compatible with the current PyTorch installation"
+        "RuntimeError: CUDA error:"
+        "CUDA out of memory"
+    )
+    
+    is_gpu_error=false
+    for pattern in "${gpu_error_patterns[@]}"; do
+        if echo "$cmd_err" | grep -qE "$pattern"; then
+            is_gpu_error=true
+            break
+        fi
+    done
+    
+    if [ "$exit_code" -eq 1 ] && [ "$is_gpu_error" = true ]; then
+        # Handle GPU errors the same way as CUDA unavailable errors
+        handle_gpu_error_and_exit "$new_err
+GPU-related runtime error detected. Requeuing job." "GPU runtime error, Requeuing job"
+    elif [ "$exit_code" -eq 1 ]; then
         new_err="$new_err
 This is likely a user error. Not requeuing.
 Please check ${fail_name}.err and ${fail_name}.out for details.
@@ -168,7 +197,7 @@ $new_err"
 
     # It seems that I must cancel the job array AFTER the email notification is sent (?)
     # because previously, the email notification was not sent.
-    if [ "$exit_code" -eq 1 ]; then
+    if [ "$exit_code" -eq 1 ] && [ "$is_gpu_error" = false ]; then
         scancel "${SLURM_ARRAY_JOB_ID}"
     fi
 fi
