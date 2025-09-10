@@ -268,6 +268,17 @@ PLOTS_GROUP_NAME="1dim_pointnet-max_history_input_variation-pbgi";
 BO_PLOTS_NAME="results_100iter";
 
 
+# Experiment of 1D PointNet MSE EI: max_history_input (2, 4, 9, null), + dataset size
+# Created 2025-09-09
+SEED=8;
+NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet-max_history_input_variation-mse_ei.yml";
+BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
+SWEEP_NAME="100iter_1dim_pointnet-max_history_input_variation-mse_ei";
+SEEDS_CFG="--n_seeds 64 --single_objective";
+PLOTS_GROUP_NAME="1dim_pointnet-max_history_input_variation-mse_ei";
+BO_PLOTS_NAME="results_100iter";
+
+
 SEEDS_CFG="--n_seeds 6 --single_objective";
 
 NN_CFG="--nn_base_config config/train_acqf.yml --nn_experiment_config $NN_EXPERIMENT_CFG";

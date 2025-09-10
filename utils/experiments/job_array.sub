@@ -4,6 +4,7 @@
 #SBATCH --requeue                     # requeue the job if it fails
 #SBATCH --exclude=kuleshov-compute-01   # Exclude this node because it currently has CUDA errors
 #SBATCH --exclude=kuleshov-compute-03   # Exclude this node because it currently has CUDA errors
+#SBATCH --exclude=bhattacharjee-compute-02   # Exclude this node because it currently has CUDA errors
 
 # Number of times to requeue the job if it fails
 MAX_RETRIES=4
