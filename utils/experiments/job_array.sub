@@ -166,6 +166,7 @@ else
         "NVIDIA .* with CUDA capability sm_[0-9]+ is not compatible with the current PyTorch installation"
         "RuntimeError: CUDA error:"
         "CUDA out of memory"
+        "RuntimeError: Attempting to deserialize object on a CUDA device but"
     )
     
     is_gpu_error=false
