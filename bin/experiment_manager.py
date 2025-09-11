@@ -171,6 +171,7 @@ def cmd_plot(args):
             plot_type=args.type,
             n_iterations=args.n_iterations,
             center_stat=args.center_stat,
+            variant=args.variant,
             dry_run=args.dry_run
         )
         
@@ -193,6 +194,32 @@ def cmd_commands(args):
     
     try:
         runner.print_experiment_commands(args.name)
+    except ValueError as e:
+        print(f"Error: {e}")
+        return 1
+
+
+def cmd_plot_variants(args):
+    """List available plot variants for an experiment."""
+    registry = ExperimentRegistry()
+    
+    try:
+        if args.type:
+            # Show variants for specific plot type
+            variants = registry.list_plot_variants(args.name, args.type)
+            print(f"Available plot variants for experiment '{args.name}' ({args.type}):")
+            for variant in variants:
+                print(f"  {variant}")
+        else:
+            # Show variants for all plot types
+            for plot_type in ['train_acqf', 'bo_experiments']:
+                variants = registry.list_plot_variants(args.name, plot_type)
+                if variants:
+                    print(f"Available plot variants for {plot_type}:")
+                    for variant in variants:
+                        print(f"  {variant}")
+                    print()
+    
     except ValueError as e:
         print(f"Error: {e}")
         return 1
@@ -238,6 +265,8 @@ def main():
     parser_plot.add_argument('name', help='Name of the experiment')
     parser_plot.add_argument('--type', choices=['bo_experiments', 'train_acqf'], 
                            default='bo_experiments', help='Type of plots to generate')
+    parser_plot.add_argument('--variant', default='default',
+                           help='Plot configuration variant to use (default: default)')
     parser_plot.add_argument('--n-iterations', type=int, default=30,
                            help='Number of iterations for BO plots')
     parser_plot.add_argument('--center-stat', choices=['mean', 'median'], default='mean',
@@ -248,6 +277,12 @@ def main():
     # Commands command (show commands like commands.txt)
     parser_commands = subparsers.add_parser('commands', help='Show commands for an experiment')
     parser_commands.add_argument('name', help='Name of the experiment')
+    
+    # Plot variants command
+    parser_variants = subparsers.add_parser('plot-variants', help='List available plot variants for an experiment')
+    parser_variants.add_argument('name', help='Name of the experiment')
+    parser_variants.add_argument('--type', choices=['bo_experiments', 'train_acqf'], 
+                                help='Type of plots (show variants for specific type or all if not specified)')
     
     args = parser.parse_args()
     
@@ -264,6 +299,7 @@ def main():
         'run': cmd_run,
         'plot': cmd_plot,
         'commands': cmd_commands,
+        'plot-variants': cmd_plot_variants,
     }
     
     try:

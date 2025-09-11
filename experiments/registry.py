@@ -120,7 +120,7 @@ class ExperimentRegistry:
         
         return args
     
-    def get_plotting_config(self, name: str, plot_type: str) -> Dict[str, Any]:
+    def get_plotting_config(self, name: str, plot_type: str, variant: str = 'default') -> Dict[str, Any]:
         """Get plotting configuration for an experiment."""
         exp_config = self.get_experiment(name)
         plotting = exp_config.get('plotting', {})
@@ -128,7 +128,43 @@ class ExperimentRegistry:
         if plot_type not in plotting:
             raise ValueError(f"Plot type '{plot_type}' not found for experiment '{name}'")
         
-        return plotting[plot_type]
+        plot_config = plotting[plot_type]
+        
+        # Handle both old format (direct config) and new format (default + alternatives)
+        if 'default' in plot_config:
+            # New format with default + alternatives
+            if variant == 'default':
+                return plot_config['default']
+            elif 'alternatives' in plot_config and variant in plot_config['alternatives']:
+                return plot_config['alternatives'][variant]
+            else:
+                available = ['default'] + list(plot_config.get('alternatives', {}).keys())
+                raise ValueError(f"Plot variant '{variant}' not found for experiment '{name}' plot type '{plot_type}'. Available: {available}")
+        else:
+            # Old format (direct config) - treat as default
+            if variant != 'default':
+                raise ValueError(f"Plot variant '{variant}' not available for experiment '{name}' plot type '{plot_type}'. Only 'default' available.")
+            return plot_config
+    
+    def list_plot_variants(self, name: str, plot_type: str) -> List[str]:
+        """List available plot variants for an experiment and plot type."""
+        exp_config = self.get_experiment(name)
+        plotting = exp_config.get('plotting', {})
+        
+        if plot_type not in plotting:
+            return []
+        
+        plot_config = plotting[plot_type]
+        
+        if 'default' in plot_config:
+            # New format
+            variants = ['default']
+            if 'alternatives' in plot_config:
+                variants.extend(plot_config['alternatives'].keys())
+            return variants
+        else:
+            # Old format
+            return ['default']
 
 
 def get_registry() -> ExperimentRegistry:

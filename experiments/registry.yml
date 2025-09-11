@@ -1,267 +1,840 @@
-# Experiment Registry
-# Central configuration for all Bayesian optimization experiments
-
 experiments:
   big_experiment_1d:
-    description: "Big experiment 1D"
-    created_date: "2025-04-15"
+    description: Big experiment 1D
+    created_date: '2025-04-15'
     parameters:
       seed: 8
-      nn_experiment_config: "config/train_acqf_experiment_1dim_big.yml"
-      bo_experiment_config: "config/bo_config_experiment_big.yml"
-      sweep_name: "test_100iter_1dim_maxhistory20_big"
+      nn_experiment_config: config/train_acqf_experiment_1dim_big.yml
+      bo_experiment_config: config/bo_config_experiment_big.yml
+      sweep_name: test_100iter_1dim_maxhistory20_big
       n_seeds: 16
       single_objective: false
-      plots_group_name: "1dim_maxhistory20_big"
-      bo_plots_name: "results_100iter"
+      plots_group_name: 1dim_maxhistory20_big
+      bo_plots_name: results_100iter
     plotting:
       train_acqf:
-        pre: [["layer_width", "train_samples_size"]]
-        attr_a: ["batch_size"]
-        attr_b: ["learning_rate"]
+        default:
+          pre:
+          - - layer_width
+            - train_samples_size
+          attr_a:
+          - batch_size
+          attr_b:
+          - learning_rate
       bo_experiments:
-        pre: [["nn.layer_width", "nn.train_samples_size", "gen_candidates"]]
-        attr_a: ["nn.batch_size"]
-        attr_b: ["nn.learning_rate"]
-
+        default:
+          pre:
+          - - nn.layer_width
+            - nn.train_samples_size
+            - gen_candidates
+          attr_a:
+          - nn.batch_size
+          attr_b:
+          - nn.learning_rate
   gittins_1d_reduced_variability:
-    description: "Gittins experiment 1D: reduce variability"
-    created_date: "2025-04-15"
+    description: 'Gittins experiment 1D: reduce variability'
+    created_date: '2025-04-15'
     parameters:
       seed: 8
-      nn_experiment_config: "config/train_acqf_experiment_1dim_gittins_good.yml"
-      bo_experiment_config: "config/bo_config_experiment_2_torch.yml"
-      sweep_name: "100iter_1dim_maxhistory20_gittins_good_reduced_variability"
+      nn_experiment_config: config/train_acqf_experiment_1dim_gittins_good.yml
+      bo_experiment_config: config/bo_config_experiment_2_torch.yml
+      sweep_name: 100iter_1dim_maxhistory20_gittins_good_reduced_variability
       n_seeds: 128
       single_objective: true
-      plots_group_name: "1dim_maxhistory20_gittins_good_reduced_variability"
-      bo_plots_name: "results_100iter"
+      plots_group_name: 1dim_maxhistory20_gittins_good_reduced_variability
+      bo_plots_name: results_100iter
     plotting:
       train_acqf:
-        pre: ["learning_rate"]
-        attr_a: ["method"]
-        attr_b: []
+        default:
+          pre:
+          - learning_rate
+          attr_a:
+          - method
+          attr_b: []
       bo_experiments:
-        pre: []
-        attr_a: ["nn.method"]
-        attr_b: []
-
+        default:
+          pre: []
+          attr_a:
+          - nn.method
+          attr_b: []
   pointnet_max_history_pbgi_1d:
-    description: "Experiment of 1D PointNet PBGI: max_history_input (2, 4, 9, null), + dataset size"
-    created_date: "2025-09-09"
+    description: 'Experiment of 1D PointNet PBGI: max_history_input (2, 4, 9, null),
+      + dataset size'
+    created_date: '2025-09-09'
     parameters:
       seed: 8
-      nn_experiment_config: "config/train_acqf_experiment_1dim_pointnet-max_history_input_variation-pbgi.yml"
-      bo_experiment_config: "config/bo_config_experiment_2_torch.yml"
-      sweep_name: "100iter_1dim_pointnet-max_history_input_variation-pbgi"
+      nn_experiment_config: config/train_acqf_experiment_1dim_pointnet-max_history_input_variation-pbgi.yml
+      bo_experiment_config: config/bo_config_experiment_2_torch.yml
+      sweep_name: 100iter_1dim_pointnet-max_history_input_variation-pbgi
       n_seeds: 64
       single_objective: true
-      plots_group_name: "1dim_pointnet-max_history_input_variation-pbgi"
-      bo_plots_name: "results_100iter"
+      plots_group_name: 1dim_pointnet-max_history_input_variation-pbgi
+      bo_plots_name: results_100iter
     plotting:
       train_acqf:
-        pre: []
-        attr_a: ["train_samples_size", "samples_addition_amount"]
-        attr_b: ["max_history_input"]
-        post: [["learning_rate"]]
+        default:
+          pre: []
+          attr_a:
+          - train_samples_size
+          - samples_addition_amount
+          attr_b:
+          - max_history_input
+          post:
+          - - learning_rate
       bo_experiments:
-        pre: []
-        attr_a: ["nn.train_samples_size", "nn.samples_addition_amount"]
-        attr_b: ["nn.max_history_input"]
-        post: [["lamda", "gp_af", "nn.learning_rate"], ["bo_seed"]]
-
+        default:
+          pre: []
+          attr_a:
+          - nn.train_samples_size
+          - nn.samples_addition_amount
+          attr_b:
+          - nn.max_history_input
+          post:
+          - - lamda
+            - gp_af
+            - nn.learning_rate
+          - - bo_seed
   pointnet_max_history_mse_ei_1d:
-    description: "Experiment of 1D PointNet MSE EI: max_history_input (2, 4, 9, null), + dataset size"
-    created_date: "2025-09-09"
+    description: 'Experiment of 1D PointNet MSE EI: max_history_input (2, 4, 9, null),
+      + dataset size'
+    created_date: '2025-09-09'
     parameters:
       seed: 8
-      nn_experiment_config: "config/train_acqf_experiment_1dim_pointnet-max_history_input_variation-mse_ei.yml"
-      bo_experiment_config: "config/bo_config_experiment_2_torch.yml"
-      sweep_name: "100iter_1dim_pointnet-max_history_input_variation-mse_ei"
+      nn_experiment_config: config/train_acqf_experiment_1dim_pointnet-max_history_input_variation-mse_ei.yml
+      bo_experiment_config: config/bo_config_experiment_2_torch.yml
+      sweep_name: 100iter_1dim_pointnet-max_history_input_variation-mse_ei
       n_seeds: 64
       single_objective: true
-      plots_group_name: "1dim_pointnet-max_history_input_variation-mse_ei"
-      bo_plots_name: "results_100iter"
+      plots_group_name: 1dim_pointnet-max_history_input_variation-mse_ei
+      bo_plots_name: results_100iter
     plotting:
       train_acqf:
-        pre: [["train_samples_size", "samples_addition_amount"]]
-        attr_a: ["include_best_y"]
-        attr_b: ["max_history_input"]
-        post: [["learning_rate"]]
+        default:
+          pre:
+          - - train_samples_size
+            - samples_addition_amount
+          attr_a:
+          - include_best_y
+          attr_b:
+          - max_history_input
+          post:
+          - - learning_rate
       bo_experiments:
-        pre: [["nn.train_samples_size", "nn.samples_addition_amount"]]
-        attr_a: ["nn.include_best_y"]
-        attr_b: ["nn.max_history_input"]
-        post: [["gp_af", "nn.learning_rate"], ["bo_seed"]]
-
+        default:
+          pre:
+          - - nn.train_samples_size
+            - nn.samples_addition_amount
+          attr_a:
+          - nn.include_best_y
+          attr_b:
+          - nn.max_history_input
+          post:
+          - - gp_af
+            - nn.learning_rate
+          - - bo_seed
   gittins_8d_big:
-    description: "Gittins experiment in 8D: try different learning rates"
-    created_date: "2025-04-15"
+    description: 'Gittins experiment in 8D: try different learning rates'
+    created_date: '2025-04-15'
     parameters:
       seed: 8
-      nn_experiment_config: "config/train_acqf_experiment_8dim_gittins_big.yml"
-      bo_experiment_config: "config/bo_config_experiment_2_torch.yml"
-      sweep_name: "100iter_8dim_maxhistory20_gittins_big"
+      nn_experiment_config: config/train_acqf_experiment_8dim_gittins_big.yml
+      bo_experiment_config: config/bo_config_experiment_2_torch.yml
+      sweep_name: 100iter_8dim_maxhistory20_gittins_big
       n_seeds: 32
       single_objective: true
-      plots_group_name: "8dim_maxhistory20_gittins_big"
-      bo_plots_name: "results_100iter"
+      plots_group_name: 8dim_maxhistory20_gittins_big
+      bo_plots_name: results_100iter
     plotting:
       train_acqf:
-        pre: [["samples_addition_amount"], ["learning_rate", "lr_scheduler"]]
-        attr_a: ["layer_width"]
-        attr_b: ["weight_decay"]
+        default:
+          pre:
+          - - samples_addition_amount
+          - - learning_rate
+            - lr_scheduler
+          attr_a:
+          - layer_width
+          attr_b:
+          - weight_decay
       bo_experiments:
-        pre: [["nn.samples_addition_amount"], ["nn.learning_rate", "nn.lr_scheduler"]]
-        attr_a: ["nn.layer_width"]
-        attr_b: ["nn.weight_decay"]
-
+        default:
+          pre:
+          - - nn.samples_addition_amount
+          - - nn.learning_rate
+            - nn.lr_scheduler
+          attr_a:
+          - nn.layer_width
+          attr_b:
+          - nn.weight_decay
   ei_1d_refine_lr:
-    description: "EI experiment in 1D: refine learning rate from best of 3e-4 found earlier"
+    description: 'EI experiment in 1D: refine learning rate from best of 3e-4 found
+      earlier'
+    created_date: '2025-04-15'
+    parameters:
+      seed: 8
+      nn_experiment_config: config/train_acqf_experiment_1dim_ei_refine_lr.yml
+      bo_experiment_config: config/bo_config_experiment_2_torch.yml
+      sweep_name: 100iter_1dim_maxhistory20_ei_refine_lr
+      n_seeds: 32
+      single_objective: true
+      plots_group_name: 1dim_maxhistory20_ei_refine_lr
+      bo_plots_name: results_100iter
+    plotting:
+      train_acqf:
+        default:
+          pre:
+          - learning_rate
+          attr_a:
+          - method
+          attr_b: []
+      bo_experiments:
+        default:
+          pre: []
+          attr_a:
+          - nn.method
+          attr_b: []
+  compare_3methods_1d:
+    description: Simple experiment in 1D to test policy gradient method and compare
+      it to the other 2 methods
+    created_date: '2025-06-04'
+    parameters:
+      seed: 8
+      nn_experiment_config: config/train_acqf_experiment_1dim_compare_3methods_initial.yml
+      bo_experiment_config: config/bo_config_experiment_2_torch.yml
+      sweep_name: 100iter_1dim_compare_3methods_initial
+      n_seeds: 128
+      single_objective: true
+      plots_group_name: 1dim_maxhistory20_compare_3methods_initial
+      bo_plots_name: results_100iter
+    plotting:
+      train_acqf:
+        default:
+          pre:
+          - learning_rate
+          attr_a:
+          - method
+          attr_b: []
+      bo_experiments:
+        default:
+          pre: []
+          attr_a:
+          - nn.method
+          attr_b: []
+  pointnet_architecture_variations_1d:
+    description: Initial experiment of PointNet architecture variations, 1D
+    created_date: '2025-06-04'
+    parameters:
+      seed: 8
+      nn_experiment_config: config/train_acqf_experiment_1dim_pointnet_architecture_variations.yml
+      bo_experiment_config: config/bo_config_experiment_2_torch.yml
+      sweep_name: 100iter_1dim_pointnet_architecture_variations
+      n_seeds: 128
+      single_objective: true
+      plots_group_name: 1dim_pointnet_architecture_variations
+      bo_plots_name: results_100iter
+    plotting:
+      train_acqf:
+        default:
+          pre:
+          - - learning_rate
+            - lr_scheduler
+          attr_a: []
+          attr_b:
+          - x_cand_input
+      bo_experiments:
+        default:
+          pre:
+          - - nn.learning_rate
+            - nn.lr_scheduler
+          attr_a:
+          - nn.include_best_y
+          attr_b:
+          - nn.x_cand_input
+  pointnet_architecture_variations_8d:
+    description: Initial experiment of PointNet architecture variations, 8D
+    created_date: '2025-06-04'
+    parameters:
+      seed: 8
+      nn_experiment_config: config/train_acqf_experiment_8dim_pointnet_architecture_variations.yml
+      bo_experiment_config: config/bo_config_experiment_2_torch.yml
+      sweep_name: 100iter_8dim_pointnet_architecture_variations
+      n_seeds: 128
+      single_objective: true
+      plots_group_name: 8dim_pointnet_architecture_variations
+      bo_plots_name: results_100iter
+    plotting:
+      train_acqf:
+        default:
+          pre:
+          - - learning_rate
+            - lr_scheduler
+          attr_a: []
+          attr_b:
+          - x_cand_input
+      bo_experiments:
+        default:
+          pre:
+          - - nn.learning_rate
+            - nn.lr_scheduler
+          attr_a:
+          - nn.include_best_y
+          attr_b:
+          - nn.x_cand_input
+  pointnet_big_dataset_1d:
+    description: PointNet, big dataset
+    created_date: '2025-07-19'
+    parameters:
+      seed: 8
+      nn_experiment_config: config/train_acqf_experiment_1dim_pointnet_big_dataset.yml
+      bo_experiment_config: config/bo_config_experiment_2_torch.yml
+      sweep_name: 100iter_1dim_pointnet_big_dataset
+      n_seeds: 128
+      single_objective: true
+      plots_group_name: 1dim_pointnet_big_dataset
+      bo_plots_name: results_100iter
+    plotting:
+      train_acqf:
+        default:
+          pre: []
+          attr_a:
+          - train_samples_size
+          - samples_addition_amount
+          attr_b:
+          - layer_width
+      bo_experiments:
+        default:
+          pre: []
+          attr_a:
+          - nn.train_samples_size
+          - nn.samples_addition_amount
+          attr_b:
+          - nn.layer_width
+
+  gittins_8d_big_2:
+    description: "Gittins experiment in 8D: try different learning rates, dataset sizes, layer widths (in response to the bad results for 8D)"
     created_date: "2025-04-15"
     parameters:
       seed: 8
-      nn_experiment_config: "config/train_acqf_experiment_1dim_ei_refine_lr.yml"
+      nn_experiment_config: "config/train_acqf_experiment_8dim_gittins_big_2.yml"
       bo_experiment_config: "config/bo_config_experiment_2_torch.yml"
-      sweep_name: "100iter_1dim_maxhistory20_ei_refine_lr"
+      sweep_name: "100iter_8dim_maxhistory100_gittins_big_2"
+      n_seeds: 16
+      single_objective: true
+      plots_group_name: "8dim_maxhistory100_gittins_big_2"
+      bo_plots_name: "results_100iter"
+    plotting:
+      train_acqf:
+        default:
+          pre: [["samples_addition_amount"], ["learning_rate", "lr_scheduler"]]
+          attr_a: ["layer_width"]
+          attr_b: ["weight_decay"]
+      bo_experiments:
+        default:
+          pre: [["nn.samples_addition_amount"], ["nn.learning_rate", "nn.lr_scheduler"]]
+          attr_a: ["nn.layer_width"]
+          attr_b: ["nn.weight_decay"]
+
+  ei_1d_many_epochs:
+    description: "EI experiment in 1D: train many epochs with 3e-4 learning rate"
+    created_date: "2025-04-15"
+    parameters:
+      seed: 8
+      nn_experiment_config: "config/train_acqf_experiment_1dim_ei_many_epochs.yml"
+      bo_experiment_config: "config/bo_config_experiment_2_torch.yml"
+      sweep_name: "100iter_1dim_maxhistory20_ei_many_epochs"
       n_seeds: 32
       single_objective: true
-      plots_group_name: "1dim_maxhistory20_ei_refine_lr"
+      plots_group_name: "1dim_maxhistory20_ei_many_epochs"
       bo_plots_name: "results_100iter"
     plotting:
       train_acqf:
-        pre: ["learning_rate"]
-        attr_a: ["method"]
-        attr_b: []
+        default:
+          pre: ["learning_rate"]
+          attr_a: ["method"]
+          attr_b: []
       bo_experiments:
-        pre: []
-        attr_a: ["nn.method"]
-        attr_b: []
+        default:
+          pre: []
+          attr_a: ["nn.method"]
+          attr_b: []
 
-  compare_3methods_1d:
-    description: "Simple experiment in 1D to test policy gradient method and compare it to the other 2 methods"
-    created_date: "2025-06-04"
+  ei_1d_many_epochs_2:
+    description: "EI experiment in 1D: train many epochs with 3e-4 learning rate -- revised after seeing results"
+    created_date: "2025-04-15"
     parameters:
       seed: 8
-      nn_experiment_config: "config/train_acqf_experiment_1dim_compare_3methods_initial.yml"
+      nn_experiment_config: "config/train_acqf_experiment_1dim_ei_many_epochs_2.yml"
       bo_experiment_config: "config/bo_config_experiment_2_torch.yml"
-      sweep_name: "100iter_1dim_compare_3methods_initial"
+      sweep_name: "100iter_1dim_maxhistory20_ei_many_epochs_2"
       n_seeds: 128
       single_objective: true
-      plots_group_name: "1dim_maxhistory20_compare_3methods_initial"
+      plots_group_name: "1dim_maxhistory20_ei_many_epochs_2"
       bo_plots_name: "results_100iter"
     plotting:
       train_acqf:
-        pre: ["learning_rate"]
-        attr_a: ["method"]
-        attr_b: []
+        default:
+          pre: ["learning_rate"]
+          attr_a: ["method"]
+          attr_b: []
       bo_experiments:
-        pre: []
-        attr_a: ["nn.method"]
-        attr_b: []
+        default:
+          pre: []
+          attr_a: ["nn.method"]
+          attr_b: []
 
-  pointnet_architecture_variations_1d:
-    description: "Initial experiment of PointNet architecture variations, 1D"
-    created_date: "2025-06-04"
+  gittins_8d_good:
+    description: "Gittins experiment in 8D: throw more compute at best (96 missing, 96 existing)"
+    created_date: "2025-04-15"
     parameters:
       seed: 8
-      nn_experiment_config: "config/train_acqf_experiment_1dim_pointnet_architecture_variations.yml"
+      nn_experiment_config: "config/train_acqf_experiment_8dim_gittins_good.yml"
       bo_experiment_config: "config/bo_config_experiment_2_torch.yml"
-      sweep_name: "100iter_1dim_pointnet_architecture_variations"
-      n_seeds: 128
-      single_objective: true
-      plots_group_name: "1dim_pointnet_architecture_variations"
-      bo_plots_name: "results_100iter"
-    plotting:
-      train_acqf:
-        pre: [["learning_rate", "lr_scheduler"]]
-        attr_a: []
-        attr_b: ["x_cand_input"]
-      bo_experiments:
-        pre: [["nn.learning_rate", "nn.lr_scheduler"]]
-        attr_a: ["nn.include_best_y"]
-        attr_b: ["nn.x_cand_input"]
-
-  pointnet_architecture_variations_8d:
-    description: "Initial experiment of PointNet architecture variations, 8D"
-    created_date: "2025-06-04"
-    parameters:
-      seed: 8
-      nn_experiment_config: "config/train_acqf_experiment_8dim_pointnet_architecture_variations.yml"
-      bo_experiment_config: "config/bo_config_experiment_2_torch.yml"
-      sweep_name: "100iter_8dim_pointnet_architecture_variations"
-      n_seeds: 128
-      single_objective: true
-      plots_group_name: "8dim_pointnet_architecture_variations"
-      bo_plots_name: "results_100iter"
-    plotting:
-      train_acqf:
-        pre: [["learning_rate", "lr_scheduler"]]
-        attr_a: []
-        attr_b: ["x_cand_input"]
-      bo_experiments:
-        pre: [["nn.learning_rate", "nn.lr_scheduler"]]
-        attr_a: ["nn.include_best_y"]
-        attr_b: ["nn.x_cand_input"]
-
-  pointnet_big_dataset_1d:
-    description: "PointNet, big dataset"
-    created_date: "2025-07-19"
-    parameters:
-      seed: 8
-      nn_experiment_config: "config/train_acqf_experiment_1dim_pointnet_big_dataset.yml"
-      bo_experiment_config: "config/bo_config_experiment_2_torch.yml"
-      sweep_name: "100iter_1dim_pointnet_big_dataset"
-      n_seeds: 128
-      single_objective: true
-      plots_group_name: "1dim_pointnet_big_dataset"
-      bo_plots_name: "results_100iter"
-    plotting:
-      train_acqf:
-        pre: []
-        attr_a: ["train_samples_size", "samples_addition_amount"]
-        attr_b: ["layer_width"]
-      bo_experiments:
-        pre: []
-        attr_a: ["nn.train_samples_size", "nn.samples_addition_amount"]
-        attr_b: ["nn.layer_width"]
-
-# Template definitions for creating new experiments
-templates:
-  basic_1d:
-    description: "Basic 1D experiment template"
-    parameters:
-      seed: 8
-      nn_experiment_config: "config/train_acqf_experiment_1dim_example.yml"
-      bo_experiment_config: "config/bo_config_experiment_2_torch.yml"
+      sweep_name: "100iter_8dim_maxhistory20_gittins_good"
       n_seeds: 32
       single_objective: true
+      plots_group_name: "8dim_maxhistory20_gittins_good"
       bo_plots_name: "results_100iter"
     plotting:
       train_acqf:
-        pre: []
-        attr_a: ["train_samples_size"]
-        attr_b: ["learning_rate"]
+        default:
+          pre: [["samples_addition_amount"], ["learning_rate", "lr_scheduler"]]
+          attr_a: ["layer_width"]
+          attr_b: ["weight_decay"]
       bo_experiments:
-        pre: []
-        attr_a: ["nn.train_samples_size"]
-        attr_b: ["nn.learning_rate"]
+        default:
+          pre: [["nn.samples_addition_amount"], ["nn.learning_rate", "nn.lr_scheduler"]]
+          attr_a: ["nn.layer_width"]
+          attr_b: ["nn.weight_decay"]
 
-  basic_8d:
-    description: "Basic 8D experiment template"
+  gittins_8d_good_2:
+    description: "Gittins experiment in 8D: throw more compute at best; more extensive hyperparameter search (1 missing, 383 existing)"
+    created_date: "2025-04-15"
+    parameters:
+      seed: 8
+      nn_experiment_config: "config/train_acqf_experiment_8dim_gittins_good_2.yml"
+      bo_experiment_config: "config/bo_config_experiment_2_torch.yml"
+      sweep_name: "100iter_8dim_maxhistory20_gittins_good_2"
+      n_seeds: 32
+      single_objective: true
+      plots_group_name: "8dim_maxhistory20_gittins_good_2"
+      bo_plots_name: "results_100iter"
+    plotting:
+      train_acqf:
+        default:
+          pre: [["samples_addition_amount"], ["learning_rate", "lr_scheduler"]]
+          attr_a: ["layer_width"]
+          attr_b: ["weight_decay"]
+      bo_experiments:
+        default:
+          pre: [["nn.samples_addition_amount"], ["nn.learning_rate", "nn.lr_scheduler"]]
+          attr_a: ["nn.layer_width"]
+          attr_b: ["nn.weight_decay"]
+
+  gittins_8d_dataset_size:
+    description: "Gittins experiment in 8D: experiment with dataset size"
+    created_date: "2025-04-15"
+    parameters:
+      seed: 8
+      nn_experiment_config: "config/train_acqf_experiment_8dim_gittins_dataset_size.yml"
+      bo_experiment_config: "config/bo_config_experiment_2_torch.yml"
+      sweep_name: "100iter_8dim_maxhistory20_gittins_dataset_size"
+      n_seeds: 32
+      single_objective: true
+      plots_group_name: "8dim_maxhistory20_gittins_dataset_size"
+      bo_plots_name: "results_100iter"
+    plotting:
+      train_acqf:
+        default:
+          pre: []
+          attr_a: ["train_samples_size"]
+          attr_b: ["samples_addition_amount"]
+      bo_experiments:
+        default:
+          pre: []
+          attr_a: ["nn.train_samples_size"]
+          attr_b: ["nn.samples_addition_amount"]
+
+  experiment_8d_big:
+    description: "Experiment in 8D: experiment with everything"
+    created_date: "2025-04-15"
     parameters:
       seed: 8
       nn_experiment_config: "config/train_acqf_experiment_8dim_big.yml"
       bo_experiment_config: "config/bo_config_experiment_2_torch.yml"
+      sweep_name: "100iter_8dim_maxhistory20_big"
       n_seeds: 16
       single_objective: true
+      plots_group_name: "8dim_maxhistory20_big"
       bo_plots_name: "results_100iter"
     plotting:
       train_acqf:
-        pre: []
-        attr_a: ["train_samples_size"]
-        attr_b: ["learning_rate"]
+        default:
+          pre: [["objective.lengthscale"], ["method"], ["learning_rate", "lr_scheduler"]]
+          attr_a: ["train_samples_size"]
+          attr_b: ["samples_addition_amount"]
       bo_experiments:
-        pre: []
-        attr_a: ["nn.train_samples_size"]
-        attr_b: ["nn.learning_rate"]
+        default:
+          pre: [["nn.objective.lengthscale"], ["nn.method"], ["nn.learning_rate", "nn.lr_scheduler"]]
+          attr_a: ["nn.train_samples_size"]
+          attr_b: ["nn.samples_addition_amount"]
+
+  gittins_8d_regularization:
+    description: "Experiment in 8D: experiment with reducing layer width and adding weight decay, and with dataset size"
+    created_date: "2025-04-15"
+    parameters:
+      seed: 8
+      nn_experiment_config: "config/train_acqf_experiment_8dim_gittins_regularization.yml"
+      bo_experiment_config: "config/bo_config_experiment_2_torch.yml"
+      sweep_name: "100iter_8dim_maxhistory20_gittins_regularization"
+      n_seeds: 16
+      single_objective: true
+      plots_group_name: "8dim_maxhistory20_gittins_regularization"
+      bo_plots_name: "results_100iter"
+    plotting:
+      train_acqf:
+        default:
+          pre: [["samples_addition_amount"], ["learning_rate", "lr_scheduler"]]
+          attr_a: ["layer_width"]
+          attr_b: ["weight_decay"]
+      bo_experiments:
+        default:
+          pre: [["nn.samples_addition_amount"], ["nn.learning_rate", "nn.lr_scheduler"]]
+          attr_a: ["nn.layer_width"]
+          attr_b: ["nn.weight_decay"]
+
+  gittins_8d_regularization_2:
+    description: "Experiment in 8D: more experimenting with regularization (now dropout too) -- just gittins"
+    created_date: "2025-04-15"
+    parameters:
+      seed: 8
+      nn_experiment_config: "config/train_acqf_experiment_8dim_gittins_regularization_2.yml"
+      bo_experiment_config: "config/bo_config_experiment_2_torch.yml"
+      sweep_name: "100iter_8dim_maxhistory20_gittins_regularization_2"
+      n_seeds: 16
+      single_objective: true
+      plots_group_name: "8dim_maxhistory20_gittins_regularization_2"
+      bo_plots_name: "results_100iter"
+    plotting:
+      train_acqf:
+        default:
+          pre: [["nn.method"], ["layer_width"], ["learning_rate", "lr_scheduler"]]
+          attr_a: ["dropout"]
+          attr_b: ["weight_decay"]
+      bo_experiments:
+        default:
+          pre: [["nn.nn.method"], ["nn.layer_width"], ["nn.learning_rate", "nn.lr_scheduler"]]
+          attr_a: ["nn.dropout"]
+          attr_b: ["nn.weight_decay"]
+
+  experiment_8d_regularization:
+    description: "Experiment in 8D: more experimenting with regularization (now dropout too) -- gittins & EI (Submitted 2025-04-24 19:18:07)"
+    created_date: "2025-04-24"
+    parameters:
+      seed: 8
+      nn_experiment_config: "config/train_acqf_experiment_8dim_regularization.yml"
+      bo_experiment_config: "config/bo_config_experiment_2_torch.yml"
+      sweep_name: "100iter_8dim_maxhistory20_regularization"
+      n_seeds: 16
+      single_objective: true
+      plots_group_name: "8dim_maxhistory20_regularization"
+      bo_plots_name: "results_100iter"
+    plotting:
+      train_acqf:
+        default:
+          pre: [["nn.method"], ["layer_width"], ["learning_rate", "lr_scheduler"]]
+          attr_a: ["dropout"]
+          attr_b: ["weight_decay"]
+      bo_experiments:
+        default:
+          pre: [["nn.nn.method"], ["nn.layer_width"], ["nn.learning_rate", "nn.lr_scheduler"]]
+          attr_a: ["nn.dropout"]
+          attr_b: ["nn.weight_decay"]
+
+  pointnet_architecture_variations_policy_gradient_1d:
+    description: "Initial experiment of PointNet architecture variations, 1D -- policy gradient (in 2025-06-04 slides)"
+    created_date: "2025-06-04"
+    parameters:
+      seed: 8
+      nn_experiment_config: "config/train_acqf_experiment_1dim_pointnet_architecture_variations_policy_gradient.yml"
+      bo_experiment_config: "config/bo_config_experiment_2_torch.yml"
+      sweep_name: "100iter_1dim_pointnet_architecture_variations_policy_gradient"
+      n_seeds: 128
+      single_objective: true
+      plots_group_name: "1dim_pointnet_architecture_variations_policy_gradient"
+      bo_plots_name: "results_100iter"
+    plotting:
+      train_acqf:
+        default:
+          pre: [["method"], ["learning_rate"], ["include_best_y"]]
+          attr_a: []
+          attr_b: ["x_cand_input"]
+      bo_experiments:
+        default:
+          pre: [["nn.method"], ["nn.learning_rate"], ["nn.include_best_y"]]
+          attr_a: ["nn.include_best_y"]
+          attr_b: ["nn.x_cand_input"]
+
+  pointnet_architecture_variations_policy_gradient_2_1d:
+    description: "Second experiment of PointNet architecture variations, 1D -- policy gradient (in 2025-06-11 slides). One NN currently in training left to complete and is still running after 3 days; and some extra BO loops left"
+    created_date: "2025-06-11"
+    parameters:
+      seed: 8
+      nn_experiment_config: "config/train_acqf_experiment_1dim_pointnet_architecture_variations_policy_gradient_2.yml"
+      bo_experiment_config: "config/bo_config_experiment_2_torch.yml"
+      sweep_name: "100iter_1dim_pointnet_architecture_variations_policy_gradient_2"
+      n_seeds: 128
+      single_objective: true
+      plots_group_name: "1dim_pointnet_architecture_variations_policy_gradient_2"
+      bo_plots_name: "results_100iter"
+    plotting:
+      train_acqf:
+        default:
+          pre: [["layer_width"], ["learning_rate"], ["include_best_y"]]
+          attr_a: []
+          attr_b: ["x_cand_input"]
+      bo_experiments:
+        default:
+          pre: [["nn.layer_width"], ["nn.learning_rate"], ["nn.include_best_y"]]
+          attr_a: ["nn.include_best_y"]
+          attr_b: ["nn.x_cand_input"]
+
+  pointnet_architecture_variations_policy_gradient_8d:
+    description: "Initial experiment of PointNet architecture variations, 8D -- policy gradient (in 2025-06-11 slides) ALL DONE"
+    created_date: "2025-06-11"
+    parameters:
+      seed: 8
+      nn_experiment_config: "config/train_acqf_experiment_8dim_pointnet_architecture_variations_policy_gradient.yml"
+      bo_experiment_config: "config/bo_config_experiment_2_torch.yml"
+      sweep_name: "100iter_8dim_pointnet_architecture_variations_policy_gradient"
+      n_seeds: 128
+      single_objective: true
+      plots_group_name: "8dim_pointnet_architecture_variations_policy_gradient"
+      bo_plots_name: "results_100iter"
+    plotting:
+      train_acqf:
+        default:
+          pre: [["learning_rate"], ["include_best_y"]]
+          attr_a: []
+          attr_b: ["x_cand_input"]
+      bo_experiments:
+        default:
+          pre: []
+          attr_a: ["nn.include_best_y"]
+          attr_b: ["nn.x_cand_input"]
+
+  pointnet_architecture_variations_dataset_size_1d:
+    description: "Experiment of PointNet architecture variations + dataset size, 1D (in 2025-06-11 slides)"
+    created_date: "2025-06-11"
+    parameters:
+      seed: 8
+      nn_experiment_config: "config/train_acqf_experiment_1dim_pointnet_architecture_variations-dataset_size.yml"
+      bo_experiment_config: "config/bo_config_experiment_2_torch.yml"
+      sweep_name: "100iter_1dim_pointnet_architecture_variations-dataset_size"
+      n_seeds: 64
+      single_objective: true
+      plots_group_name: "1dim_pointnet_architecture_variations-dataset_size"
+      bo_plots_name: "results_100iter"
+    plotting:
+      train_acqf:
+        default:
+          pre: [["x_cand_input"], ["learning_rate"], ["include_best_y"], ["train_samples_size"]]
+          attr_a: []
+          attr_b: ["samples_addition_amount"]
+        alternatives:
+          version_2:
+            pre: [["x_cand_input"], ["learning_rate"], ["include_best_y"]]
+            attr_a: ["train_samples_size"]
+            attr_b: ["samples_addition_amount"]
+          version_3:
+            pre: [["x_cand_input"], ["learning_rate"], ["include_best_y"]]
+            attr_a: ["train_samples_size"]
+            attr_b: ["samples_addition_amount"]
+      bo_experiments:
+        default:
+          pre: [["nn.x_cand_input"], ["nn.learning_rate"], ["nn.include_best_y"]]
+          attr_a: ["nn.train_samples_size"]
+          attr_b: ["nn.samples_addition_amount"]
+        alternatives:
+          version_2:
+            pre: [["nn.x_cand_input"], ["nn.learning_rate"], ["nn.include_best_y"]]
+            attr_a: ["nn.include_best_y"]
+            attr_b: ["nn.x_cand_input"]
+          version_3:
+            pre: [["nn.x_cand_input"], ["nn.learning_rate"], ["nn.include_best_y"]]
+            attr_a: ["nn.train_samples_size"]
+            attr_b: ["nn.samples_addition_amount"]
+
+  feature_dim_variation_1d:
+    description: "Experiment of changing feature dimension of PointNet (keeping layer width the same), 1D (in 2025-06-11 slides)"
+    created_date: "2025-06-11"
+    parameters:
+      seed: 8
+      nn_experiment_config: "config/train_acqf_experiment_1dim_feature_dim_variation.yml"
+      bo_experiment_config: "config/bo_config_experiment_2_torch.yml"
+      sweep_name: "100iter_1dim_feature_dim_variation"
+      n_seeds: 128
+      single_objective: true
+      plots_group_name: "1dim_feature_dim_variation"
+      bo_plots_name: "results_100iter"
+    plotting:
+      train_acqf:
+        default:
+          pre: [["learning_rate"], ["layer_width"]]
+          attr_a: []
+          attr_b: ["encoded_history_dim"]
+      bo_experiments:
+        default:
+          pre: [["nn.learning_rate"], ["nn.layer_width"]]
+          attr_a: ["nn.layer_width"]
+          attr_b: ["nn.encoded_history_dim"]
+        alternatives:
+          version_2:
+            pre: [["nn.learning_rate"], ["nn.layer_width"]]
+            attr_a: ["nn.layer_width"]
+            attr_b: ["nn.encoded_history_dim"]
+          version_3:
+            pre: []
+            attr_a: ["nn.layer_width"]
+            attr_b: ["nn.encoded_history_dim"]
+
+  pointnet_architecture_variations_dataset_size_more_architectures_1d:
+    description: "Experiment of PointNet architecture variations + dataset size, 1D -- More architecture variations. This is Architecture variation experiment 1 in 2025-07-19 presentation. Vary dataset size; fix architecture size; vary x_cand_input, pooling, include_best_y, subtract_best_y"
+    created_date: "2025-07-19"
+    parameters:
+      seed: 8
+      nn_experiment_config: "config/train_acqf_experiment_1dim_pointnet_architecture_variations-dataset_size-more_architectures.yml"
+      bo_experiment_config: "config/bo_config_experiment_2_torch.yml"
+      sweep_name: "100iter_1dim_pointnet_architecture_variations-dataset_size-more_architectures"
+      n_seeds: 64
+      single_objective: true
+      plots_group_name: "1dim_pointnet_architecture_variations-dataset_size-more_architectures"
+      bo_plots_name: "results_100iter"
+    plotting:
+      train_acqf:
+        default:
+          pre: [["train_samples_size", "samples_addition_amount"], ["x_cand_input"], ["learning_rate"], ["pooling"]]
+          attr_a: []
+          attr_b: ["include_best_y", "subtract_best_y"]
+      bo_experiments:
+        default:
+          pre: [["nn.train_samples_size", "nn.samples_addition_amount"], ["nn.x_cand_input"], ["nn.learning_rate"], ["nn.pooling"]]
+          attr_a: ["nn.x_cand_input"]
+          attr_b: ["nn.include_best_y", "nn.subtract_best_y"]
+        alternatives:
+          version_2:
+            pre: [["nn.train_samples_size", "nn.samples_addition_amount"], ["nn.x_cand_input"]]
+            attr_a: ["nn.train_samples_size"]
+            attr_b: ["nn.samples_addition_amount"]
+          version_3:
+            pre: [["nn.train_samples_size", "nn.samples_addition_amount"], ["nn.x_cand_input"]]
+            attr_a: ["nn.include_best_y"]
+            attr_b: ["nn.subtract_best_y"]
+
+  pointnet_model_size_variations_dataset_size_1d:
+    description: "Experiment of PointNet architecture size (layer width, # hidden layers, feature dimension), + dataset size. This is Architecture variation experiment 2 in 2025-07-19 presentation"
+    created_date: "2025-07-19"
+    parameters:
+      seed: 8
+      nn_experiment_config: "config/train_acqf_experiment_1dim_pointnet_model_size_variations-dataset_size.yml"
+      bo_experiment_config: "config/bo_config_experiment_2_torch.yml"
+      sweep_name: "100iter_1dim_pointnet_model_size_variations-dataset_size"
+      n_seeds: 64
+      single_objective: true
+      plots_group_name: "1dim_pointnet_model_size_variations-dataset_size"
+      bo_plots_name: "results_100iter"
+    plotting:
+      train_acqf:
+        default:
+          pre: [["train_samples_size", "samples_addition_amount"], ["pooling"], ["encoded_history_dim"], ["learning_rate"]]
+          attr_a: []
+          attr_b: ["num_layers", "layer_width"]
+        alternatives:
+          version_2:
+            pre: [["pooling"], ["train_samples_size", "samples_addition_amount"], ["encoded_history_dim"]]
+            attr_a: ["layer_width"]
+            attr_b: ["num_layers"]
+            post: [["learning_rate"]]
+      bo_experiments:
+        default:
+          pre: [["nn.train_samples_size", "nn.samples_addition_amount"], ["nn.pooling"], ["nn.encoded_history_dim"], ["nn.learning_rate"]]
+          attr_a: ["nn.num_layers"]
+          attr_b: ["nn.layer_width", "nn.encoded_history_dim"]
+        alternatives:
+          version_2:
+            pre: [["nn.train_samples_size", "nn.samples_addition_amount"], ["nn.pooling"], ["nn.encoded_history_dim"]]
+            attr_a: ["nn.train_samples_size"]
+            attr_b: ["nn.samples_addition_amount"]
+
+  pointnet_model_size_variations_dataset_size_2_1d:
+    description: "Refined Experiment of PointNet architecture size (layer width, # hidden layers, feature dimension), + dataset size"
+    created_date: "2025-07-19"
+    parameters:
+      seed: 8
+      nn_experiment_config: "config/train_acqf_experiment_1dim_pointnet_model_size_variations-dataset_size-2.yml"
+      bo_experiment_config: "config/bo_config_experiment_2_torch.yml"
+      sweep_name: "100iter_1dim_pointnet_model_size_variations-dataset_size-2"
+      n_seeds: 128
+      single_objective: true
+      plots_group_name: "1dim_pointnet_model_size_variations-dataset_size-2"
+      bo_plots_name: "results_100iter"
+    plotting:
+      train_acqf:
+        default:
+          pre: []
+          attr_a: ["train_samples_size", "samples_addition_amount"]
+          attr_b: ["layer_width"]
+          post: [["learning_rate"]]
+      bo_experiments:
+        default:
+          pre: [["nn.samples_addition_amount"]]
+          attr_a: ["nn.train_samples_size"]
+          attr_b: ["nn.layer_width"]
+
+templates:
+  basic_1d:
+    description: Basic 1D experiment template
+    parameters:
+      seed: 8
+      nn_experiment_config: config/train_acqf_experiment_1dim_example.yml
+      bo_experiment_config: config/bo_config_experiment_2_torch.yml
+      n_seeds: 32
+      single_objective: true
+      bo_plots_name: results_100iter
+    plotting:
+      train_acqf:
+        default:
+          pre: []
+          attr_a:
+          - train_samples_size
+          attr_b:
+          - learning_rate
+      bo_experiments:
+        default:
+          pre: []
+          attr_a:
+          - nn.train_samples_size
+          attr_b:
+          - nn.learning_rate
+  basic_8d:
+    description: Basic 8D experiment template
+    parameters:
+      seed: 8
+      nn_experiment_config: config/train_acqf_experiment_8dim_big.yml
+      bo_experiment_config: config/bo_config_experiment_2_torch.yml
+      n_seeds: 16
+      single_objective: true
+      bo_plots_name: results_100iter
+    plotting:
+      train_acqf:
+        default:
+          pre: []
+          attr_a:
+          - train_samples_size
+          attr_b:
+          - learning_rate
+      bo_experiments:
+        default:
+          pre: []
+          attr_a:
+          - nn.train_samples_size
+          attr_b:
+          - nn.learning_rate

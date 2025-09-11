@@ -41,32 +41,34 @@ def detect_experiment_from_config(nn_experiment_config: str) -> Optional[str]:
     return None
 
 
-def get_plotting_config_for_experiment(experiment_name: str, plot_type: str) -> Optional[Dict[str, Any]]:
+def get_plotting_config_for_experiment(experiment_name: str, plot_type: str, variant: str = 'default') -> Optional[Dict[str, Any]]:
     """
     Get the plotting configuration for a specific experiment and plot type.
     
     Args:
         experiment_name: Name of the experiment
         plot_type: 'train_acqf' or 'bo_experiments'
+        variant: Plot configuration variant (default: 'default')
     
     Returns:
         Dictionary with plotting configuration or None if not found
     """
     try:
         registry = ExperimentRegistry()
-        plot_config = registry.get_plotting_config(experiment_name, plot_type)
+        plot_config = registry.get_plotting_config(experiment_name, plot_type, variant)
         return plot_config
     except:
         return None
 
 
-def auto_configure_plotting(nn_experiment_config: str, plot_type: str) -> Tuple[List, List, List]:
+def auto_configure_plotting(nn_experiment_config: str, plot_type: str, variant: str = 'default') -> Tuple[List, List, List]:
     """
     Automatically configure plotting parameters based on experiment configuration.
     
     Args:
         nn_experiment_config: Path to the NN experiment config file
         plot_type: 'train_acqf' or 'bo_experiments'
+        variant: Plot configuration variant (default: 'default')
     
     Returns:
         Tuple of (PRE, ATTR_A, ATTR_B) lists
@@ -75,7 +77,7 @@ def auto_configure_plotting(nn_experiment_config: str, plot_type: str) -> Tuple[
     experiment_name = detect_experiment_from_config(nn_experiment_config)
     
     if experiment_name:
-        plot_config = get_plotting_config_for_experiment(experiment_name, plot_type)
+        plot_config = get_plotting_config_for_experiment(experiment_name, plot_type, variant)
         
         if plot_config:
             pre = plot_config.get('pre', [])
@@ -83,7 +85,7 @@ def auto_configure_plotting(nn_experiment_config: str, plot_type: str) -> Tuple[
             attr_b = plot_config.get('attr_b', [])
             
             print(f"Auto-detected experiment: {experiment_name}")
-            print(f"Using plotting configuration for {plot_type}:")
+            print(f"Using plotting configuration for {plot_type} (variant: {variant}):")
             print(f"  PRE = {pre}")
             print(f"  ATTR_A = {attr_a}")
             print(f"  ATTR_B = {attr_b}")
@@ -121,18 +123,19 @@ def apply_auto_plotting(nn_experiment_config: str, plot_type: str,
     globals_dict['ATTR_B'] = attr_b
 
 
-def get_experiment_post_config(experiment_name: str, plot_type: str) -> Optional[List]:
+def get_experiment_post_config(experiment_name: str, plot_type: str, variant: str = 'default') -> Optional[List]:
     """
     Get the POST configuration for an experiment if it exists.
     
     Args:
         experiment_name: Name of the experiment
         plot_type: 'train_acqf' or 'bo_experiments'
+        variant: Plot configuration variant (default: 'default')
     
     Returns:
         POST configuration list or None if not found
     """
-    plot_config = get_plotting_config_for_experiment(experiment_name, plot_type)
+    plot_config = get_plotting_config_for_experiment(experiment_name, plot_type, variant)
     if plot_config:
         return plot_config.get('post', None)
     return None

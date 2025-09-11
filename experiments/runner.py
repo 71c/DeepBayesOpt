@@ -110,7 +110,7 @@ class ExperimentRunner:
             return 1, "", f"Error running training: {str(e)}"
     
     def generate_plots(self, name: str, plot_type: str = "bo_experiments", n_iterations: int = 30, 
-                      center_stat: str = "mean", dry_run: bool = False) -> Tuple[int, str, str]:
+                      center_stat: str = "mean", variant: str = "default", dry_run: bool = False) -> Tuple[int, str, str]:
         """Generate plots for an experiment."""
         try:
             args = self.registry.get_experiment_command_args(name)
