@@ -94,6 +94,138 @@ experiments:
         attr_b: ["nn.max_history_input"]
         post: [["gp_af", "nn.learning_rate"], ["bo_seed"]]
 
+  gittins_8d_big:
+    description: "Gittins experiment in 8D: try different learning rates"
+    created_date: "2025-04-15"
+    parameters:
+      seed: 8
+      nn_experiment_config: "config/train_acqf_experiment_8dim_gittins_big.yml"
+      bo_experiment_config: "config/bo_config_experiment_2_torch.yml"
+      sweep_name: "100iter_8dim_maxhistory20_gittins_big"
+      n_seeds: 32
+      single_objective: true
+      plots_group_name: "8dim_maxhistory20_gittins_big"
+      bo_plots_name: "results_100iter"
+    plotting:
+      train_acqf:
+        pre: [["samples_addition_amount"], ["learning_rate", "lr_scheduler"]]
+        attr_a: ["layer_width"]
+        attr_b: ["weight_decay"]
+      bo_experiments:
+        pre: [["nn.samples_addition_amount"], ["nn.learning_rate", "nn.lr_scheduler"]]
+        attr_a: ["nn.layer_width"]
+        attr_b: ["nn.weight_decay"]
+
+  ei_1d_refine_lr:
+    description: "EI experiment in 1D: refine learning rate from best of 3e-4 found earlier"
+    created_date: "2025-04-15"
+    parameters:
+      seed: 8
+      nn_experiment_config: "config/train_acqf_experiment_1dim_ei_refine_lr.yml"
+      bo_experiment_config: "config/bo_config_experiment_2_torch.yml"
+      sweep_name: "100iter_1dim_maxhistory20_ei_refine_lr"
+      n_seeds: 32
+      single_objective: true
+      plots_group_name: "1dim_maxhistory20_ei_refine_lr"
+      bo_plots_name: "results_100iter"
+    plotting:
+      train_acqf:
+        pre: ["learning_rate"]
+        attr_a: ["method"]
+        attr_b: []
+      bo_experiments:
+        pre: []
+        attr_a: ["nn.method"]
+        attr_b: []
+
+  compare_3methods_1d:
+    description: "Simple experiment in 1D to test policy gradient method and compare it to the other 2 methods"
+    created_date: "2025-06-04"
+    parameters:
+      seed: 8
+      nn_experiment_config: "config/train_acqf_experiment_1dim_compare_3methods_initial.yml"
+      bo_experiment_config: "config/bo_config_experiment_2_torch.yml"
+      sweep_name: "100iter_1dim_compare_3methods_initial"
+      n_seeds: 128
+      single_objective: true
+      plots_group_name: "1dim_maxhistory20_compare_3methods_initial"
+      bo_plots_name: "results_100iter"
+    plotting:
+      train_acqf:
+        pre: ["learning_rate"]
+        attr_a: ["method"]
+        attr_b: []
+      bo_experiments:
+        pre: []
+        attr_a: ["nn.method"]
+        attr_b: []
+
+  pointnet_architecture_variations_1d:
+    description: "Initial experiment of PointNet architecture variations, 1D"
+    created_date: "2025-06-04"
+    parameters:
+      seed: 8
+      nn_experiment_config: "config/train_acqf_experiment_1dim_pointnet_architecture_variations.yml"
+      bo_experiment_config: "config/bo_config_experiment_2_torch.yml"
+      sweep_name: "100iter_1dim_pointnet_architecture_variations"
+      n_seeds: 128
+      single_objective: true
+      plots_group_name: "1dim_pointnet_architecture_variations"
+      bo_plots_name: "results_100iter"
+    plotting:
+      train_acqf:
+        pre: [["learning_rate", "lr_scheduler"]]
+        attr_a: []
+        attr_b: ["x_cand_input"]
+      bo_experiments:
+        pre: [["nn.learning_rate", "nn.lr_scheduler"]]
+        attr_a: ["nn.include_best_y"]
+        attr_b: ["nn.x_cand_input"]
+
+  pointnet_architecture_variations_8d:
+    description: "Initial experiment of PointNet architecture variations, 8D"
+    created_date: "2025-06-04"
+    parameters:
+      seed: 8
+      nn_experiment_config: "config/train_acqf_experiment_8dim_pointnet_architecture_variations.yml"
+      bo_experiment_config: "config/bo_config_experiment_2_torch.yml"
+      sweep_name: "100iter_8dim_pointnet_architecture_variations"
+      n_seeds: 128
+      single_objective: true
+      plots_group_name: "8dim_pointnet_architecture_variations"
+      bo_plots_name: "results_100iter"
+    plotting:
+      train_acqf:
+        pre: [["learning_rate", "lr_scheduler"]]
+        attr_a: []
+        attr_b: ["x_cand_input"]
+      bo_experiments:
+        pre: [["nn.learning_rate", "nn.lr_scheduler"]]
+        attr_a: ["nn.include_best_y"]
+        attr_b: ["nn.x_cand_input"]
+
+  pointnet_big_dataset_1d:
+    description: "PointNet, big dataset"
+    created_date: "2025-07-19"
+    parameters:
+      seed: 8
+      nn_experiment_config: "config/train_acqf_experiment_1dim_pointnet_big_dataset.yml"
+      bo_experiment_config: "config/bo_config_experiment_2_torch.yml"
+      sweep_name: "100iter_1dim_pointnet_big_dataset"
+      n_seeds: 128
+      single_objective: true
+      plots_group_name: "1dim_pointnet_big_dataset"
+      bo_plots_name: "results_100iter"
+    plotting:
+      train_acqf:
+        pre: []
+        attr_a: ["train_samples_size", "samples_addition_amount"]
+        attr_b: ["layer_width"]
+      bo_experiments:
+        pre: []
+        attr_a: ["nn.train_samples_size", "nn.samples_addition_amount"]
+        attr_b: ["nn.layer_width"]
+
 # Template definitions for creating new experiments
 templates:
   basic_1d:

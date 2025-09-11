@@ -14,6 +14,14 @@ from bo_experiments_gp import get_bo_experiments_parser, generate_gp_bo_job_spec
 from run_bo import GP_AF_DICT, get_arg_names, pre_run_bo
 from train_acqf import MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN
 
+# Import auto-plotting configuration
+try:
+    from experiments.plot_helper import setup_plotting_from_args
+    AUTO_PLOTTING_AVAILABLE = True
+except ImportError:
+    AUTO_PLOTTING_AVAILABLE = False
+    print("Auto-plotting not available. Using manual configuration.")
+
 
 CPROFILE = True
 
@@ -395,6 +403,14 @@ def main():
     
     ## Parse arguments
     args = parser.parse_args()
+
+    # Auto-configure plotting parameters based on experiment
+    if AUTO_PLOTTING_AVAILABLE:
+        try:
+            setup_plotting_from_args(args, 'bo_experiments', globals())
+            print("Successfully applied auto-plotting configuration")
+        except Exception as e:
+            print(f"Auto-plotting failed, using manual configuration: {e}")
 
     interval_kwargs = {k: getattr(args, k) for k in get_arg_names(interval_group)}
 

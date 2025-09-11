@@ -15,6 +15,14 @@ from utils.utils import DEVICE, dict_to_str, group_by, group_by_nested_attrs, lo
 from nn_af.acquisition_function_net_save_utils import load_nn_acqf
 from train_acqf import add_train_acqf_args, cmd_opts_nn_to_model_and_info_name, get_cmd_options_train_acqf
 
+# Import auto-plotting configuration
+try:
+    from experiments.plot_helper import setup_plotting_from_args
+    AUTO_PLOTTING_AVAILABLE = True
+except ImportError:
+    AUTO_PLOTTING_AVAILABLE = False
+    print("Auto-plotting not available. Using manual configuration.")
+
 
 CPROFILE = False
 
@@ -301,6 +309,14 @@ def main():
     ## Parse arguments
     args = parser.parse_args()
 
+    # Auto-configure plotting parameters based on experiment
+    if AUTO_PLOTTING_AVAILABLE:
+        try:
+            setup_plotting_from_args(args, 'train_acqf', globals())
+            print("Successfully applied auto-plotting configuration")
+        except Exception as e:
+            print(f"Auto-plotting failed, using manual configuration: {e}")
+    
     # Get all the configs of all the NNs
     all_cfgs_list, refined_config = get_config_options_list(
         getattr(args, nn_base_config_name), getattr(args, nn_experiment_config_name))
