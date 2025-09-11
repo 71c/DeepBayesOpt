@@ -269,15 +269,37 @@ CPROFILE = True
 
 
 # For dim_pointnet_model_size_variations-dataset_size-2
-PRE = [
-    ["nn.samples_addition_amount"]
-]
-ATTR_A = ["nn.train_samples_size"]
-ATTR_B =  ["nn.layer_width"]
+# PRE = [
+#     ["nn.samples_addition_amount"]
+# ]
+# ATTR_A = ["nn.train_samples_size"]
+# ATTR_B =  ["nn.layer_width"]
+# POST = [
+#     ["lamda", "gp_af", "nn.learning_rate"],
+#     ["bo_seed"]
+# ]
+
+
+# For 1dim_pointnet-max_history_input_variation-pbgi
+PRE = []
+ATTR_A = ["nn.train_samples_size", "nn.samples_addition_amount"]
+ATTR_B =  ["nn.max_history_input"]
 POST = [
     ["lamda", "gp_af", "nn.learning_rate"],
     ["bo_seed"]
 ]
+
+# For 1dim_pointnet-max_history_input_variation-mse_ei
+# PRE = [
+#     ["nn.train_samples_size", "nn.samples_addition_amount"]
+# ]
+# ATTR_A = ["nn.include_best_y"]
+# ATTR_B = ["nn.max_history_input"]
+# POST = [
+#     ["gp_af", "nn.learning_rate"],
+#     ["bo_seed"]
+# ]
+
 
 
 # Default POST:

@@ -1,4 +1,5 @@
 
+######### STEP 1: Copy-paste one of these code blocks into the terminal ########
 
 # Big experiment 1D:
 SEED=8;
@@ -279,22 +280,26 @@ PLOTS_GROUP_NAME="1dim_pointnet-max_history_input_variation-mse_ei";
 BO_PLOTS_NAME="results_100iter";
 
 
+######## Optionally use this SEEDS_CFG instead
 SEEDS_CFG="--n_seeds 6 --single_objective";
 
+
+######### STEP 2: Copy-paste this code into the terminal ########
 NN_CFG="--nn_base_config config/train_acqf.yml --nn_experiment_config $NN_EXPERIMENT_CFG";
 BO_CFG="--bo_base_config config/bo_config.yml --bo_experiment_config $BO_EXPERIMENT_CFG --seed $SEED $SEEDS_CFG";
 SLURM_CFG="--sweep_name $SWEEP_NAME --mail adj53@cornell.edu --gres gpu:1";
 PLOTS_CFG="--plots_group_name $PLOTS_GROUP_NAME --use_rows --use_cols";
 
+######### STEP 3: Copy-paste one of these lines into terminal ########
 BO_PLOTS_CFG="--center_stat mean --interval_of_center --plots_name $BO_PLOTS_NAME --assume_normal"
 BO_PLOTS_CFG="--center_stat mean --interval_of_center --plots_name $BO_PLOTS_NAME"
 BO_PLOTS_CFG="--center_stat median --interval_of_center --plots_name $BO_PLOTS_NAME"
 BO_PLOTS_CFG="--plots_name $BO_PLOTS_NAME"
 
-
+################ STEP 4: Here are the commands that you can run: ###############
 python bo_experiments_gp_status.py $NN_CFG $BO_CFG
-       python bo_experiments_gp.py $NN_CFG $BO_CFG $SLURM_CFG
        python bo_experiments_gp.py $NN_CFG $BO_CFG $SLURM_CFG --no_submit
+       python bo_experiments_gp.py $NN_CFG $BO_CFG $SLURM_CFG
        python train_acqf.py $NN_CFG $SLURM_CFG
   python bo_experiments_gp_plot.py $NN_CFG $BO_CFG $PLOTS_CFG $BO_PLOTS_CFG --n_iterations 30
          python train_acqf_plot.py $NN_CFG         $PLOTS_CFG

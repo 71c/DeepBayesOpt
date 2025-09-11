@@ -145,13 +145,31 @@ CPROFILE = False
 
 
 # For 1dim_pointnet_model_size_variations-dataset_size-2
-PRE = [
-]
+# PRE = []
+# ATTR_A = ["train_samples_size", "samples_addition_amount"]
+# ATTR_B = ["layer_width"]
+# POST = [
+#     ["learning_rate"]
+# ]
+
+
+# For 1dim_pointnet-max_history_input_variation-pbgi
+PRE = []
 ATTR_A = ["train_samples_size", "samples_addition_amount"]
-ATTR_B = ["layer_width"]
+ATTR_B = ["max_history_input"]
 POST = [
     ["learning_rate"]
 ]
+
+# For 1dim_pointnet-max_history_input_variation-mse_ei
+# PRE = [
+#     ["train_samples_size", "samples_addition_amount"]
+# ]
+# ATTR_A = ["include_best_y"]
+# ATTR_B = ["max_history_input"]
+# POST = [
+#     ["learning_rate"]
+# ]
 
 
 # POST = [] # No "line" level yet
