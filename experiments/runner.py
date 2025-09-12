@@ -19,6 +19,53 @@ class ExperimentRunner:
         """Initialize the runner."""
         self.registry = registry or ExperimentRegistry()
     
+    def _run_command_with_streaming(self, cmd: List[str]) -> Tuple[int, str, str]:
+        """Run command with real-time output streaming."""
+        stdout_lines = []
+        stderr_lines = []
+        
+        try:
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+                universal_newlines=True
+            )
+            
+            # Read stdout and stderr in real-time
+            while True:
+                # Check if process has finished
+                if process.poll() is not None:
+                    break
+                
+                # Read stdout
+                stdout_line = process.stdout.readline()
+                if stdout_line:
+                    print(stdout_line.rstrip())
+                    stdout_lines.append(stdout_line)
+                
+                # Read stderr
+                stderr_line = process.stderr.readline()
+                if stderr_line:
+                    print(f"STDERR: {stderr_line.rstrip()}", file=sys.stderr)
+                    stderr_lines.append(stderr_line)
+            
+            # Read any remaining output
+            remaining_stdout, remaining_stderr = process.communicate()
+            if remaining_stdout:
+                print(remaining_stdout.rstrip())
+                stdout_lines.append(remaining_stdout)
+            if remaining_stderr:
+                print(f"STDERR: {remaining_stderr.rstrip()}", file=sys.stderr)
+                stderr_lines.append(remaining_stderr)
+            
+            return process.returncode, ''.join(stdout_lines), ''.join(stderr_lines)
+            
+        except Exception as e:
+            return 1, "", f"Error running command: {str(e)}"
+    
     def run_status_check(self, name: str) -> Tuple[int, str, str]:
         """Run status check for an experiment using existing status script."""
         try:
@@ -38,8 +85,7 @@ class ExperimentRunner:
             seeds_cfg = args['SEEDS_CFG'].strip('"').split()
             cmd.extend(seeds_cfg)
             
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            return result.returncode, result.stdout, result.stderr
+            return self._run_command_with_streaming(cmd)
             
         except Exception as e:
             return 1, "", f"Error running status check: {str(e)}"
@@ -76,8 +122,7 @@ class ExperimentRunner:
                 print(" ".join(cmd))
                 return 0, " ".join(cmd), ""
             
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            return result.returncode, result.stdout, result.stderr
+            return self._run_command_with_streaming(cmd)
             
         except Exception as e:
             return 1, "", f"Error running experiment: {str(e)}"
@@ -103,8 +148,7 @@ class ExperimentRunner:
                 print(" ".join(cmd))
                 return 0, " ".join(cmd), ""
             
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            return result.returncode, result.stdout, result.stderr
+            return self._run_command_with_streaming(cmd)
             
         except Exception as e:
             return 1, "", f"Error running training: {str(e)}"
@@ -161,8 +205,7 @@ class ExperimentRunner:
                 print(" ".join(cmd))
                 return 0, " ".join(cmd), ""
             
-            result = subprocess.run(cmd, capture_output=True, text=True)
-            return result.returncode, result.stdout, result.stderr
+            return self._run_command_with_streaming(cmd)
             
         except Exception as e:
             return 1, "", f"Error generating plots: {str(e)}"
