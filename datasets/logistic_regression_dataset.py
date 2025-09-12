@@ -175,14 +175,9 @@ class LogisticRegressionRandomDataset(
             - y_values: corresponding log-likelihood evaluations (n_datapoints, 1)
         """
         # First, generate a synthetic logistic regression dataset
-        if self.log_uniform_sampling:
-            n_samples = self._sample_int_range(self.n_samples_range, log_uniform=True)
-            n_features = self._sample_int_range(self.n_features_range, log_uniform=True)
-            sigma_y = self._sample_float_range(self.noise_range, log_uniform=True)
-        else:
-            n_samples = self._sample_int_range(self.n_samples_range, log_uniform=False)
-            n_features = self._sample_int_range(self.n_features_range, log_uniform=False)
-            sigma_y = self._sample_float_range(self.noise_range, log_uniform=False)
+        n_samples = self._sample_int_range(self.n_samples_range, log_uniform=self.log_uniform_sampling)
+        n_features = self._sample_int_range(self.n_features_range, log_uniform=self.log_uniform_sampling)
+        sigma_y = self._sample_float_range(self.noise_range, log_uniform=self.log_uniform_sampling)
         
         # Sample dataset parameters
         b = self._sample_float_range(self.bias_range, log_uniform=False)  # Bias term
