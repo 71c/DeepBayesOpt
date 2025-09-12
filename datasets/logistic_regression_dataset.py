@@ -96,6 +96,10 @@ class LogisticRegressionRandomDataset(
         self.log_uniform_sampling = log_uniform_sampling
         self.device = device if device is not None else torch.device('cpu')
         
+        # Required for compatibility with FunctionSamplesDataset infrastructure
+        # Logistic regression doesn't use models, so set to None
+        self._model_sampler = None
+        
         if dataset_size is None:
             dataset_size = math.inf
         else:

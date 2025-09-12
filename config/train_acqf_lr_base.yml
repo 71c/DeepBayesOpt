@@ -1,0 +1,127 @@
+parameters:
+  # Dataset configuration
+  dataset_type:
+    value: logistic_regression
+  function_samples_dataset:
+    parameters:
+      logistic_regression:
+        parameters:
+          lr_n_samples_range:
+            values: [[50, 500], [100, 1000]]
+          lr_n_features_range:
+            values: [[5, 50], [10, 100]]
+          lr_bias_range:
+            value: [-2.0, 2.0]
+          lr_coefficient_std:
+            value: 1.0
+          lr_noise_range:
+            values: [[0.01, 0.5], [0.1, 1.0]]
+          lr_log_lambda_range:
+            value: [-6, 2]
+          lr_log_uniform_sampling:
+            values: [false, true]
+      standardize_outcomes:
+        value: false
+      train_samples_size:
+        values: [1000, 5000]
+      test_samples_size:
+        value: 2000
+        
+  # Acquisition dataset configuration
+  acquisition_dataset:
+    parameters:
+      train_acquisition_size:
+        value: 8000
+      replacement:
+        values: [false, true]
+      test_expansion_factor:
+        value: 1
+      n_candidates:
+        values: [1, 5]
+      min_history:
+        value: 1
+      max_history:
+        values: [10, 50]
+      samples_addition_amount:
+        value: 5
+        
+  # Architecture configuration
+  architecture:
+    parameters:
+      layer_width:
+        values: [200, 400]
+      num_layers:
+        values: [2, 3]
+      dropout:
+        value: null
+      standardize_nn_history_outcomes:
+        value: false
+      include_best_y:
+        values: [false, true]
+      subtract_best_y:
+        values: [false, true]
+      max_history_input:
+        values: [null, 8]
+      architecture:
+        values:
+        - value: pointnet
+          parameters:
+            x_cand_input:
+              values: ["local_and_final", "final_only"]
+            encoded_history_dim:
+              values: [null]
+            pooling:
+              values: ["max", "mean"]
+        - value: transformer
+          parameters:
+            num_heads:
+              value: 4
+              
+  # Training configuration
+  training:
+    parameters:
+      method:
+        values:
+        - value: gittins
+          parameters:
+            gi_loss_normalization:
+              values: ["normal", null]
+            lamda_config:
+              parameters:
+              - lamda:
+                  values: [1.e-3, 1.e-2]
+        - value: mse_ei
+      learning_rate:
+        values: [3.e-4, 1.e-3]
+      weight_decay:
+        value: null
+      batch_size:
+        values: [64, 128]
+      epochs:
+        value: 300
+      use_maxei:
+        value: false
+      early_stopping:
+        values:
+        - value: true
+          parameters:
+            patience:
+              value: 30
+            min_delta:
+              value: 0.0
+            cumulative_delta:
+              value: false
+        - value: false
+      lr_scheduler:
+        values:
+        - value: null
+        - value: ReduceLROnPlateau
+          parameters:
+            lr_scheduler_patience:
+              value: 15
+            lr_scheduler_factor:
+              value: 0.1
+            lr_scheduler_min_lr:
+              value: 0.0
+            lr_scheduler_cooldown:
+              value: 0

@@ -9,19 +9,38 @@ from utils.experiments.submit_dependent_jobs import add_slurm_args, submit_jobs_
 from nn_af.acquisition_function_net_save_utils import (
     get_nn_af_args_configs_model_paths_from_cmd_args, nn_acqf_is_trained)
 from gp_acquisition_dataset import create_train_test_gp_acq_datasets_from_args
+from dataset_factory import create_train_test_acquisition_datasets_from_args
 
 
 def get_cmd_options_train_acqf(options: dict[str, Any]):
     # TODO: In the future, could do this more automatically rather than hard-coding
     # everything.
     options = {k.split('.')[-1]: v for k, v in options.items()}
+    # Extract dataset_type to determine which parameters to include
+    dataset_type = options.get('dataset_type', 'gp')
+    
+    # Base dataset parameters common to all types
     cmd_opts_sample_dataset = {
-        k: options.get(k)
-        for k in ['dimension', 'kernel', 'lengthscale',
-                  'randomize_params', 'outcome_transform', 'sigma',
-                  'train_samples_size', 'test_samples_size']
+        'dataset_type': dataset_type,
+        'train_samples_size': options.get('train_samples_size'),
+        'test_samples_size': options.get('test_samples_size'),
+        'standardize_dataset_outcomes': options.get('standardize_outcomes', False)
     }
-    cmd_opts_sample_dataset['standardize_dataset_outcomes'] = options['standardize_outcomes']
+    
+    # Add dataset-specific parameters
+    if dataset_type == 'gp':
+        cmd_opts_sample_dataset.update({
+            k: options.get(k)
+            for k in ['dimension', 'kernel', 'lengthscale',
+                      'randomize_params', 'outcome_transform', 'sigma']
+        })
+    elif dataset_type == 'logistic_regression':
+        cmd_opts_sample_dataset.update({
+            k: options.get(k)
+            for k in ['lr_n_samples_range', 'lr_n_features_range', 'lr_bias_range',
+                      'lr_coefficient_std', 'lr_noise_range', 'lr_log_lambda_range',
+                      'lr_log_uniform_sampling']
+        })
 
     cmd_opts_acquisition_dataset = {
         'train_acquisition_size': options['train_acquisition_size'],
@@ -152,7 +171,7 @@ def create_dependency_structure_train_acqf(
                 dataset_already_cached = datasets_cached_dict[cmd_dataset]
             else:
                 args_dataset = argparse.Namespace(**cmd_opts_dataset)
-                whether_cached = create_train_test_gp_acq_datasets_from_args(
+                whether_cached = create_train_test_acquisition_datasets_from_args(
                     args_dataset, check_cached=True, load_dataset=False)
                 dataset_already_cached = True
                 for cached in whether_cached:

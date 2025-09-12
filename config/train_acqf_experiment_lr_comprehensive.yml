@@ -1,0 +1,82 @@
+parameters:
+  # Compare logistic regression vs GP datasets
+  dataset_type:
+    values: [gp, logistic_regression]
+  
+  # GP-specific parameters (used only when dataset_type=gp)
+  dimension:
+    value: 8
+  kernel:
+    value: Matern52
+  lengthscale:
+    value: 0.1
+  randomize_params:
+    value: false
+    
+  # Logistic regression-specific parameters (used only when dataset_type=logistic_regression)
+  lr_n_samples_range:
+    values: [[100, 800], [200, 1500]]
+  lr_n_features_range:
+    values: [[5, 40], [10, 80]]  
+  lr_bias_range:
+    value: [-1.5, 1.5]
+  lr_coefficient_std:
+    value: 1.0
+  lr_noise_range:
+    value: [0.05, 0.6]
+  lr_log_lambda_range:
+    value: [-5, 1]
+  lr_log_uniform_sampling:
+    value: true
+  
+  # Common dataset parameters
+  train_samples_size:
+    values: [3000, 8000]
+  test_samples_size:
+    value: 3000
+  train_acquisition_size:
+    value: 12000
+  standardize_outcomes:
+    value: false
+  
+  # Training configuration
+  method:
+    values: [gittins, mse_ei]
+  gi_loss_normalization:
+    value: normal
+  lamda:
+    values: [1.e-3, 1.e-2, 5.e-2]
+  learning_rate:
+    values: [1.e-4, 3.e-4]
+  batch_size:
+    value: 128
+  epochs:
+    value: 250
+  early_stopping:
+    value: true
+  patience:
+    value: 35
+  layer_width:
+    values: [250, 400]
+  
+  # Architecture configuration  
+  architecture:
+    values: [pointnet, transformer]
+  x_cand_input:
+    value: local_and_final
+  pooling:
+    value: max
+  num_heads:
+    value: 4
+    
+  # Acquisition dataset configuration
+  train_n_candidates:
+    values: [3, 8]
+  test_n_candidates:
+    value: 15
+  min_history:
+    value: 1
+  max_history:
+    values: [25, 60]
+  replacement:
+    value: false

@@ -1,0 +1,56 @@
+parameters:
+  dataset_type:
+    value: logistic_regression
+  method:
+    values: [gittins, mse_ei]
+  gi_loss_normalization:
+    value: normal
+  lamda:
+    value: 1.e-2
+  train_samples_size:
+    value: 2000
+  test_samples_size:
+    value: 1000
+  train_acquisition_size:
+    value: 4000
+  layer_width:
+    values: [200, 400]
+  learning_rate:
+    value: 3.e-4
+  patience:
+    value: 30
+  batch_size:
+    value: 64
+  epochs:
+    value: 100
+  early_stopping:
+    value: true
+  train_n_candidates:
+    value: 5
+  test_n_candidates:
+    value: 10
+  min_history:
+    value: 1
+  max_history:
+    value: 20
+  architecture:
+    value: pointnet
+  x_cand_input:
+    value: local_and_final
+  pooling:
+    value: max
+  # Logistic regression specific parameters
+  lr_n_samples_range:
+    value: [50, 500]
+  lr_n_features_range:
+    value: [5, 50]
+  lr_bias_range:
+    value: [-2.0, 2.0]
+  lr_coefficient_std:
+    value: 1.0
+  lr_noise_range:
+    value: [0.1, 0.8]
+  lr_log_lambda_range:
+    value: [-5, 1]
+  lr_log_uniform_sampling:
+    value: true

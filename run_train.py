@@ -19,7 +19,7 @@ from utils.plot_utils import (
 from utils.nn_utils import count_trainable_parameters, count_parameters
 from utils.tictoc import tic, tocl
 
-from gp_acquisition_dataset import create_train_test_gp_acq_datasets_helper
+from dataset_factory import create_train_test_acquisition_datasets_from_args
 
 from nn_af.acquisition_function_net_save_utils import (
     get_nn_af_args_configs_model_paths_from_cmd_args, load_nn_acqf)
@@ -65,8 +65,7 @@ def run_train(cmd_args: Optional[Sequence[str]]=None):
 
     ####################### Make the train and test datasets #######################
     (train_aq_dataset, test_aq_dataset,
-     small_test_aq_dataset) = create_train_test_gp_acq_datasets_helper(
-         args, af_dataset_configs)
+     small_test_aq_dataset) = create_train_test_acquisition_datasets_from_args(args)
 
     ######################## Train the model #######################################
     if args.train:
