@@ -1681,6 +1681,34 @@ class SizedInfiniteIterableMixin(SizedIterableMixin):
             return self._next()
         raise TypeError(
             f"Cannot call __next__ on a finitely sized {type(self)}. Use iter() first.")
+    
+    def random_split(self, lengths: Sequence[Union[int, float]]):
+        """Split the dataset into multiple datasets with given lengths.
+        
+        Args:
+            lengths: List of lengths (integers) or proportions (floats summing to 1)
+                    for each split dataset.
+                    
+        Returns:
+            List of new dataset instances with the specified lengths.
+        """
+        # Same check that pytorch does in torch.utils.data.random_split
+        lengths_is_proportions = math.isclose(sum(lengths), 1) and sum(lengths) <= 1
+
+        dataset_size = self._size
+        if dataset_size == math.inf:
+            if lengths_is_proportions:
+                raise ValueError(
+                    f"The {self.__class__.__name__} should not be infinite if "
+                    "lengths is a list of proportions")
+        else:
+            if lengths_is_proportions:
+                lengths = get_lengths_from_proportions(dataset_size, lengths)
+            
+            if sum(lengths) != dataset_size:
+                raise ValueError(
+                    "Sum of input lengths does not equal the dataset size!")
+        return [self.copy_with_new_size(length) for length in lengths]
 
 
 class _ResizedIterable(Iterable):

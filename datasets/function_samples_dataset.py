@@ -591,24 +591,8 @@ class GaussianProcessRandomDataset(
         return ret
     
     def random_split(self, lengths: Sequence[Union[int, float]]):
-        # Same check that pytorch does in torch.utils.data.random_split
-        # https://pytorch.org/docs/stable/_modules/torch/utils/data/dataset.html#random_split
-        lengths_is_proportions = math.isclose(sum(lengths), 1) and sum(lengths) <= 1
-
-        dataset_size = self._size
-        if dataset_size == math.inf:
-            if lengths_is_proportions:
-                raise ValueError(
-                    "The GaussianProcessRandomDataset should not be infinite if "
-                    "lengths is a list of proportions")
-        else:
-            if lengths_is_proportions:
-                lengths = get_lengths_from_proportions(dataset_size, lengths)
-            
-            if sum(lengths) != dataset_size:
-                raise ValueError(
-                    "Sum of input lengths does not equal the dataset size!")
-        return [self.copy_with_new_size(length) for length in lengths]
+        # Delegate to the mixin implementation
+        return SizedInfiniteIterableMixin.random_split(self, lengths)
 
     def _next(self):
         """Generate a random Gaussian Process model and sample from it.
