@@ -5,7 +5,7 @@ from collections.abc import Sequence
 import torch
 from torch.utils.data import IterableDataset
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import cross_val_score, StratifiedKFold
 
 from utils.utils import uniform_randint, loguniform_randint, SizedInfiniteIterableMixin
 from datasets.function_samples_dataset import (
@@ -212,23 +212,26 @@ class LogisticRegressionRandomDataset(
         X_np = X.detach().cpu().numpy()
         y_np = y_class.detach().cpu().numpy()
         
+        # Map x ∈ [0,1] to log-lambda range using self.log_lambda_range
+        min_log_lambda, max_log_lambda = self.log_lambda_range
+        log_lambdas = min_log_lambda + x_hyperparams * (max_log_lambda - min_log_lambda)
+        lambda_vals = 10 ** log_lambdas
+        C_vals = 1.0 / lambda_vals  # sklearn uses C = 1/lambda
+        
         # Evaluate log-likelihood for each hyperparameter value
-        for i, x_norm in enumerate(x_hyperparams):
-            # Map x ∈ [0,1] to log-lambda range using self.log_lambda_range
-            min_log_lambda, max_log_lambda = self.log_lambda_range
-            log_lambda = min_log_lambda + x_norm.item() * (max_log_lambda - min_log_lambda)
-            lambda_val = 10 ** log_lambda
-            C = 1.0 / lambda_val  # sklearn uses C = 1/lambda
-            
+        for i, C_tensor in enumerate(C_vals):
+            C = C_tensor.item()  # Convert tensor to Python float
             # Evaluate with cross-validation
             lr = LogisticRegression(C=C, random_state=42, max_iter=1000, solver='lbfgs')
             try:
-                # Use fewer CV folds for efficiency
-                scores = cross_val_score(lr, X_np, y_np, cv=3, scoring='neg_log_loss')
+                # Use consistent CV splits to reduce noise in the objective function
+                cv_splits = StratifiedKFold(n_splits=3, shuffle=True, random_state=42)
+                scores = cross_val_score(lr, X_np, y_np, cv=cv_splits, scoring='neg_log_loss')
                 log_likelihood = -scores.mean()  # Convert neg_log_loss to log_likelihood
                 y_log_likelihoods[i, 0] = log_likelihood
-            except:
-                # If optimization fails, use a penalty
+            except Exception as e:
+                # If optimization fails, use a penalty (but log the error for debugging)
+                # print(f"CV failed for C={C:.4f}: {type(e).__name__}: {e}")  # Uncomment for debugging
                 y_log_likelihoods[i, 0] = -10.0
         
         return FunctionSamplesItem(x_hyperparams, y_log_likelihoods)
