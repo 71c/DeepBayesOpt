@@ -20,7 +20,14 @@ class LogisticRegressionAcquisitionDatasetManager(AcquisitionDatasetManager):
     
     def create_function_samples_dataset(self, **kwargs):
         """Create logistic regression function samples dataset."""
-        return LogisticRegressionRandomDataset(**kwargs)
+        # Filter out parameters that LogisticRegressionRandomDataset doesn't use
+        # Keep train_samples_size and test_samples_size for consistency with GP manager
+        excluded_params = {
+            'dimension', 'models', 'model_probabilities', 'randomize_params', 
+            'model_sampler'
+        }
+        lr_kwargs = {k: v for k, v in kwargs.items() if k not in excluded_params}
+        return LogisticRegressionRandomDataset(**lr_kwargs)
     
     def get_dataset_configs(self, args: argparse.Namespace, device=None):
         """Get logistic regression-specific dataset configuration."""
@@ -136,6 +143,15 @@ def get_logistic_regression_acquisition_dataset_configs(args: argparse.Namespace
         noise_range=lr_noise_range,
         log_lambda_range=lr_log_lambda_range,
         log_uniform_sampling=lr_log_uniform_sampling,
+
+        #### Dimension for LR is always 1 (single hyperparameter lambda)
+        dimension=1,
+
+        #### No models for LR (procedural generation), but needed for compatibility
+        models=[],
+        model_probabilities=None,
+        randomize_params=True,  # LR always randomizes parameters
+        model_sampler=None,  # LR doesn't use model sampling
 
         #### Dataset size
         train_samples_size=args.train_samples_size,

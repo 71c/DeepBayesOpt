@@ -127,9 +127,22 @@ def get_nn_af_args_configs_model_paths_from_cmd_args(
         cmd_args:Optional[Sequence[str]]=None):
     args = _parse_af_train_cmd_args(cmd_args=cmd_args)
 
-    #### Get AF dataset configs
-    gp_af_dataset_configs = get_gp_acquisition_dataset_configs(
-        args, device=GP_GEN_DEVICE)
+    #### Get AF dataset configs using unified factory
+    from dataset_factory import create_train_test_acquisition_datasets_from_args
+    # Get dataset configs dynamically based on dataset_type
+    dataset_type = getattr(args, 'dataset_type', 'gp')
+    if dataset_type == 'gp':
+        from gp_acquisition_dataset_manager import GPAcquisitionDatasetManager
+        manager = GPAcquisitionDatasetManager(device=GP_GEN_DEVICE)
+        gp_af_dataset_configs = manager.get_dataset_configs(args, device=GP_GEN_DEVICE)
+    elif dataset_type == 'logistic_regression':
+        from lr_acquisition_dataset_manager import LogisticRegressionAcquisitionDatasetManager
+        manager = LogisticRegressionAcquisitionDatasetManager(device=GP_GEN_DEVICE)
+        gp_af_dataset_configs = manager.get_dataset_configs(args, device=GP_GEN_DEVICE)
+        # For LR datasets, ensure args.dimension is set to 1 for model creation
+        args.dimension = gp_af_dataset_configs["function_samples_config"]["dimension"]
+    else:
+        raise ValueError(f"Unsupported dataset_type: {dataset_type}")
 
     # Exp technically works, but Power does not
     # Make sure to set these appropriately depending on whether the transform
@@ -179,14 +192,19 @@ def json_serialize_nn_acqf_configs(
 
     function_samples_config_json = convert_to_json_serializable(function_samples_config)
     dataset_transform_config_json = convert_to_json_serializable(dataset_transform_config)
-    model_sampler_json = convert_to_json_serializable({
-            '_models': model_sampler._models,
-            '_initial_params_list': model_sampler._initial_params_list,
-            'model_probabilities': model_sampler.model_probabilities,
-            'randomize_params': model_sampler.randomize_params
-        },
-        include_priors=True, hash_gpytorch_modules=hash_gpytorch_modules,
-        hash_include_str=False, hash_str=True)
+    
+    # Handle the case where model_sampler is None (for datasets like logistic regression)
+    if model_sampler is None:
+        model_sampler_json = None
+    else:
+        model_sampler_json = convert_to_json_serializable({
+                '_models': model_sampler._models,
+                '_initial_params_list': model_sampler._initial_params_list,
+                'model_probabilities': model_sampler.model_probabilities,
+                'randomize_params': model_sampler.randomize_params
+            },
+            include_priors=True, hash_gpytorch_modules=hash_gpytorch_modules,
+            hash_include_str=False, hash_str=True)
 
     all_info_json = {
         # af_dataset_config
