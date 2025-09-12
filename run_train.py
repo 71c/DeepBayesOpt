@@ -39,7 +39,7 @@ TIME = True
 VERBOSE = True
 
 ############################# Settings for datasets ############################
-from gp_acquisition_dataset import (
+from gp_acquisition_dataset_manager import (
     GET_TRAIN_TRUE_GP_STATS,
     GET_TEST_TRUE_GP_STATS
 )

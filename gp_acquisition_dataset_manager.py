@@ -16,6 +16,7 @@ from utils.utils import get_gp, get_kernel, get_standardized_exp_transform
 
 
 # GP-specific constants
+GP_GEN_DEVICE = "cpu"
 GET_TRAIN_TRUE_GP_STATS = False
 GET_TEST_TRUE_GP_STATS = True
 

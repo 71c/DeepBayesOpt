@@ -114,3 +114,26 @@ def add_optional_lr_args(parser):
         parser.add_argument('--lr_log_uniform_sampling', action='store_true')
     except argparse.ArgumentError:
         pass  # Argument already exists
+
+
+def main():
+    """CLI interface for dataset creation."""
+    import argparse
+    parser = argparse.ArgumentParser(description='Create train/test acquisition datasets')
+    add_unified_dataset_args(parser)
+    
+    # Add batch size argument for compatibility with old interface
+    parser.add_argument(
+        '--batch_size',
+        type=int,
+        default=64,
+        help='Batch size for the acquisition dataset.'
+    )
+    
+    args = parser.parse_args()
+    create_train_test_acquisition_datasets_from_args(
+        args, check_cached=False, load_dataset=False)
+
+
+if __name__ == "__main__":
+    main()

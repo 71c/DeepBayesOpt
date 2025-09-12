@@ -8,7 +8,6 @@ from utils.experiments.submit_dependent_jobs import add_slurm_args, submit_jobs_
 
 from nn_af.acquisition_function_net_save_utils import (
     get_nn_af_args_configs_model_paths_from_cmd_args, nn_acqf_is_trained)
-from gp_acquisition_dataset import create_train_test_gp_acq_datasets_from_args
 from dataset_factory import create_train_test_acquisition_datasets_from_args
 
 
@@ -98,7 +97,7 @@ def get_cmd_options_train_acqf(options: dict[str, Any]):
         **cmd_opts_sample_dataset, **cmd_opts_acquisition_dataset
     }
     cmd_args_dataset = dict_to_cmd_args(cmd_opts_dataset)
-    cmd_dataset = "python gp_acquisition_dataset.py " + " ".join(cmd_args_dataset)
+    cmd_dataset = "python dataset_factory.py " + " ".join(cmd_args_dataset)
 
     cmd_opts_nn_no_dataset = {
         **cmd_opts_architecture, **cmd_opts_training

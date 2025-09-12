@@ -7,7 +7,7 @@ from typing import Optional
 import torch
 
 from nn_af.acquisition_function_net_save_utils import get_lamda_for_bo_of_nn, nn_acqf_is_trained
-from gp_acquisition_dataset import create_train_test_gp_acq_datasets_helper
+from dataset_factory import create_train_test_acquisition_datasets_from_args
 from utils.experiments.experiment_config_utils import get_config_options_list
 from utils.plot_utils import N_CANDIDATES_PLOT, add_plot_args, create_plot_directory, plot_acquisition_function_net_training_history_ax, plot_dict_to_str, plot_nn_vs_gp_acquisition_function_1d, save_figures_from_nested_structure
 from utils.utils import DEVICE, dict_to_str, group_by, group_by_nested_attrs, load_json, save_json
@@ -347,7 +347,7 @@ def main():
             if cached is not None:
                 return cached
             (train_aq_dataset, test_aq_dataset, small_test_aq_dataset
-            ) = create_train_test_gp_acq_datasets_helper(args_nn, af_dataset_configs)
+            ) = create_train_test_acquisition_datasets_from_args(args_nn)
             caches[i] = test_aq_dataset
             return test_aq_dataset
         
