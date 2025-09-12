@@ -1,23 +1,15 @@
-import copy
 import math
 from typing import Optional, Union
 from collections.abc import Sequence
 
 import torch
 from torch.utils.data import IterableDataset
-from torch.distributions import Normal, Uniform, Bernoulli
-import numpy as np
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import cross_val_score
 
-from datasets.dataset_with_models import TupleWithModel
+from utils.utils import uniform_randint, loguniform_randint, SizedInfiniteIterableMixin
 from datasets.function_samples_dataset import (
     FunctionSamplesDataset, FunctionSamplesItem)
-from utils.utils import SizedInfiniteIterableMixin
-
-
-# We'll reuse FunctionSamplesItem from the existing infrastructure
-from datasets.function_samples_dataset import FunctionSamplesItem
 
 
 class LogisticRegressionRandomDataset(
@@ -151,20 +143,27 @@ class LogisticRegressionRandomDataset(
 
     def random_split(self, lengths: Sequence[Union[int, float]]):
         # Delegate to the mixin implementation
-        from utils.utils import SizedInfiniteIterableMixin
         return SizedInfiniteIterableMixin.random_split(self, lengths)
 
-    def _sample_range(self, range_tuple: tuple, log_uniform: bool = False) -> float:
-        """Sample a value from a range, optionally using log-uniform distribution."""
+    def _sample_int_range(self, range_tuple: tuple, log_uniform: bool = False) -> int:
+        """Sample an integer value from a range, optionally using log-uniform distribution."""
+        min_val, max_val = range_tuple
+        if log_uniform:
+            return loguniform_randint(min_val, max_val)
+        else:
+            return uniform_randint(min_val, max_val)
+    
+    def _sample_float_range(self, range_tuple: tuple, log_uniform: bool = False) -> float:
+        """Sample a float value from a range, optionally using log-uniform distribution."""
         min_val, max_val = range_tuple
         if log_uniform and min_val > 0:
-            # Log-uniform sampling
+            # Log-uniform sampling for floats
             log_min = math.log(min_val)
             log_max = math.log(max_val)
             log_val = torch.rand(1, device=self.device).item() * (log_max - log_min) + log_min
             return math.exp(log_val)
         else:
-            # Uniform sampling
+            # Uniform sampling for floats
             return torch.rand(1, device=self.device).item() * (max_val - min_val) + min_val
 
     def _next(self):
@@ -177,16 +176,16 @@ class LogisticRegressionRandomDataset(
         """
         # First, generate a synthetic logistic regression dataset
         if self.log_uniform_sampling:
-            n_samples = int(self._sample_range(self.n_samples_range, log_uniform=True))
-            n_features = int(self._sample_range(self.n_features_range, log_uniform=True))
-            sigma_y = self._sample_range(self.noise_range, log_uniform=True)
+            n_samples = self._sample_int_range(self.n_samples_range, log_uniform=True)
+            n_features = self._sample_int_range(self.n_features_range, log_uniform=True)
+            sigma_y = self._sample_float_range(self.noise_range, log_uniform=True)
         else:
-            n_samples = torch.randint(self.n_samples_range[0], self.n_samples_range[1] + 1, (1,), device=self.device).item()
-            n_features = torch.randint(self.n_features_range[0], self.n_features_range[1] + 1, (1,), device=self.device).item()
-            sigma_y = self._sample_range(self.noise_range, log_uniform=False)
+            n_samples = self._sample_int_range(self.n_samples_range, log_uniform=False)
+            n_features = self._sample_int_range(self.n_features_range, log_uniform=False)
+            sigma_y = self._sample_float_range(self.noise_range, log_uniform=False)
         
         # Sample dataset parameters
-        b = self._sample_range(self.bias_range, log_uniform=False)  # Bias term
+        b = self._sample_float_range(self.bias_range, log_uniform=False)  # Bias term
         c = torch.randn(n_features, device=self.device) * self.coefficient_std  # Coefficient vector
         
         # Generate covariates X ~ N(0, I_d)
