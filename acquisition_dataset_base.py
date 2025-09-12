@@ -35,37 +35,9 @@ LAZY_TEST = True
 FIX_TRAIN_ACQUISITION_DATASET = False
 DEBUG = False
 
-
-def add_lamda_args(parser):
-    """Add lambda arguments to argument parser."""
-    try:
-        parser.add_argument(
-            '--lamda_min',
-            type=float,
-            help=('Minimum value of lambda (if using variable lambda). '
-                'Only used if method=gittins.')
-        )
-    except argparse.ArgumentError:
-        pass  # Argument already exists
-    
-    try:
-        parser.add_argument(
-            '--lamda_max',
-            type=float,
-            help=('Maximum value of lambda (if using variable lambda). '
-                'Only used if method=gittins.')
-        )
-    except argparse.ArgumentError:
-        pass  # Argument already exists
-    
-    try:
-        parser.add_argument(
-            '--lamda',
-            type=float,
-            help='Value of lambda (if using constant lambda). Only used if method=gittins.'
-        )
-    except argparse.ArgumentError:
-        pass  # Argument already exists
+# Global shared cache for all dataset manager instances
+# This ensures cache persistence across multiple manager instances
+_GLOBAL_DATA_CACHE = {}
 
 
 def get_lamda_min_max(args: argparse.Namespace):
@@ -76,7 +48,158 @@ def get_lamda_min_max(args: argparse.Namespace):
     return lamda_min, lamda_max
 
 
-def get_n_datapoints_random_gen_fixed_n_candidates(
+def add_lamda_args(parser):
+    """Add lambda arguments to argument parser."""
+    parser.add_argument(
+        '--lamda_min',
+        type=float,
+        help=('Minimum value of lambda (if using variable lambda). '
+            'Only used if method=gittins.')
+    )
+    parser.add_argument(
+        '--lamda_max',
+        type=float,
+        help=('Maximum value of lambda (if using variable lambda). '
+            'Only used if method=gittins.')
+    )
+    parser.add_argument(
+        '--lamda',
+        type=float,
+        help='Value of lambda (if using constant lambda). Only used if method=gittins.'
+    )
+
+
+def add_common_acquisition_dataset_args(parser):
+    """Add common acquisition dataset arguments shared across dataset types."""
+    ## Dataset Train and Test Size
+    parser.add_argument(
+        '--train_samples_size', 
+        type=int, 
+        help='Size of the train samples dataset',
+        required=True
+    )
+    parser.add_argument(
+        '--test_samples_size',
+        type=int, 
+        help='Size of the test samples dataset',
+        required=True
+    )
+
+    ############################ Acquisition dataset settings ##########################
+    parser.add_argument(
+        '--train_acquisition_size', 
+        type=int, 
+        help='Size of the train acqusition dataset that is based on the train samples dataset',
+        required=True
+    )
+    parser.add_argument(
+        '--test_expansion_factor',
+        type=int,
+        default=1,
+        help='The factor that the test dataset samples is expanded to get the test acquisition dataset'
+    )
+    parser.add_argument(
+        '--replacement',
+        action='store_true',
+        help='Whether to sample with replacement for the acquisition dataset. Default is False.'
+    )
+    parser.add_argument(
+        '--train_n_candidates',
+        type=int,
+        default=15,
+        help='Number of candidate points for each item in the train dataset'
+    )
+    parser.add_argument(
+        '--test_n_candidates',
+        type=int,
+        default=50,
+        help='Number of candidate points for each item in the test dataset'
+    )
+    parser.add_argument(
+        '--min_history',
+        type=int,
+        help='Minimum number of history points.',
+        required=True
+    )
+    parser.add_argument(
+        '--max_history',
+        type=int,
+        help='Maximum number of history points.',
+        required=True
+    )
+    parser.add_argument(
+        '--samples_addition_amount',
+        type=int,
+        help='Number of samples to add to the history points.'
+    )
+    parser.add_argument(
+        '--standardize_dataset_outcomes', 
+        action='store_true', 
+        help='Whether to standardize the outcomes of the dataset (independently for each item). Default is False'
+    )
+
+
+def _build_config_dict_structure(
+        args: argparse.Namespace,
+        function_samples_config: dict,
+        outcome_transform=None
+    ) -> dict:
+    """Build standard configuration dictionary structure shared across dataset types."""
+    
+    acquisition_dataset_config = dict(
+        train_acquisition_size=args.train_acquisition_size,
+        test_expansion_factor=getattr(args, 'test_expansion_factor', 1),
+        fix_train_samples_dataset=True,
+        small_test_proportion_of_test=1.0,
+        replacement=getattr(args, 'replacement', False),
+        fix_test_samples_dataset=False,
+        fix_test_acquisition_dataset=True,
+    )
+    
+    if not acquisition_dataset_config['fix_train_samples_dataset']:
+        acquisition_dataset_config['replacement'] = False
+
+    ########## Set number of history and candidate points generation ###############
+    n_points_config = dict(
+        loguniform=False,
+        fix_n_candidates=True,
+        fix_n_samples=True
+    )
+    if n_points_config['loguniform']:
+        n_points_config['pre_offset'] = 3.0
+    if n_points_config['fix_n_candidates']:
+        n_points_config = dict(
+            train_n_candidates=args.train_n_candidates,
+            test_n_candidates=args.test_n_candidates,
+            min_history=args.min_history,
+            max_history=args.max_history,
+            **n_points_config
+        )
+        if getattr(args, 'samples_addition_amount', None) is None:
+            args.samples_addition_amount = 5
+        if args.samples_addition_amount != 5:
+            n_points_config['samples_addition_amount'] = args.samples_addition_amount
+    else:
+        n_points_config = dict(
+            min_n_candidates=2,
+            max_points=30,
+            **n_points_config
+        )
+
+    dataset_transform_config = dict(
+        outcome_transform=outcome_transform,
+        standardize_outcomes=getattr(args, 'standardize_dataset_outcomes', False)
+    )
+
+    return {
+        "function_samples_config": function_samples_config,
+        "acquisition_dataset_config": acquisition_dataset_config,
+        "n_points_config": n_points_config,
+        "dataset_transform_config": dataset_transform_config
+    }
+
+
+def _get_n_datapoints_random_gen_fixed_n_candidates(
         loguniform=True, pre_offset=None,
         min_history=1, max_history=8, n_candidates=50):
     """Generate function for random number of datapoints with fixed candidate count."""
@@ -94,7 +217,7 @@ def get_n_datapoints_random_gen_fixed_n_candidates(
             n_candidates+min_history, n_candidates+max_history)
 
 
-def get_n_datapoints_random_gen_variable_n_candidates(
+def _get_n_datapoints_random_gen_variable_n_candidates(
         loguniform=True, pre_offset=None,
         min_n_candidates=2, max_points=30):
     """Generate function for random number of datapoints with variable candidate count."""
@@ -126,7 +249,8 @@ class AcquisitionDatasetManager(ABC):
     def __init__(self, dataset_type: str, device: str = "cpu"):
         self.dataset_type = dataset_type
         self.device = device
-        self._data_cache = {}
+        # Use global cache to share across instances
+        self._data_cache = _GLOBAL_DATA_CACHE
     
     @abstractmethod
     def create_function_samples_dataset(self, **kwargs):
@@ -134,9 +258,21 @@ class AcquisitionDatasetManager(ABC):
         pass
     
     @abstractmethod
-    def get_dataset_configs(self, args: argparse.Namespace, device=None):
-        """Get dataset configuration dictionary for this dataset type."""
+    def get_function_samples_config(self, args: argparse.Namespace, device=None):
+        """Get function samples configuration specific to this dataset type."""
         pass
+    
+    @abstractmethod  
+    def get_outcome_transform(self, args: argparse.Namespace, device=None):
+        """Get outcome transform specific to this dataset type."""
+        pass
+    
+    def get_dataset_configs(self, args: argparse.Namespace, device=None):
+        """Get complete dataset configuration using shared structure."""
+        function_samples_config = self.get_function_samples_config(args, device)
+        outcome_transform = self.get_outcome_transform(args, device)
+        return _build_config_dict_structure(
+            args, function_samples_config, outcome_transform=outcome_transform)
     
     @abstractmethod
     def add_dataset_args(self, parser: argparse.ArgumentParser):
@@ -331,8 +467,8 @@ class AcquisitionDatasetManager(ABC):
                     function_samples_dataset = None
             
             if create_function_samples_dataset:
-                f = get_n_datapoints_random_gen_fixed_n_candidates if fix_n_candidates \
-                    else get_n_datapoints_random_gen_variable_n_candidates
+                f = _get_n_datapoints_random_gen_fixed_n_candidates if fix_n_candidates \
+                    else _get_n_datapoints_random_gen_variable_n_candidates
                 n_datapoints_random_gen = f(**n_datapoints_kwargs)
                 
                 # Use subclass method to create dataset-specific function samples dataset
@@ -542,6 +678,10 @@ class AcquisitionDatasetManager(ABC):
         
         return train_aq_dataset, test_aq_dataset, small_test_aq_dataset
 
+    def get_train_test_true_stats_flags(self):
+        """Get flags for training/testing statistics collection. Override in subclasses."""
+        return False, False  # Default: no stats collection
+    
     def create_train_test_datasets_helper(
             self,
             args: argparse.Namespace,
@@ -559,9 +699,13 @@ class AcquisitionDatasetManager(ABC):
         }
 
         lamda_min, lamda_max = get_lamda_min_max(args)
+        get_train_true_stats, get_test_true_stats = self.get_train_test_true_stats_flags()
+        
+        # Use global cache setting consistently like original code
+        
         other_kwargs = dict(        
-            get_train_true_stats=False,  # Set appropriately per dataset type
-            get_test_true_stats=False,   # Set appropriately per dataset type
+            get_train_true_stats=get_train_true_stats,
+            get_test_true_stats=get_test_true_stats,
             cache_datasets=CACHE_DATASETS,
             lazy_train=LAZY_TRAIN,
             lazy_test=LAZY_TEST,
@@ -589,6 +733,8 @@ class AcquisitionDatasetManager(ABC):
         train_aq_dataset, test_aq_dataset, small_test_aq_dataset = ret
 
         if not check_cached:
+            from datasets.acquisition_dataset import CostAwareAcquisitionDataset, FunctionSamplesAcquisitionDataset
+            
             if train_aq_dataset is not None:
                 if isinstance(train_aq_dataset, CostAwareAcquisitionDataset):
                     fs_dataset = train_aq_dataset.base_dataset.base_dataset
@@ -628,3 +774,17 @@ class AcquisitionDatasetManager(ABC):
         return self.create_train_test_datasets_helper(
             args, dataset_configs,
             check_cached=check_cached, load_dataset=load_dataset)
+
+
+def create_dataset_factory_function(manager_class):
+    """Create factory function for dataset managers to avoid duplication."""
+    def create_train_test_acq_datasets_from_args(
+            args, check_cached=False, load_dataset=True):
+        """Create acquisition datasets from command line arguments."""
+        if getattr(args, 'samples_addition_amount', None) is None:
+            args.samples_addition_amount = 5
+        
+        manager = manager_class(device="cpu")
+        return manager.create_train_test_datasets_from_args(
+            args, check_cached=check_cached, load_dataset=load_dataset)
+    return create_train_test_acq_datasets_from_args
