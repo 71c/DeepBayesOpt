@@ -49,7 +49,7 @@ class ExperimentRunner:
                 # Read stderr
                 stderr_line = process.stderr.readline()
                 if stderr_line:
-                    print(f"STDERR: {stderr_line.rstrip()}", file=sys.stderr)
+                    print(stderr_line.rstrip(), file=sys.stderr)
                     stderr_lines.append(stderr_line)
             
             # Read any remaining output
@@ -58,7 +58,7 @@ class ExperimentRunner:
                 print(remaining_stdout.rstrip())
                 stdout_lines.append(remaining_stdout)
             if remaining_stderr:
-                print(f"STDERR: {remaining_stderr.rstrip()}", file=sys.stderr)
+                print(remaining_stderr.rstrip(), file=sys.stderr)
                 stderr_lines.append(remaining_stderr)
             
             return process.returncode, ''.join(stdout_lines), ''.join(stderr_lines)
