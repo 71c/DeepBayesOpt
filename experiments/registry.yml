@@ -907,17 +907,19 @@ experiments:
       train_acqf:
         default:
           pre: []
-          attr_a:
-          - train_samples_size
-          attr_b:
-          - learning_rate
+          attr_a: []
+          attr_b: []
+          post: []
       bo_experiments:
         default:
           pre: []
-          attr_a:
-          - nn.train_samples_size
-          attr_b:
-          - nn.learning_rate
+          attr_a: []
+          attr_b: []
+          post:
+          - - lamda
+            - gp_af
+            - nn.learning_rate
+          - - bo_seed
   pointnet_max_history_pbgi_1d:
     description: 'Experiment of 1D PointNet PBGI: max_history_input (2, 4, 9, null),
       + dataset size'
@@ -993,6 +995,19 @@ experiments:
           - - gp_af
             - nn.learning_rate
           - - bo_seed
+        alternatives:
+          version_2:
+            pre:
+            - nn.include_best_y
+            attr_a:
+            - - nn.train_samples_size
+              - nn.samples_addition_amount
+            attr_b:
+            - nn.max_history_input
+            post:
+            - - gp_af
+              - nn.learning_rate
+            - - bo_seed
 templates:
   basic_1d:
     description: Basic 1D experiment template

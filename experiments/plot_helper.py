@@ -163,3 +163,5 @@ def setup_plotting_from_args(args, plot_type: str, globals_dict: Dict[str, Any])
             post_config = get_experiment_post_config(experiment_name, plot_type)
             if post_config:
                 globals_dict['POST'] = post_config
+            else:
+                globals_dict['POST'] = []  # Default empty if not specified

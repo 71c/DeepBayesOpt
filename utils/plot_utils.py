@@ -1109,10 +1109,17 @@ def _get_figure_from_nested_structure(
         figure_name: str,
         pbar=None,
         **plot_kwargs):
-    this_attrs_group = attrs_groups_list[0]
-    next_attrs_groups = attrs_groups_list[1:]
-    this_level_name = level_names[0]
-    next_level_names = level_names[1:]
+    try:
+        this_attrs_group = attrs_groups_list[0]
+        next_attrs_groups = attrs_groups_list[1:]
+    except IndexError:
+        this_attrs_group = set()
+        next_attrs_groups = [set()]
+    try:
+        this_level_name = level_names[0]
+        next_level_names = level_names[1:]
+    except IndexError:
+        this_level_name = "line"
 
     scale = plot_kwargs.get("scale", 1.0)
     aspect = plot_kwargs.get("aspect", 1.5)

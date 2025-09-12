@@ -183,26 +183,13 @@ POST = [
 # POST = [] # No "line" level yet
 
 
-PLOTS_CONFIG_SINGLE = [
-    *PRE,
-    ATTR_A,
-    ATTR_B,
-    *POST
-]
-
-PLOTS_CONFIG_MULTIPLE = [
-    *PRE,
-    [*ATTR_A, *ATTR_B],
-    *POST
-]
-
 ATTR_GROUPS = [
-    # ["0_training_history_train_test"],
+    ["0_training_history_train_test"],
 
     # ["0_training_history_train_test", "1_training_history_test_log_regret", "2_af_plot"],
     # ["0_training_history_train_test", "2_af_plot"],
     ["1_training_history_test_log_regret"],
-    # ["2_af_plot"],
+    ["2_af_plot"],
 
     # ["0_training_history_train_test", "1_training_history_test_log_regret"],
 ]
@@ -316,6 +303,19 @@ def main():
             print("Successfully applied auto-plotting configuration")
         except Exception as e:
             print(f"Auto-plotting failed, using manual configuration: {e}")
+    
+    PLOTS_CONFIG_SINGLE = [
+        *PRE,
+        ATTR_A,
+        ATTR_B,
+        *POST
+    ]
+
+    PLOTS_CONFIG_MULTIPLE = [
+        *PRE,
+        [*ATTR_A, *ATTR_B],
+        *POST
+    ]
     
     # Get all the configs of all the NNs
     all_cfgs_list, refined_config = get_config_options_list(
@@ -481,7 +481,6 @@ def main():
             }
 
         train_acqf_plot_ax = get_plot_ax_train_acqf_func(get_result)
-        
         save_figures_from_nested_structure(
             plot_config,
             train_acqf_plot_ax,
