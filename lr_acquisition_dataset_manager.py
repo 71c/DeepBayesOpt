@@ -22,13 +22,6 @@ class LogisticRegressionAcquisitionDatasetManager(AcquisitionDatasetManager):
     
     def create_function_samples_dataset(self, **kwargs):
         """Create logistic regression function samples dataset."""
-        # Filter out parameters that LogisticRegressionRandomDataset doesn't use
-        # Keep train_samples_size and test_samples_size for consistency with GP manager
-        # excluded_params = {
-        #     'dimension', 'models', 'model_probabilities', 'randomize_params', 
-        #     'model_sampler'
-        # }
-        # lr_kwargs = {k: v for k, v in kwargs.items() if k not in excluded_params}
         return LogisticRegressionRandomDataset(**kwargs)
     
     def get_function_samples_config(self, args: argparse.Namespace, device=None):
@@ -77,11 +70,6 @@ class LogisticRegressionAcquisitionDatasetManager(AcquisitionDatasetManager):
     def get_train_test_true_stats_flags(self):
         """LR-specific stats flags - no GP stats."""
         return False, False
-
-    # create_train_test_datasets_helper now uses the shared implementation from base class
-
-
-# Configuration logic moved into LogisticRegressionAcquisitionDatasetManager methods
 
 
 def add_lr_args(parser):
@@ -134,15 +122,11 @@ def add_lr_args(parser):
     )
 
 
-# add_common_acquisition_dataset_args moved to acquisition_dataset_base.py
-
-
 def add_logistic_regression_acquisition_dataset_args(parser):
     """Add logistic regression acquisition dataset arguments to parser."""
     add_lr_args(parser)
     add_common_acquisition_dataset_args(parser)
 
 
-# Use factory function to eliminate duplication
 create_train_test_lr_acq_datasets_from_args = create_dataset_factory_function(
     LogisticRegressionAcquisitionDatasetManager)

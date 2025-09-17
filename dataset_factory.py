@@ -8,14 +8,18 @@ regardless of the underlying dataset type (GP, logistic regression, etc.).
 import argparse
 from typing import Tuple, Any
 
-from gp_acquisition_dataset_manager import GPAcquisitionDatasetManager
-from lr_acquisition_dataset_manager import LogisticRegressionAcquisitionDatasetManager
+from gp_acquisition_dataset_manager import GPAcquisitionDatasetManager, add_gp_args
+from hpob_acquisition_dataset_manager import HPOBAcquisitionDatasetManager, add_hpob_args
+from lr_acquisition_dataset_manager import LogisticRegressionAcquisitionDatasetManager, add_lr_args
+
+from acquisition_dataset_base import add_lamda_args, add_common_acquisition_dataset_args 
 
 
 # Mapping of dataset types to their respective manager classes
 manager_class_map = {
     'gp': GPAcquisitionDatasetManager,
-    'logistic_regression': LogisticRegressionAcquisitionDatasetManager
+    'logistic_regression': LogisticRegressionAcquisitionDatasetManager,
+    'hpob': HPOBAcquisitionDatasetManager
 }
 
 
@@ -79,27 +83,26 @@ def add_unified_dataset_args(parser: argparse.ArgumentParser):
     # Add dataset type selector
     parser.add_argument(
         '--dataset_type',
-        choices=['gp', 'logistic_regression'],
+        choices=list(manager_class_map),
         default='gp',
         help='Type of dataset for hyperparameter optimization'
     )
     
     # Add common arguments
-    from acquisition_dataset_base import add_lamda_args
     add_lamda_args(parser)
     
     # Add common acquisition dataset arguments that all datasets need
-    from lr_acquisition_dataset_manager import add_common_acquisition_dataset_args
     add_common_acquisition_dataset_args(parser)
     
     # Add GP arguments (made optional)
-    from gp_acquisition_dataset_manager import add_gp_args
     parser.add_argument('--dimension', type=int, help='Dimension of the optimization problem')
     add_gp_args(parser, "function samples", required=False)
     
     # Add logistic regression arguments  
-    from lr_acquisition_dataset_manager import add_lr_args
     add_lr_args(parser)
+
+    # Add HPO-B arguments
+    add_hpob_args(parser)
 
 
 def main():

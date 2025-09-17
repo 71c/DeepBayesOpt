@@ -69,21 +69,22 @@ def add_lamda_args(parser):
     )
 
 
-def add_common_acquisition_dataset_args(parser):
+def add_common_acquisition_dataset_args(parser, add_train_test_size_args: bool = True):
     """Add common acquisition dataset arguments shared across dataset types."""
-    ## Dataset Train and Test Size
-    parser.add_argument(
-        '--train_samples_size', 
-        type=int, 
-        help='Size of the train samples dataset',
-        required=True
-    )
-    parser.add_argument(
-        '--test_samples_size',
-        type=int, 
-        help='Size of the test samples dataset',
-        required=True
-    )
+    if add_train_test_size_args:
+        ## Dataset Train and Test Size
+        parser.add_argument(
+            '--train_samples_size', 
+            type=int, 
+            help='Size of the train samples dataset',
+            required=True
+        )
+        parser.add_argument(
+            '--test_samples_size',
+            type=int, 
+            help='Size of the test samples dataset',
+            required=True
+        )
 
     ############################ Acquisition dataset settings ##########################
     parser.add_argument(
@@ -492,6 +493,8 @@ class AcquisitionDatasetManager(ABC):
                         **function_samples_dataset_kwargs,
                         dataset_size=samples_size,
                         n_datapoints_random_gen=n_datapoints_random_gen)
+                else:
+                    function_samples_dataset_kwargs['name'] = name
 
                 # Use subclass method to create dataset-specific function samples dataset
                 function_samples_dataset = self.create_function_samples_dataset(

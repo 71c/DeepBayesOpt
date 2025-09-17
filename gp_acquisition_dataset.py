@@ -19,7 +19,6 @@ from datasets.function_samples_dataset import (
     GaussianProcessRandomDataset, ListMapFunctionSamplesDataset)
 from datasets.acquisition_dataset import (
     AcquisitionDataset, CostAwareAcquisitionDataset, FunctionSamplesAcquisitionDataset)
-from datasets.logistic_regression_dataset import LogisticRegressionRandomDataset
 
 from nn_af.train_acquisition_function_net import train_or_test_loop
 

@@ -13,5 +13,6 @@ RESULTS_DIR = os.path.join(_DATA_DIR, "bayesopt_results")
 SWEEPS_DIR = os.path.join(_DATA_DIR, "sweeps")
 PLOTS_DIR = os.path.join(_DATA_DIR, "plots")
 MODELS_DIR = os.path.join(_DATA_DIR, "saved_models")
+HPOB_DATA_DIR = os.path.join(_DATA_DIR, "hpob-data")
 MODELS_VERSION = "v3"
 BO_PLOTS_FOLDER = "bo_plots"
