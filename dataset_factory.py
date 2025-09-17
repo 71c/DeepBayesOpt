@@ -63,6 +63,12 @@ def create_train_test_acquisition_datasets_from_args(
 
 def _validate_args_for_dataset_type(args: argparse.Namespace, dataset_type: str):
     """Validate that required arguments are present for the specified dataset type."""
+    if dataset_type == 'gp' or dataset_type == 'logistic_regression':
+        # make sure has test_samples_size and train_samples_size
+        if getattr(args, 'train_samples_size', None) is None:
+            raise ValueError("Missing required argument: train_samples_size")
+        if getattr(args, 'test_samples_size', None) is None:
+            raise ValueError("Missing required argument: test_samples_size")
     if dataset_type == 'gp':
         required_gp_args = ['dimension', 'kernel', 'lengthscale']
         missing_args = [arg for arg in required_gp_args if getattr(args, arg, None) is None]

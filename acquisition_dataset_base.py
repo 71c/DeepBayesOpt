@@ -77,13 +77,13 @@ def add_common_acquisition_dataset_args(parser, add_train_test_size_args: bool =
             '--train_samples_size', 
             type=int, 
             help='Size of the train samples dataset',
-            required=True
+            required=False
         )
         parser.add_argument(
             '--test_samples_size',
             type=int, 
             help='Size of the test samples dataset',
-            required=True
+            required=False
         )
 
     ############################ Acquisition dataset settings ##########################
@@ -500,7 +500,7 @@ class AcquisitionDatasetManager(ABC):
                 function_samples_dataset = self.create_function_samples_dataset(
                     **function_samples_dataset_kwargs)
                 
-                if fix_function_samples:
+                if fix_function_samples and not function_samples_dataset.data_is_fixed:
                     function_samples_dataset = function_samples_dataset.fix_samples(
                         lazy=False if cache else lazy)
             
