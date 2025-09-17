@@ -214,7 +214,6 @@ def json_serialize_nn_acqf_configs(
         'n_points_config': n_points_config,
         'dataset_transform_config': dataset_transform_config_json,
         'model_sampler': model_sampler_json,
-        
         'training_config': training_config
     }
     # all_info_json = _remove_none_and_false(all_info_json)

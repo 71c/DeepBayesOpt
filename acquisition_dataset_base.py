@@ -281,8 +281,9 @@ class AcquisitionDatasetManager(ABC):
     
     def create_acquisition_dataset(
             self,
-            samples_size: int,
-            acquisition_size: int,
+            acquisition_size: Optional[int] = None,
+            expansion_factor: Optional[int] = None,
+            samples_size: Optional[int] = None,
             
             # Dataset-specific parameters will be in kwargs
             outcome_transform: Optional[OutcomeTransform] = None,
@@ -332,6 +333,9 @@ class AcquisitionDatasetManager(ABC):
         This method contains the core logic for dataset creation, caching, and saving
         that is shared across all dataset types.
         """
+        if not ((acquisition_size is None) ^ (expansion_factor is None)):
+            raise ValueError("Exactly one of acquisition_size or expansion_factor must be specified.")
+
         if check_cached:
             if load_dataset:
                 raise ValueError("load_dataset should be False if check_cached is True.")
@@ -358,24 +362,26 @@ class AcquisitionDatasetManager(ABC):
                 samples_addition_amount = 5
             if n_candidates is None:
                 n_candidates = 50
-            if fix_n_samples:
-                n_datapoints_kwargs = dict(
-                    loguniform=False, pre_offset=None,
-                    min_history=max_history + samples_addition_amount,
-                    max_history=max_history + samples_addition_amount,
-                    n_candidates=n_candidates)
-            else:
-                n_datapoints_kwargs = dict(
-                    loguniform=loguniform, pre_offset=pre_offset,
-                    min_history=min_history, max_history=max_history,
-                    n_candidates=n_candidates)
+            if samples_size is not None:
+                if fix_n_samples:
+                    n_datapoints_kwargs = dict(
+                        loguniform=False, pre_offset=None,
+                        min_history=max_history + samples_addition_amount,
+                        max_history=max_history + samples_addition_amount,
+                        n_candidates=n_candidates)
+                else:
+                    n_datapoints_kwargs = dict(
+                        loguniform=loguniform, pre_offset=pre_offset,
+                        min_history=min_history, max_history=max_history,
+                        n_candidates=n_candidates)
         elif min_history is None and max_history is None and n_candidates is None:
             fix_n_candidates = False
             if min_n_candidates is None:
                 min_n_candidates = 2
-            n_datapoints_kwargs = dict(
-                loguniform=loguniform, pre_offset=pre_offset,
-                min_n_candidates=min_n_candidates, max_points=max_points)
+            if samples_size is not None:
+                n_datapoints_kwargs = dict(
+                    loguniform=loguniform, pre_offset=pre_offset,
+                    min_n_candidates=min_n_candidates, max_points=max_points)
         else:
             raise ValueError(
                 "Either min_n_candidates and max_points or min_history, " 
@@ -384,8 +390,11 @@ class AcquisitionDatasetManager(ABC):
         fix_n_samples = fix_n_candidates and fix_n_samples
         
         # Prepare dataset configuration
-        function_dataset_kwargs = dict(
-            **dataset_specific_kwargs, **n_datapoints_kwargs)
+        if samples_size is not None:
+            function_dataset_kwargs = dict(
+                **dataset_specific_kwargs, **n_datapoints_kwargs)
+        else:
+            function_dataset_kwargs = dict(**dataset_specific_kwargs)
         
         aq_dataset_already_saved = False
         aq_dataset = None
@@ -395,11 +404,12 @@ class AcquisitionDatasetManager(ABC):
             name_ = name + "_" if name != "" else name
 
             function_dataset_hash = dict_to_hash(function_dataset_kwargs)
-            base_name = f"{name_}base_size={samples_size}_{function_dataset_hash}"
+            base_name = f"{name_}" + (
+                f"base_size={samples_size}_" if samples_size is not None else ""
+                ) + function_dataset_hash
 
             aq_dataset_extra_info = dict(
                 fix_acquisition_samples=fix_acquisition_samples,
-                acquisition_size=acquisition_size,
                 outcome_transform=outcome_transform,
                 standardize_outcomes=standardize_outcomes,
                 give_improvements=give_improvements,
@@ -407,6 +417,11 @@ class AcquisitionDatasetManager(ABC):
                 y_cand_indices=y_cand_indices,
                 lambda_min=lambda_min,
                 lambda_max=lambda_max)
+            if acquisition_size is not None:
+                aq_dataset_extra_info['acquisition_size'] = acquisition_size
+            if expansion_factor is not None:
+                aq_dataset_extra_info['expansion_factor'] = expansion_factor
+
             if fix_n_samples:
                 aq_dataset_extra_info = dict(
                     **aq_dataset_extra_info,
@@ -467,16 +482,20 @@ class AcquisitionDatasetManager(ABC):
                     function_samples_dataset = None
             
             if create_function_samples_dataset:
-                f = _get_n_datapoints_random_gen_fixed_n_candidates if fix_n_candidates \
-                    else _get_n_datapoints_random_gen_variable_n_candidates
-                n_datapoints_random_gen = f(**n_datapoints_kwargs)
-                
+                function_samples_dataset_kwargs = dict(
+                    **dataset_specific_kwargs, device=self.device)
+                if samples_size is not None:
+                    f = _get_n_datapoints_random_gen_fixed_n_candidates if fix_n_candidates \
+                        else _get_n_datapoints_random_gen_variable_n_candidates
+                    n_datapoints_random_gen = f(**n_datapoints_kwargs)
+                    function_samples_dataset_kwargs = dict(
+                        **function_samples_dataset_kwargs,
+                        dataset_size=samples_size,
+                        n_datapoints_random_gen=n_datapoints_random_gen)
+
                 # Use subclass method to create dataset-specific function samples dataset
                 function_samples_dataset = self.create_function_samples_dataset(
-                    dataset_size=samples_size,
-                    n_datapoints_random_gen=n_datapoints_random_gen,
-                    device=self.device,
-                    **dataset_specific_kwargs)
+                    **function_samples_dataset_kwargs)
                 
                 if fix_function_samples:
                     function_samples_dataset = function_samples_dataset.fix_samples(
@@ -508,11 +527,17 @@ class AcquisitionDatasetManager(ABC):
                 else:
                     extra_kwargs = dict(n_candidate_points="uniform",
                                         min_n_candidates=min_n_candidates)
+                
+                if acquisition_size is not None:
+                    extra_kwargs['acquisition_size'] = acquisition_size
+                elif expansion_factor is not None:
+                    extra_kwargs['acquisition_size'] = (
+                        len(function_samples_dataset) * expansion_factor)
+
                 aq_dataset = FunctionSamplesAcquisitionDataset(
                     function_samples_dataset,
                     n_samples="uniform" if fix_n_samples else "all",
                     give_improvements=give_improvements,
-                    acquisition_size=acquisition_size,
                     replacement=replacement,
                     y_cand_indices=y_cand_indices,
                     **extra_kwargs)
@@ -544,13 +569,12 @@ class AcquisitionDatasetManager(ABC):
         
         return aq_dataset
 
-    def create_train_and_test_acquisition_datasets(
+    def _create_train_and_test_acquisition_datasets(
             self,
-            train_samples_size: int,
+            
             train_acquisition_size: int,
             fix_train_samples_dataset: bool,
 
-            test_samples_size: int,
             small_test_proportion_of_test: float,
             fix_test_samples_dataset: bool,
             fix_test_acquisition_dataset: bool,
@@ -563,6 +587,9 @@ class AcquisitionDatasetManager(ABC):
             
             batch_size: int,
             fix_train_acquisition_dataset: bool,
+
+            train_samples_size: Optional[int] = None,
+            test_samples_size: Optional[int] = None,
 
             replacement: bool = False,
             outcome_transform: Optional[OutcomeTransform] = None,
@@ -625,7 +652,7 @@ class AcquisitionDatasetManager(ABC):
             **dataset_specific_kwargs)
 
         train_aq_dataset = self.create_acquisition_dataset(
-            train_samples_size, lazy=lazy_train,
+            samples_size=train_samples_size, lazy=lazy_train,
             fix_function_samples=fix_train_samples_dataset,
             fix_acquisition_samples=fix_train_acquisition_dataset,
             get_true_stats=get_train_true_stats,
@@ -639,19 +666,22 @@ class AcquisitionDatasetManager(ABC):
             get_true_stats=get_test_true_stats,
             **common_kwargs, **test_n_points_kwargs)
 
-        small_test_size, small_test_complement_size = get_lengths_from_proportions(
-            test_samples_size,
-            [small_test_proportion_of_test, 1 - small_test_proportion_of_test])
+        if test_samples_size is None:
+            small_test_size = None
+        else:
+            small_test_size, small_test_complement_size = get_lengths_from_proportions(
+                test_samples_size,
+                [small_test_proportion_of_test, 1 - small_test_proportion_of_test])
 
         if test_samples_size != small_test_size \
                 and fix_test_acquisition_dataset and cache_datasets:
             print("Making small test acquisition dataset and complement")
             small_test_aq_dataset = self.create_acquisition_dataset(
-                small_test_size, name="small-test",
+                samples_size=small_test_size, name="small-test",
                 acquisition_size=small_test_size * test_expansion_factor,
                 **test_dataset_kwargs)
             small_test_complement_aq_dataset = self.create_acquisition_dataset(
-                small_test_complement_size, name="small-test-complement",
+                samples_size=small_test_complement_size, name="small-test-complement",
                 acquisition_size=small_test_complement_size * test_expansion_factor,
                 **test_dataset_kwargs)
             if isinstance(small_test_aq_dataset, AcquisitionDataset) and \
@@ -664,10 +694,11 @@ class AcquisitionDatasetManager(ABC):
             else:
                 test_aq_dataset = None
         else:
+            tmp = {'acquisition_size': test_samples_size * test_expansion_factor} \
+                if test_samples_size is not None else {'expansion_factor': test_expansion_factor}
             test_aq_dataset = self.create_acquisition_dataset(
-                test_samples_size, name="test",
-                acquisition_size=test_samples_size * test_expansion_factor,
-                **test_dataset_kwargs)
+                samples_size=test_samples_size, name="test",
+                **tmp, **test_dataset_kwargs)
             if isinstance(test_aq_dataset, AcquisitionDataset):
                 small_test_aq_dataset, _ = test_aq_dataset.random_split(
                     [small_test_proportion_of_test, 1 - small_test_proportion_of_test])
@@ -681,15 +712,15 @@ class AcquisitionDatasetManager(ABC):
     def get_train_test_true_stats_flags(self):
         """Get flags for training/testing statistics collection. Override in subclasses."""
         return False, False  # Default: no stats collection
-    
-    def create_train_test_datasets_helper(
-            self,
-            args: argparse.Namespace,
-            dataset_configs: dict,
-            check_cached: bool = False,
+
+    def create_train_test_datasets_from_args(
+            self, 
+            args: argparse.Namespace, 
+            check_cached: bool = False, 
             load_dataset: bool = True
         ):
-        """Helper function to create train/test datasets with caching."""
+        """Create train/test datasets from command line arguments."""
+        dataset_configs = self.get_dataset_configs(args, device=self.device)
         
         dataset_kwargs = {
             **dataset_configs["function_samples_config"],
@@ -727,7 +758,7 @@ class AcquisitionDatasetManager(ABC):
         if info_str in self._data_cache:
             return self._data_cache[info_str]
 
-        ret = self.create_train_and_test_acquisition_datasets(**all_kwargs)
+        ret = self._create_train_and_test_acquisition_datasets(**all_kwargs)
         self._data_cache[info_str] = ret
 
         train_aq_dataset, test_aq_dataset, small_test_aq_dataset = ret
@@ -762,18 +793,6 @@ class AcquisitionDatasetManager(ABC):
                       len(small_test_aq_dataset) % args.batch_size)
 
         return ret
-
-    def create_train_test_datasets_from_args(
-            self, 
-            args: argparse.Namespace, 
-            check_cached: bool = False, 
-            load_dataset: bool = True
-        ):
-        """Create train/test datasets from command line arguments."""
-        dataset_configs = self.get_dataset_configs(args, device=self.device)
-        return self.create_train_test_datasets_helper(
-            args, dataset_configs,
-            check_cached=check_cached, load_dataset=load_dataset)
 
 
 def create_dataset_factory_function(manager_class: type[AcquisitionDatasetManager]):
