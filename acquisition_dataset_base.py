@@ -776,7 +776,7 @@ class AcquisitionDatasetManager(ABC):
             check_cached=check_cached, load_dataset=load_dataset)
 
 
-def create_dataset_factory_function(manager_class):
+def create_dataset_factory_function(manager_class: type[AcquisitionDatasetManager]):
     """Create factory function for dataset managers to avoid duplication."""
     def create_train_test_acq_datasets_from_args(
             args, check_cached=False, load_dataset=True):
