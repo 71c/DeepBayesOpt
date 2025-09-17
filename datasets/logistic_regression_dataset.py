@@ -196,6 +196,7 @@ class LogisticRegressionRandomDataset(
             log_uniform_sampling=log_uniform_sampling,
             device=device
         )
+        self.device = self.objective_sampler.device
         
         # Required for compatibility with FunctionSamplesDataset infrastructure
         # Logistic regression doesn't use models, so set to None

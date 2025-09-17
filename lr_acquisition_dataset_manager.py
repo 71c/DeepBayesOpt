@@ -40,7 +40,7 @@ class LogisticRegressionAcquisitionDatasetManager(AcquisitionDatasetManager):
         lr_noise_range = tuple(getattr(args, 'lr_noise_range', [0.01, 1.0]))
         lr_log_lambda_range = tuple(getattr(args, 'lr_log_lambda_range', [-6, 2]))
         lr_coefficient_std = getattr(args, 'lr_coefficient_std', 1.0)
-        lr_log_uniform_sampling = getattr(args, 'lr_log_uniform_sampling', False)
+        lr_log_uniform_sampling = getattr(args, 'lr_log_uniform_sampling', True)
 
         return dict(
             #### Logistic regression settings

@@ -1,10 +1,13 @@
+import matplotlib.pyplot as plt
+import numpy as np
 from bayesopt.bayesopt import outcome_transform_function
 from gp_acquisition_dataset_manager import GPAcquisitionDatasetManager, get_gp_model_from_args_no_outcome_transform
+from lr_acquisition_dataset_manager import LogisticRegressionAcquisitionDatasetManager
 
 
 command = "python gp_acquisition_dataset.py --dimension 1 --kernel Matern52 --lengthscale 0.05 --max_history 100 --min_history 100 --replacement --test_expansion_factor 1 --test_n_candidates 1 --test_samples_size 100 --train_acquisition_size 30000 --train_n_candidates 1 --train_samples_size 10000"
 
-n_funcs = 3
+n_funcs = 6
 
 base_af_params = dict(
     samples_size=n_funcs,
@@ -31,8 +34,6 @@ base_af_params = dict(
 )
 
 
-gp_manager = GPAcquisitionDatasetManager()
-
 gp_params_args = dict(
     dimension=1,
     kernel="Matern52",
@@ -58,5 +59,31 @@ gp_params = dict(
     model_probabilities=None
 )
 
-dataset = gp_manager.create_acquisition_dataset(**base_af_params, **gp_params)
-print(f"{dataset=}")
+function_samples_dataset_gp = GPAcquisitionDatasetManager().create_acquisition_dataset(
+    **base_af_params, **gp_params).base_dataset
+
+function_samples_dataset_lr = LogisticRegressionAcquisitionDatasetManager().create_acquisition_dataset(
+    **base_af_params, log_lambda_range=(-8, 0)).base_dataset
+
+datasets = [function_samples_dataset_gp, function_samples_dataset_lr]
+dataset_names = ["GP", "Logistic Regression"]
+
+fig, axes = plt.subplots(len(datasets), n_funcs, figsize=(5 * n_funcs, 4))
+for k in range(len(datasets)):
+    for i in range(n_funcs):
+        ax = axes[k, i]
+        item = datasets[k][i]
+        x_values = item.x_values.cpu().numpy().flatten()
+        y_values = item.y_values.cpu().numpy().flatten()
+        # Sort for plotting
+        sorted_indices = np.argsort(x_values)
+        x_values = x_values[sorted_indices]
+        y_values = y_values[sorted_indices]
+        ax.plot(x_values, y_values, marker='o', linestyle='-')
+        ax.set_title(f"{dataset_names[k]} Function Sample {i+1}")
+        ax.set_xlabel("x")
+        ax.set_ylabel("y")
+        ax.grid(True)
+
+plt.tight_layout()
+plt.savefig("function_samples.png", dpi=300)
