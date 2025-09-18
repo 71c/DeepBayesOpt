@@ -6,22 +6,43 @@ from datasets.function_samples_dataset import FunctionSamplesItem, ListMapFuncti
 from utils.constants import HPOB_DATA_DIR
 from utils.utils import load_json
 
-PATHS = {
+
+_HPOB_PATHS = {
     'train': os.path.join(HPOB_DATA_DIR, "meta-train-dataset.json"),
     'validation': os.path.join(HPOB_DATA_DIR, "meta-validation-dataset.json"),
     'test': os.path.join(HPOB_DATA_DIR, "meta-test-dataset.json"),
 }
 
 
+_HPOB_JSON_CACHE = {}
+def _get_hpob_dataset_json(search_space_id: str,
+                           dataset_type: Literal['train', 'validation', 'test']):
+    if dataset_type not in _HPOB_JSON_CACHE:
+        data_path = _HPOB_PATHS[dataset_type]
+        _HPOB_JSON_CACHE[dataset_type] = load_json(data_path)
+    data = _HPOB_JSON_CACHE[dataset_type]
+    try:
+        return data[search_space_id]
+    except KeyError:
+        ValueError(f"Search space ID {search_space_id} not found in HPO-B dataset.")
+
+
+def get_hpob_dataset_dimension(search_space_id: str) -> int:
+    """Get the dimension of the search space for a given HPO-B search space ID."""
+    search_space_data = _get_hpob_dataset_json(search_space_id, 'validation')
+    dataset_id = list(search_space_data.keys())[0]
+    X = search_space_data[dataset_id]['X']
+    return len(X[0])
+
+
 def get_hpob_dataset(search_space_id: str,
                      dataset_type: Literal['train', 'validation', 'test'],
                      device: str = "cpu") -> ListMapFunctionSamplesDataset:
     """Get a function samples dataset from the HPO-B benchmark."""
-    data_path = PATHS[dataset_type]
-    data = load_json(data_path)[search_space_id]
+    search_space_data = _get_hpob_dataset_json(search_space_id, dataset_type)
     list_of_datasets = []
-    for dataset_id in sorted(data):
-        Xy = data[dataset_id]
+    for dataset_id in sorted(search_space_data):
+        Xy = search_space_data[dataset_id]
         X, y = Xy['X'], Xy['y']
         item = FunctionSamplesItem(
             torch.tensor(X, device=device), torch.tensor(y, device=device))

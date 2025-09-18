@@ -1,23 +1,33 @@
 parameters:
   function_samples_dataset:
     parameters:
-      gp:
-        parameters:
-          dimension:
-            values: [8, 16, 32]
-          kernel:
-            values: ["Matern52"]
-          lengthscale:
-            values: [0.1]
-          outcome_transform:
-            values:
-            - value: null
-            - value: exp
+      dataset_type:
+        values:
+        - value: gp
+          parameters:
+            gp:
               parameters:
-                sigma:
-                  value: 0.8
-          randomize_params:
-            values: [false, true]
+                dimension:
+                  values: [8, 16, 32]
+                kernel:
+                  values: ["Matern52"]
+                lengthscale:
+                  values: [0.1]
+                outcome_transform:
+                  values:
+                  - value: null
+                  - value: exp
+                    parameters:
+                      sigma:
+                        value: 0.8
+                randomize_params:
+                  values: [false, true]
+        - value: hpob
+          parameters:
+            hpob:
+              parameters:
+                hpob_search_space_id:
+                  value: "5970"
       standardize_outcomes:
         value: false
       train_samples_size:

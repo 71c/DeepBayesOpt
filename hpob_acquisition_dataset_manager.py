@@ -1,5 +1,5 @@
 import argparse
-from datasets.hpob_dataset import get_hpob_dataset
+from datasets.hpob_dataset import get_hpob_dataset, get_hpob_dataset_dimension
 from acquisition_dataset_base import (
     AcquisitionDatasetManager, add_common_acquisition_dataset_args)
 
@@ -17,6 +17,7 @@ class HPOBAcquisitionDatasetManager(AcquisitionDatasetManager):
         """Get HPO-B-specific function samples configuration."""
         return dict(
             search_space_id=args.hpob_search_space_id,
+            dimension=get_hpob_dataset_dimension(args.hpob_search_space_id)
         )
     
     def get_outcome_transform(self, args: argparse.Namespace, device=None):

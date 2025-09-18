@@ -23,7 +23,7 @@ def get_cmd_options_train_acqf(options: dict[str, Any]):
         'dataset_type': dataset_type,
         'train_samples_size': options.get('train_samples_size'),
         'test_samples_size': options.get('test_samples_size'),
-        'standardize_dataset_outcomes': options.get('standardize_outcomes', False)
+        'standardize_dataset_outcomes': options['standardize_outcomes']
     }
     
     # Add dataset-specific parameters
@@ -40,6 +40,12 @@ def get_cmd_options_train_acqf(options: dict[str, Any]):
                       'lr_coefficient_std', 'lr_noise_range', 'lr_log_lambda_range',
                       'lr_log_uniform_sampling']
         })
+    elif dataset_type == 'hpob':
+        cmd_opts_sample_dataset.update({
+            'hpob_search_space_id': options.get('hpob_search_space_id')
+        })
+    else:
+        raise ValueError(f"Unknown dataset_type: {dataset_type}")
 
     cmd_opts_acquisition_dataset = {
         'train_acquisition_size': options['train_acquisition_size'],

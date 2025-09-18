@@ -16,11 +16,21 @@ from acquisition_dataset_base import add_lamda_args, add_common_acquisition_data
 
 
 # Mapping of dataset types to their respective manager classes
-manager_class_map = {
+MANAGER_CLASS_MAP = {
     'gp': GPAcquisitionDatasetManager,
     'logistic_regression': LogisticRegressionAcquisitionDatasetManager,
     'hpob': HPOBAcquisitionDatasetManager
 }
+
+
+def get_dataset_manager(dataset_type: str, device: str = "cpu"):
+    """Get the appropriate dataset manager class based on dataset_type."""
+    try:
+        manager_cls = MANAGER_CLASS_MAP[dataset_type]
+    except KeyError:
+        raise ValueError(f"Unsupported dataset_type: {dataset_type}. "
+                         f"Supported types: {list(MANAGER_CLASS_MAP.keys())}")
+    return manager_cls(device=device)
 
 
 def create_train_test_acquisition_datasets_from_args(
@@ -49,14 +59,9 @@ def create_train_test_acquisition_datasets_from_args(
 
     if getattr(args, 'samples_addition_amount', None) is None:
         args.samples_addition_amount = 5
-
-    try:
-        manager_cls = manager_class_map[dataset_type]
-    except KeyError:
-        raise ValueError(f"Unsupported dataset_type: {dataset_type}. "
-                        f"Supported types: {list(manager_class_map.keys())}")
     
-    manager = manager_cls(device="cpu")
+    manager = get_dataset_manager(dataset_type, device="cpu")
+    
     return manager.create_train_test_datasets_from_args(
             args, check_cached=check_cached, load_dataset=load_dataset)
 
@@ -69,17 +74,25 @@ def _validate_args_for_dataset_type(args: argparse.Namespace, dataset_type: str)
             raise ValueError("Missing required argument: train_samples_size")
         if getattr(args, 'test_samples_size', None) is None:
             raise ValueError("Missing required argument: test_samples_size")
+    else:
+        # For HPO-B, these args are not needed
+        if getattr(args, 'train_samples_size', None) is not None:
+            raise ValueError("Argument 'train_samples_size' should not be set for HPO-B datasets")
+        if getattr(args, 'test_samples_size', None) is not None:
+            raise ValueError("Argument 'test_samples_size' should not be set for HPO-B datasets")
+
     if dataset_type == 'gp':
         required_gp_args = ['dimension', 'kernel', 'lengthscale']
         missing_args = [arg for arg in required_gp_args if getattr(args, arg, None) is None]
         if missing_args:
             raise ValueError(f"Missing required GP arguments: {missing_args}")
-    elif dataset_type == 'logistic_regression':
-        # LR arguments all have defaults, so just check that they are reasonable
-        pass  # No strict validation needed since all LR args have sensible defaults
+    else:
+        if getattr(args, 'dimension', None) is not None:
+            raise ValueError(f"Argument 'dimension' should not be set for dataset_type '{dataset_type}'")
 
 
-def add_unified_dataset_args(parser: argparse.ArgumentParser):
+def add_unified_dataset_args(
+        parser: argparse.ArgumentParser, add_lamda_args_flag: bool = True):
     """
     Add unified dataset arguments that support all dataset types.
     
@@ -89,20 +102,21 @@ def add_unified_dataset_args(parser: argparse.ArgumentParser):
     # Add dataset type selector
     parser.add_argument(
         '--dataset_type',
-        choices=list(manager_class_map),
+        choices=list(MANAGER_CLASS_MAP),
         default='gp',
         help='Type of dataset for hyperparameter optimization'
     )
     
-    # Add common arguments
-    add_lamda_args(parser)
+    if add_lamda_args_flag:
+        add_lamda_args(parser)
     
     # Add common acquisition dataset arguments that all datasets need
     add_common_acquisition_dataset_args(parser)
     
     # Add GP arguments (made optional)
     parser.add_argument('--dimension', type=int, help='Dimension of the optimization problem')
-    add_gp_args(parser, "function samples", required=False)
+    add_gp_args(
+        parser, "function samples", required=False, add_randomize_params=True)
     
     # Add logistic regression arguments  
     add_lr_args(parser)

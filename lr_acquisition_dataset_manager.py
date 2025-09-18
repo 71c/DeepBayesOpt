@@ -46,7 +46,7 @@ class LogisticRegressionAcquisitionDatasetManager(AcquisitionDatasetManager):
             log_uniform_sampling=lr_log_uniform_sampling,
 
             #### Dimension for LR is always 1 (single hyperparameter lambda)
-            # dimension=1,
+            dimension=1,
 
             # #### No models for LR (procedural generation), but needed for compatibility
             # models=[],

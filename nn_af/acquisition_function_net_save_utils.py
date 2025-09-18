@@ -14,7 +14,7 @@ from nn_af.train_acquisition_function_net import GI_NORMALIZATIONS, METHODS
 from datasets.dataset_with_models import RandomModelSampler
 from acquisition_dataset_base import FIX_TRAIN_ACQUISITION_DATASET, get_lamda_min_max
 from gp_acquisition_dataset_manager import GP_GEN_DEVICE
-from dataset_factory import add_unified_dataset_args
+from dataset_factory import add_unified_dataset_args, get_dataset_manager
 from acquisition_dataset_base import add_lamda_args
 
 
@@ -127,23 +127,13 @@ def load_nn_acqf_configs(model_and_info_folder_name: str):
 def get_nn_af_args_configs_model_paths_from_cmd_args(
         cmd_args:Optional[Sequence[str]]=None):
     args = _parse_af_train_cmd_args(cmd_args=cmd_args)
-
-    #### Get AF dataset configs using unified factory
-    from dataset_factory import create_train_test_acquisition_datasets_from_args
-    # Get dataset configs dynamically based on dataset_type
     dataset_type = getattr(args, 'dataset_type', 'gp')
-    if dataset_type == 'gp':
-        from gp_acquisition_dataset_manager import GPAcquisitionDatasetManager
-        manager = GPAcquisitionDatasetManager(device=GP_GEN_DEVICE)
-        gp_af_dataset_configs = manager.get_dataset_configs(args, device=GP_GEN_DEVICE)
-    elif dataset_type == 'logistic_regression':
-        from lr_acquisition_dataset_manager import LogisticRegressionAcquisitionDatasetManager
-        manager = LogisticRegressionAcquisitionDatasetManager(device=GP_GEN_DEVICE)
-        gp_af_dataset_configs = manager.get_dataset_configs(args, device=GP_GEN_DEVICE)
-        # For LR datasets, ensure args.dimension is set to 1 for model creation
+    manager = get_dataset_manager(dataset_type, device="cpu")
+    gp_af_dataset_configs = manager.get_dataset_configs(args, device=GP_GEN_DEVICE)
+    if dataset_type != 'gp':
+        # Make sure to set the dimension for non-GP datasets so that it is available
+        # for model creation
         args.dimension = gp_af_dataset_configs["function_samples_config"]["dimension"]
-    else:
-        raise ValueError(f"Unsupported dataset_type: {dataset_type}")
 
     # Exp technically works, but Power does not
     # Make sure to set these appropriately depending on whether the transform
@@ -665,7 +655,7 @@ def _get_run_train_parser():
 
     ################################ Dataset settings ##################################
     dataset_group = parser.add_argument_group("Dataset options")
-    add_unified_dataset_args(dataset_group)
+    add_unified_dataset_args(dataset_group, add_lamda_args_flag=False)
 
     ############################ NN architecture settings ##############################
     nn_architecture_group = parser.add_argument_group("NN Architecture options")
