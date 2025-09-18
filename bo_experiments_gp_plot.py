@@ -289,13 +289,13 @@ CPROFILE = True
 
 
 # For 1dim_pointnet-max_history_input_variation-pbgi
-PRE = []
-ATTR_A = ["nn.train_samples_size", "nn.samples_addition_amount"]
-ATTR_B =  ["nn.max_history_input"]
-POST = [
-    ["lamda", "gp_af", "nn.learning_rate"],
-    ["bo_seed"]
-]
+# PRE = []
+# ATTR_A = ["nn.train_samples_size", "nn.samples_addition_amount"]
+# ATTR_B =  ["nn.max_history_input"]
+# POST = [
+#     ["lamda", "gp_af", "nn.learning_rate"],
+#     ["bo_seed"]
+# ]
 
 # For 1dim_pointnet-max_history_input_variation-mse_ei
 # PRE = [

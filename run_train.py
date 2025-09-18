@@ -92,6 +92,8 @@ def run_train(cmd_args: Optional[Sequence[str]]=None):
         # optimizer = torch.optim.SGD(model.parameters(), lr=args.learning_rate, momentum=0.9)
         # optimizer = torch.optim.RMSprop(model.parameters(), lr=learning_rate)
 
+        dataset_type = getattr(args, 'dataset_type', 'gp')
+
         training_history_data = train_acquisition_function_net(
             model, train_aq_dataset, optimizer, args.method, args.epochs, args.batch_size,
             DEVICE, verbose=VERBOSE, n_train_printouts_per_epoch=10,
@@ -102,8 +104,8 @@ def run_train(cmd_args: Optional[Sequence[str]]=None):
             get_train_stats_after_training=True,
             ## These both default to reasonable values depending on whether the
             ## acquisition datasets are fixed
-            get_train_true_gp_stats=GET_TRAIN_TRUE_GP_STATS,
-            get_test_true_gp_stats=GET_TEST_TRUE_GP_STATS,
+            get_train_true_gp_stats=GET_TRAIN_TRUE_GP_STATS and dataset_type == 'gp',
+            get_test_true_gp_stats=GET_TEST_TRUE_GP_STATS and dataset_type == 'gp',
             save_dir=model_path,
             save_incremental_best_models=SAVE_INCREMENTAL_BEST_MODELS and args.save_model,
             # early stopping

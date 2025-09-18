@@ -1008,6 +1008,82 @@ experiments:
             - - gp_af
               - nn.learning_rate
             - - bo_seed
+  pointnet_max_history_pbgi_3d:
+    description: 'Experiment of 3D PointNet PBGI: max_history_input (2, 4, 9, null), + dataset size'
+    created_date: '2025-09-18'
+    parameters:
+      seed: 8
+      nn_experiment_config: config/train_acqf_experiment_3dim_pointnet-max_history_input_variation-pbgi.yml
+      bo_experiment_config: config/bo_config_experiment_2_torch.yml
+      sweep_name: 100iter_3dim_pointnet-max_history_input_variation-pbgi
+      n_seeds: 64
+      single_objective: true
+      plots_group_name: 3dim_pointnet-max_history_input_variation-pbgi
+      bo_plots_name: results_100iter
+    plotting:
+      train_acqf:
+        default:
+          pre:
+          - ['layer_width', 'encoded_history_dim']
+          attr_a:
+          - train_samples_size
+          - samples_addition_amount
+          attr_b:
+          - max_history_input
+          post:
+          - - learning_rate
+      bo_experiments:
+        default:
+          pre:
+          - ['layer_width', 'encoded_history_dim']
+          attr_a:
+          - nn.train_samples_size
+          - nn.samples_addition_amount
+          attr_b:
+          - nn.max_history_input
+          post:
+          - - lamda
+            - gp_af
+            - nn.learning_rate
+          - - bo_seed
+  pointnet_max_history_pbgi_hpob:
+    description: 'Experiment of HPO-B PointNet PBGI: max_history_input (2, 4, 9, null), + dataset size'
+    created_date: '2025-09-18'
+    parameters:
+      seed: 8
+      nn_experiment_config: config/train_acqf_experiment_hpob_pointnet-max_history_input_variation-pbgi.yml
+      bo_experiment_config: config/bo_config_experiment_2_torch.yml
+      sweep_name: 100iter_hpob_pointnet-max_history_input_variation-pbgi
+      n_seeds: 64
+      single_objective: true
+      plots_group_name: hpob_pointnet-max_history_input_variation-pbgi
+      bo_plots_name: results_100iter
+    plotting:
+      train_acqf:
+        default:
+          pre:
+          - ['layer_width', 'encoded_history_dim']
+          - ['x_cand_input']
+          attr_a:
+          - hpob_search_space_id
+          attr_b:
+          - max_history_input
+          post:
+          - - learning_rate
+      bo_experiments:
+        default:
+          pre:
+          - ['layer_width', 'encoded_history_dim']
+          - ['x_cand_input']
+          attr_a:
+          - hpob_search_space_id
+          attr_b:
+          - nn.max_history_input
+          post:
+          - - lamda
+            - gp_af
+            - nn.learning_rate
+          - - bo_seed
 templates:
   basic_1d:
     description: Basic 1D experiment template

@@ -1,0 +1,61 @@
+parameters:
+  dataset_type:
+    value: hpob
+  hpob_search_space_id:
+    values: ['5860', '5970', '6766', '4796']
+  max_history:
+    value: 20
+  method:
+    values: ['gittins']
+  gi_loss_normalization:
+    value: normal
+  lamda:
+    value: 1.00e-02
+  samples_addition_amount:
+    value: 5
+  test_expansion_factor:
+    value: 100
+  n_candidates:
+    value: 1
+  layer_width:
+    values: [8, 16]
+  encoded_history_dim:
+    values: [8, 16]
+  num_layers:
+    values: [1]
+  architecture:
+    value: pointnet
+  include_best_y:
+    values: [false]
+  subtract_best_y:
+    values: [false]
+  max_history_input:
+    values: [2, 4, 9, null]
+  x_cand_input:
+    values:
+    - "subtract-lossy"
+    - "subtract-local_only"
+  pooling:
+    values: ["max"]
+  epochs:
+    value: 4000
+  learning_rate:
+    values: [5.20e-05, 3.00e-04, 1.73e-03]
+  batch_size:
+    value: 512
+  dropout:
+    values: [null]
+  weight_decay:
+    values: [null]
+  lr_scheduler:
+    values: [null]
+  lr_scheduler_patience:
+    value: 300
+  lr_scheduler_factor:
+    value: 0.5
+  early_stopping:
+    value: false
+  patience:
+    value: 1000
+  min_delta:
+    value: 1.00e-09

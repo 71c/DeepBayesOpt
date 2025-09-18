@@ -271,6 +271,8 @@ class AcquisitionDatasetManager(ABC):
     def get_dataset_configs(self, args: argparse.Namespace, device=None):
         """Get complete dataset configuration using shared structure."""
         function_samples_config = self.get_function_samples_config(args, device)
+        if self.dataset_type != 'gp':
+            function_samples_config['dataset_type'] = self.dataset_type
         outcome_transform = self.get_outcome_transform(args, device)
         return _build_config_dict_structure(
             args, function_samples_config, outcome_transform=outcome_transform)

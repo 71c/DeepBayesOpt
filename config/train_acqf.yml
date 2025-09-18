@@ -31,9 +31,9 @@ parameters:
       standardize_outcomes:
         value: false
       train_samples_size:
-        values: [1000, 10000, 100000]
+        values: [null, 1000, 10000, 100000]
       test_samples_size:
-        value: 10000
+        values: [null, 10000]
   acquisition_dataset:
     parameters:
       train_acquisition_size:

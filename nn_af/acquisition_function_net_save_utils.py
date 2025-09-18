@@ -5,6 +5,7 @@ from typing import Any, Sequence, Optional
 import torch
 import argparse
 
+from datasets.hpob_dataset import get_hpob_dataset_dimension
 from utils.utils import convert_to_json_serializable, dict_to_hash, load_json, save_json
 from utils.constants import MODELS_DIR, MODELS_VERSION
 
@@ -130,10 +131,14 @@ def get_nn_af_args_configs_model_paths_from_cmd_args(
     dataset_type = getattr(args, 'dataset_type', 'gp')
     manager = get_dataset_manager(dataset_type, device="cpu")
     gp_af_dataset_configs = manager.get_dataset_configs(args, device=GP_GEN_DEVICE)
-    if dataset_type != 'gp':
+    if dataset_type == 'gp':
+        dimension = None # already in args.dimension
+    elif dataset_type == 'logistic_regression':
+        dimension = 1
+    elif dataset_type == 'hpob':
         # Make sure to set the dimension for non-GP datasets so that it is available
         # for model creation
-        args.dimension = gp_af_dataset_configs["function_samples_config"]["dimension"]
+        dimension = get_hpob_dataset_dimension(args.hpob_search_space_id)
 
     # Exp technically works, but Power does not
     # Make sure to set these appropriately depending on whether the transform
@@ -147,7 +152,7 @@ def get_nn_af_args_configs_model_paths_from_cmd_args(
     # This wastes some resources, but need to do it to get the model's init dict to
     # obtain the correct path for saving the model because that is currently how the
     # model is uniquely identified.
-    model = _get_model(args)
+    model = _get_model(args, dimension=dimension)
 
     #### Save the configs for the model and training and datasets
     training_config = _get_training_config(args)
@@ -172,23 +177,26 @@ def json_serialize_nn_acqf_configs(
     n_points_config = af_dataset_config["n_points_config"]
     dataset_transform_config = af_dataset_config["dataset_transform_config"]
 
-    if 'model_sampler' in function_samples_config:
-        model_sampler = function_samples_config.pop('model_sampler')
-    else:
-        model_sampler = RandomModelSampler(
-            models=function_samples_config["models"],
-            model_probabilities=function_samples_config["model_probabilities"],
-            randomize_params=function_samples_config["randomize_params"]
-        )
+    all_info_json = {
+        'function_samples_config': convert_to_json_serializable(function_samples_config),
+        'acquisition_dataset_config': acquisition_dataset_config,
+        'n_points_config': n_points_config,
+        'dataset_transform_config': convert_to_json_serializable(dataset_transform_config),
+        'training_config': training_config
+    }
 
-    function_samples_config_json = convert_to_json_serializable(function_samples_config)
-    dataset_transform_config_json = convert_to_json_serializable(dataset_transform_config)
+    dataset_type = function_samples_config.get("dataset_type", "gp")
+    if dataset_type == 'gp':
+        if 'model_sampler' in function_samples_config:
+            model_sampler = function_samples_config.pop('model_sampler')
+        else:
+            model_sampler = RandomModelSampler(
+                models=function_samples_config["models"],
+                model_probabilities=function_samples_config["model_probabilities"],
+                randomize_params=function_samples_config["randomize_params"]
+            )
     
-    # Handle the case where model_sampler is None (for datasets like logistic regression)
-    if model_sampler is None:
-        model_sampler_json = None
-    else:
-        model_sampler_json = convert_to_json_serializable({
+        all_info_json['model_sampler'] = convert_to_json_serializable({
                 '_models': model_sampler._models,
                 '_initial_params_list': model_sampler._initial_params_list,
                 'model_probabilities': model_sampler.model_probabilities,
@@ -196,17 +204,8 @@ def json_serialize_nn_acqf_configs(
             },
             include_priors=True, hash_gpytorch_modules=hash_gpytorch_modules,
             hash_include_str=False, hash_str=True)
-
-    all_info_json = {
-        # af_dataset_config
-        'function_samples_config': function_samples_config_json,
-        'acquisition_dataset_config': acquisition_dataset_config,
-        'n_points_config': n_points_config,
-        'dataset_transform_config': dataset_transform_config_json,
-        'model_sampler': model_sampler_json,
-        'training_config': training_config
-    }
-    # all_info_json = _remove_none_and_false(all_info_json)
+    else:
+        model_sampler = None
 
     return all_info_json, model_sampler
 
@@ -268,8 +267,9 @@ def _save_nn_acqf_configs(
                 os.path.join(model_and_info_path, "acquisition_dataset_config.json"))
         save_json(n_points_config,
                 os.path.join(model_and_info_path, "n_points_config.json"))
-        model_sampler.save(
-            os.path.join(model_and_info_path, "model_sampler"))
+        if model_sampler is not None:
+            model_sampler.save(
+                os.path.join(model_and_info_path, "model_sampler"))
 
         # Save dataset transform config
         dataset_transform_config_json = all_info_json['dataset_transform_config']
@@ -445,13 +445,13 @@ _POINTNET_X_CAND_INPUT_OPTIONS = {
 }
 
 
-def _get_model(args: argparse.Namespace):
+def _get_model(args: argparse.Namespace, dimension:Optional[int]=None):
     architecture = args.architecture
     hidden_dims = [args.layer_width] * args.num_layers
     if architecture == "pointnet":
         body_cls = AcquisitionFunctionBodyPointnetV1and2
         af_body_init_params_base = dict(
-            dimension=args.dimension,
+            dimension=dimension if dimension is not None else args.dimension,
 
             history_enc_hidden_dims=hidden_dims,
             pooling=args.pooling,
