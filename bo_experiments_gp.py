@@ -32,7 +32,7 @@ def _generate_bo_commands(
             bo_policy_args=bo_policy_args_,
             gp_af_args=gp_af_args
         )
-        cmd_args_list = bo_loop_dicts_to_cmd_args_list(**bo_config)
+        cmd_args_list = bo_loop_dicts_to_cmd_args_list(**bo_config, validate=False)
         # Only run the BO loop if it has not been run before
         opt_results = run_bo(**bo_config, load_weights=False)
         

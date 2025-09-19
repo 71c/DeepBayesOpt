@@ -613,7 +613,7 @@ def run_bo(objective_args: dict[str, Any],
 
 
 def bo_loop_dicts_to_cmd_args_list(
-        objective_args: dict, bo_policy_args: dict, gp_af_args: dict):
+        objective_args: dict, bo_policy_args: dict, gp_af_args: dict, validate: bool = True):
     objective_args_ = {
         f'{OBJECTIVE_NAME_PREFIX}_{k}': v for k, v in objective_args.items()
     }
@@ -623,10 +623,11 @@ def bo_loop_dicts_to_cmd_args_list(
     }
     all_args = {**objective_args_, **bo_policy_args, **gp_af_args_}
     cmd_args_list = dict_to_cmd_args(all_args)
-    
-    # Just validate that the given args are correctly specified
-    # (at least as much as the checks done by the parser)
-    info = parse_bo_loop_args(cmd_args_list)
+
+    if validate:
+        # Just validate that the given args are correctly specified
+        # (at least as much as the checks done by the parser)
+        info = parse_bo_loop_args(cmd_args_list)
 
     return cmd_args_list
 
