@@ -13,7 +13,6 @@ _HPOB_PATHS = {
     'test': os.path.join(HPOB_DATA_DIR, "meta-test-dataset.json"),
 }
 
-
 _HPOB_JSON_CACHE = {}
 def _get_hpob_dataset_json(search_space_id: str,
                            dataset_type: Literal['train', 'validation', 'test']):
@@ -48,6 +47,12 @@ def get_hpob_dataset(search_space_id: str,
             torch.tensor(X, device=device), torch.tensor(y, device=device))
         list_of_datasets.append(item)
     return ListMapFunctionSamplesDataset(list_of_datasets)
+
+
+def get_hpob_objective_function(search_space_id: str, dataset_id: str):
+    """Get a function that evaluates the objective function for a given
+    HPO-B search space ID and dataset ID."""
+    pass # TODO-HPO-B: Implement this function.
 
 
 if __name__ == "__main__":

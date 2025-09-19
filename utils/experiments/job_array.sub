@@ -176,12 +176,17 @@ else
             break
         fi
     done
+
+    is_exit_code_1_or_2=false
+    if [ "$exit_code" -eq 1 ] || [ "$exit_code" -eq 2 ]; then
+        is_exit_code_1_or_2=true
+    fi
     
-    if [ "$exit_code" -eq 1 ] && [ "$is_gpu_error" = true ]; then
+    if [ "$is_exit_code_1_or_2" = true ] && [ "$is_gpu_error" = true ]; then
         # Handle GPU errors the same way as CUDA unavailable errors
         handle_gpu_error_and_exit "$new_err
 GPU-related runtime error detected. Requeuing job." "GPU runtime error, Requeuing job"
-    elif [ "$exit_code" -eq 1 ]; then
+    elif [ "$is_exit_code_1_or_2" = true ]; then
         new_err="$new_err
 This is likely a user error. Not requeuing.
 Please check ${fail_name}.err and ${fail_name}.out for details.

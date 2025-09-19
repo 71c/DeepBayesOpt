@@ -62,7 +62,7 @@ def _gp_bo_jobs_spec_and_cfgs(
 
     for nn_options in options_list:
         dataset_type = nn_options.get('function_samples_dataset.dataset_type', 'gp')
-        if dataset_type not in  {'gp', 'hpob'}:
+        if dataset_type not in {'gp', 'hpob'}:
             raise ValueError(f"Unsupported dataset type: {dataset_type}")
         gp_options = {
             k.split('.')[-1]: v for k, v in nn_options.items()
@@ -82,8 +82,8 @@ def _gp_bo_jobs_spec_and_cfgs(
                 "If dataset_type is 'hpob', then there must be some "\
                 "hpob options and no gp options."
             objective_args = hpob_options
-            objective_args['dimension'] = get_hpob_dataset_dimension(
-                objective_args['hpob_search_space_id'])
+        
+        objective_args['dataset_type'] = dataset_type
         
         objective_args_str = dict_to_str(objective_args)
 
@@ -258,6 +258,8 @@ def generate_gp_bo_job_specs(args: argparse.Namespace,
     nn_options_list, nn_refined_config = get_config_options_list(
         nn_base_config, nn_experiment_config)
 
+    ### TODO-HPO-B: Do this for GP, but do something else for HPOB.
+    ### Make it vary both the objective function and the seed (seed1-5)
     # Set seed again for reproducibility
     torch.manual_seed(args.seed)
     # Set a seed for each round of GP function draw + BO loop

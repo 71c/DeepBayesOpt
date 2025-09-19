@@ -20,6 +20,7 @@ from nn_af.acquisition_function_net_save_utils import load_nn_acqf_configs
 from nn_af.acquisition_function_net import GittinsAcquisitionFunctionNet
 from nn_af.acquisition_function_net_save_utils import load_nn_acqf, nn_acqf_is_trained
 from datasets.dataset_with_models import RandomModelSampler
+from datasets.hpob_dataset import get_hpob_dataset_dimension, get_hpob_objective_function
 from gp_acquisition_dataset_manager import (
     GP_GEN_DEVICE, add_gp_args, get_gp_model_from_args_no_outcome_transform,
     get_outcome_transform_from_args as get_outcome_transform)
@@ -176,6 +177,9 @@ def _get_bo_loop_args_parser():
         help='Seed for the random GP draw (the objective function)',
         required=True
     )
+    # TODO-HPO-B: make the above two arguments optional if using HPOB; add the HPOB args;
+    # add a --objective_dataset_type argument that is either 'gp' or 'hpob';
+    # add logic to handle both GP and HPOB cases being required
     add_gp_args(objective_function_group, "objective function",
                 name_prefix=OBJECTIVE_NAME_PREFIX,
                 required=True, add_randomize_params=True)
@@ -305,14 +309,24 @@ def _optimize_function(objective_fn, dimension, objective_name):
     return optimal_input, optimal_output
 
 
-def _get_gp_objective_things(objective_args):
-    objective_gp, objective_fn, objective_name = _get_gp_objective_things_helper(
-        dimension=objective_args['dimension'],
-        kernel=objective_args['kernel'],
-        lengthscale=objective_args['lengthscale'],
-        randomize_params=objective_args['randomize_params'],
-        gp_seed=objective_args['gp_seed']
-    )
+def _get_objective_things(objective_args):
+    if objective_args['dataset_type'] == 'gp':
+        objective_gp, objective_fn, objective_name = _get_gp_objective_things_helper(
+            dimension=objective_args['dimension'],
+            kernel=objective_args['kernel'],
+            lengthscale=objective_args['lengthscale'],
+            randomize_params=objective_args['randomize_params'],
+            gp_seed=objective_args['gp_seed']
+        )
+    elif objective_args['dataset_type'] == 'hpob':
+        dataset_id = None # TODO-HPO-B: provide this
+        objective_fn = get_hpob_objective_function(
+            search_space_id=objective_args['hpob_search_space_id'],
+            dataset_id=dataset_id
+        )
+        objective_name = f"hpob_{objective_args['hpob_search_space_id']}_{dataset_id}"
+        objective_gp = None
+
     # Apply outcome transform to the objective function
     objective_octf, objective_octf_args = get_outcome_transform(
         argparse.Namespace(**objective_args),
@@ -364,10 +378,16 @@ def pre_run_bo(objective_args: dict[str, Any],
                     tmp = ', '.join(param_methods)
                     raise ValueError(f"Cannot specify {k} if {gen_candidates=} "
                                     f"(this is only for gen_candidates={tmp})")
-
-    dimension = objective_args['dimension']
+    
+    dataset_type = objective_args.get('dataset_type', 'gp')
+    
+    if dataset_type == 'gp':
+        dimension = objective_args['dimension']
+    elif dataset_type == 'hpob':
+        dimension = get_hpob_dataset_dimension(objective_args['hpob_search_space_id'])
+    
     (objective_gp, objective_octf, objective_fn,
-     objective_name, optimal_output) = _get_gp_objective_things(objective_args)
+     objective_name, optimal_output) = _get_objective_things(objective_args)
     
     ############################# Determine the BO policy ##############################
     lamda = bo_policy_args.get('lamda', None)
@@ -375,6 +395,8 @@ def pre_run_bo(objective_args: dict[str, Any],
         raise ValueError("lamda must be > 0")
     
     results_print_data = {'dimension': dimension}
+    if dataset_type == 'hpob':
+        results_print_data['search space ID'] = objective_args['hpob_search_space_id']
     
     nn_model_name = bo_policy_args.get('nn_model_name')
     random_search = bo_policy_args.get('random_search', False)
