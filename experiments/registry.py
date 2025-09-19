@@ -108,8 +108,9 @@ class ExperimentRegistry:
         
         # Seeds configuration
         seeds_parts = [f"--n_seeds {params['n_seeds']}"]
-        if params.get('single_objective', False):
-            seeds_parts.append("--single_objective")
+        n_objectives = params.get('n_objectives', None)
+        if n_objectives is not None:
+            seeds_parts.append(f"--n_objectives {n_objectives}")
         args['SEEDS_CFG'] = f'"{" ".join(seeds_parts)}"'
         
         # Derived configurations (matching original commands.txt)

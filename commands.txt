@@ -15,7 +15,7 @@ SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_gittins_good.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_maxhistory20_gittins_good_reduced_variability";
-SEEDS_CFG="--n_seeds 128 --single_objective";
+SEEDS_CFG="--n_seeds 128 --n_objectives 1";
 PLOTS_GROUP_NAME="1dim_maxhistory20_gittins_good_reduced_variability";
 BO_PLOTS_NAME="results_100iter";
 
@@ -24,7 +24,7 @@ SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_gittins_big.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_8dim_maxhistory20_gittins_big";
-SEEDS_CFG="--n_seeds 32 --single_objective";
+SEEDS_CFG="--n_seeds 32 --n_objectives 1";
 PLOTS_GROUP_NAME="8dim_maxhistory20_gittins_big";
 BO_PLOTS_NAME="results_100iter";
 
@@ -33,7 +33,7 @@ SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_ei_refine_lr.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_maxhistory20_ei_refine_lr";
-SEEDS_CFG="--n_seeds 32 --single_objective";
+SEEDS_CFG="--n_seeds 32 --n_objectives 1";
 PLOTS_GROUP_NAME="1dim_maxhistory20_ei_refine_lr";
 BO_PLOTS_NAME="results_100iter";
 
@@ -43,7 +43,7 @@ SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_gittins_big_2.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_8dim_maxhistory100_gittins_big_2";
-SEEDS_CFG="--n_seeds 16 --single_objective";
+SEEDS_CFG="--n_seeds 16 --n_objectives 1";
 PLOTS_GROUP_NAME="8dim_maxhistory100_gittins_big_2";
 BO_PLOTS_NAME="results_100iter";
 
@@ -52,7 +52,7 @@ SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_ei_many_epochs.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_maxhistory20_ei_many_epochs";
-SEEDS_CFG="--n_seeds 32 --single_objective";
+SEEDS_CFG="--n_seeds 32 --n_objectives 1";
 PLOTS_GROUP_NAME="1dim_maxhistory20_ei_many_epochs";
 BO_PLOTS_NAME="results_100iter";
 
@@ -61,7 +61,7 @@ SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_ei_many_epochs_2.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_maxhistory20_ei_many_epochs_2";
-SEEDS_CFG="--n_seeds 128 --single_objective";
+SEEDS_CFG="--n_seeds 128 --n_objectives 1";
 PLOTS_GROUP_NAME="1dim_maxhistory20_ei_many_epochs_2";
 BO_PLOTS_NAME="results_100iter";
 
@@ -70,7 +70,7 @@ SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_gittins_good.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_8dim_maxhistory20_gittins_good";
-SEEDS_CFG="--n_seeds 32 --single_objective";
+SEEDS_CFG="--n_seeds 32 --n_objectives 1";
 PLOTS_GROUP_NAME="8dim_maxhistory20_gittins_good";
 BO_PLOTS_NAME="results_100iter";
 
@@ -80,7 +80,7 @@ SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_gittins_good_2.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_8dim_maxhistory20_gittins_good_2";
-SEEDS_CFG="--n_seeds 32 --single_objective";
+SEEDS_CFG="--n_seeds 32 --n_objectives 1";
 PLOTS_GROUP_NAME="8dim_maxhistory20_gittins_good_2";
 BO_PLOTS_NAME="results_100iter";
 
@@ -89,7 +89,7 @@ SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_gittins_dataset_size.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_8dim_maxhistory20_gittins_dataset_size";
-SEEDS_CFG="--n_seeds 32 --single_objective";
+SEEDS_CFG="--n_seeds 32 --n_objectives 1";
 PLOTS_GROUP_NAME="8dim_maxhistory20_gittins_dataset_size";
 BO_PLOTS_NAME="results_100iter";
 
@@ -98,7 +98,7 @@ SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_big.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_8dim_maxhistory20_big";
-SEEDS_CFG="--n_seeds 16 --single_objective";
+SEEDS_CFG="--n_seeds 16 --n_objectives 1";
 PLOTS_GROUP_NAME="8dim_maxhistory20_big";
 BO_PLOTS_NAME="results_100iter";
 
@@ -108,7 +108,7 @@ SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_gittins_regularization.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_8dim_maxhistory20_gittins_regularization";
-SEEDS_CFG="--n_seeds 16 --single_objective";
+SEEDS_CFG="--n_seeds 16 --n_objectives 1";
 PLOTS_GROUP_NAME="8dim_maxhistory20_gittins_regularization";
 BO_PLOTS_NAME="results_100iter";
 
@@ -117,7 +117,7 @@ SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_gittins_regularization_2.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_8dim_maxhistory20_gittins_regularization_2";
-SEEDS_CFG="--n_seeds 16 --single_objective";
+SEEDS_CFG="--n_seeds 16 --n_objectives 1";
 PLOTS_GROUP_NAME="8dim_maxhistory20_gittins_regularization_2";
 BO_PLOTS_NAME="results_100iter";
 
@@ -127,7 +127,7 @@ SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_regularization.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_8dim_maxhistory20_regularization";
-SEEDS_CFG="--n_seeds 16 --single_objective";
+SEEDS_CFG="--n_seeds 16 --n_objectives 1";
 PLOTS_GROUP_NAME="8dim_maxhistory20_regularization";
 BO_PLOTS_NAME="results_100iter";
 
@@ -138,7 +138,7 @@ SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_compare_3methods_initial.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_compare_3methods_initial";
-SEEDS_CFG="--n_seeds 128 --single_objective";
+SEEDS_CFG="--n_seeds 128 --n_objectives 1";
 PLOTS_GROUP_NAME="1dim_maxhistory20_compare_3methods_initial";
 BO_PLOTS_NAME="results_100iter";
 
@@ -148,7 +148,7 @@ SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_architecture_variations.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_pointnet_architecture_variations";
-SEEDS_CFG="--n_seeds 128 --single_objective";
+SEEDS_CFG="--n_seeds 128 --n_objectives 1";
 PLOTS_GROUP_NAME="1dim_pointnet_architecture_variations";
 BO_PLOTS_NAME="results_100iter";
 
@@ -158,7 +158,7 @@ SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_architecture_variations_policy_gradient.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_pointnet_architecture_variations_policy_gradient";
-SEEDS_CFG="--n_seeds 128 --single_objective";
+SEEDS_CFG="--n_seeds 128 --n_objectives 1";
 PLOTS_GROUP_NAME="1dim_pointnet_architecture_variations_policy_gradient";
 BO_PLOTS_NAME="results_100iter";
 
@@ -168,7 +168,7 @@ SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_pointnet_architecture_variations.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_8dim_pointnet_architecture_variations";
-SEEDS_CFG="--n_seeds 128 --single_objective";
+SEEDS_CFG="--n_seeds 128 --n_objectives 1";
 PLOTS_GROUP_NAME="8dim_pointnet_architecture_variations";
 BO_PLOTS_NAME="results_100iter";
 
@@ -180,7 +180,7 @@ SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_architecture_variations_policy_gradient_2.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_pointnet_architecture_variations_policy_gradient_2";
-SEEDS_CFG="--n_seeds 128 --single_objective";
+SEEDS_CFG="--n_seeds 128 --n_objectives 1";
 PLOTS_GROUP_NAME="1dim_pointnet_architecture_variations_policy_gradient_2";
 BO_PLOTS_NAME="results_100iter";
 
@@ -191,7 +191,7 @@ SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_pointnet_architecture_variations_policy_gradient.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_8dim_pointnet_architecture_variations_policy_gradient";
-SEEDS_CFG="--n_seeds 128 --single_objective";
+SEEDS_CFG="--n_seeds 128 --n_objectives 1";
 PLOTS_GROUP_NAME="8dim_pointnet_architecture_variations_policy_gradient";
 BO_PLOTS_NAME="results_100iter";
 
@@ -201,7 +201,7 @@ SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_architecture_variations-dataset_size.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_pointnet_architecture_variations-dataset_size";
-SEEDS_CFG="--n_seeds 64 --single_objective";
+SEEDS_CFG="--n_seeds 64 --n_objectives 1";
 PLOTS_GROUP_NAME="1dim_pointnet_architecture_variations-dataset_size";
 BO_PLOTS_NAME="results_100iter";
 
@@ -211,7 +211,7 @@ SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_feature_dim_variation.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_feature_dim_variation";
-SEEDS_CFG="--n_seeds 128 --single_objective";
+SEEDS_CFG="--n_seeds 128 --n_objectives 1";
 PLOTS_GROUP_NAME="1dim_feature_dim_variation";
 BO_PLOTS_NAME="results_100iter";
 
@@ -223,7 +223,7 @@ SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_architecture_variations-dataset_size-more_architectures.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_pointnet_architecture_variations-dataset_size-more_architectures";
-SEEDS_CFG="--n_seeds 64 --single_objective";
+SEEDS_CFG="--n_seeds 64 --n_objectives 1";
 PLOTS_GROUP_NAME="1dim_pointnet_architecture_variations-dataset_size-more_architectures";
 BO_PLOTS_NAME="results_100iter";
 
@@ -233,7 +233,7 @@ SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_model_size_variations-dataset_size.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_pointnet_model_size_variations-dataset_size";
-SEEDS_CFG="--n_seeds 64 --single_objective";
+SEEDS_CFG="--n_seeds 64 --n_objectives 1";
 PLOTS_GROUP_NAME="1dim_pointnet_model_size_variations-dataset_size";
 BO_PLOTS_NAME="results_100iter";
 
@@ -243,7 +243,7 @@ SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_model_size_variations-dataset_size-2.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_pointnet_model_size_variations-dataset_size-2";
-SEEDS_CFG="--n_seeds 128 --single_objective";
+SEEDS_CFG="--n_seeds 128 --n_objectives 1";
 PLOTS_GROUP_NAME="1dim_pointnet_model_size_variations-dataset_size-2";
 BO_PLOTS_NAME="results_100iter";
 
@@ -253,7 +253,7 @@ SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_big_dataset.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_pointnet_big_dataset";
-SEEDS_CFG="--n_seeds 128 --single_objective";
+SEEDS_CFG="--n_seeds 128 --n_objectives 1";
 PLOTS_GROUP_NAME="1dim_pointnet_big_dataset";
 BO_PLOTS_NAME="results_100iter";
 
@@ -264,7 +264,7 @@ SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet-max_history_input_variation-pbgi.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_pointnet-max_history_input_variation-pbgi";
-SEEDS_CFG="--n_seeds 64 --single_objective";
+SEEDS_CFG="--n_seeds 64 --n_objectives 1";
 PLOTS_GROUP_NAME="1dim_pointnet-max_history_input_variation-pbgi";
 BO_PLOTS_NAME="results_100iter";
 
@@ -274,7 +274,7 @@ SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet-max_history_input_variation-mse_ei.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_pointnet-max_history_input_variation-mse_ei";
-SEEDS_CFG="--n_seeds 64 --single_objective";
+SEEDS_CFG="--n_seeds 64 --n_objectives 1";
 PLOTS_GROUP_NAME="1dim_pointnet-max_history_input_variation-mse_ei";
 BO_PLOTS_NAME="results_100iter";
 
@@ -284,7 +284,7 @@ SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_3dim_pointnet-max_history_input_variation-pbgi.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_3dim_pointnet-max_history_input_variation-pbgi";
-SEEDS_CFG="--n_seeds 64 --single_objective";
+SEEDS_CFG="--n_seeds 64 --n_objectives 1";
 PLOTS_GROUP_NAME="3dim_pointnet-max_history_input_variation-pbgi";
 BO_PLOTS_NAME="results_100iter";
 
@@ -294,13 +294,13 @@ SEED=8;
 NN_EXPERIMENT_CFG="config/train_acqf_experiment_hpob_pointnet-max_history_input_variation-pbgi.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_hpob_pointnet-max_history_input_variation-pbgi";
-SEEDS_CFG="--n_seeds 64 --single_objective";
+SEEDS_CFG="--n_seeds 64 --n_objectives 1";
 PLOTS_GROUP_NAME="hpob_pointnet-max_history_input_variation-pbgi";
 BO_PLOTS_NAME="results_100iter";
 
 
 ######## Optionally use this SEEDS_CFG instead
-SEEDS_CFG="--n_seeds 6 --single_objective";
+SEEDS_CFG="--n_seeds 6 --n_objectives 1";
 
 
 ######### STEP 2: Copy-paste this code into the terminal ########

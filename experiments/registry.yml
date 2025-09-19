@@ -7,8 +7,8 @@ experiments:
       nn_experiment_config: config/train_acqf_experiment_1dim_big.yml
       bo_experiment_config: config/bo_config_experiment_big.yml
       sweep_name: test_100iter_1dim_maxhistory20_big
-      n_seeds: 16
-      single_objective: false
+      n_seeds: 1
+      n_objectives: 16
       plots_group_name: 1dim_maxhistory20_big
       bo_plots_name: results_100iter
     plotting:
@@ -35,7 +35,7 @@ experiments:
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_maxhistory20_gittins_good_reduced_variability
       n_seeds: 128
-      single_objective: true
+      n_objectives: 1
       plots_group_name: 1dim_maxhistory20_gittins_good_reduced_variability
       bo_plots_name: results_100iter
     plotting:
@@ -62,7 +62,7 @@ experiments:
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_8dim_maxhistory20_gittins_big
       n_seeds: 32
-      single_objective: true
+      n_objectives: 1
       plots_group_name: 8dim_maxhistory20_gittins_big
       bo_plots_name: results_100iter
     plotting:
@@ -90,7 +90,7 @@ experiments:
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_maxhistory20_ei_refine_lr
       n_seeds: 32
-      single_objective: true
+      n_objectives: 1
       plots_group_name: 1dim_maxhistory20_ei_refine_lr
       bo_plots_name: results_100iter
     plotting:
@@ -118,7 +118,7 @@ experiments:
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_8dim_maxhistory100_gittins_big_2
       n_seeds: 16
-      single_objective: true
+      n_objectives: 1
       plots_group_name: 8dim_maxhistory100_gittins_big_2
       bo_plots_name: results_100iter
     plotting:
@@ -145,7 +145,7 @@ experiments:
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_maxhistory20_ei_many_epochs
       n_seeds: 32
-      single_objective: true
+      n_objectives: 1
       plots_group_name: 1dim_maxhistory20_ei_many_epochs
       bo_plots_name: results_100iter
     plotting:
@@ -173,7 +173,7 @@ experiments:
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_maxhistory20_ei_many_epochs_2
       n_seeds: 128
-      single_objective: true
+      n_objectives: 1
       plots_group_name: 1dim_maxhistory20_ei_many_epochs_2
       bo_plots_name: results_100iter
     plotting:
@@ -201,7 +201,7 @@ experiments:
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_8dim_maxhistory20_gittins_good
       n_seeds: 32
-      single_objective: true
+      n_objectives: 1
       plots_group_name: 8dim_maxhistory20_gittins_good
       bo_plots_name: results_100iter
     plotting:
@@ -229,7 +229,7 @@ experiments:
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_8dim_maxhistory20_gittins_good_2
       n_seeds: 32
-      single_objective: true
+      n_objectives: 1
       plots_group_name: 8dim_maxhistory20_gittins_good_2
       bo_plots_name: results_100iter
     plotting:
@@ -256,7 +256,7 @@ experiments:
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_8dim_maxhistory20_gittins_dataset_size
       n_seeds: 32
-      single_objective: true
+      n_objectives: 1
       plots_group_name: 8dim_maxhistory20_gittins_dataset_size
       bo_plots_name: results_100iter
     plotting:
@@ -283,7 +283,7 @@ experiments:
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_8dim_maxhistory20_big
       n_seeds: 16
-      single_objective: true
+      n_objectives: 1
       plots_group_name: 8dim_maxhistory20_big
       bo_plots_name: results_100iter
     plotting:
@@ -323,7 +323,7 @@ experiments:
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_8dim_maxhistory20_gittins_regularization
       n_seeds: 16
-      single_objective: true
+      n_objectives: 1
       plots_group_name: 8dim_maxhistory20_gittins_regularization
       bo_plots_name: results_100iter
     plotting:
@@ -362,7 +362,7 @@ experiments:
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_8dim_maxhistory20_gittins_regularization_2
       n_seeds: 16
-      single_objective: true
+      n_objectives: 1
       plots_group_name: 8dim_maxhistory20_gittins_regularization_2
       bo_plots_name: results_100iter
     plotting:
@@ -402,7 +402,7 @@ experiments:
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_8dim_maxhistory20_regularization
       n_seeds: 16
-      single_objective: true
+      n_objectives: 1
       plots_group_name: 8dim_maxhistory20_regularization
       bo_plots_name: results_100iter
     plotting:
@@ -442,7 +442,7 @@ experiments:
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_compare_3methods_initial
       n_seeds: 128
-      single_objective: true
+      n_objectives: 1
       plots_group_name: 1dim_maxhistory20_compare_3methods_initial
       bo_plots_name: results_100iter
     plotting:
@@ -473,7 +473,7 @@ experiments:
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_pointnet_architecture_variations
       n_seeds: 128
-      single_objective: true
+      n_objectives: 1
       plots_group_name: 1dim_pointnet_architecture_variations
       bo_plots_name: results_100iter
     plotting:
@@ -509,7 +509,7 @@ experiments:
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_pointnet_architecture_variations_policy_gradient
       n_seeds: 128
-      single_objective: true
+      n_objectives: 1
       plots_group_name: 1dim_pointnet_architecture_variations_policy_gradient
       bo_plots_name: results_100iter
     plotting:
@@ -544,7 +544,7 @@ experiments:
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_8dim_pointnet_architecture_variations
       n_seeds: 128
-      single_objective: true
+      n_objectives: 1
       plots_group_name: 8dim_pointnet_architecture_variations
       bo_plots_name: results_100iter
     plotting:
@@ -581,7 +581,7 @@ experiments:
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_pointnet_architecture_variations_policy_gradient_2
       n_seeds: 128
-      single_objective: true
+      n_objectives: 1
       plots_group_name: 1dim_pointnet_architecture_variations_policy_gradient_2
       bo_plots_name: results_100iter
     plotting:
@@ -618,7 +618,7 @@ experiments:
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_8dim_pointnet_architecture_variations_policy_gradient
       n_seeds: 128
-      single_objective: true
+      n_objectives: 1
       plots_group_name: 8dim_pointnet_architecture_variations_policy_gradient
       bo_plots_name: results_100iter
     plotting:
@@ -652,7 +652,7 @@ experiments:
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_pointnet_architecture_variations-dataset_size
       n_seeds: 64
-      single_objective: true
+      n_objectives: 1
       plots_group_name: 1dim_pointnet_architecture_variations-dataset_size
       bo_plots_name: results_100iter
     plotting:
@@ -728,7 +728,7 @@ experiments:
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_feature_dim_variation
       n_seeds: 128
-      single_objective: true
+      n_objectives: 1
       plots_group_name: 1dim_feature_dim_variation
       bo_plots_name: results_100iter
     plotting:
@@ -779,7 +779,7 @@ experiments:
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_pointnet_architecture_variations-dataset_size-more_architectures
       n_seeds: 64
-      single_objective: true
+      n_objectives: 1
       plots_group_name: 1dim_pointnet_architecture_variations-dataset_size-more_architectures
       bo_plots_name: results_100iter
     plotting:
@@ -822,7 +822,7 @@ experiments:
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_pointnet_model_size_variations-dataset_size
       n_seeds: 64
-      single_objective: true
+      n_objectives: 1
       plots_group_name: 1dim_pointnet_model_size_variations-dataset_size
       bo_plots_name: results_100iter
     plotting:
@@ -864,7 +864,7 @@ experiments:
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_pointnet_model_size_variations-dataset_size-2
       n_seeds: 128
-      single_objective: true
+      n_objectives: 1
       plots_group_name: 1dim_pointnet_model_size_variations-dataset_size-2
       bo_plots_name: results_100iter
     plotting:
@@ -900,7 +900,7 @@ experiments:
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_pointnet_big_dataset
       n_seeds: 128
-      single_objective: true
+      n_objectives: 1
       plots_group_name: 1dim_pointnet_big_dataset
       bo_plots_name: results_100iter
     plotting:
@@ -930,7 +930,7 @@ experiments:
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_pointnet-max_history_input_variation-pbgi
       n_seeds: 64
-      single_objective: true
+      n_objectives: 1
       plots_group_name: 1dim_pointnet-max_history_input_variation-pbgi
       bo_plots_name: results_100iter
     plotting:
@@ -967,7 +967,7 @@ experiments:
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_pointnet-max_history_input_variation-mse_ei
       n_seeds: 64
-      single_objective: true
+      n_objectives: 1
       plots_group_name: 1dim_pointnet-max_history_input_variation-mse_ei
       bo_plots_name: results_100iter
     plotting:
@@ -1017,7 +1017,7 @@ experiments:
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_3dim_pointnet-max_history_input_variation-pbgi
       n_seeds: 64
-      single_objective: true
+      n_objectives: 1
       plots_group_name: 3dim_pointnet-max_history_input_variation-pbgi
       bo_plots_name: results_100iter
     plotting:
@@ -1055,7 +1055,7 @@ experiments:
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_hpob_pointnet-max_history_input_variation-pbgi
       n_seeds: 64
-      single_objective: true
+      n_objectives: 1
       plots_group_name: hpob_pointnet-max_history_input_variation-pbgi
       bo_plots_name: results_100iter
     plotting:
@@ -1092,7 +1092,7 @@ templates:
       nn_experiment_config: config/train_acqf_experiment_1dim_example.yml
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       n_seeds: 32
-      single_objective: true
+      n_objectives: 1
       bo_plots_name: results_100iter
     plotting:
       train_acqf:
@@ -1116,7 +1116,7 @@ templates:
       nn_experiment_config: config/train_acqf_experiment_8dim_big.yml
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       n_seeds: 16
-      single_objective: true
+      n_objectives: 1
       bo_plots_name: results_100iter
     plotting:
       train_acqf:

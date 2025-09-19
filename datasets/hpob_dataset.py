@@ -14,8 +14,9 @@ _HPOB_PATHS = {
 }
 
 _HPOB_JSON_CACHE = {}
-def _get_hpob_dataset_json(search_space_id: str,
-                           dataset_type: Literal['train', 'validation', 'test']):
+def _get_hpob_dataset_json(
+        search_space_id: str,
+        dataset_type: Literal['train', 'validation', 'test']) -> dict:
     if dataset_type not in _HPOB_JSON_CACHE:
         data_path = _HPOB_PATHS[dataset_type]
         _HPOB_JSON_CACHE[dataset_type] = load_json(data_path)
@@ -32,6 +33,14 @@ def get_hpob_dataset_dimension(search_space_id: str) -> int:
     dataset_id = list(search_space_data.keys())[0]
     X = search_space_data[dataset_id]['X']
     return len(X[0])
+
+
+def get_hpob_dataset_ids(
+        search_space_id: str,
+        dataset_type: Literal['train', 'validation', 'test']) -> list[str]:
+    """Get the list of dataset IDs for a given search space ID and dataset type."""
+    search_space_data = _get_hpob_dataset_json(search_space_id, dataset_type)
+    return sorted(search_space_data.keys())
 
 
 def get_hpob_dataset(search_space_id: str,
