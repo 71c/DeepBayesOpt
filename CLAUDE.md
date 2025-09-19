@@ -19,11 +19,19 @@ This repository implements research on using deep reinforcement learning techniq
   - `bayesopt.py`: Optimizer classes (RandomSearch, GPAcquisitionOptimizer, NNAcquisitionOptimizer)
   - `stable_gittins.py`: Stable Gittins index computations
 
-- **Dataset Generation**: Synthetic objective function datasets  
-  - `gp_acquisition_dataset_manager.py`: GP-based training datasets
-  - `lr_acquisition_dataset_manager.py`: Logistic regression hyperparameter optimization datasets  
-  - `dataset_factory.py`: Unified interface for multiple dataset types
-  - Supporting classes in `datasets/` for dataset hierarchies including `LogisticRegressionRandomDataset`
+- **Dataset Generation**: Multiple dataset types for training acquisition functions
+  - `dataset_factory.py`: Unified factory interface for creating different dataset types
+  - `acquisition_dataset_base.py`: Base classes and manager architecture
+  - `gp_acquisition_dataset_manager.py`: GP-based synthetic training datasets
+  - `lr_acquisition_dataset_manager.py`: Logistic regression hyperparameter optimization datasets
+  - `hpob_acquisition_dataset_manager.py`: HPO-B benchmark datasets
+  - Supporting classes in `datasets/` including `GaussianProcessRandomDataset`, `LogisticRegressionRandomDataset`, and HPO-B datasets
+
+- **Experiment Management** (`experiments/`): Centralized experiment registry and orchestration
+  - `registry.py`: Central registry for managing experiment configurations
+  - `runner.py`: Experiment execution and orchestration
+  - `plot_helper.py`: Utilities for generating experiment plots
+  - `validate_migration.py`: Tools for validating experiment migrations
 
 - **Utilities** (`utils/`):
   - `utils.py`: Outcome transformations, kernel setup, JSON serialization
@@ -42,6 +50,7 @@ The codebase supports three main training approaches:
 The codebase supports multiple dataset types for training acquisition functions:
 1. **Gaussian Process** (`dataset_type: gp`): Traditional GP-based synthetic functions (default)
 2. **Logistic Regression** (`dataset_type: logistic_regression`): Hyperparameter optimization for regularized logistic regression
+3. **HPO-B** (`dataset_type: hpob`): Real-world hyperparameter optimization benchmarks from the HPO-B dataset
 
 ## Common Development Commands
 
@@ -62,8 +71,13 @@ python run_train.py --dimension 1 --lengthscale 0.05 --kernel Matern52 --min_his
 ```
 
 **Logistic Regression Dataset Example:**
-```bash  
+```bash
 python run_train.py --dataset_type logistic_regression --train_samples_size 5000 --test_samples_size 2000 --train_acquisition_size 8000 --batch_size 128 --epochs 200 --layer_width 300 --learning_rate 3e-4 --method gittins --lamda 1e-2 --architecture pointnet --train_n_candidates 5 --test_n_candidates 10 --min_history 1 --max_history 50 --lr_n_samples_range 100 1000 --lr_n_features_range 10 100 --lr_log_lambda_range -6 2 --early_stopping --patience 30
+```
+
+**HPO-B Dataset Example:**
+```bash
+python run_train.py --dataset_type hpob --hpob_search_space_id 5970 --min_history 1 --max_history 20 --train_acquisition_size 8000 --batch_size 128 --epochs 4000 --layer_width 16 --learning_rate 3e-4 --method gittins --lamda 1e-2 --architecture pointnet
 ```
 
 #### Single BO Loop
@@ -95,8 +109,8 @@ The project uses YAML-based hierarchical configuration:
 - **Configuration structure**: Nested parameters with `values` arrays for hyperparameter sweeps
 
 Key configuration sections:
-- `dataset_type`: Choose between 'gp' (default) or 'logistic_regression'  
-- `function_samples_dataset`: Dataset parameters (GP kernel parameters OR logistic regression parameters), dataset sizes
+- `dataset_type`: Choose between 'gp' (default), 'logistic_regression', or 'hpob'
+- `function_samples_dataset`: Dataset parameters (GP kernel parameters, logistic regression parameters, OR HPO-B search space), dataset sizes
 - `acquisition_dataset`: History lengths, candidate counts
 - `architecture`: NN architecture (PointNet/Transformer), layer widths, features
 - `training`: Loss methods, learning rates, regularization
@@ -110,6 +124,10 @@ Key configuration sections:
 - `lr_noise_range`: [min, max] range for noise standard deviation σ_y (e.g., [0.01, 1.0])
 - `lr_log_lambda_range`: [min, max] log-space range for regularization mapping (e.g., [-6, 2])
 - `lr_log_uniform_sampling`: Whether to use log-uniform sampling for parameter ranges (e.g., true)
+
+**HPO-B Dataset Parameters:**
+- `hpob_search_space_id`: HPO-B search space identifier (e.g., '5970', '5860', '6766', '4796')
+- Note: HPO-B datasets have fixed sizes and do not use `train_samples_size`/`test_samples_size` parameters
 
 ### Model Persistence
 
@@ -132,6 +150,14 @@ To add new NN training parameters:
 
 The codebase includes automated SLURM job submission through `bo_experiments_gp.py`. Job dependencies are handled automatically - NN training jobs are submitted first, followed by BO loop jobs that depend on them.
 
+### Experiment Registry
+
+The centralized experiment registry (`experiments/registry.py`) provides structured management of complex experiments:
+- **Configuration Templates**: Reusable experiment configurations
+- **Parameter Validation**: Automatic validation of experiment parameters
+- **Command Generation**: Automatic generation of command-line arguments
+- **Plotting Integration**: Structured plotting configurations with multiple variants
+
 ### Dataset Caching
 
 Datasets are cached in `datasets/` directory with content-based naming to avoid regeneration of identical datasets across experiments.
@@ -139,3 +165,16 @@ Datasets are cached in `datasets/` directory with content-based naming to avoid 
 ## Testing
 
 No specific test framework is mentioned in the codebase. Verify changes by running small-scale experiments with `config/train_acqf_experiment_test_simple.yml`.
+
+## Dataset-Specific Notes
+
+### HPO-B Integration
+- Requires HPO-B dataset files in the directory specified by `HPOB_DATA_DIR` in `utils/constants.py`
+- Supports multiple search spaces: '5970', '5860', '6766', '4796'
+- Fixed dataset sizes (train/validation/test splits are predetermined)
+- No outcome transforms applied
+
+### Logistic Regression Datasets
+- Synthetic hyperparameter optimization tasks
+- Configurable data dimensionality and regularization ranges
+- Supports both uniform and log-uniform parameter sampling

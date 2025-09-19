@@ -1,10 +1,11 @@
 # Model-free Offline RL Bayesian Optimization
 
-This repository contains code for research on using offline deep reinforcement learning techniques to learn acquisition functions for Bayesian optimization. Instead of relying on surrogate models like Gaussian Processes, this approach trains neural networks end-to-end on a dataset of objective functions to approximate acquisition functions such as Expected Improvement and the Gittins index.  
+This repository contains code for research on using offline deep reinforcement learning techniques to learn acquisition functions for Bayesian optimization. Instead of relying on surrogate models like Gaussian Processes, this approach trains neural networks end-to-end on datasets of objective functions to approximate acquisition functions such as Expected Improvement and the Gittins index.
 
 The repository includes:
-- Scripts for generating synthetic datasets of black-box objective functions, training neural network-based acquisition functions, and running Bayesian optimization loops.
-- Fully automated running of experiments using YAML config files and command-line Python scripts to automate the submission of several dependent jobs and job arrays using SLURM.  
+- Scripts for generating synthetic datasets of black-box objective functions (GP-based, logistic regression, and HPO-B benchmark), training neural network-based acquisition functions, and running Bayesian optimization loops.
+- Fully automated running of experiments using YAML config files and command-line Python scripts to automate the submission of several dependent jobs and job arrays using SLURM.
+- Centralized experiment management system with a registry for tracking and organizing complex experiments.
 - Tools assessing the Bayesian optimization performance through scripts that generate and save plots in a hierarchical, systematic way.
 
 NOTE: I might not update this README as quickly as I change the code.
@@ -107,8 +108,19 @@ Use `run_train.py` for training a single NN, and `train_acqf.py` for training mu
 
 ## Training a single neural network
 `run_train.py` is the script that trains a single neural network. `run_train.py --help` will show the description of the arguments. An example command is as follows:
+**GP Dataset Example:**
 ```bash
 python run_train.py --dimension 1 --lengthscale 0.05 --kernel Matern52 --min_history 1 --max_history 20 --replacement --train_n_candidates 1 --test_n_candidates 1 --train_acquisition_size 8192 --train_samples_size 10000 --test_expansion_factor 1 --test_samples_size 5000 --batch_size 512 --early_stopping --min_delta 0.0 --patience 30 --layer_width 200 --learning_rate 3e-4 --lr_scheduler ReduceLROnPlateau --lr_scheduler_patience 15 --lr_scheduler_factor 0.1 --method gittins --lamda 1e-2 --gi_loss_normalization normal --architecture pointnet --epochs 3
+```
+
+**Logistic Regression Dataset Example:**
+```bash
+python run_train.py --dataset_type logistic_regression --train_samples_size 5000 --test_samples_size 2000 --train_acquisition_size 8000 --batch_size 128 --epochs 200 --layer_width 300 --learning_rate 3e-4 --method gittins --lamda 1e-2 --architecture pointnet --train_n_candidates 5 --test_n_candidates 10 --min_history 1 --max_history 50 --lr_n_samples_range 100 1000 --lr_n_features_range 10 100 --lr_log_lambda_range -6 2 --early_stopping --patience 30
+```
+
+**HPO-B Dataset Example:**
+```bash
+python run_train.py --dataset_type hpob --hpob_search_space_id 5970 --min_history 1 --max_history 20 --train_acquisition_size 8000 --batch_size 128 --epochs 4000 --layer_width 16 --learning_rate 3e-4 --method gittins --lamda 1e-2 --architecture pointnet
 ```
 It will output
 ```
@@ -122,7 +134,13 @@ python run_train.py --dimension 1 --kernel Matern52 --lamda 0.01 --lengthscale 0
 ```
 
 ### Dataset generation
-In order to train the neural network, you need to have a dataset of black-box objective functions. Currently, the dataset is randomly generated using Gaussian process models. Since it takes some time to generate the datasets, they are cached in the `datasets` directory. When running `run_train.py`, if the dataset is not found, it will automatically generate the dataset and save it in the `datasets` directory. But there is also a stand-alone script to generate the dataset manually, because this way the dataset generation can be separated from the neural network training which makes it possible to have finer-grained control of the automated job scheduling.
+In order to train the neural network, you need to have a dataset of black-box objective functions. The codebase supports multiple dataset types:
+
+1. **Gaussian Process (GP)**: Randomly generated synthetic functions using GP models (default)
+2. **Logistic Regression**: Hyperparameter optimization tasks for regularized logistic regression
+3. **HPO-B**: Real-world hyperparameter optimization benchmarks from the HPO-B dataset
+
+Since it takes some time to generate the datasets, they are cached in the `datasets` directory. When running `run_train.py`, if the dataset is not found, it will automatically generate the dataset and save it in the `datasets` directory. But there is also a stand-alone script to generate the dataset manually, because this way the dataset generation can be separated from the neural network training which makes it possible to have finer-grained control of the automated job scheduling.
 
 To generate a synthetic dataset of black-box objective functions, use `gp_acquisition_dataset.py`. Run `python gp_acquisition_dataset.py --help` to see the description of the arguments. An example command to generate a dataset is as follows:
 ```bash
@@ -171,9 +189,26 @@ Enabling `--use_rows` and/or `use_cols` is more compact since it fits multiple s
 # Overview of the rest of the codebase
 
 ## Datasets
-- `dataset_with_models.py`: Provides a mechanism for creating a hierarchy of classes that represents datasets and can optionally have a GP model attached to each item in the dataset.
-- `function_samples_dataset.py`: Defines classes that represent samples of functions. Uses `dataset_with_models.py` to create the class `FunctionSamplesDataset`, along with `MapFunctionSamplesDataset`, `ListMapFunctionSamplesDataset`, `LazyMapFunctionSamplesDataset`, and `MapFunctionSamplesSubset`. Also defines `TransformedFunctionSamplesIterableDataset`, `TransformedLazyMapFunctionSamplesDataset`, `GaussianProcessRandomDataset`, and `ResizedFunctionSamplesIterableDataset`.
-- `acquisition_dataset.py`: Defines classes that represent datasets for training acquisition functions. Uses `function_samples_dataset.py` to create the class `AcquisitionDataset`, along with `MapAcquisitionDataset`, `ListMapAcquisitionDataset`, `LazyMapAcquisitionDataset`, and `MapAcquisitionSubset`. Defines `FunctionSamplesAcquisitionDataset` which is used to create an acquisition dataset from a function samples dataset. Also defines `CostAwareAcquisitionDataset` which simply combines random $\lambda$ values with the acquisition dataset.
+- `datasets/`: Directory containing dataset implementations:
+  - `dataset_with_models.py`: Provides a mechanism for creating a hierarchy of classes that represents datasets and can optionally have a GP model attached to each item in the dataset.
+  - `function_samples_dataset.py`: Defines classes that represent samples of functions. Uses `dataset_with_models.py` to create the class `FunctionSamplesDataset`, along with `MapFunctionSamplesDataset`, `ListMapFunctionSamplesDataset`, `LazyMapFunctionSamplesDataset`, and `MapFunctionSamplesSubset`. Also defines `TransformedFunctionSamplesIterableDataset`, `TransformedLazyMapFunctionSamplesDataset`, `GaussianProcessRandomDataset`, and `ResizedFunctionSamplesIterableDataset`.
+  - `acquisition_dataset.py`: Defines classes that represent datasets for training acquisition functions. Uses `function_samples_dataset.py` to create the class `AcquisitionDataset`, along with `MapAcquisitionDataset`, `ListMapAcquisitionDataset`, `LazyMapAcquisitionDataset`, and `MapAcquisitionSubset`. Defines `FunctionSamplesAcquisitionDataset` which is used to create an acquisition dataset from a function samples dataset. Also defines `CostAwareAcquisitionDataset` which simply combines random $\lambda$ values with the acquisition dataset.
+  - `hpob_dataset.py`: Implementation for HPO-B benchmark datasets.
+  - `logistic_regression_dataset.py`: Implementation for logistic regression hyperparameter optimization datasets.
+
+## Dataset Management
+- `dataset_factory.py`: Unified factory interface for creating different dataset types.
+- `acquisition_dataset_base.py`: Base classes and manager architecture for acquisition datasets.
+- `gp_acquisition_dataset_manager.py`: Manager for GP-based datasets.
+- `lr_acquisition_dataset_manager.py`: Manager for logistic regression datasets.
+- `hpob_acquisition_dataset_manager.py`: Manager for HPO-B datasets.
+
+## Experiment Management
+- `experiments/`: Directory containing the centralized experiment management system:
+  - `registry.py`: Central registry for managing experiment configurations.
+  - `runner.py`: Experiment execution and orchestration.
+  - `plot_helper.py`: Utilities for generating experiment plots.
+  - `validate_migration.py`: Tools for validating experiment migrations.
 
 ## NN AF Architecture: `acquisition_function_net.py`
 `acquisition_function_net.py` defines PyTorch modules for acquisition functions in likelihood-free Bayesian optimization. It includes modular classes for structured acquisition function design, such as:
