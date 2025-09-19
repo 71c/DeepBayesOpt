@@ -3,6 +3,7 @@ from typing import Any, Optional
 import cProfile, pstats
 import torch
 
+from datasets.hpob_dataset import get_hpob_dataset_dimension
 from nn_af.acquisition_function_net_save_utils import get_lamda_for_bo_of_nn
 from utils.utils import dict_to_str, group_by, save_json
 from utils.experiments.experiment_config_utils import CONFIG_DIR, add_config_args, get_config_options_list
@@ -52,7 +53,7 @@ def _gp_bo_jobs_spec_and_cfgs(
         options_list, bo_loop_args_list, bo_loop_args_list_random_search,
         seeds, single_objective=False, always_train=False,
         dependents_slurm_options:dict[str, Any]={}):
-    gp_options_dict = {}
+    objective_args_dict = {}
 
     new_bo_configs = []
     existing_bo_configs_and_results = []
@@ -60,16 +61,35 @@ def _gp_bo_jobs_spec_and_cfgs(
     included = []
 
     for nn_options in options_list:
+        dataset_type = nn_options.get('function_samples_dataset.dataset_type', 'gp')
+        if dataset_type not in  {'gp', 'hpob'}:
+            raise ValueError(f"Unsupported dataset type: {dataset_type}")
         gp_options = {
             k.split('.')[-1]: v for k, v in nn_options.items()
             if k.startswith("function_samples_dataset.gp.")
         }
+        hpob_options = {
+            k.split('.')[-1]: v for k, v in nn_options.items()
+            if k.startswith("function_samples_dataset.hpob.")
+        }
+        if dataset_type == 'gp':
+            assert len(gp_options) != 0 and len(hpob_options) == 0, \
+                "If dataset_type is 'gp', then there must be some "\
+                "gp options and no hpob options."
+            objective_args = gp_options
+        elif dataset_type == 'hpob':
+            assert len(gp_options) == 0 and len(hpob_options) != 0, \
+                "If dataset_type is 'hpob', then there must be some "\
+                "hpob options and no gp options."
+            objective_args = hpob_options
+            objective_args['dimension'] = get_hpob_dataset_dimension(
+                objective_args['hpob_search_space_id'])
+        
+        objective_args_str = dict_to_str(objective_args)
 
-        gp_options_str = dict_to_str(gp_options)
-
-        if gp_options_str not in gp_options_dict:
-            gp_options_dict[gp_options_str] = {
-                'gp_options': gp_options,
+        if objective_args_str not in objective_args_dict:
+            objective_args_dict[objective_args_str] = {
+                'objective_args': objective_args,
                 'lamda_vals': set()
             }
 
@@ -80,7 +100,7 @@ def _gp_bo_jobs_spec_and_cfgs(
             lamda_max = nn_options.get('training.lamda_config.lamda_max')
             
             lamda = get_lamda_for_bo_of_nn(lamda, lamda_min, lamda_max)
-            gp_options_dict[gp_options_str]['lamda_vals'].add(lamda)
+            objective_args_dict[objective_args_str]['lamda_vals'].add(lamda)
         else:
             lamda = None
 
@@ -94,7 +114,7 @@ def _gp_bo_jobs_spec_and_cfgs(
         for bo_loop_args in bo_loop_args_list:
             new_cmds, new_cfgs, existing_cfgs_and_results = _generate_bo_commands(
                 seeds,
-                objective_args=gp_options,
+                objective_args=objective_args,
                 bo_policy_args={**bo_loop_args, 'lamda': lamda,
                                 'nn_model_name': model_and_info_name},
                 gp_af_args={},
@@ -118,15 +138,15 @@ def _gp_bo_jobs_spec_and_cfgs(
 
     # Add the GP AF commands & random search
     non_nn_bo_commands = []
-    for options in gp_options_dict.values():
-        gp_options = options['gp_options']
+    for options in objective_args_dict.values():
+        objective_args = options['objective_args']
         lamda_vals = options['lamda_vals']
         if len(lamda_vals) == 0:
             lamda_vals = {1e-4}
 
-        if gp_options['randomize_params']:
+        if objective_args['randomize_params']:
             gp_af_fit_args = {
-                k: v for k, v in gp_options
+                k: v for k, v in objective_args
                 if not (k == 'dimension' or k == 'randomize_params')
             }
             gp_af_fit_args['fit'] = 'map'
@@ -143,7 +163,7 @@ def _gp_bo_jobs_spec_and_cfgs(
                 for bo_loop_args in bo_loop_args_list:
                     new_cmds, new_cfgs, existing_cfgs_and_results = _generate_bo_commands(
                         seeds,
-                        objective_args=gp_options,
+                        objective_args=objective_args,
                         bo_policy_args={**bo_loop_args, **extra_bo_policy_args},
                         gp_af_args=gp_af_args,
                         single_objective=single_objective
@@ -156,7 +176,7 @@ def _gp_bo_jobs_spec_and_cfgs(
         for bo_loop_args in bo_loop_args_list_random_search:
             new_cmds, new_cfgs, existing_cfgs_and_results = _generate_bo_commands(
                 seeds,
-                objective_args=gp_options,
+                objective_args=objective_args,
                 bo_policy_args={**bo_loop_args, 'random_search': True},
                 gp_af_args={},
                 single_objective=single_objective

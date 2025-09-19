@@ -1,7 +1,14 @@
 {
   "permissions": {
     "allow": [
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(sinfo:*)",
+      "Bash(squeue:*)",
+      "Bash(scontrol show:*)",
+      "Bash(netstat:*)",
+      "Bash(sbatch:*)",
+      "Bash(salloc:*)",
+      "Bash(srun:*)"
     ],
     "deny": [],
     "ask": []
