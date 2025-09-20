@@ -112,7 +112,8 @@ def _load_hpob_surrogates_stats(surrogate_name: str):
 
 
 @cache
-def get_hpob_objective_function(search_space_id: str, dataset_id: str):
+def get_hpob_objective_function(
+    search_space_id: str, dataset_id: str, scale_y: bool = True):
     """Get a function that evaluates the objective function for a given
     HPO-B search space ID and dataset ID."""
     dataset_ids = get_hpob_dataset_ids(search_space_id, 'test')
@@ -124,10 +125,17 @@ def get_hpob_objective_function(search_space_id: str, dataset_id: str):
     bst_surrogate = xgb.Booster()
     bst_surrogate.load_model(f"{HPOB_SAVED_SURROGATES_DIR}/{surrogate_name}.json")
 
-    surrogate_stats = _load_hpob_surrogates_stats(surrogate_name)
-    y_min = surrogate_stats["y_min"]
-    y_max = surrogate_stats["y_max"]
-    # print(f"{surrogate_name}: y_min={y_min}, y_max={y_max}")
+    ## Note: The y_min and y_max values stored in the summary-stats.json file
+    ## have been observed to sometimes incorrect, so instead we compute them from
+    ## the actual dataset y values.
+    # surrogate_stats = _load_hpob_surrogates_stats(surrogate_name)
+    # y_min = surrogate_stats["y_min"]
+    # y_max = surrogate_stats["y_max"]
+
+    y_vals = _get_hpob_dataset_json(search_space_id, 'test')[dataset_id]['y']
+    y_vals = np.array(y_vals)
+    y_min, y_max = y_vals.min(), y_vals.max()
+
     dim = get_hpob_dataset_dimension(search_space_id)
 
     def objective_function(x: torch.Tensor) -> torch.Tensor:
@@ -150,9 +158,11 @@ def get_hpob_objective_function(search_space_id: str, dataset_id: str):
         x_q = xgb.DMatrix(x_np)
         new_y = bst_surrogate.predict(x_q)
 
-        ## This is what HPO-B does, but I'm not sure whether it's a good idea.
-        new_y = (new_y - y_min) / (y_max - y_min)
-        new_y = np.clip(new_y, 0, 1)
+        if scale_y:
+            new_y = (new_y - y_min) / (y_max - y_min)
+            new_y = np.clip(new_y, 0, 1)
+        else:
+            new_y = np.clip(new_y, y_min, y_max)
 
         new_y = torch.tensor(new_y, device=x.device, dtype=x.dtype)
         assert new_y.dim() == 1 and new_y.size(0) == x.size(0)
@@ -162,16 +172,66 @@ def get_hpob_objective_function(search_space_id: str, dataset_id: str):
 
 
 if __name__ == "__main__":
-    # Example usage
-    dataset = get_hpob_dataset('5970', 'train')
+    import matplotlib.pyplot as plt
+
+    search_space_id = '5970' # ranger (5), 2 dimensions
+    # search_space_id = '5965' # ranger (9), 10 dimensions
+    # search_space_id = '5636'
+    dataset_type = 'test'
+    dataset = get_hpob_dataset(search_space_id, dataset_type)
+    dataset_ids = get_hpob_dataset_ids(search_space_id, dataset_type)
     print(f"Number of datasets: {len(dataset)}")
+
+    # Create 3 rows of subplots
+    fig, axs = plt.subplots(1, len(dataset), figsize=(5*len(dataset), 5), squeeze=True)
+    if len(dataset) == 1:
+        axs = [axs]
+
     for i in range(len(dataset)):
         item = dataset[i]
-        min_y = item.y_values.min().item()
-        max_y = item.y_values.max().item()
+        dataset_id = dataset_ids[i]
+
+        y_values = item.y_values.flatten()
+
+        # Split dataset into two random equal-sized parts
+        n_samples = len(y_values)
+
+        # Get original min/max for plotting
+        min_y = y_values.min().item()
+        max_y = y_values.max().item()
         min_x = item.x_values.min(axis=0).values.numpy()
         max_x = item.x_values.max(axis=0).values.numpy()
+        surrogate_stats = _load_hpob_surrogates_stats('surrogate-'+search_space_id+'-'+dataset_id)
+        min_y_surrogate = surrogate_stats["y_min"]
+        max_y_surrogate = surrogate_stats["y_max"]
         print(
             f"Dataset {i}: X shape: {tuple(item.x_values.shape)}, "
-            f"y shape: {tuple(item.y_values.shape)}, y min: {min_y}, y max: {max_y}, "
+            f"y shape: {tuple(y_values.shape)}, y min: {min_y}, y max: {max_y}, "
+            f"y min (surrogate): {min_y_surrogate}, y max (surrogate): {max_y_surrogate}, "
             f"X min: {min_x}, X max: {max_x}")
+
+        surrogate_function = get_hpob_objective_function(
+            search_space_id, dataset_id, scale_y=False)
+
+        y = y_values.cpu().numpy()
+        y_pred = surrogate_function(item.x_values).cpu().numpy()
+
+        axs[i].scatter(y, y_pred, alpha=0.5)
+        axs[i].plot([min_y, max_y], [min_y, max_y], 'r--')
+        axs[i].set_xlabel("True y")
+        axs[i].set_ylabel("Predicted y")
+        axs[i].set_title(f"Dataset {i} (ID {dataset_id})")
+        axs[i].set_aspect('equal', 'box')
+        axs[i].grid(True)
+
+        ## Can observe in the plots that these min/max values are sometimes wrong
+        axs[i].axhline(min_y_surrogate, color='g', linestyle='--', label='Surrogate min')
+        axs[i].axhline(max_y_surrogate, color='b', linestyle='--', label='Surrogate max')
+        axs[i].legend()
+
+        # axs[i].axhline(min_y, color='g', linestyle='--', label='Surrogate min')
+        # axs[i].axhline(max_y, color='b', linestyle='--', label='Surrogate max')
+        # axs[i].legend()
+
+    plt.tight_layout()
+    plt.savefig("hpob_surrogate_check.pdf")
