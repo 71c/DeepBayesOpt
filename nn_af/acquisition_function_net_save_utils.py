@@ -96,13 +96,18 @@ def load_nn_acqf_configs(model_and_info_folder_name: str):
         dataset_transform_config['outcome_transform'] = torch.load(
             os.path.join(model_and_info_path, "outcome_transform.pt"))
     
-    model_sampler = RandomModelSampler.load(
-        os.path.join(model_and_info_path, "model_sampler"))
-    if function_samples_config['models'] is not None:
-        function_samples_config['models'] = model_sampler.initial_models
-        function_samples_config['model_probabilities'] = model_sampler.model_probabilities
-        assert model_sampler.randomize_params == function_samples_config['randomize_params']
-        function_samples_config['model_sampler'] = model_sampler
+    try:
+        model_sampler = RandomModelSampler.load(
+            os.path.join(model_and_info_path, "model_sampler"))
+        if function_samples_config['models'] is not None:
+            function_samples_config['models'] = model_sampler.initial_models
+            function_samples_config['model_probabilities'] = model_sampler.model_probabilities
+            assert model_sampler.randomize_params == function_samples_config['randomize_params']
+            function_samples_config['model_sampler'] = model_sampler
+    except FileNotFoundError:
+        assert not any(
+            k in function_samples_config for k in
+            ['models', 'model_probabilities', 'randomize_params', 'model_sampler'])
     
     training_config = load_json(
         os.path.join(model_and_info_path, "training_config.json"))
@@ -119,9 +124,10 @@ def load_nn_acqf_configs(model_and_info_folder_name: str):
         af_dataset_config=af_dataset_config,
         hash_gpytorch_modules=False
     )
-    del all_info_json['function_samples_config']['models']
-    del all_info_json['function_samples_config']['model_probabilities']
-    del all_info_json['function_samples_config']['randomize_params']
+    if model_sampler is not None:
+        del all_info_json['function_samples_config']['models']
+        del all_info_json['function_samples_config']['model_probabilities']
+        del all_info_json['function_samples_config']['randomize_params']
     return all_info_json
 
 

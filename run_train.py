@@ -1,10 +1,6 @@
-# Run like, e.g.,
-# python run_train.py --dimension 8 --test_expansion_factor 1 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_samples_size 5000 --test_n_candidates 1 --train_samples_size 10000 --train_acquisition_size 2000 --train_n_candidates 1 --batch_size 32 --early_stopping --epochs 200 --layer_width 100 --learning_rate 0.0003 --method gittins --min_delta 0.0 --gi_loss_normalization normal --patience 5 --lamda 0.001 --replacement
-from functools import lru_cache
 from typing import Optional, Sequence
 import torch
 import matplotlib.pyplot as plt
-import numpy as np
 import os
 import cProfile, pstats
 from datetime import datetime
@@ -13,7 +9,6 @@ from nn_af.acquisition_function_net_save_utils import get_lamda_for_bo_of_nn
 from utils.exact_gp_computations import calculate_EI_GP
 from utils.utils import DEVICE, load_json, save_json
 from utils.plot_utils import (
-    plot_acquisition_function_net_training_history_ax,
     plot_nn_vs_gp_acquisition_function_1d_grid,
     plot_acquisition_function_net_training_history)
 from utils.nn_utils import count_trainable_parameters, count_parameters
@@ -63,6 +58,10 @@ def run_train(cmd_args: Optional[Sequence[str]]=None):
     print("Number of parameters:", count_parameters(model))
     print(f"\nSaving model and configs to {model_and_info_folder_name}\n")
 
+    dataset_type = getattr(args, 'dataset_type', 'gp')
+    get_train_true_gp_stats = GET_TRAIN_TRUE_GP_STATS and dataset_type == 'gp'
+    get_test_true_gp_stats = GET_TEST_TRUE_GP_STATS and dataset_type == 'gp'
+
     ####################### Make the train and test datasets #######################
     (train_aq_dataset, test_aq_dataset,
      small_test_aq_dataset) = create_train_test_acquisition_datasets_from_args(args)
@@ -92,8 +91,6 @@ def run_train(cmd_args: Optional[Sequence[str]]=None):
         # optimizer = torch.optim.SGD(model.parameters(), lr=args.learning_rate, momentum=0.9)
         # optimizer = torch.optim.RMSprop(model.parameters(), lr=learning_rate)
 
-        dataset_type = getattr(args, 'dataset_type', 'gp')
-
         training_history_data = train_acquisition_function_net(
             model, train_aq_dataset, optimizer, args.method, args.epochs, args.batch_size,
             DEVICE, verbose=VERBOSE, n_train_printouts_per_epoch=10,
@@ -104,8 +101,8 @@ def run_train(cmd_args: Optional[Sequence[str]]=None):
             get_train_stats_after_training=True,
             ## These both default to reasonable values depending on whether the
             ## acquisition datasets are fixed
-            get_train_true_gp_stats=GET_TRAIN_TRUE_GP_STATS and dataset_type == 'gp',
-            get_test_true_gp_stats=GET_TEST_TRUE_GP_STATS and dataset_type == 'gp',
+            get_train_true_gp_stats=get_train_true_gp_stats,
+            get_test_true_gp_stats=get_test_true_gp_stats,
             save_dir=model_path,
             save_incremental_best_models=SAVE_INCREMENTAL_BEST_MODELS and args.save_model,
             # early stopping
@@ -166,7 +163,7 @@ def run_train(cmd_args: Optional[Sequence[str]]=None):
                     test_dataloader, model, train=False,
                     nn_device=DEVICE, method=args.method,
                     verbose=False, desc=f"Compute final test stats",
-                    get_true_gp_stats=GET_TEST_TRUE_GP_STATS,
+                    get_true_gp_stats=get_test_true_gp_stats,
                     get_map_gp_stats=False,
                     get_basic_stats=True,
                     alpha_increment=args.alpha_increment,
@@ -181,6 +178,7 @@ def run_train(cmd_args: Optional[Sequence[str]]=None):
         if model_path is not None:
             history_plot_path = os.path.join(model_path, 'training_history.pdf')
             history_fig.savefig(history_plot_path, bbox_inches='tight')
+            print(f"Saved training history plot to {history_plot_path}")
 
     ######################## Plot performance of model #############################
     ######################## (old useless code)

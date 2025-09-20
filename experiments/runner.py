@@ -132,7 +132,9 @@ class ExperimentRunner:
         except Exception as e:
             return 1, "", f"Error running experiment: {str(e)}"
     
-    def run_training_only(self, name: str, dry_run: bool = False) -> Tuple[int, str, str]:
+    def run_training_only(self, name: str,
+                          dry_run: bool = False,
+                          no_submit: bool = False) -> Tuple[int, str, str]:
         """Run only the training part of an experiment."""
         try:
             args = self.registry.get_experiment_command_args(name)
@@ -147,6 +149,10 @@ class ExperimentRunner:
             # Add SLURM configuration
             slurm_cfg = args['SLURM_CFG'].strip('"').split()
             cmd.extend(slurm_cfg)
+
+            # Add optional flags
+            if no_submit:
+                cmd.append("--no_submit")
             
             if dry_run:
                 print("Dry run - would execute command:")

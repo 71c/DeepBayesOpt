@@ -467,17 +467,9 @@ def plot_nn_vs_gp_acquisition_function_1d(
     return arrs, fit_methods
 
 
-def plot_acquisition_function_net_training_history_ax(
-        ax, training_history_data, plot_maxei=False, plot_log_regret=False,
-        plot_name=None, label='', strict_colors=True):
-    if label:
-        label = f' ({label})'
+def _get_gp_stat_info(training_history_data, plot_maxei):
     stats_epochs = training_history_data['stats_epochs']
     stat_name = 'maxei' if plot_maxei else training_history_data['stat_name']
-    
-    train_stat = np.array(
-        [epoch['train']['after_training'][stat_name] for epoch in stats_epochs])
-    test_stat = np.array([epoch['test'][stat_name] for epoch in stats_epochs])
     
     # Determine the GP test stat
     if stat_name == 'mse' or stat_name == 'maxei':
@@ -498,12 +490,25 @@ def plot_acquisition_function_net_training_history_ax(
         gp_test_stat = gp_test_stat[0]
     except KeyError:
         gp_test_stat = None
+    return stats_epochs, stat_name, gp_stat_name, is_loss, gp_test_stat
+
+
+def plot_acquisition_function_net_training_history_ax(
+        ax, training_history_data, plot_maxei=False, plot_log_regret=False,
+        plot_name=None, label='', strict_colors=True):
+    stats_epochs, stat_name, gp_stat_name, is_loss, gp_test_stat = _get_gp_stat_info(
+        training_history_data, plot_maxei)
+    
+    if label:
+        label = f' ({label})'
+    test_stat = np.array([epoch['test'][stat_name] for epoch in stats_epochs])
     
     if plot_log_regret:
         if gp_test_stat is None:
             s = stats_epochs[0]['test']
-            print(f"Fist test stats: {s}", file=sys.stderr)
-            raise ValueError(f"Need to have GP test stat '{gp_stat_name}' to plot regret")
+            raise ValueError(
+                f"Need to have GP test stat '{gp_stat_name}' to plot regret. "
+                f"Fist test stats: {s}")
         # regret_data = np.abs(test_stat - gp_test_stat)
         regret_data = test_stat - gp_test_stat
         regret_data = -regret_data if regret_data[0] < 0 else regret_data
@@ -523,6 +528,8 @@ def plot_acquisition_function_net_training_history_ax(
             'log_scale_y': True
         }
     else:
+        train_stat = np.array(
+            [epoch['train']['after_training'][stat_name] for epoch in stats_epochs])
         to_plot = {
             'lines': [
                 {
@@ -553,7 +560,7 @@ def plot_acquisition_function_net_training_history_ax(
                 }
             ]
 
-    epochs = np.arange(1, len(train_stat) + 1)
+    epochs = np.arange(1, len(test_stat) + 1)
 
     line_properties = ['label', 'marker', 'linestyle']
     if strict_colors:
@@ -599,19 +606,24 @@ def plot_acquisition_function_net_training_history(
 
     plot_log_regrets = [False]
     if plot_log_regret:
-        plot_log_regrets.append(True)
+        (stats_epochs, stat_name, gp_stat_name,
+         is_loss, gp_test_stat) = _get_gp_stat_info(training_history_data, plot_maxei)
+        if gp_test_stat is not None:
+            plot_log_regrets.append(True)
 
     n_rows, n_cols = 1, len(plot_log_regrets)
     fig, axs = plt.subplots(n_rows, n_cols,
                              figsize=(width * n_cols, height * n_rows),
                              sharex=False, sharey=False,
-                             squeeze=True)
-    for ax, plot_log_regret in zip(axs, plot_log_regrets):
+                             squeeze=False)
+    axs = axs.flatten()
+
+    for ax, plt_log_regret in zip(axs, plot_log_regrets):
         plot_acquisition_function_net_training_history_ax(
             ax=ax,
             training_history_data=training_history_data,
             plot_maxei=plot_maxei,
-            plot_log_regret=plot_log_regret
+            plot_log_regret=plt_log_regret
         )
 
     return fig

@@ -138,7 +138,11 @@ def cmd_run(args):
             print("DRY RUN MODE - no commands will be executed")
         
         if args.training_only:
-            returncode, stdout, stderr = runner.run_training_only(args.name, dry_run=args.dry_run)
+            returncode, stdout, stderr = runner.run_training_only(
+                args.name,
+                dry_run=args.dry_run,
+                no_submit=args.no_submit
+            )
         else:
             returncode, stdout, stderr = runner.run_experiment(
                 args.name, 
