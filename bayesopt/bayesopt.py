@@ -459,7 +459,8 @@ class OptimizationResultsSingleMethod:
 
         if initial_points.dim() != 3:
             raise ValueError("initial_points must be a 3D tensor of shape "
-                             "(n_trials_per_function, n_initial_samples, dim)")
+                             "(n_trials_per_function, n_initial_samples, dim) "
+                             f"but got shape {tuple(initial_points.shape)}")
         self.initial_points = initial_points
         self.n_trials_per_function = initial_points.size(0)
 

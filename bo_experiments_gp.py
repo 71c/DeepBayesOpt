@@ -1,14 +1,13 @@
 import argparse
-from typing import Any, Literal, Optional
+from typing import Any, Optional
 import cProfile, pstats
 import warnings
-from sympy import use
 import torch
 from botorch.exceptions import UnsupportedError
 
-from datasets.hpob_dataset import get_hpob_dataset_dimension, get_hpob_dataset_ids
+from datasets.hpob_dataset import get_hpob_dataset_ids
 from nn_af.acquisition_function_net_save_utils import get_lamda_for_bo_of_nn
-from utils.utils import dict_to_str, group_by, save_json
+from utils.utils import dict_to_str, group_by
 from utils.experiments.experiment_config_utils import CONFIG_DIR, add_config_args, get_config_options_list
 from utils.experiments.submit_dependent_jobs import add_slurm_args, submit_jobs_sweep_from_args
 
@@ -17,6 +16,7 @@ from train_acqf import add_train_acqf_args, cmd_opts_nn_to_model_and_info_name, 
 
 
 CPROFILE = False
+
 N_HPOB_SEEDS = 5 # They provide 5 predefined seeds for HPO-B experiments
 HPOB_SEEDS = [f"test{i}" for i in range(N_HPOB_SEEDS)]
 
@@ -32,7 +32,7 @@ def _generate_bo_commands(
     dataset_type = objective_args['dataset_type']
     if dataset_type == 'hpob':
         test_dataset_ids = get_hpob_dataset_ids(
-            objective_args['search_space_id'], 'test')
+            objective_args['hpob_search_space_id'], 'test')
         n_objectives = len(test_dataset_ids)
         if use_hpob_seeds:
             bo_seeds = seeds[:N_HPOB_SEEDS]
@@ -47,9 +47,9 @@ def _generate_bo_commands(
     for objective_idx in range(n_objectives):
         objective_args_ = {**objective_args}
         if dataset_type == 'hpob':
-            objective_args_['dataset_id'] = test_dataset_ids[objective_idx]
+            objective_args_['id'] = test_dataset_ids[objective_idx]
         else:
-            objective_args_['gp_seed'] = seeds[objective_idx]
+            objective_args_['id'] = seeds[objective_idx]
         
         for bo_seed_idx, bo_seed in enumerate(bo_seeds):
             bo_policy_args_ = {**bo_policy_args, 'bo_seed': bo_seed}
@@ -92,7 +92,7 @@ def _gp_bo_jobs_spec_and_cfgs(
     for nn_options in options_list:
         dataset_type = nn_options.get('function_samples_dataset.dataset_type', 'gp')
         if dataset_type not in {'gp', 'hpob'}:
-            raise ValueError(
+            raise UnsupportedError(
                 f"Unsupported dataset type: {dataset_type}. Must be 'gp' or 'hpob'.")
         gp_options = {
             k.split('.')[-1]: v for k, v in nn_options.items()

@@ -20,7 +20,7 @@ from nn_af.acquisition_function_net_save_utils import load_nn_acqf_configs
 from nn_af.acquisition_function_net import GittinsAcquisitionFunctionNet
 from nn_af.acquisition_function_net_save_utils import load_nn_acqf, nn_acqf_is_trained
 from datasets.dataset_with_models import RandomModelSampler
-from datasets.hpob_dataset import get_hpob_dataset_dimension, get_hpob_objective_function
+from datasets.hpob_dataset import get_hpob_dataset_dimension, get_hpob_initialization, get_hpob_objective_function
 from gp_acquisition_dataset_manager import (
     GP_GEN_DEVICE, add_gp_args, get_gp_model_from_args_no_outcome_transform,
     get_outcome_transform_from_args as get_outcome_transform)
@@ -79,7 +79,7 @@ def _add_bo_loop_args(parser, bo_policy_group, af_opt_group):
         '--n_initial_samples',
         type=int,
         help='Number of initial sobol points to sample at before using the AF',
-        required=True
+        required=False # yes required if using GP
     )
     
     af_opt_group.add_argument(
@@ -166,23 +166,39 @@ def _get_bo_loop_args_parser():
     ################## Objective function (can only be a GP for now) ###################
     objective_function_group = parser.add_argument_group("Objective function")
     objective_function_group.add_argument(
-        f'--{OBJECTIVE_NAME_PREFIX}_dimension', 
-        type=int, 
-        help='Dimension of the objective function',
+        f'--{OBJECTIVE_NAME_PREFIX}_dataset_type',
+        choices=['gp', 'hpob'],
+        help='Whether the objective function is a random GP draw (gp) or from HPO-B (hpob)',
         required=True
     )
     objective_function_group.add_argument(
-        f'--{OBJECTIVE_NAME_PREFIX}_gp_seed',
-        type=int, 
-        help='Seed for the random GP draw (the objective function)',
+        f'--{OBJECTIVE_NAME_PREFIX}_id',
+        type=int,
+        help=f'If {OBJECTIVE_NAME_PREFIX}_dataset_type=gp, this is the seed for '
+        'the random GP draw (the objective function). '
+        f'If {OBJECTIVE_NAME_PREFIX}_dataset_type=hpob, this is the dataset ID that '
+        'specifies the HPO-B objective function.',
         required=True
     )
-    # TODO-HPO-B: make the above two arguments optional if using HPOB; add the HPOB args;
-    # add a --objective_dataset_type argument that is either 'gp' or 'hpob';
-    # add logic to handle both GP and HPOB cases being required
+
+    # HPO-B-specific args
+    objective_function_group.add_argument(
+        f'--{OBJECTIVE_NAME_PREFIX}_hpob_search_space_id', 
+        type=str, 
+        help=f'If {OBJECTIVE_NAME_PREFIX}_dataset_type=hpob, this is the HPO-B search space ID',
+        required=False
+    )
+
+    # GP-specific args
+    objective_function_group.add_argument(
+        f'--{OBJECTIVE_NAME_PREFIX}_dimension', 
+        type=int, 
+        help='Dimension of the objective function (only for dataset_type=gp)',
+        required=False
+    )
     add_gp_args(objective_function_group, "objective function",
                 name_prefix=OBJECTIVE_NAME_PREFIX,
-                required=True, add_randomize_params=True)
+                required=False, add_randomize_params=True)
 
     ###################################### BO Policy ##################################
     bo_policy_group = parser.add_argument_group("BO policy and misc. settings")
@@ -196,6 +212,12 @@ def _get_bo_loop_args_parser():
         type=int,
         help='Seed for the BO loop',
         required=True
+    )
+    bo_policy_group.add_argument(
+        '--hpob_seed',
+        choices=[None] + [f"test{i}" for i in range(5)],
+        help='Seed for the HPO-B initial points (if using HPO-B)',
+        required=False
     )
     bo_policy_group.add_argument(
         '--lamda',
@@ -251,10 +273,11 @@ def _get_bo_loop_args_parser():
     }
 
 
-def parse_bo_loop_args(args=None):
+def parse_bo_loop_args(cmd_args=None):
     parser_info = {**_get_bo_loop_args_parser()}
-    parser = parser_info.pop('parser')    
-    parser_info['args'] = parser.parse_args(args=args)
+    parser = parser_info.pop('parser')
+    args = parser.parse_args(args=cmd_args)
+    parser_info['args'] = args
     return parser_info
 
 
@@ -298,7 +321,7 @@ def _get_gp_objective_things_helper(
 
 
 _objective_opt_cache = {}
-def _optimize_function(objective_fn, dimension, objective_name):
+def _optimize_gp_function(objective_fn, dimension, objective_name):
     if objective_name in _objective_opt_cache:
         return _objective_opt_cache[objective_name]
     optimal_input, optimal_output = optimize_posterior_samples(
@@ -310,21 +333,23 @@ def _optimize_function(objective_fn, dimension, objective_name):
 
 
 def _get_objective_things(objective_args):
-    if objective_args['dataset_type'] == 'gp':
+    dataset_type = objective_args['dataset_type']
+    if dataset_type == 'gp':
         objective_gp, objective_fn, objective_name = _get_gp_objective_things_helper(
             dimension=objective_args['dimension'],
             kernel=objective_args['kernel'],
             lengthscale=objective_args['lengthscale'],
             randomize_params=objective_args['randomize_params'],
-            gp_seed=objective_args['gp_seed']
+            gp_seed=objective_args['id']
         )
-    elif objective_args['dataset_type'] == 'hpob':
-        dataset_id = None # TODO-HPO-B: provide this
+    elif dataset_type == 'hpob':
+        search_space_id = objective_args['hpob_search_space_id']
+        dataset_id = objective_args['id']
         objective_fn = get_hpob_objective_function(
-            search_space_id=objective_args['hpob_search_space_id'],
+            search_space_id=search_space_id,
             dataset_id=dataset_id
         )
-        objective_name = f"hpob_{objective_args['hpob_search_space_id']}_{dataset_id}"
+        objective_name = f"hpob_{search_space_id}_{dataset_id}"
         objective_gp = None
 
     # Apply outcome transform to the objective function
@@ -337,9 +362,12 @@ def _get_objective_things(objective_args):
         objective_name = f'{objective_name}_{octf_str}'
         objective_fn = outcome_transform_function(objective_fn, objective_octf)
     
-    optimal_input, optimal_output = _optimize_function(
-        objective_fn, objective_args['dimension'], objective_name)
-    
+    if dataset_type == 'gp':
+        optimal_input, optimal_output = _optimize_gp_function(
+            objective_fn, objective_args['dimension'], objective_name)
+    elif dataset_type == 'hpob':
+        optimal_output = 1.0
+
     return objective_gp, objective_octf, objective_fn, objective_name, optimal_output
 
 
@@ -363,6 +391,39 @@ def pre_run_bo(objective_args: dict[str, Any],
            gp_af_args: dict[str, Any],
            load_weights: bool=True):
     info = _get_bo_loop_args_parser()
+
+    # GP-specific args that would be added by add_gp_args()
+    gp_specific_args = {
+        'kernel', 'lengthscale', 'outcome_transform', 'sigma', 'randomize_params'
+    }
+
+    if objective_args['dataset_type'] == 'gp':
+        if objective_args['hpob_search_space_id'] is not None:
+            raise ValueError("If {OBJECTIVE_NAME_PREFIX}_dataset_type=gp, cannot specify "
+                             "objective_hpob_search_space_id")
+        if objective_args['dimension'] is None:
+            raise ValueError("If {OBJECTIVE_NAME_PREFIX}_dataset_type=gp, must specify objective_dimension")
+        if objective_args['dimension'] <= 0:
+            raise ValueError("objective_dimension must be > 0")
+        # Validate that required GP args are provided
+        for arg_name in ['kernel', 'lengthscale']:
+            if objective_args.get(arg_name) is None:
+                raise ValueError(
+                    f"If {OBJECTIVE_NAME_PREFIX}_dataset_type=gp, must specify {OBJECTIVE_NAME_PREFIX}_{arg_name}")
+    elif objective_args['dataset_type'] == 'hpob':
+        if objective_args['hpob_search_space_id'] is None:
+            raise ValueError("If {OBJECTIVE_NAME_PREFIX}_dataset_type=hpob, must specify "
+                             "objective_hpob_search_space_id")
+        if objective_args['dimension'] is not None:
+            raise ValueError("If {OBJECTIVE_NAME_PREFIX}_dataset_type=hpob, cannot specify "
+                             "objective_dimension")
+        # Validate that no GP args are provided for HPO-B
+        for arg_name in gp_specific_args:
+            if objective_args.get(arg_name) not in [None, False]:
+                raise ValueError(
+                    f"If {OBJECTIVE_NAME_PREFIX}_dataset_type=hpob, cannot specify {OBJECTIVE_NAME_PREFIX}_{arg_name}")
+        objective_args[f'id'] = str(objective_args[f'id'])
+
     optimize_acqf_arg_names = info['optimize_acqf_arg_names']
 
     gen_candidates = bo_policy_args.get('gen_candidates', None)
@@ -428,13 +489,19 @@ def pre_run_bo(objective_args: dict[str, Any],
     else:
         # Using BO with optimize_acqf
         # optimize_acqf_arg_names = num_restarts, raw_samples, gen_candidates
+        missing_args = []
         for k in optimize_acqf_arg_names:
             v = bo_policy_args[k]
             if v is None:
-                raise ValueError(f"Must specify {k} if not using random search")
+                missing_args.append(k)
+                continue
             if k == 'gen_candidates':
                 v = GEN_CANDIDATES_NAME_TO_FUNCTION[v]["func"]
             af_options[k] = v
+        if missing_args:
+            raise ValueError(
+                "run_bo.py: Must specify the following missing arguments: "
+                f"{', '.join(missing_args)} if not using random search")
         options = {
             k: bo_policy_args[k]
             for k in GEN_CANDIDATES_CONFIG[gen_candidates]
@@ -589,7 +656,6 @@ def run_bo(objective_args: dict[str, Any],
            bo_policy_args: dict[str, Any],
            gp_af_args: dict[str, Any],
            load_weights: bool=True):
-    
     stuff = pre_run_bo(
         objective_args, bo_policy_args, gp_af_args, load_weights=load_weights)
     if stuff is None:
@@ -604,8 +670,16 @@ def run_bo(objective_args: dict[str, Any],
     
     bo_seed = bo_policy_args['bo_seed']
     
-    init_x = _get_sobol_samples(
-        bo_seed, bo_policy_args['n_initial_samples'], dimension)
+    hpob_seed = bo_policy_args.get('hpob_seed', None)
+    if hpob_seed is None:
+        init_x = _get_sobol_samples(
+            bo_seed, bo_policy_args['n_initial_samples'], dimension)
+    else:
+        search_space_id = objective_args['hpob_search_space_id']
+        dataset_id = objective_args['id']
+        init_x = get_hpob_initialization(search_space_id, dataset_id, hpob_seed)
+        # Add a dimension so that init_x has shape 1 x n_initial_samples x dimension
+        init_x = init_x.unsqueeze(0)
     
     # One seed per BO loop. Here, we have n=1 BO loops, so need just 1 seed.
     seeds = [bo_seed]
@@ -615,9 +689,13 @@ def run_bo(objective_args: dict[str, Any],
         out = out.unsqueeze(-1) # get to shape n x m where m=1 (m = number of outputs)
         return out
 
+    optimal_output = stuff['optimal_output']
+    if torch.is_tensor(optimal_output):
+        optimal_output = optimal_output.numpy()
+
     return OptimizationResultsSingleMethod(
         objectives=[objective_fn_],
-        optimal_outputs=[stuff['optimal_output'].numpy()],
+        optimal_outputs=[optimal_output],
         initial_points=init_x,
         n_iter=bo_policy_args['n_iter'],
         seeds=seeds,
@@ -713,31 +791,6 @@ objective_args={'dimension': 8, 'gp_seed': 123, 'kernel': 'Matern52', 'lengthsca
 bo_policy_args={'n_iter': 30, 'n_initial_samples': 4, 'bo_seed': 99, 'lamda': 0.01, 'nn_model_name': None}
 gp_af_args={'gp_af': 'gittins', 'fit': 'exact', 'kernel': None, 'lengthscale': None, 'outcome_transform': None, 'sigma': None}
 """
-
-# LogEI; Objective function is same as GP used for AF, manual specification
-# python run_bo.py --objective_dimension 8 --objective_gp_seed 123 --objective_kernel Matern52 --objective_lengthscale 0.1 --n_iter 30 --n_initial_samples 4 --bo_seed 99 --gp_af LogEI --gp_af_kernel Matern52 --gp_af_lengthscale 0.1
-
-# LogEI; Objective function is same as GP used for AF, automatic specification
-# python run_bo.py --objective_dimension 8 --objective_gp_seed 123 --objective_kernel Matern52 --objective_lengthscale 0.1 --n_iter 30 --n_initial_samples 4 --bo_seed 99 --gp_af LogEI --gp_af_fit exact
-
-## GP-based Gittins index:
-# python run_bo.py --objective_dimension 8 --objective_gp_seed 123 --objective_kernel Matern52 --objective_lengthscale 0.1 --n_iter 30 --n_initial_samples 4 --bo_seed 99 --gp_af gittins --gp_af_fit exact --lamda 0.01
-
-
-#### EXAMPLE:
-## The following is a simple cheap test command for testing mse_ei method:
-# python run_train.py --dimension 8 --kernel Matern52  --lengthscale 0.1 --train_samples_size 2000 --train_acquisition_size 2000 --test_samples_size 2000 --train_n_candidates 1 --test_n_candidates 1 --min_history 1 --max_history 60 --layer_width 100 --method mse_ei --learning_rate 0.003 --batch_size 32 --epochs 10
-# ====> Saves to v1/model_c9176a1cdf11da57e5d4801812f27622efbb9f182d3d459c7904dba4010cab87
-## Next, run the BO on it:
-# python run_bo.py --objective_dimension 8 --objective_gp_seed 123 --objective_kernel Matern52 --objective_lengthscale 0.1 --n_iter 30 --n_initial_samples 4 --bo_seed 99 --nn_model_name v1/model_c9176a1cdf11da57e5d4801812f27622efbb9f182d3d459c7904dba4010cab87
-
-# python run_bo.py --objective_dimension 8 --objective_gp_seed 123 --objective_kernel Matern52 --objective_lengthscale 0.1 --n_iter 30 --n_initial_samples 4 --bo_seed 99 --nn_model_name v1/model_6c038ea3a2ae01627595a1ab371a4e0a86411772f33141db9d212bb77d4207d7
-
-## Gittins index, variable lambda:
-# python run_train.py --dimension 8 --test_expansion_factor 2 --kernel Matern52 --lengthscale 0.1 --max_history 400 --min_history 1 --test_samples_size 10000 --test_n_candidates 1 --train_samples_size 2000 --train_acquisition_size 2000 --train_n_candidates 1 --batch_size 32 --early_stopping --epochs 200 --layer_width 100 --learning_rate 0.003 --method gittins --min_delta 0.0 --gi_loss_normalization normal --patience 5 --lamda_min 0.001 --lamda_max 1.0
-# ===> Saves to v1/model_6388a4fee84e6df0aaea3a018ca0c78caf1667930402fc521e50c77f43d2579d
-# python run_bo.py --objective_dimension 8 --objective_gp_seed 123 --objective_kernel Matern52 --objective_lengthscale 0.1 --n_iter 30 --n_initial_samples 4 --bo_seed 99 --nn_model_name v1/model_6388a4fee84e6df0aaea3a018ca0c78caf1667930402fc521e50c77f43d2579d --lamda 0.01
-
 
 if __name__ == "__main__":
     main()
