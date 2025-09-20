@@ -66,27 +66,32 @@ class ExperimentRunner:
         except Exception as e:
             return 1, "", f"Error running command: {str(e)}"
     
-    def run_status_check(self, name: str) -> Tuple[int, str, str]:
+    def run_status_check(self, name: str, dry_run: bool = False) -> Tuple[int, str, str]:
         """Run status check for an experiment using existing status script."""
         try:
             args = self.registry.get_experiment_command_args(name)
-            
+
             # Build the status command
             cmd = [
                 sys.executable, "bo_experiments_gp_status.py",
                 "--nn_base_config", "config/train_acqf.yml",
                 "--nn_experiment_config", args['NN_EXPERIMENT_CFG'].strip('"'),
-                "--bo_base_config", "config/bo_config.yml", 
+                "--bo_base_config", "config/bo_config.yml",
                 "--bo_experiment_config", args['BO_EXPERIMENT_CFG'].strip('"'),
                 "--seed", args['SEED']
             ]
-            
+
             # Add seeds configuration
             seeds_cfg = args['SEEDS_CFG'].strip('"').split()
             cmd.extend(seeds_cfg)
-            
-            return self._run_command_with_streaming(cmd)
-            
+
+            if dry_run:
+                # In dry run mode, just print the command that would be executed
+                cmd_str = ' '.join(cmd)
+                return 0, f"Would execute: {cmd_str}", ""
+            else:
+                return self._run_command_with_streaming(cmd)
+
         except Exception as e:
             return 1, "", f"Error running status check: {str(e)}"
     

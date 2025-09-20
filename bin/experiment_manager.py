@@ -87,29 +87,32 @@ def cmd_status(args):
     """Check status of an experiment."""
     registry = ExperimentRegistry()
     runner = ExperimentRunner(registry)
-    
+
     try:
+        if args.dry_run:
+            print("DRY RUN MODE - no commands will be executed")
+
         if args.name:
             # Check specific experiment
             print(f"Checking status of experiment: {args.name}")
-            returncode, stdout, stderr = runner.run_status_check(args.name)
-            
+            returncode, stdout, stderr = runner.run_status_check(args.name, dry_run=args.dry_run)
+
             if stdout:
                 print(stdout)
             if stderr:
                 print(f"Errors:\n{stderr}")
-            
+
             return returncode
         else:
             # Check all experiments
             experiments = registry.list_experiments()
             print(f"Checking status of {len(experiments)} experiments...")
             print("=" * 60)
-            
+
             for exp_name in sorted(experiments):
                 print(f"\n{exp_name}:")
-                returncode, stdout, stderr = runner.run_status_check(exp_name)
-                
+                returncode, stdout, stderr = runner.run_status_check(exp_name, dry_run=args.dry_run)
+
                 if returncode == 0:
                     # Parse and summarize stdout
                     lines = stdout.strip().split('\n')
@@ -117,7 +120,7 @@ def cmd_status(args):
                         print(f"  Status: {lines[-1] if lines else 'Unknown'}")
                 else:
                     print(f"  Error checking status")
-    
+
     except ValueError as e:
         print(f"Error: {e}")
         return 1
@@ -249,6 +252,8 @@ def main():
     # Status command
     parser_status = subparsers.add_parser('status', help='Check status of experiments')
     parser_status.add_argument('name', nargs='?', help='Name of specific experiment (optional)')
+    parser_status.add_argument('--dry-run', action='store_true',
+                             help='Show what would be executed without running')
     
     # Run command
     parser_run = subparsers.add_parser('run', help='Run an experiment')

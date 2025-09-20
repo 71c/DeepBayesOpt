@@ -8,7 +8,7 @@ from botorch.exceptions import UnsupportedError
 from datasets.hpob_dataset import get_hpob_dataset_ids
 from nn_af.acquisition_function_net_save_utils import get_lamda_for_bo_of_nn
 from utils.utils import dict_to_str, group_by
-from utils.experiments.experiment_config_utils import CONFIG_DIR, add_config_args, get_config_options_list
+from utils.experiments.experiment_config_utils import add_config_args, get_config_options_list
 from utils.experiments.submit_dependent_jobs import add_slurm_args, submit_jobs_sweep_from_args
 
 from run_bo import GP_AF_DICT, bo_loop_dicts_to_cmd_args_list, run_bo
@@ -290,9 +290,9 @@ def _validate_bo_experiments_args(args: argparse.Namespace, dataset_types):
             raise ValueError("If --n_seeds is not specified, then --use_hpob_seeds "
                              "must be set.")
     else:
-        if 'gp' not in dataset_types and not use_hpob_seeds:
-            raise ValueError("If --n_seeds is specified, then either at least one of the "
-                             "objective functions must be GP, or --use_hpob_seeds must be set.")
+        if 'gp' not in dataset_types and use_hpob_seeds:
+            raise ValueError("Cannot set both --n_seeds and --use_hpob_seeds if none "
+                             "of the objective functions are GP.")
         if n_seeds <= 0:
             raise ValueError("If specified, --n_seeds must be a positive integer.")
     
@@ -327,6 +327,9 @@ def generate_gp_bo_job_specs(args: argparse.Namespace,
     bo_options_list, bo_refined_config = get_config_options_list(
         bo_base_config, bo_experiment_config)
     
+    nn_options_list, nn_refined_config = get_config_options_list(
+        nn_base_config, nn_experiment_config)
+    
     # Determine the dataset type for purpose of args validation
     dataset_types = {
         item['function_samples_dataset.dataset_type'] for item in nn_options_list}
@@ -348,9 +351,6 @@ def generate_gp_bo_job_specs(args: argparse.Namespace,
         {k.split('.')[-1]: v for k, v in options.items()}
         for options in bo_options_list
     ]
-
-    nn_options_list, nn_refined_config = get_config_options_list(
-        nn_base_config, nn_experiment_config)
 
     # Determine the number of seeds to generate
     if args.n_seeds is None:

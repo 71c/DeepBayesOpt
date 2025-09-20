@@ -111,6 +111,7 @@ def _load_hpob_surrogates_stats(surrogate_name: str):
     return _load_hpob_surrogates_stats_helper()[surrogate_name]
 
 
+@cache
 def get_hpob_objective_function(search_space_id: str, dataset_id: str):
     """Get a function that evaluates the objective function for a given
     HPO-B search space ID and dataset ID."""
@@ -126,6 +127,7 @@ def get_hpob_objective_function(search_space_id: str, dataset_id: str):
     surrogate_stats = _load_hpob_surrogates_stats(surrogate_name)
     y_min = surrogate_stats["y_min"]
     y_max = surrogate_stats["y_max"]
+    # print(f"{surrogate_name}: y_min={y_min}, y_max={y_max}")
     dim = get_hpob_dataset_dimension(search_space_id)
 
     def objective_function(x: torch.Tensor) -> torch.Tensor:
@@ -147,8 +149,11 @@ def get_hpob_objective_function(search_space_id: str, dataset_id: str):
         x_np = x.cpu().numpy().reshape(-1, dim)
         x_q = xgb.DMatrix(x_np)
         new_y = bst_surrogate.predict(x_q)
+
+        ## This is what HPO-B does, but I'm not sure whether it's a good idea.
         new_y = (new_y - y_min) / (y_max - y_min)
         new_y = np.clip(new_y, 0, 1)
+
         new_y = torch.tensor(new_y, device=x.device, dtype=x.dtype)
         assert new_y.dim() == 1 and new_y.size(0) == x.size(0)
         return new_y

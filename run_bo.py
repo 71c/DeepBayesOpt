@@ -3,6 +3,7 @@ from functools import cache
 import math
 from typing import Any
 import argparse
+import warnings
 import yaml
 
 import torch
@@ -414,9 +415,9 @@ def pre_run_bo(objective_args: dict[str, Any],
         if objective_args['hpob_search_space_id'] is None:
             raise ValueError("If {OBJECTIVE_NAME_PREFIX}_dataset_type=hpob, must specify "
                              "objective_hpob_search_space_id")
-        if objective_args['dimension'] is not None:
+        if objective_args.get('dimension', None) is not None:
             raise ValueError("If {OBJECTIVE_NAME_PREFIX}_dataset_type=hpob, cannot specify "
-                             "objective_dimension")
+                             f"{OBJECTIVE_NAME_PREFIX}_dimension")
         # Validate that no GP args are provided for HPO-B
         for arg_name in gp_specific_args:
             if objective_args.get(arg_name) not in [None, False]:
@@ -527,16 +528,21 @@ def pre_run_bo(objective_args: dict[str, Any],
                 af_octf = objective_octf
             else:
                 ## Determine af_gp_model from the GP args
-                af_kernel = gp_af_args['kernel']
-                af_lengthscale = gp_af_args['lengthscale']
+                af_kernel = gp_af_args.get('kernel')
+                af_lengthscale = gp_af_args.get('lengthscale')
                 if af_kernel is None:
                     raise ValueError(
                         f"If using a GP AF and {GP_AF_NAME_PREFIX}_fit != exact, "
                         f"must specify {GP_AF_NAME_PREFIX}_kernel")
                 if af_lengthscale is None:
-                    raise ValueError(
+                    # raise ValueError(
+                    #     f"If using a GP AF and {GP_AF_NAME_PREFIX}_fit != exact, "
+                    #     f"must specify {GP_AF_NAME_PREFIX}_lengthscale")
+                    warnings.warn(
                         f"If using a GP AF and {GP_AF_NAME_PREFIX}_fit != exact, "
-                        f"must specify {GP_AF_NAME_PREFIX}_lengthscale")
+                        f"should specify {GP_AF_NAME_PREFIX}_lengthscale. "
+                        "Using default (starting) lengthscale of 1.0")
+                    af_lengthscale = 1.0 # Default lengthscale
                 
                 # Add priors if using MAP. If using MLE or no fitting, don't add priors
                 add_gp_af_priors_flag = fit == "map"

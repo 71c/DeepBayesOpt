@@ -107,10 +107,18 @@ class ExperimentRegistry:
         args['BO_PLOTS_NAME'] = f'"{params["bo_plots_name"]}"'
         
         # Seeds configuration
-        seeds_parts = [f"--n_seeds {params['n_seeds']}"]
+        seeds_parts = []
+        # n_seeds is optional when use_hpob_seeds is True (HPO-B defines its own seeds)
+        if 'n_seeds' in params:
+            seeds_parts.append(f"--n_seeds {params['n_seeds']}")
+
         n_objectives = params.get('n_objectives', None)
         if n_objectives is not None:
             seeds_parts.append(f"--n_objectives {n_objectives}")
+
+        use_hpob_seeds = params.get('use_hpob_seeds', False)
+        if use_hpob_seeds:
+            seeds_parts.append("--use_hpob_seeds")
         args['SEEDS_CFG'] = f'"{" ".join(seeds_parts)}"'
         
         # Derived configurations (matching original commands.txt)
