@@ -111,11 +111,48 @@ def _load_hpob_surrogates_stats(surrogate_name: str):
     return _load_hpob_surrogates_stats_helper()[surrogate_name]
 
 
+## Note: The y_min and y_max values stored in the summary-stats.json file
+## have been observed to sometimes incorrect, so instead we compute them from
+## the actual dataset y values.
+_USE_SURROGATE_STATS = False
+
+
+_HPOB_FUNCTION_MIN_MAX_CACHE = {}
+def get_hpob_function_min_max(
+        search_space_id: str, dataset_id: str,
+        use_surrogate_stats: bool = _USE_SURROGATE_STATS) -> tuple[float, float]:
+    """Get the minimum and maximum function values for a given HPO-B search space ID
+    and dataset ID.
+    Args:
+        search_space_id: The HPO-B search space ID.
+        dataset_id: The HPO-B dataset ID.
+        use_surrogate_stats: If True, use the y_min and y_max values from the
+            surrogate stats file. If False, compute y_min and y_max from the dataset.
+    Returns:
+        A tuple (y_min, y_max) representing the minimum and maximum function values.
+    """
+    key = (search_space_id, dataset_id, use_surrogate_stats)
+    if key not in _HPOB_FUNCTION_MIN_MAX_CACHE:
+        dataset_ids = get_hpob_dataset_ids(search_space_id, 'test')
+        if dataset_id not in dataset_ids:
+            raise ValueError(
+                f"Dataset ID {dataset_id} not found in HPO-B test datasets for search "
+                f"space ID {search_space_id}. Available datasets: {dataset_ids}")
+        if use_surrogate_stats:
+            surrogate_name = 'surrogate-'+search_space_id+'-'+dataset_id
+            surrogate_stats = _load_hpob_surrogates_stats(surrogate_name)
+            y_min, y_max = surrogate_stats["y_min"], surrogate_stats["y_max"]
+        else:
+            y_vals = _get_hpob_dataset_json(search_space_id, 'test')[dataset_id]['y']
+            y_vals = np.array(y_vals)
+            y_min, y_max = y_vals.min(), y_vals.max()
+        _HPOB_FUNCTION_MIN_MAX_CACHE[key] = (y_min, y_max)
+    return _HPOB_FUNCTION_MIN_MAX_CACHE[key]
+
+
 @cache
-def get_hpob_objective_function(
-    search_space_id: str, dataset_id: str, scale_y: bool = True):
-    """Get a function that evaluates the objective function for a given
-    HPO-B search space ID and dataset ID."""
+def _get_hpob_objective_function(
+    search_space_id: str, dataset_id: str, scale_y: bool):
     dataset_ids = get_hpob_dataset_ids(search_space_id, 'test')
     if dataset_id not in dataset_ids:
         raise ValueError(
@@ -125,16 +162,7 @@ def get_hpob_objective_function(
     bst_surrogate = xgb.Booster()
     bst_surrogate.load_model(f"{HPOB_SAVED_SURROGATES_DIR}/{surrogate_name}.json")
 
-    ## Note: The y_min and y_max values stored in the summary-stats.json file
-    ## have been observed to sometimes incorrect, so instead we compute them from
-    ## the actual dataset y values.
-    # surrogate_stats = _load_hpob_surrogates_stats(surrogate_name)
-    # y_min = surrogate_stats["y_min"]
-    # y_max = surrogate_stats["y_max"]
-
-    y_vals = _get_hpob_dataset_json(search_space_id, 'test')[dataset_id]['y']
-    y_vals = np.array(y_vals)
-    y_min, y_max = y_vals.min(), y_vals.max()
+    y_min, y_max = get_hpob_function_min_max(search_space_id, dataset_id)
 
     dim = get_hpob_dataset_dimension(search_space_id)
 
@@ -171,6 +199,24 @@ def get_hpob_objective_function(
     return objective_function
 
 
+def get_hpob_objective_function(
+    search_space_id: str, dataset_id: str, scale_y: bool = False):
+    """Get a function that evaluates the objective function for a given
+    HPO-B search space ID and dataset ID.
+    
+    Args:
+        search_space_id: The HPO-B search space ID.
+        dataset_id: The HPO-B dataset ID.
+        scale_y: If True, scale the output to [0, 1] using min-max scaling.
+            If False, return the raw output clipped to [y_min, y_max].
+            
+    Returns:
+        A function that takes a tensor of shape (n_points, dim) and returns
+        a tensor of shape (n_points,) representing the objective function values.
+    """
+    return _get_hpob_objective_function(search_space_id, dataset_id, scale_y)
+
+
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
@@ -201,9 +247,8 @@ if __name__ == "__main__":
         max_y = y_values.max().item()
         min_x = item.x_values.min(axis=0).values.numpy()
         max_x = item.x_values.max(axis=0).values.numpy()
-        surrogate_stats = _load_hpob_surrogates_stats('surrogate-'+search_space_id+'-'+dataset_id)
-        min_y_surrogate = surrogate_stats["y_min"]
-        max_y_surrogate = surrogate_stats["y_max"]
+        min_y_surrogate, max_y_surrogate = get_hpob_function_min_max(
+            search_space_id, dataset_id, use_surrogate_stats=True)
         print(
             f"Dataset {i}: X shape: {tuple(item.x_values.shape)}, "
             f"y shape: {tuple(y_values.shape)}, y min: {min_y}, y max: {max_y}, "

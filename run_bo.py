@@ -7,6 +7,7 @@ import warnings
 import yaml
 
 import torch
+from torch import Tensor
 from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprovement
 from botorch.utils.sampling import draw_sobol_samples
 from botorch.exceptions import UnsupportedError
@@ -21,7 +22,7 @@ from nn_af.acquisition_function_net_save_utils import load_nn_acqf_configs
 from nn_af.acquisition_function_net import GittinsAcquisitionFunctionNet
 from nn_af.acquisition_function_net_save_utils import load_nn_acqf, nn_acqf_is_trained
 from datasets.dataset_with_models import RandomModelSampler
-from datasets.hpob_dataset import get_hpob_dataset_dimension, get_hpob_initialization, get_hpob_objective_function
+from datasets.hpob_dataset import get_hpob_dataset_dimension, get_hpob_function_min_max, get_hpob_initialization, get_hpob_objective_function
 from gp_acquisition_dataset_manager import (
     GP_GEN_DEVICE, add_gp_args, get_gp_model_from_args_no_outcome_transform,
     get_outcome_transform_from_args as get_outcome_transform)
@@ -322,19 +323,22 @@ def _get_gp_objective_things_helper(
 
 
 _objective_opt_cache = {}
-def _optimize_gp_function(objective_fn, dimension, objective_name):
-    if objective_name in _objective_opt_cache:
-        return _objective_opt_cache[objective_name]
-    optimal_input, optimal_output = optimize_posterior_samples(
-        paths=objective_fn, bounds=_get_bounds(dimension),
-        maximize=True, raw_samples=8192, num_restarts=100)
-    _objective_opt_cache[objective_name] = (optimal_input, optimal_output)
-    print(f"Optimized {objective_name} with {optimal_input=}, {optimal_output=}")
-    return optimal_input, optimal_output
+def _get_gp_function_min_max(
+        objective_fn, dimension, objective_name) -> tuple[Tensor, Tensor]:
+    if objective_name not in _objective_opt_cache:
+        opt_kwargs = dict(
+            paths=objective_fn, bounds=_get_bounds(dimension),
+            raw_samples=8192, num_restarts=100
+        )
+        argmin, y_min = optimize_posterior_samples(**opt_kwargs, maximize=False)
+        argmax, y_max = optimize_posterior_samples(**opt_kwargs, maximize=True)
+        print(f"Optimized {objective_name} with {argmin=}, {y_min=}, {argmax=}, {y_max=}")
+        _objective_opt_cache[objective_name] = (y_min, y_max)
+    return _objective_opt_cache[objective_name]
 
 
 def _get_objective_things(objective_args):
-    dataset_type = objective_args['dataset_type']
+    dataset_type = objective_args.get('dataset_type', 'gp')
     if dataset_type == 'gp':
         objective_gp, objective_fn, objective_name = _get_gp_objective_things_helper(
             dimension=objective_args['dimension'],
@@ -364,12 +368,13 @@ def _get_objective_things(objective_args):
         objective_fn = outcome_transform_function(objective_fn, objective_octf)
     
     if dataset_type == 'gp':
-        optimal_input, optimal_output = _optimize_gp_function(
+        y_min, y_max = _get_gp_function_min_max(
             objective_fn, objective_args['dimension'], objective_name)
     elif dataset_type == 'hpob':
-        optimal_output = 1.0
+        y_min, y_max = get_hpob_function_min_max(search_space_id, dataset_id)
+        y_min, y_max = torch.tensor([y_min]), torch.tensor([y_max])
 
-    return objective_gp, objective_octf, objective_fn, objective_name, optimal_output
+    return objective_gp, objective_octf, objective_fn, objective_name, y_min, y_max
 
 
 def _get_bounds(dimension):
@@ -397,9 +402,10 @@ def pre_run_bo(objective_args: dict[str, Any],
     gp_specific_args = {
         'kernel', 'lengthscale', 'outcome_transform', 'sigma', 'randomize_params'
     }
-
-    if objective_args['dataset_type'] == 'gp':
-        if objective_args['hpob_search_space_id'] is not None:
+    hpob_search_space_id = objective_args.get('hpob_search_space_id', None)
+    dataset_type = objective_args.get('dataset_type', 'gp')
+    if dataset_type == 'gp':
+        if hpob_search_space_id is not None:
             raise ValueError("If {OBJECTIVE_NAME_PREFIX}_dataset_type=gp, cannot specify "
                              "objective_hpob_search_space_id")
         if objective_args['dimension'] is None:
@@ -411,8 +417,8 @@ def pre_run_bo(objective_args: dict[str, Any],
             if objective_args.get(arg_name) is None:
                 raise ValueError(
                     f"If {OBJECTIVE_NAME_PREFIX}_dataset_type=gp, must specify {OBJECTIVE_NAME_PREFIX}_{arg_name}")
-    elif objective_args['dataset_type'] == 'hpob':
-        if objective_args['hpob_search_space_id'] is None:
+    elif dataset_type == 'hpob':
+        if hpob_search_space_id is None:
             raise ValueError("If {OBJECTIVE_NAME_PREFIX}_dataset_type=hpob, must specify "
                              "objective_hpob_search_space_id")
         if objective_args.get('dimension', None) is not None:
@@ -446,10 +452,10 @@ def pre_run_bo(objective_args: dict[str, Any],
     if dataset_type == 'gp':
         dimension = objective_args['dimension']
     elif dataset_type == 'hpob':
-        dimension = get_hpob_dataset_dimension(objective_args['hpob_search_space_id'])
+        dimension = get_hpob_dataset_dimension(hpob_search_space_id)
     
     (objective_gp, objective_octf, objective_fn,
-     objective_name, optimal_output) = _get_objective_things(objective_args)
+     objective_name, y_min, y_max) = _get_objective_things(objective_args)
     
     ############################# Determine the BO policy ##############################
     lamda = bo_policy_args.get('lamda', None)
@@ -458,7 +464,7 @@ def pre_run_bo(objective_args: dict[str, Any],
     
     results_print_data = {'dimension': dimension}
     if dataset_type == 'hpob':
-        results_print_data['search space ID'] = objective_args['hpob_search_space_id']
+        results_print_data['search space ID'] = hpob_search_space_id
     
     nn_model_name = bo_policy_args.get('nn_model_name')
     random_search = bo_policy_args.get('random_search', False)
@@ -646,7 +652,8 @@ def pre_run_bo(objective_args: dict[str, Any],
     return {
         'dimension': dimension,
         'objective_fn': objective_fn,
-        'optimal_output': optimal_output,
+        'y_min': y_min,
+        'y_max': y_max,
         'optimizer_class': optimizer_class,
         'objective_name': objective_name,
         'results_name': results_name,
@@ -695,13 +702,12 @@ def run_bo(objective_args: dict[str, Any],
         out = out.unsqueeze(-1) # get to shape n x m where m=1 (m = number of outputs)
         return out
 
-    optimal_output = stuff['optimal_output']
-    if torch.is_tensor(optimal_output):
-        optimal_output = optimal_output.numpy()
+    y_min, y_max = stuff['y_min'], stuff['y_max']
 
     return OptimizationResultsSingleMethod(
         objectives=[objective_fn_],
-        optimal_outputs=[optimal_output],
+        y_mins=[y_min],
+        y_maxs=[y_max],
         initial_points=init_x,
         n_iter=bo_policy_args['n_iter'],
         seeds=seeds,

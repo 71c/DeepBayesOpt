@@ -444,7 +444,8 @@ class OptimizationResultsSingleMethod:
                  n_iter: int,
                  seeds: List[int],
                  optimizer_class: Type[BayesianOptimizer],
-                 optimal_outputs: Optional[List[Tensor]]=None,
+                 y_mins: Optional[List[Tensor]]=None,
+                 y_maxs: Optional[List[Tensor]]=None,
                  optimizer_kwargs_per_function: Optional[List[dict]]=None,
                  objective_names: Optional[list[str]]=None,
                  nn_model_name: Optional[str]=None,
@@ -561,10 +562,33 @@ class OptimizationResultsSingleMethod:
 
         self.n_funcs_to_optimize = sum(x > 0 for x in self.n_trials_to_run_per_func)
 
-        self.optimal_outputs = optimal_outputs
+        for name in ['y_mins', 'y_maxs']:
+            var = locals()[name]
+            if var is not None:
+                if len(var) != self.n_functions:
+                    raise ValueError(f"{name} must be a list of length n_functions.")
+                for i in range(self.n_functions):
+                    v = var[i]
+                    if not torch.is_tensor(v) or v.dim() != 1 or v.size(0) != 1:
+                        raise ValueError(f"Each element of {name} must be a tensor of shape (1,).")
+                    var[i] = v.numpy()
+        self.y_mins: Optional[List[np.ndarray]] = y_mins
+        self.y_maxs: Optional[List[np.ndarray]] = y_maxs
 
     def __len__(self):
         return self.n_functions
+    
+    def _add_regret_to_result(self, result: dict, func_index: int):
+        y_min = None if self.y_mins is None else self.y_mins[func_index]
+        y_max = None if self.y_maxs is None else self.y_maxs[func_index]
+        if self.optimizer_kwargs['maximize']:
+            if y_max is not None:
+                result['regret'] = y_max - result['best_y']
+        else:
+            if y_min is not None:
+                result['regret'] = result['best_y'] - y_min
+        if y_min is not None and y_max is not None:
+            result['normalized_regret'] = result['regret'] / (y_max - y_min)
 
     def _get_cached_trial_result(self, func_index: int, trial_index: int,
                                  return_result: bool=True):
@@ -590,8 +614,7 @@ class OptimizationResultsSingleMethod:
                 return True if os.path.exists(data_path) else None
         if return_result:
             result = json_serializable_to_numpy(trial_result)
-            if self.optimal_outputs is not None:
-                result['regret'] = self.optimal_outputs[func_index] - result['best_y']
+            self._add_regret_to_result(result, func_index)
             return result
         else:
             return True
@@ -611,8 +634,7 @@ class OptimizationResultsSingleMethod:
             )
             optimizer.optimize(self.n_iter, verbose=verbose)
             trial_result = optimizer.get_stats()
-            if self.optimal_outputs is not None:
-                trial_result['regret'] = self.optimal_outputs[func_index] - trial_result['best_y']
+            self._add_regret_to_result(trial_result, func_index)
             if self.save_dir is not None:
                 trial_config_str = self.trial_configs_str[trial_index]
                 self._func_results_to_save[func_index][trial_config_str] = \

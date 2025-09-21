@@ -327,6 +327,7 @@ ATTR_GROUPS = [
     # ["per_iteration_decisions"],
     # ["best_y"],
     ["regret"],
+    ["normalized_regret"],
     # ["x"],
     # ["best_y", "x"]
 ]
@@ -341,6 +342,7 @@ if INCLUDE_TIMES:
 ATTR_NAME_TO_TITLE = {
     "best_y": "Best function value",
     "regret": "Regret",
+    "normalized_regret": "Normalized Regret",
     "process_time": "Process time",
     "time": "Time",
     "n_evals": "Number of AF evaluations by optimize_acqf",

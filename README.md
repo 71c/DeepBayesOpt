@@ -46,25 +46,25 @@ To run a BO loop, you can use `run_bo.py`. `run_bo.py --help` will show the desc
 Example commands:
 - Random Search:
 ```bash
-python run_bo.py --n_initial_samples 1 --n_iter 20 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --random_search --bo_seed 6888556634303915349 --objective_gp_seed 6888556634303915349
+python run_bo.py --n_initial_samples 1 --n_iter 20 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --random_search --bo_seed 6888556634303915349 --objective_dataset_type gp --objective_id 6888556634303915349
 
-python run_bo.py --n_initial_samples 1 --n_iter 20 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --random_search --bo_seed 8643049736318478698 --objective_gp_seed 8643049736318478698
+python run_bo.py --n_initial_samples 1 --n_iter 20 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --random_search --bo_seed 8643049736318478698 --objective_dataset_type gp --objective_id 8643049736318478698
 ```
 - GP-based acquisition function:
 ```bash
-python run_bo.py --n_initial_samples 1 --n_iter 20 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --gp_af LogEI --gp_af_fit exact --num_restarts 160 --raw_samples 3200 --gen_candidates L-BFGS-B --bo_seed 6888556634303915349 --objective_gp_seed 6888556634303915349
+python run_bo.py --n_initial_samples 1 --n_iter 20 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --gp_af LogEI --gp_af_fit exact --num_restarts 160 --raw_samples 3200 --gen_candidates L-BFGS-B --bo_seed 6888556634303915349 --objective_dataset_type gp --objective_id 6888556634303915349
 
-python run_bo.py --n_initial_samples 1 --n_iter 20 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --gp_af LogEI --gp_af_fit exact --num_restarts 160 --raw_samples 3200 --gen_candidates L-BFGS-B --bo_seed 8643049736318478698 --objective_gp_seed 8643049736318478698
+python run_bo.py --n_initial_samples 1 --n_iter 20 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --gp_af LogEI --gp_af_fit exact --num_restarts 160 --raw_samples 3200 --gen_candidates L-BFGS-B --bo_seed 8643049736318478698 --objective_dataset_type gp --objective_id 8643049736318478698
 
-python run_bo.py --eps 1e-08 --ftol 2.220446049250313e-09 --gen_candidates L-BFGS-B --gp_af gittins --gp_af_fit exact --gtol 1e-05 --lamda 0.01 --maxcor 10 --maxfun 15000 --maxiter 15000 --maxls 20 --n_initial_samples 1 --n_iter 20 --num_restarts 160 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --raw_samples 3200 --bo_seed 6888556634303915349 --objective_gp_seed 6888556634303915349
+python run_bo.py --eps 1e-08 --ftol 2.220446049250313e-09 --gen_candidates L-BFGS-B --gp_af gittins --gp_af_fit exact --gtol 1e-05 --lamda 0.01 --maxcor 10 --maxfun 15000 --maxiter 15000 --maxls 20 --n_initial_samples 1 --n_iter 20 --num_restarts 160 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --raw_samples 3200 --bo_seed 6888556634303915349 --objective_dataset_type gp --objective_id 6888556634303915349
 
-python run_bo.py --eps 1e-08 --ftol 2.220446049250313e-09 --gen_candidates L-BFGS-B --gp_af gittins --gp_af_fit exact --gtol 1e-05 --lamda 0.01 --maxcor 10 --maxfun 15000 --maxiter 15000 --maxls 20 --n_initial_samples 1 --n_iter 20 --num_restarts 160 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --raw_samples 3200 --bo_seed 8643049736318478698 --objective_gp_seed 8643049736318478698
+python run_bo.py --eps 1e-08 --ftol 2.220446049250313e-09 --gen_candidates L-BFGS-B --gp_af gittins --gp_af_fit exact --gtol 1e-05 --lamda 0.01 --maxcor 10 --maxfun 15000 --maxiter 15000 --maxls 20 --n_initial_samples 1 --n_iter 20 --num_restarts 160 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --raw_samples 3200 --bo_seed 8643049736318478698 --objective_dataset_type gp --objective_id 8643049736318478698
 ```
 - NN-based acquisition function:
 ```bash
-python run_bo.py --lamda 1e-2 --n_initial_samples 1 --n_iter 20 --nn_model_name v2/model_35f043d1473e2adc8a97027e56c8dc8cefd60ef48a14382cfd07e60e52a55234 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --num_restarts 160 --raw_samples 3200 --gen_candidates L-BFGS-B --bo_seed 6888556634303915349 --objective_gp_seed 6888556634303915349
+python run_bo.py --lamda 1e-2 --n_initial_samples 1 --n_iter 20 --nn_model_name v2/model_35f043d1473e2adc8a97027e56c8dc8cefd60ef48a14382cfd07e60e52a55234 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --num_restarts 160 --raw_samples 3200 --gen_candidates L-BFGS-B --bo_seed 6888556634303915349 --objective_dataset_type gp --objective_id 6888556634303915349
 
-python run_bo.py --lamda 1e-2 --n_initial_samples 1 --n_iter 20 --nn_model_name v2/model_35f043d1473e2adc8a97027e56c8dc8cefd60ef48a14382cfd07e60e52a55234 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --num_restarts 160 --raw_samples 3200 --gen_candidates L-BFGS-B --bo_seed 8643049736318478698 --objective_gp_seed 8643049736318478698
+python run_bo.py --lamda 1e-2 --n_initial_samples 1 --n_iter 20 --nn_model_name v2/model_35f043d1473e2adc8a97027e56c8dc8cefd60ef48a14382cfd07e60e52a55234 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --num_restarts 160 --raw_samples 3200 --gen_candidates L-BFGS-B --bo_seed 8643049736318478698 --objective_dataset_type gp --objective_id 8643049736318478698
 ```
 See the [section on NN training](#nn-training--dataset-generation-if-necessary) for how to train the NN model and obtain `--nn_model_name`.
 
