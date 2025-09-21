@@ -118,7 +118,6 @@ def load_nn_acqf_configs(model_and_info_folder_name: str):
         "n_points_config": n_points_config,
         "dataset_transform_config": dataset_transform_config
     }
-
     all_info_json, model_sampler = json_serialize_nn_acqf_configs(
         training_config=training_config,
         af_dataset_config=af_dataset_config,
@@ -184,7 +183,6 @@ def json_serialize_nn_acqf_configs(
     dataset_transform_config = af_dataset_config["dataset_transform_config"]
 
     all_info_json = {
-        'function_samples_config': convert_to_json_serializable(function_samples_config),
         'acquisition_dataset_config': acquisition_dataset_config,
         'n_points_config': n_points_config,
         'dataset_transform_config': convert_to_json_serializable(dataset_transform_config),
@@ -212,6 +210,9 @@ def json_serialize_nn_acqf_configs(
             hash_include_str=False, hash_str=True)
     else:
         model_sampler = None
+
+    all_info_json['function_samples_config'] = convert_to_json_serializable(
+        function_samples_config)
 
     return all_info_json, model_sampler
 

@@ -403,7 +403,7 @@ def pre_run_bo(objective_args: dict[str, Any],
         'kernel', 'lengthscale', 'outcome_transform', 'sigma', 'randomize_params'
     }
     hpob_search_space_id = objective_args.get('hpob_search_space_id', None)
-    dataset_type = objective_args.get('dataset_type', 'gp')
+    dataset_type = objective_args['dataset_type']
     if dataset_type == 'gp':
         if hpob_search_space_id is not None:
             raise ValueError("If {OBJECTIVE_NAME_PREFIX}_dataset_type=gp, cannot specify "
@@ -447,7 +447,7 @@ def pre_run_bo(objective_args: dict[str, Any],
                     raise ValueError(f"Cannot specify {k} if {gen_candidates=} "
                                     f"(this is only for gen_candidates={tmp})")
     
-    dataset_type = objective_args.get('dataset_type', 'gp')
+    dataset_type = objective_args['dataset_type']
     
     if dataset_type == 'gp':
         dimension = objective_args['dimension']

@@ -29,7 +29,7 @@ def _generate_bo_commands(
     new_bo_conf = []
     existing_bo_conf_and_results = []
 
-    dataset_type = objective_args.get('dataset_type', 'gp')
+    dataset_type = objective_args['dataset_type']
     if dataset_type == 'hpob':
         test_dataset_ids = get_hpob_dataset_ids(
             objective_args['hpob_search_space_id'], 'test')
@@ -112,11 +112,8 @@ def _gp_bo_jobs_spec_and_cfgs(
                 "If dataset_type is 'hpob', then there must be some "\
                 "hpob options and no gp options."
             objective_args = hpob_options
-        
-        # For backward compatibility, only include dataset_type
-        # in objective_args if it is not 'gp'
-        if dataset_type != 'gp':
-            objective_args['dataset_type'] = dataset_type
+
+        objective_args['dataset_type'] = dataset_type
         
         objective_args_str = dict_to_str(objective_args)
 
@@ -179,7 +176,7 @@ def _gp_bo_jobs_spec_and_cfgs(
         if len(lamda_vals) == 0:
             lamda_vals = {1e-4}
 
-        dataset_type = objective_args.get('dataset_type', 'gp')
+        dataset_type = objective_args['dataset_type']
         if dataset_type == 'hpob':
             gp_af_fit_args = {'fit': 'mle', 'kernel': 'Matern52'}
         elif dataset_type == 'gp':
