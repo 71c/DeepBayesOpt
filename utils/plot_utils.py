@@ -865,11 +865,13 @@ def get_plot_ax_bo_stats_vs_iteration_func(get_result_func):
                     attr_name = info['attr_name']
                     attr_names.add(attr_name)
                     val = info[attr_name]
-                    if attr_name in {'best_y', 'regret', 'y', 'x', 'best_x'}:
+                    if attr_name in {
+                        'best_y', 'regret', 'normalized_regret', 'y', 'x', 'best_x'}:
                         # For x vals, get the first component (if dim > 1)
                         if len(val.shape) != 2:
                             raise ValueError(f"Expected 2D array, but got {val.shape=}")
-                        if attr_name in {'best_y', 'regret', 'y'} and val.shape[1] != 1:
+                        if attr_name in {'best_y', 'regret', 'normalized_regret', 'y'} \
+                                        and val.shape[1] != 1:
                             raise ValueError(
                                 f"Expected {attr_name} to have shape (n_seeds, 1), "
                                 f"but got {val.shape=}")
@@ -900,7 +902,7 @@ def get_plot_ax_bo_stats_vs_iteration_func(get_result_func):
                 plot_error_bars(ax, center, lower, upper,
                                 label=legend_name, shade=plot_kwargs['shade'])
                 # ax.set_xscale('log')
-                if attr_name == 'regret':
+                if attr_name in {'regret', 'normalized_regret'}:
                     ax.set_yscale('log')
                     
                 # plot_bo_violin(ax, np.array(this_data))

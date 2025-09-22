@@ -184,11 +184,11 @@ POST = [
 
 
 ATTR_GROUPS = [
-    # ["0_training_history_train_test"],
+    ["0_training_history_train_test"],
 
     # ["0_training_history_train_test", "1_training_history_test_log_regret", "2_af_plot"],
     # ["0_training_history_train_test", "2_af_plot"],
-    ["1_training_history_test_log_regret"],
+    # ["1_training_history_test_log_regret"],
     # ["2_af_plot"],
 
     # ["0_training_history_train_test", "1_training_history_test_log_regret"],

@@ -1072,17 +1072,18 @@ experiments:
       bo_experiments:
         default:
           pre:
-          - ['layer_width', 'encoded_history_dim']
-          - ['x_cand_input']
+          - ['nn.layer_width', 'nn.encoded_history_dim']
+          - ['nn.x_cand_input']
           attr_a:
-          - hpob_search_space_id
+            - objective.hpob_search_space_id
           attr_b:
           - nn.max_history_input
           post:
           - - lamda
             - gp_af
             - nn.learning_rate
-          - - bo_seed
+          - - objective.id
+            - bo_seed
 templates:
   basic_1d:
     description: Basic 1D experiment template
