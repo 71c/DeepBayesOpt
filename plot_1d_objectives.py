@@ -46,6 +46,7 @@ models = [
         kernel=gp_params_args['kernel'],
         lengthscale=gp_params_args['lengthscale'],
         add_priors=gp_params_args['randomize_params'],
+        add_standardize=False,
         device="cpu"
     )
 ]

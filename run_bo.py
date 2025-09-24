@@ -1,4 +1,5 @@
 from collections import defaultdict
+import copy
 from functools import cache
 import math
 from typing import Any
@@ -15,7 +16,7 @@ from botorch.generation.gen import gen_candidates_scipy, gen_candidates_torch
 from botorch.utils.sampling import optimize_posterior_samples
 
 from utils.utils import (add_outcome_transform, dict_to_cmd_args,
-                         dict_to_fname_str, dict_to_str)
+                         dict_to_fname_str, dict_to_str, remove_priors)
 from utils.constants import RESULTS_DIR
 from nn_af.acquisition_function_net_save_utils import load_nn_acqf_configs
 
@@ -296,6 +297,7 @@ def _get_gp_objective_things_helper(
         kernel=kernel,
         lengthscale=lengthscale,
         add_priors=randomize_params,
+        add_standardize=False,
         device=GP_GEN_DEVICE
     )
     objective_gp_sampler = RandomModelSampler(
@@ -326,12 +328,44 @@ _objective_opt_cache = {}
 def _get_gp_function_min_max(
         objective_fn, dimension, objective_name) -> tuple[Tensor, Tensor]:
     if objective_name not in _objective_opt_cache:
+        # Need to handle an extra dimension at the beginning because for some reason,
+        # in the new BoTorch version where it uses gen_candidates_scipy instead of
+        # gen_candidates_torch as the old version did, it adds an extra dimension at the
+        # beginning when optimizing.
+        # (The original objective function expects 2D inputs of shape (n, d).)
+        def fn(x):
+            if x.dim() == 3:
+                assert x.size(0) == 1
+                x = x.squeeze(0)
+            return objective_fn(x)
+        
         opt_kwargs = dict(
-            paths=objective_fn, bounds=_get_bounds(dimension),
-            raw_samples=8192, num_restarts=100
+            bounds=_get_bounds(dimension),
+            raw_samples=8192, num_restarts=100,
+            # return_transformed=False is the default and is what we *would* want,
+            # but for some reason, in the new BoTorch version it does
+            # f_opt = paths(X_opt.unsqueeze(-2)).squeeze(-2)
+            # which gives IndexError: Dimension out of range (expected to be in range of [-1, 0], but got -2)
+            # So we will manually un-transform it for the negative one.
+            return_transformed=True 
         )
-        argmin, y_min = optimize_posterior_samples(**opt_kwargs, maximize=False)
-        argmax, y_max = optimize_posterior_samples(**opt_kwargs, maximize=True)
+        # It maximizes by default
+        argmax, y_max = optimize_posterior_samples(**opt_kwargs, paths=fn)
+
+        # To minimize, optimize the negative.
+        
+        ## Should use new BoTorch to version to minimize as follows.
+        ## This is what we would do if it didn't give error
+        ## "RuntimeError: Output shape of samples not equal to that of weights"
+        # from botorch.acquisition.objective import LinearMCObjective
+        # obj = LinearMCObjective(weights=-torch.ones(1))
+        # argmin, y_min = optimize_posterior_samples(**opt_kwargs, paths=fn, sample_transform=obj)
+
+        # But since it gives error, we will just optimize the negative function instead
+        # (which does the same thing).
+        argmin, y_min = optimize_posterior_samples(**opt_kwargs, paths=lambda x: -fn(x))
+        y_min = -y_min
+        
         print(f"Optimized {objective_name} with {argmin=}, {y_min=}, {argmax=}, {y_max=}")
         _objective_opt_cache[objective_name] = (y_min, y_max)
     return _objective_opt_cache[objective_name]
@@ -417,19 +451,20 @@ def pre_run_bo(objective_args: dict[str, Any],
             if objective_args.get(arg_name) is None:
                 raise ValueError(
                     f"If {OBJECTIVE_NAME_PREFIX}_dataset_type=gp, must specify {OBJECTIVE_NAME_PREFIX}_{arg_name}")
-    elif dataset_type == 'hpob':
-        if hpob_search_space_id is None:
-            raise ValueError("If {OBJECTIVE_NAME_PREFIX}_dataset_type=hpob, must specify "
-                             "objective_hpob_search_space_id")
-        if objective_args.get('dimension', None) is not None:
-            raise ValueError("If {OBJECTIVE_NAME_PREFIX}_dataset_type=hpob, cannot specify "
-                             f"{OBJECTIVE_NAME_PREFIX}_dimension")
-        # Validate that no GP args are provided for HPO-B
-        for arg_name in gp_specific_args:
-            if objective_args.get(arg_name) not in [None, False]:
-                raise ValueError(
-                    f"If {OBJECTIVE_NAME_PREFIX}_dataset_type=hpob, cannot specify {OBJECTIVE_NAME_PREFIX}_{arg_name}")
-        objective_args[f'id'] = str(objective_args[f'id'])
+    else:
+        if dataset_type == 'hpob':
+            if hpob_search_space_id is None:
+                raise ValueError("If {OBJECTIVE_NAME_PREFIX}_dataset_type=hpob, must specify "
+                                "objective_hpob_search_space_id")
+            if objective_args.get('dimension', None) is not None:
+                raise ValueError("If {OBJECTIVE_NAME_PREFIX}_dataset_type=hpob, cannot specify "
+                                f"{OBJECTIVE_NAME_PREFIX}_dimension")
+            # Validate that no GP args are provided for HPO-B
+            for arg_name in gp_specific_args:
+                if objective_args.get(arg_name) not in [None, False]:
+                    raise ValueError(
+                        f"If {OBJECTIVE_NAME_PREFIX}_dataset_type=hpob, cannot specify {OBJECTIVE_NAME_PREFIX}_{arg_name}")
+            objective_args[f'id'] = str(objective_args[f'id'])
 
     optimize_acqf_arg_names = info['optimize_acqf_arg_names']
 
@@ -524,13 +559,19 @@ def pre_run_bo(objective_args: dict[str, Any],
             fit = gp_af_args.get('fit')
             #### Determine the GP model to be used for the AF
             if fit == "exact":
+                if objective_gp is None:
+                    raise ValueError(f"If using {GP_AF_NAME_PREFIX}_fit=exact, "
+                                    f"the objective function must be a GP")
                 ## Determine af_gp_model from the GP used for the objective
                 for k, v in gp_af_args.items():
                     if not (k == "fit" or k == GP_AF_NAME_PREFIX):
                         if v is not None:
                             raise ValueError(f"Cannot specify {GP_AF_NAME_PREFIX}_{k} "
                                             f"if {GP_AF_NAME_PREFIX}_fit=exact")
-                af_gp_model = objective_gp
+                # Remove priors if there are any
+                af_gp_model = copy.deepcopy(objective_gp)
+                remove_priors(af_gp_model)
+                
                 af_octf = objective_octf
             else:
                 ## Determine af_gp_model from the GP args
@@ -540,15 +581,10 @@ def pre_run_bo(objective_args: dict[str, Any],
                     raise ValueError(
                         f"If using a GP AF and {GP_AF_NAME_PREFIX}_fit != exact, "
                         f"must specify {GP_AF_NAME_PREFIX}_kernel")
-                if af_lengthscale is None:
-                    # raise ValueError(
-                    #     f"If using a GP AF and {GP_AF_NAME_PREFIX}_fit != exact, "
-                    #     f"must specify {GP_AF_NAME_PREFIX}_lengthscale")
-                    warnings.warn(
-                        f"If using a GP AF and {GP_AF_NAME_PREFIX}_fit != exact, "
-                        f"should specify {GP_AF_NAME_PREFIX}_lengthscale. "
-                        "Using default (starting) lengthscale of 1.0")
-                    af_lengthscale = 1.0 # Default lengthscale
+                if af_lengthscale is None and fit is None:
+                    raise ValueError(
+                        f"If using a GP AF and {GP_AF_NAME_PREFIX}_fit is None, "
+                        f"must specify {GP_AF_NAME_PREFIX}_lengthscale")                    
                 
                 # Add priors if using MAP. If using MLE or no fitting, don't add priors
                 add_gp_af_priors_flag = fit == "map"
@@ -556,8 +592,9 @@ def pre_run_bo(objective_args: dict[str, Any],
                 af_gp_model = get_gp_model_from_args_no_outcome_transform(
                     dimension=dimension,
                     kernel=af_kernel,
-                    lengthscale=af_lengthscale,
+                    lengthscale=af_lengthscale, # can be None; then will not be set
                     add_priors=add_gp_af_priors_flag,
+                    add_standardize=fit is not None,
                     device=GP_GEN_DEVICE
                 )
                 af_octf, af_octf_args = get_outcome_transform(
@@ -764,8 +801,7 @@ def main():
         for k in info['gp_af_arg_names']
     }
 
-    optimization_results = run_bo(
-        objective_args, bo_policy_args, gp_af_args)
+    optimization_results = run_bo(objective_args, bo_policy_args, gp_af_args)
 
     if optimization_results is None:
         raise ValueError("NN model not trained")

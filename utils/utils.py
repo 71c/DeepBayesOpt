@@ -1,24 +1,18 @@
 from abc import abstractmethod, ABC
-from collections import defaultdict
 import hashlib
 import itertools
-import os
-import random
 import re
-import json
-import inspect
-import copy
 import math
 from typing import Any, Set, TypeVar, Iterable, Sequence, List, Tuple, Dict, Optional, Union
-# Python 3.11+: can do "from typing import Self"
-# Before Python 3.11: need to do the following:
-from typing_extensions import Self
+
 import warnings
 from functools import partial, lru_cache
 
 import numpy as np
 from scipy.optimize import root_scalar
 import torch
+
+from utils.io_utils import load_json, safe_issubclass, save_json
 
 torch.set_default_dtype(torch.float64)
 from torch import Tensor
@@ -27,7 +21,7 @@ import gpytorch
 from gpytorch.likelihoods import GaussianLikelihood
 from gpytorch.constraints.constraints import GreaterThan
 from gpytorch.kernels import MaternKernel, ScaleKernel, RBFKernel
-from gpytorch.priors.torch_priors import GammaPrior
+from gpytorch.priors.torch_priors import GammaPrior, LogNormalPrior
 from gpytorch.mlls import ExactMarginalLogLikelihood
 from botorch.fit import fit_gpytorch_mll
 from botorch.exceptions.errors import (
@@ -39,6 +33,7 @@ from botorch.exceptions.warnings import (
     BotorchTensorDimensionWarning,
     InputDataWarning,
 )
+from botorch.utils.types import _DefaultType, DEFAULT
 from botorch.posteriors import Posterior
 from botorch.models.transforms.outcome import OutcomeTransform, Standardize, Log, Power
 from torch.nn import ModuleList
@@ -353,11 +348,15 @@ def add_outcome_transform(gp, octf):
     return gp # Could alternatively return None; either would work
 
 
+SQRT2 = math.sqrt(2)
+SQRT3 = math.sqrt(3)
+
 def get_kernel(
         dimension: int,
         kernel: str,
         add_priors: bool,
-        lengthscale: float,
+        lengthscale: Optional[float] = None,
+        new_botorch_version: bool = True,
         device=None):
     r"""Constructs a kernel for Gaussian Processes with optional priors.
 
@@ -376,18 +375,26 @@ def get_kernel(
     Returns:
         kernel: A kernel object configured with the specified parameters.
     """
-    base_kernel_kwargs = dict(
+    kernel_kwargs = dict(
         ard_num_dims=dimension,
         batch_shape=torch.Size()
     )
     if add_priors:
-        alpha = 3.0
-        # lengthscale == alpha / beta
-        beta = alpha / lengthscale
-        base_kernel_kwargs['lengthscale_prior'] = GammaPrior(alpha, beta)
+        if new_botorch_version:
+            lengthscale_prior = LogNormalPrior(
+                loc=SQRT2 + math.log(dimension) * 0.5, scale=SQRT3)
+            kernel_kwargs['lengthscale_prior'] = lengthscale_prior
+            kernel_kwargs['lengthscale_constraint'] = GreaterThan(
+                2.5e-2, transform=None, initial_value=lengthscale_prior.mode
+            )
+        else:
+            alpha = 3.0
+            # lengthscale == alpha / beta
+            beta = alpha / (lengthscale if lengthscale is not None else 1.0)
+            kernel_kwargs['lengthscale_prior'] = GammaPrior(alpha, beta)
 
     if kernel == 'RBF':
-        base_kernel = RBFKernel(**base_kernel_kwargs)
+        kernel = RBFKernel(**kernel_kwargs)
     else:
         if kernel == 'Matern32':
             nu = 1.5
@@ -395,29 +402,31 @@ def get_kernel(
             nu = 2.5
         else:
             raise ValueError(f"Invalid kernel {kernel}")
-        base_kernel = MaternKernel(nu=nu, **base_kernel_kwargs)
+        kernel = MaternKernel(nu=nu, **kernel_kwargs)
 
-    # Set the lengthscale. Note: This automatically sets it to this vaue for
-    # all components.
-    base_kernel.lengthscale = torch.tensor(lengthscale, device=device)
+    if lengthscale is not None:
+        # Set the lengthscale. Note: This automatically sets it to this vaue for
+        # all components.
+        kernel.lengthscale = torch.tensor(lengthscale, device=device)
 
-    scale_kernel_kwargs = dict(
-        base_kernel=base_kernel,
-        batch_shape=torch.Size()
-    )
-    if add_priors:
-        # NOTE: This is not exactly what we want if outcome_transform=exp,
-        # because in that case, the implied mean and std of the outcome value
-        # will *not* be 0 and outputscale if there is a prior on outputscale.
-        # Ideally, we would do outcome transform and then put scale kernel
-        # with scale prior rather than scale kernel with scale prior and then
-        # outcome transform, but that's too difficult to do with the current
-        # setup.
-        alpha = 3.0
-        mean = 1.0
-        scale_kernel_kwargs['outputscale_prior'] = GammaPrior(alpha, alpha / mean)
-    kernel = ScaleKernel(**scale_kernel_kwargs)
-    kernel.outputscale = torch.tensor(1.0, device=device)
+    if not new_botorch_version:
+        scale_kernel_kwargs = dict(
+            base_kernel=kernel,
+            batch_shape=torch.Size()
+        )
+        if add_priors:
+            # NOTE: This is not exactly what we want if outcome_transform=exp,
+            # because in that case, the implied mean and std of the outcome value
+            # will *not* be 0 and outputscale if there is a prior on outputscale.
+            # Ideally, we would do outcome transform and then put scale kernel
+            # with scale prior rather than scale kernel with scale prior and then
+            # outcome transform, but that's too difficult to do with the current
+            # setup.
+            alpha = 3.0
+            mean = 1.0
+            scale_kernel_kwargs['outputscale_prior'] = GammaPrior(alpha, alpha / mean)
+        kernel = ScaleKernel(**scale_kernel_kwargs)
+        kernel.outputscale = torch.tensor(1.0, device=device)
     return kernel
 
 
@@ -428,12 +437,13 @@ def get_gp(train_X:Optional[Tensor]=None,
            likelihood=None,
            covar_module=None,
            mean_module=None,
-           outcome_transform=None,
+           outcome_transform: OutcomeTransform | _DefaultType | None = DEFAULT,
            input_transform=None,
            device=None):
-    # Default: Matern 5/2 kernel with gamma priors on
-    # lengthscale and outputscale, and noise level also if
-    # observation_noise.
+    # Default: RBF kernel with dimension-scaled log-normal priors on lengthscale.
+    # (Old BoTorch version: default was Matern 5/2 kernel with gamma priors on
+    # lengthscale and outputscale.)
+    # Also priors on noise level if observation_noise.
     
     if train_X is None and train_Y is None:
         has_data = False
@@ -472,10 +482,13 @@ def get_gp(train_X:Optional[Tensor]=None,
         )
         # Make it so likelihood can't change by gradient-based optimization.
         likelihood.noise_covar.raw_noise.requires_grad_(False)
-    model = SingleTaskGP(
-        train_X, train_Y, likelihood=likelihood, covar_module=covar_module,
+    singletaskgp_kwargs = dict(
+        likelihood=likelihood, covar_module=covar_module,
         mean_module=mean_module, outcome_transform=outcome_transform,
-        input_transform=input_transform).to(device)
+        input_transform=input_transform
+    )
+    model = SingleTaskGP(
+        train_X, train_Y, **singletaskgp_kwargs).to(device)
     if not has_data:
         model.remove_data()
     return model
@@ -734,10 +747,8 @@ def remove_priors(module: gpytorch.module.Module) -> list:
     """Removes all priors from a GPyTorch Module, and also returns the
     equivalent of list(module.named_priors()) for convenience to be used with
     add_priors."""
-    named_priors_tuple_list = []
-    for name, parent_module, prior, closure, inv_closure in module.named_priors():
-        named_priors_tuple_list.append(
-            (name, parent_module, prior, closure, inv_closure))
+    named_priors_tuple_list = list(module.named_priors())
+    for name, parent_module, prior, closure, inv_closure in named_priors_tuple_list:
         prior_variable_name = name.rsplit('.', 1)[-1]
         delattr(parent_module, prior_variable_name)
         del parent_module._priors[prior_variable_name]
@@ -1078,33 +1089,6 @@ def to_device(tensor, device):
     return tensor.to(device)
 
 
-def save_json(data, fname, **kwargs):
-    already_exists = os.path.exists(fname)
-    r = random.randint(0, 1_000_000_000)
-    save_fname = fname + f'{r}.tmp' if already_exists else fname
-    try:
-        # Ensure the directory exists
-        dirname = os.path.dirname(fname)
-        if dirname != '':
-            os.makedirs(dirname, exist_ok=True)
-        
-        # Write data to the (possibly temporary) file
-        with open(save_fname, 'w') as json_file:
-            json.dump(data, json_file, **kwargs)
-
-        if already_exists:
-            # Replace the original file with the temporary file
-            os.replace(save_fname, fname)
-    except Exception as e:
-        if os.path.exists(save_fname):
-            # Remove the written file if an error occurs
-            os.remove(save_fname)
-        raise e
-
-
-def load_json(fname, **kwargs):
-    with open(fname, 'r') as json_file:
-        return json.load(json_file, **kwargs)
 
 
 def dict_to_cmd_args(params, equals=False) -> list[str]:
@@ -1795,251 +1779,6 @@ def resize_iterable(it, new_len: Optional[int] = None, allow_repeats=False):
     return it
 
 
-def safe_issubclass(obj, parent):
-    """Returns whether `obj` is a class that is a subclass of `parent`.
-    In contrast to `issubclass`, doesn't raise TypeError when `obj` is not a class."""
-    return isinstance(obj, type) and issubclass(obj, parent)
-
-
-# Dictionary to keep track of subclasses of SaveableObject
-_CLASSES: dict[str, type] = {}
-
-def _info_dict_to_instance(info_dict) -> tuple[type, dict]:
-    """Creates an instance of a class from a dictionary containing its class name
-    and arguments."""
-    if set(info_dict.keys()) != {"class_name", "kwargs"}:
-        raise ValueError("info_dict should have keys 'class_name' and 'kwargs'")
-    
-    class_name = info_dict["class_name"]
-    loaded_cls = _get_class_from_name(class_name)
-    
-    kwargs = info_dict["kwargs"]
-    if not isinstance(kwargs, dict):
-        raise TypeError("'kwargs' should be a dictionary")
-    for k, v in kwargs.items():
-        class_ = None
-        if type(v) is str:
-            try:
-                class_ = _get_class_from_name(v)
-            except KeyError:
-                pass
-        if class_ is not None:
-            kwargs[k] = class_
-        elif isinstance(v, dict) and set(v.keys()) == {"class_name", "kwargs"}:
-            v_cls, v_kwargs = _info_dict_to_instance(v)
-            kwargs[k] = v_cls(**v_kwargs)
-    return loaded_cls, kwargs
-
-def _get_class_from_name(class_name):
-    try:
-        loaded_cls = _CLASSES[class_name]
-    except KeyError:
-        try:
-            # Backwards compatibility with old code
-            if '.' not in class_name:
-                raise KeyError
-            new_class_name = class_name.split(".")[-1]
-            warnings.warn(
-                f"Subclass {class_name} of SaveableObject is not registered. "
-                f"Must be old code. Trying to get it as {new_class_name}")
-            loaded_cls = _CLASSES[new_class_name]
-        except KeyError:
-            raise KeyError(f"Subclass {class_name} of SaveableObject does not exist")
-    return loaded_cls
-
-def _default_json_SaveableObject(o):
-    if o.__class__ is type:
-        the_type = o.__name__
-        tmp = f"the type {the_type}"
-    else:
-        the_type = o.__class__.__name__
-        tmp = f"of type {the_type}"
-    msg = "Unable to save the file because one of the values is not JSON " \
-        "serializable. Only JSON serializable values and SaveableObject " \
-        "subclasses and instances are supported to be saved by SaveableObject. " \
-        f"If you need to save this object ({tmp}), consider making {the_type} " \
-        "a subclass of SaveableObject."
-    raise TypeError(msg)
-
-def _get_class_name(c: type):
-    # return f"{c.__module__}.{c.__name__}"  # Old code was this
-    return c.__name__                        # This allows for moving files around
-
-class SaveableObject(ABC):
-    r"""An abstract base class for objects that can be saved and loaded with their
-    initialization parameters.
-
-    This class enables automatic serialization and deserialization of subclasses by 
-    tracking their __init__ arguments. When a subclass is instantiated, its 
-    constructor arguments are introspected and stored, allowing the object to be 
-    reconstructed from saved data. Supports instances of `SaveableObject`
-    as well as subclasses of `SaveableObject` as arguments to __init__.
-
-    Subclass __init__ must not use `*args` (variadic positional arguments).
-    
-    Subclasses should subclass `SaveableObject` with `SaveableObject` as the last
-    one, i.e., as in,
-    ```class C(A, B, SaveableObject)
-    ```
-    
-    *Note:* although internally, SaveableObject has an abstract method __init__, this is
-    NOT for purpose of an interface/contract: since SaveableObject automatically assigns
-    an explicit __init__ method whenever a new subclass is created, subclasses are NOT
-    required to implement __init__.
-    Rather, the purpose of this abstract __init__ method is to have at least one
-    @abstractmethod in the abstract base class SaveableObject so that SaveableObject is
-    prevented from being instantiated directly.
-    """
-    @classmethod
-    def load_init(cls, folder: str) -> Self:
-        r"""Loads an instance from a JSON file.
-
-        This method reads the JSON file 'init.json' from the specified folder,
-        reconstructs the initialization parameters stored therein, and returns a new
-        instance of the appropriate class.
-
-        Usage:
-        - To load any `SaveableObject` instance using the base class:
-                ```instance = SaveableObject.load_init("/path/to/folder")
-                ```
-        - To load an instance of a specific subclass `MySubClass`:
-                ```instance = MySubClass.load_init("/path/to/folder")
-                ```
-        In the latter case, ensure that the JSON file contains data for a `MySubClass`
-        instance; otherwise, a TypeError will be raised.
-
-        Args:
-            folder (str): The directory containing the 'init.json' file.
-
-        Returns:
-            The loaded instance.
-
-        Raises:
-            RuntimeError:
-                If the JSON file could not be loaded (e.g., file not found,
-                JSON decoding error, or Unicode decode error).
-            TypeError:
-                If the JSON file contains an instance of a different class than
-                expected.
-        """
-        try:
-            info_dict = load_json(os.path.join(folder, "init.json"))
-        except (FileNotFoundError,
-                json.decoder.JSONDecodeError, UnicodeDecodeError) as e:
-            raise RuntimeError(f"Could not load {cls.__name__} instance") from e
-        typ, kwargs = _info_dict_to_instance(info_dict)
-        if not issubclass(typ, cls):
-            raise TypeError(
-                f"Trying to load a {cls.__name__} instance but the JSON file "
-                f"contains a {typ.__name__} instance. Instead of calling "
-                f"{cls.__name__}.load_init, you could call "
-                f"SaveableObject.load_init or {typ.__name__}.load_init"
-            )
-        return typ(**kwargs)
-
-    def save_init(self, folder: str):
-        r"""Saves initialization parameters to a JSON file.
-        Args:
-            folder (str): The directory to save the JSON file.
-        """
-        os.makedirs(folder, exist_ok=True)
-        save_json(self.get_info_dict(), os.path.join(folder, "init.json"),
-                  default=_default_json_SaveableObject)
-    
-    def get_init_kwargs(self) -> dict[str, Any]:
-        r"""Returns a dictionary of initialization parameters of the SaveableObject."""
-        return {**self._init_kwargs}
-
-    def get_info_dict(self) -> dict[str, Union[str, dict[str, Any]]]:
-        r"""Returns a dictionary representation of initialization parameters
-        and class name."""
-        return {
-            "class_name": _get_class_name(self.__class__),
-            "kwargs": self.get_init_kwargs()
-        }
-
-    @abstractmethod
-    def __init__(self, *args, **kwargs):
-        # Default __init__ for SaveableObject that does nothing.
-        # Prevents SaveableObject from being instantiated directly.
-        # Although this is an abstractmethod, subclasses do NOT need to
-        # implement __init__.
-        pass
-
-    def __init_subclass__(cls, **kwargs):
-        # Preserve the original __init__ method.
-        original_init = cls.__init__
-
-        def new_init(self, *args, **kwargs):
-            # If we are constructing THIS exact class (and not a subclass further down
-            # the hierarchy). i.e., check if if we are calling the same __init__ as the
-            # __init__ defined directly in the object that is being constructed,
-            # not a superclass' __init__.
-            is_same_class = self.__class__ is cls
-
-            if is_same_class:
-                # Copy the original args and kwargs, just in case original_init modifies
-                # them
-                original_args = copy.deepcopy(args)
-                original_kwargs = copy.deepcopy(kwargs)
-
-            original_init(self, *args, **kwargs) # Call the original __init__ method
-
-            if is_same_class:
-                # Convert args to kwargs
-                sig = inspect.signature(original_init)
-                
-                # Can use either bind or bind_partial;
-                # we already ensured that all required arguments are passed
-                # because we already called the original __init__ method.
-                # Need to remember to put 'self' in the arguments.
-                bound_args = sig.bind(self, *original_args, **original_kwargs)
-                bound_args.apply_defaults()
-                all_kwargs = bound_args.arguments
-
-                # Detect VAR_KEYWORD parameters (i.e. **kwargs) and flatten them
-                # to fix the problem that all_kwargs = {..., 'kwargs': {...}}
-                # arises due to apply_defaults when there's ** kind of parameters.
-                # Also, make sure that there are no *args type of parameters
-                # because we don't support that (makes it too complicated).
-                for p_name, param in sig.parameters.items():
-                    if param.kind == param.VAR_KEYWORD:
-                        if p_name in all_kwargs:
-                            # all_kwargs[p_name] is the dict that ended up in **whatever
-                            var_kw_dict = all_kwargs.pop(p_name) # remove from top-level
-                            # Flatten all items inside that dict:
-                            all_kwargs.update(var_kw_dict)
-                    elif param.kind == param.VAR_POSITIONAL:
-                        value = all_kwargs[p_name]
-                        assert type(value) is tuple
-                        if len(value) > 0:
-                            raise ValueError(
-                                "SaveableObject does not support *args in __init__")
-                        all_kwargs.pop(p_name)
-
-                # Remove 'self' from the kwargs
-                all_kwargs.pop('self', None)
-
-                for k, v in all_kwargs.items():
-                    # If there are any subclasses of SaveableObject in the
-                    # kwargs, replace them with their name
-                    if safe_issubclass(v, SaveableObject):
-                        all_kwargs[k] = _get_class_name(v)
-                    # If there are any instances of SaveableObject in the
-                    # kwargs, replace them with their info_dict
-                    elif isinstance(v, SaveableObject):
-                        all_kwargs[k] = v.get_info_dict()
-
-                self._init_kwargs = all_kwargs
-
-        # Replace the __init__ method with the new one
-        cls.__init__ = new_init
-
-        # Register the class in the _CLASSES dictionary
-        _CLASSES[_get_class_name(cls)] = cls
-
-        # Call the original __init_subclass__ method
-        super().__init_subclass__(**kwargs)
 
 
 # Based on
@@ -2091,3 +1830,30 @@ def fit_model(model, x_hist, y_hist, fit_params, mle):
 # }
 
 
+if __name__ == "__main__":
+    from botorch.test_functions import Hartmann
+    objective = Hartmann(negate=True)
+    x = torch.rand(20, 6, device=None, dtype=torch.float64)
+    y = objective(x).unsqueeze(-1)  # add output dimension
+
+    model = get_gp(x, y, observation_noise=True)
+
+    print("initial model:")
+    print(model)
+
+    print("\nmodel priors:")
+    print(list(model.named_priors()))
+
+    named_priors_tuple_list = remove_priors(model)
+
+    print("\nmodel with priors removed:")
+    print(model)
+    print("\nmodel priors:")
+    print(list(model.named_priors()))
+
+    add_priors(named_priors_tuple_list)
+
+    print("\nmodel with priors added back:")
+    print(model)
+    print("\nmodel priors:")
+    print(list(model.named_priors()))

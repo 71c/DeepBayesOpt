@@ -55,6 +55,8 @@ def _generate_bo_commands(
             bo_policy_args_ = {**bo_policy_args, 'bo_seed': bo_seed}
             if dataset_type == 'hpob' and use_hpob_seeds:
                 bo_policy_args_['hpob_seed'] = HPOB_SEEDS[bo_seed_idx]
+                # Don't need n_initial_samples for HPO-B if using predefined seeds
+                bo_policy_args_.pop('n_initial_samples', None)
             bo_config = dict(
                 objective_args=objective_args_,
                 bo_policy_args=bo_policy_args_,
@@ -90,6 +92,7 @@ def _gp_bo_jobs_spec_and_cfgs(
     included = []
 
     for nn_options in options_list:
+        ## Determine dataset_type and get objective_args
         dataset_type = nn_options.get('function_samples_dataset.dataset_type', 'gp')
         if dataset_type not in {'gp', 'hpob'}:
             raise UnsupportedError(
@@ -178,7 +181,8 @@ def _gp_bo_jobs_spec_and_cfgs(
 
         dataset_type = objective_args['dataset_type']
         if dataset_type == 'hpob':
-            gp_af_fit_args = {'fit': 'mle', 'kernel': 'Matern52'}
+            # Use the default GP fit settings of the latest BoTorch version (0.15.1)
+            gp_af_fit_args = {'fit': 'map', 'kernel': 'RBF'}
         elif dataset_type == 'gp':
             if objective_args['randomize_params']:
                 gp_af_fit_args = {

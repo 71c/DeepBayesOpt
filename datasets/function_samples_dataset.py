@@ -461,6 +461,7 @@ class GaussianProcessRandomDataset(
                 raise ValueError("dimension should be specified if models is None")
             models = [get_gp(dimension=dimension,
                            observation_noise=observation_noise,
+                           outcome_transform=None,
                            device=device)]
         else:
             for i, model in enumerate(models):

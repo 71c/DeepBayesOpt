@@ -11,6 +11,7 @@ import numpy as np
 
 import torch
 from torch import Tensor
+import botorch
 from botorch.optim import optimize_acqf
 from botorch.generation.gen import TGenCandidates
 from botorch.acquisition.acquisition import AcquisitionFunction
@@ -523,7 +524,7 @@ class OptimizationResultsSingleMethod:
             self._func_results_to_save = [{} for _ in range(self.n_functions)]
             os.makedirs(save_dir, exist_ok=True)
 
-            info_kwargs = dict(include_priors=False, hash_gpytorch_modules=False)
+            info_kwargs = dict(include_priors=True, hash_gpytorch_modules=False)
             opt_config_json = convert_to_json_serializable(opt_config, **info_kwargs)
             extra_fn_configs = [
                 convert_to_json_serializable(fn_kwargs, **info_kwargs)

@@ -6,6 +6,7 @@ building on the abstract base class.
 """
 
 import argparse
+from typing import Optional
 
 from acquisition_dataset_base import (
     AcquisitionDatasetManager, add_common_acquisition_dataset_args, 
@@ -13,6 +14,7 @@ from acquisition_dataset_base import (
 )
 from datasets.function_samples_dataset import GaussianProcessRandomDataset
 from utils.utils import get_gp, get_kernel, get_standardized_exp_transform
+from botorch.utils.types import DEFAULT
 
 
 # GP-specific constants
@@ -39,6 +41,7 @@ class GPAcquisitionDatasetManager(AcquisitionDatasetManager):
                 kernel=args.kernel,
                 lengthscale=args.lengthscale,
                 add_priors=args.randomize_params,
+                add_standardize=False,
                 device=device
             )
         ]
@@ -76,8 +79,9 @@ class GPAcquisitionDatasetManager(AcquisitionDatasetManager):
 def get_gp_model_from_args_no_outcome_transform(
         dimension: int,
         kernel: str,
-        lengthscale: float,
-        add_priors: bool,
+        lengthscale: Optional[float] = None,
+        add_priors: bool = True,
+        add_standardize: bool = True,
         device=None):
     """Create GP model from arguments without outcome transform."""
     kernel = get_kernel(
@@ -88,7 +92,8 @@ def get_gp_model_from_args_no_outcome_transform(
         device=device
     )
     return get_gp(dimension=dimension, observation_noise=False,
-                  covar_module=kernel, device=device)
+                  covar_module=kernel, device=device,
+                  outcome_transform=DEFAULT if add_standardize else None)
 
 
 def get_outcome_transform_from_args(args: argparse.Namespace, name_prefix="", device=None):
