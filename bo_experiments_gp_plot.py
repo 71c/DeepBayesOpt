@@ -326,8 +326,9 @@ INCLUDE_TIMES = False
 ATTR_GROUPS = [
     # ["per_iteration_decisions"],
     # ["best_y"],
-    ["regret"],
     ["normalized_regret"],
+    ["model_fitting_errors"],
+    ["regret"],
     # ["x"],
     # ["best_y", "x"]
 ]
@@ -343,6 +344,7 @@ ATTR_NAME_TO_TITLE = {
     "best_y": "Best function value",
     "regret": "Regret",
     "normalized_regret": "Normalized Regret",
+    "model_fitting_errors": "Cumulative Model Fitting Errors",
     "process_time": "Process time",
     "time": "Time",
     "n_evals": "Number of AF evaluations by optimize_acqf",
@@ -439,10 +441,19 @@ def main():
     assert all(len(v) == 1 for v in gr.values())
 
     # Extract results
-    results_list = [
-        {k: v[0, :] for k, v in next(iter(r))[2].items()}
-        for r in existing_results
-    ]
+    results_list = []
+    for r in existing_results:
+        result_data = next(iter(r))[2]
+        item = {}
+        for k, v in result_data.items():
+            try:
+                item[k] = v[0, :]
+            except IndexError:
+                print(f"DEBUG IndexError: {k}: shape={getattr(v, 'shape', 'no shape')}, ndim={getattr(v, 'ndim', 'no ndim')}, type={type(v)}")
+                if hasattr(v, 'shape') and len(v.shape) > 0:
+                    print(f"DEBUG IndexError: {k} first few values: {v.flat[:min(5, v.size)]}")
+                raise  # Re-raise the error after printing debug info
+        results_list.append(item)
 
     reformatted_configs = []
     for item in existing_cfgs:

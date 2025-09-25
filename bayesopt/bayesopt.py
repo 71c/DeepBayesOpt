@@ -4,6 +4,7 @@ import copy
 import os
 import time
 import math
+import warnings
 
 from tqdm import tqdm, trange
 import matplotlib.pyplot as plt
@@ -403,6 +404,8 @@ class GPAcquisitionOptimizer(ModelAcquisitionOptimizer):
                 remove_priors(model)
         
         self.model = model
+        self.model_fitting_errors_count = 0  # Keep track of total count
+        self.model_fitting_errors_history = []  # Track cumulative count per iteration
 
         if issubclass(acquisition_function_class, LogExpectedImprovement):
             self._is_ei = True
@@ -424,6 +427,16 @@ class GPAcquisitionOptimizer(ModelAcquisitionOptimizer):
             self._acq_history_exponentiated.append(new_point_acquisition_val)
         return new_point
 
+    def update_best(self, time, process_time):
+        super().update_best(time, process_time)
+        # Append current cumulative count to history after each iteration
+        self.model_fitting_errors_history.append(self.model_fitting_errors_count)
+
+    def get_stats(self):
+        ret = super().get_stats()
+        ret['model_fitting_errors'] = torch.tensor(self.model_fitting_errors_history).numpy()
+        return ret
+
     def get_model(self):
         if self.fit_params:
             self.model.train()
@@ -433,7 +446,15 @@ class GPAcquisitionOptimizer(ModelAcquisitionOptimizer):
         
         if self.fit_params:
             mll = ExactMarginalLogLikelihood(self.model.likelihood, self.model)
-            fit_gpytorch_mll(mll)
+            try:
+                fit_gpytorch_mll(mll)
+            except botorch.exceptions.errors.ModelFittingError as e:
+                self.model_fitting_errors_count += 1
+                warnings.warn(
+                    "Model fitting error: " + str(e) +
+                    " Proceeding with unfitted model.",
+                    RuntimeWarning
+                )
 
         return self.model
 

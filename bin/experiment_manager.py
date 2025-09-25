@@ -279,7 +279,7 @@ def main():
     parser_plot.add_argument('--n-iterations', type=int, default=30,
                            help='Number of iterations for BO plots')
     parser_plot.add_argument('--center-stat', choices=['mean', 'median'], default='mean',
-                           help='Center statistic for plots')
+                           help='Center statistic for plots. Default is mean.')
     parser_plot.add_argument('--dry-run', action='store_true',
                            help='Show what would be executed without running')
     

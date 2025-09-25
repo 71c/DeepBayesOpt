@@ -4,7 +4,6 @@ from functools import cache
 import math
 from typing import Any
 import argparse
-import warnings
 import yaml
 
 import torch
@@ -284,46 +283,6 @@ def parse_bo_loop_args(cmd_args=None):
     return parser_info
 
 
-# Cache the objective function things.
-# This greatly speeds up the script bo_experiments_gp.py
-# that generates the commands for the BO loops.
-# Otherwise, it takes too long to run get_rff_function_and_name many times.
-@cache
-def _get_gp_objective_things_helper(
-    dimension, kernel, lengthscale, randomize_params, gp_seed):
-    # Get GP model sampler
-    objective_gp_base_model = get_gp_model_from_args_no_outcome_transform(
-        dimension=dimension,
-        kernel=kernel,
-        lengthscale=lengthscale,
-        add_priors=randomize_params,
-        add_standardize=False,
-        device=GP_GEN_DEVICE
-    )
-    objective_gp_sampler = RandomModelSampler(
-        [objective_gp_base_model],
-        randomize_params=randomize_params
-    )
-
-    # Seed
-    torch.manual_seed(gp_seed)
-
-    # Get (potentially) random GP parameters
-    objective_gp = objective_gp_sampler.sample(deepcopy=True).eval()
-    # Get random GP draw
-    objective_fn = get_rff_function(objective_gp, dimension=dimension)
-
-    desc_dict = dict(
-        dimension=dimension,
-        kernel=kernel, lengthscale=lengthscale,
-        randomize_params=randomize_params,
-        seed=gp_seed
-    )
-    objective_name = f'gp_{dict_to_fname_str(desc_dict)}'
-
-    return objective_gp, objective_fn, objective_name
-
-
 _objective_opt_cache = {}
 def _get_gp_function_min_max(
         objective_fn, dimension, objective_name) -> tuple[Tensor, Tensor]:
@@ -369,6 +328,46 @@ def _get_gp_function_min_max(
         print(f"Optimized {objective_name} with {argmin=}, {y_min=}, {argmax=}, {y_max=}")
         _objective_opt_cache[objective_name] = (y_min, y_max)
     return _objective_opt_cache[objective_name]
+
+
+# Cache the objective function things.
+# This greatly speeds up the script bo_experiments_gp.py
+# that generates the commands for the BO loops.
+# Otherwise, it takes too long to run get_rff_function_and_name many times.
+@cache
+def _get_gp_objective_things_helper(
+    dimension, kernel, lengthscale, randomize_params, gp_seed):
+    # Get GP model sampler
+    objective_gp_base_model = get_gp_model_from_args_no_outcome_transform(
+        dimension=dimension,
+        kernel=kernel,
+        lengthscale=lengthscale,
+        add_priors=randomize_params,
+        add_standardize=False,
+        device=GP_GEN_DEVICE
+    )
+    objective_gp_sampler = RandomModelSampler(
+        [objective_gp_base_model],
+        randomize_params=randomize_params
+    )
+
+    # Seed
+    torch.manual_seed(gp_seed)
+
+    # Get (potentially) random GP parameters
+    objective_gp = objective_gp_sampler.sample(deepcopy=True).eval()
+    # Get random GP draw
+    objective_fn = get_rff_function(objective_gp, dimension=dimension)
+
+    desc_dict = dict(
+        dimension=dimension,
+        kernel=kernel, lengthscale=lengthscale,
+        randomize_params=randomize_params,
+        seed=gp_seed
+    )
+    objective_name = f'gp_{dict_to_fname_str(desc_dict)}'
+
+    return objective_gp, objective_fn, objective_name
 
 
 def _get_objective_things(objective_args):
@@ -441,11 +440,11 @@ def pre_run_bo(objective_args: dict[str, Any],
     if dataset_type == 'gp':
         if hpob_search_space_id is not None:
             raise ValueError("If {OBJECTIVE_NAME_PREFIX}_dataset_type=gp, cannot specify "
-                             "objective_hpob_search_space_id")
+                             "{OBJECTIVE_NAME_PREFIX}_hpob_search_space_id")
         if objective_args['dimension'] is None:
             raise ValueError("If {OBJECTIVE_NAME_PREFIX}_dataset_type=gp, must specify objective_dimension")
         if objective_args['dimension'] <= 0:
-            raise ValueError("objective_dimension must be > 0")
+            raise ValueError("{OBJECTIVE_NAME_PREFIX}_dimension must be > 0")
         # Validate that required GP args are provided
         for arg_name in ['kernel', 'lengthscale']:
             if objective_args.get(arg_name) is None:
@@ -455,7 +454,7 @@ def pre_run_bo(objective_args: dict[str, Any],
         if dataset_type == 'hpob':
             if hpob_search_space_id is None:
                 raise ValueError("If {OBJECTIVE_NAME_PREFIX}_dataset_type=hpob, must specify "
-                                "objective_hpob_search_space_id")
+                                "{OBJECTIVE_NAME_PREFIX}_hpob_search_space_id")
             if objective_args.get('dimension', None) is not None:
                 raise ValueError("If {OBJECTIVE_NAME_PREFIX}_dataset_type=hpob, cannot specify "
                                 f"{OBJECTIVE_NAME_PREFIX}_dimension")
