@@ -9,9 +9,7 @@ import argparse
 from typing import Optional
 
 from acquisition_dataset_base import (
-    AcquisitionDatasetManager, add_common_acquisition_dataset_args, 
-    create_dataset_factory_function
-)
+    AcquisitionDatasetManager, add_common_acquisition_dataset_args)
 from datasets.function_samples_dataset import GaussianProcessRandomDataset
 from utils.utils import get_gp, get_kernel, get_standardized_exp_transform
 from botorch.utils.types import DEFAULT
@@ -175,8 +173,3 @@ def add_gp_acquisition_dataset_args(parser):
     )
     add_gp_args(parser, "dataset", required=True, add_randomize_params=True)
     add_common_acquisition_dataset_args(parser)
-
-
-# Use factory function to eliminate duplication
-create_train_test_gp_acq_datasets_from_args = create_dataset_factory_function(
-    GPAcquisitionDatasetManager)

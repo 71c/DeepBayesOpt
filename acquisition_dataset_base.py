@@ -9,7 +9,6 @@ import argparse
 import os
 import sys
 import traceback
-import math
 from typing import Any, List, Optional, Union
 from abc import ABC, abstractmethod
 
@@ -402,7 +401,7 @@ class AcquisitionDatasetManager(ABC):
         aq_dataset_already_saved = False
         aq_dataset = None
         
-        # Define paths and names for caching
+        # Define the paths and names for the datasets; load the AF dataset if it exists
         if cache:
             name_ = name + "_" if name != "" else name
 
@@ -446,6 +445,10 @@ class AcquisitionDatasetManager(ABC):
                     aq_dataset_already_saved = False
                 if aq_dataset_already_saved:
                     assert aq_dataset.data_is_fixed == fix_acquisition_samples
+                    # Won't just return it now because 
+                    # it is possible that the dataset currently doesn't have cached
+                    # data that we want to compute now.
+                    # If so, we compute the cached data and save the dataset again.
             
             if fix_acquisition_samples:
                 if batch_size is None or get_true_stats is None:
@@ -469,9 +472,11 @@ class AcquisitionDatasetManager(ABC):
         # If we don't have the acquisition dataset saved, generate it
         if not aq_dataset_already_saved:
             # Generate or load the function samples dataset
-            create_function_samples_dataset = True
             if cache and fix_function_samples and function_dataset_already_saved:
                 create_function_samples_dataset = False
+                # Even if load_dataset=False, then we still want to load the function
+                # samples dataset when fix_acquisition_samples=True because in that case
+                # we want to save the acquisition dataset.
                 if load_dataset or fix_acquisition_samples:
                     try:
                         function_samples_dataset = ListMapFunctionSamplesDataset.load(
@@ -483,6 +488,8 @@ class AcquisitionDatasetManager(ABC):
                         create_function_samples_dataset = True
                 else:
                     function_samples_dataset = None
+            else:
+                create_function_samples_dataset = True
             
             if create_function_samples_dataset:
                 function_samples_dataset_kwargs = dict(
@@ -516,6 +523,8 @@ class AcquisitionDatasetManager(ABC):
                     function_samples_dataset.save(function_dataset_path, verbose=True)
                 
                 # Transform the function samples dataset
+                # Make sure to transform AFTER the dataset is saved because we want to
+                # save the un-transformed values.
                 if outcome_transform is not None:
                     function_samples_dataset = function_samples_dataset.transform_outcomes(
                         outcome_transform)
@@ -798,17 +807,3 @@ class AcquisitionDatasetManager(ABC):
                       len(small_test_aq_dataset) % args.batch_size)
 
         return ret
-
-
-def create_dataset_factory_function(manager_class: type[AcquisitionDatasetManager]):
-    """Create factory function for dataset managers to avoid duplication."""
-    def create_train_test_acq_datasets_from_args(
-            args, check_cached=False, load_dataset=True):
-        """Create acquisition datasets from command line arguments."""
-        if getattr(args, 'samples_addition_amount', None) is None:
-            args.samples_addition_amount = 5
-        
-        manager = manager_class(device="cpu")
-        return manager.create_train_test_datasets_from_args(
-            args, check_cached=check_cached, load_dataset=load_dataset)
-    return create_train_test_acq_datasets_from_args

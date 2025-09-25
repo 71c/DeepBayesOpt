@@ -8,9 +8,7 @@ building on the abstract base class.
 import argparse
 
 from acquisition_dataset_base import (
-    AcquisitionDatasetManager, add_common_acquisition_dataset_args,
-    create_dataset_factory_function
-)
+    AcquisitionDatasetManager, add_common_acquisition_dataset_args)
 from datasets.logistic_regression_dataset import LogisticRegressionRandomDataset
 
 
@@ -126,7 +124,3 @@ def add_logistic_regression_acquisition_dataset_args(parser):
     """Add logistic regression acquisition dataset arguments to parser."""
     add_lr_args(parser)
     add_common_acquisition_dataset_args(parser)
-
-
-create_train_test_lr_acq_datasets_from_args = create_dataset_factory_function(
-    LogisticRegressionAcquisitionDatasetManager)
