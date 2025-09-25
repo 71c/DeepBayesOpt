@@ -263,6 +263,14 @@ def _get_bo_loop_args_parser():
     add_gp_args(gp_af_group, "GP-based AF", name_prefix=GP_AF_NAME_PREFIX,
                 required=False, add_randomize_params=False)
 
+    # Add recompute options
+    recompute_group = parser.add_argument_group("Recompute options")
+    recompute_group.add_argument(
+        '--recompute-result',
+        action='store_true',
+        help='Recompute/overwrite existing BO result even if already cached'
+    )
+
     return {
         'parser': parser,
         'params_all': params_all,
@@ -704,7 +712,8 @@ _BO_CACHE = {}
 def run_bo(objective_args: dict[str, Any],
            bo_policy_args: dict[str, Any],
            gp_af_args: dict[str, Any],
-           load_weights: bool=True):
+           load_weights: bool=True,
+           recompute_result: bool=False):
     stuff = pre_run_bo(
         objective_args, bo_policy_args, gp_af_args, load_weights=load_weights)
     if stuff is None:
@@ -756,6 +765,7 @@ def run_bo(objective_args: dict[str, Any],
         maximize=True,
         verbose=True,
         result_cache=_BO_CACHE,
+        recompute_results=recompute_result,
         **af_options
     )
 
@@ -800,7 +810,8 @@ def main():
         for k in info['gp_af_arg_names']
     }
 
-    optimization_results = run_bo(objective_args, bo_policy_args, gp_af_args)
+    optimization_results = run_bo(objective_args, bo_policy_args, gp_af_args,
+                                  recompute_result=args.recompute_result)
 
     if optimization_results is None:
         raise ValueError("NN model not trained")

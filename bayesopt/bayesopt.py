@@ -384,6 +384,9 @@ class GPAcquisitionOptimizer(ModelAcquisitionOptimizer):
                  gen_candidates: Optional[TGenCandidates]=None,
                  options: Optional[dict[str, Union[bool, float, int, str]]]=None,
                  **acqf_kwargs):
+        self.model_fitting_errors_count = 0  # Keep track of total count
+        self.model_fitting_errors_history = []  # Track cumulative count per iteration
+
         super().__init__(
             dim, maximize, initial_points, objective, bounds,
             acquisition_function_class=acquisition_function_class,
@@ -404,8 +407,6 @@ class GPAcquisitionOptimizer(ModelAcquisitionOptimizer):
                 remove_priors(model)
         
         self.model = model
-        self.model_fitting_errors_count = 0  # Keep track of total count
-        self.model_fitting_errors_history = []  # Track cumulative count per iteration
 
         if issubclass(acquisition_function_class, LogExpectedImprovement):
             self._is_ei = True
@@ -475,6 +476,7 @@ class OptimizationResultsSingleMethod:
                  results_name: Optional[str]=None,
                  verbose=False,
                  result_cache={},
+                 recompute_results=False,
                  **optimizer_kwargs):
         self.objectives = objectives
         self.n_functions = len(objectives)
@@ -535,7 +537,8 @@ class OptimizationResultsSingleMethod:
                 "nn_model_name must not be provided if not using NNAcquisitionOptimizer.")
 
         self.results_name = results_name
-
+        self.recompute_results = recompute_results
+        
         self.save_dir = save_dir
         if save_dir is not None:
             if objective_names is None:
@@ -546,6 +549,7 @@ class OptimizationResultsSingleMethod:
             os.makedirs(save_dir, exist_ok=True)
 
             info_kwargs = dict(include_priors=True, hash_gpytorch_modules=False)
+            
             opt_config_json = convert_to_json_serializable(opt_config, **info_kwargs)
             extra_fn_configs = [
                 convert_to_json_serializable(fn_kwargs, **info_kwargs)
@@ -555,6 +559,7 @@ class OptimizationResultsSingleMethod:
                  'optimizer_class': optimizer_class.__name__}
                 for fn_config in extra_fn_configs
             ]
+            # self.func_opt_configs_str is fucked up
             self.func_opt_configs_str = list(map(dict_to_hash, func_opt_configs_list))
             self.func_opt_configs = dict(zip(self.func_opt_configs_str, func_opt_configs_list))
 
@@ -571,8 +576,11 @@ class OptimizationResultsSingleMethod:
                          for _ in range(self.n_functions)]
         for func_index in range(self.n_functions):
             for trial_index in range(self.n_trials_per_function):
-                cached_trial_result = self._get_cached_trial_result(
-                    func_index, trial_index, return_result=False)
+                if recompute_results:
+                    cached_trial_result = None
+                else:
+                    cached_trial_result = self._get_cached_trial_result(
+                        func_index, trial_index, return_result=False)
                 if cached_trial_result is None:
                     self._trial_indices_not_cached[func_index].append(trial_index)
                 else:
@@ -643,7 +651,7 @@ class OptimizationResultsSingleMethod:
 
     def _get_trial_result(self, func_index: int, trial_index: int, verbose=False):
         trial_result = None
-        if self.save_dir is not None:
+        if not self.recompute_results and self.save_dir is not None:
             trial_result = self._get_cached_trial_result(func_index, trial_index)
 
         if trial_result is None:
@@ -675,7 +683,6 @@ class OptimizationResultsSingleMethod:
         func_name = self.objective_names[func_index]
         func_opt_config_str = self.func_opt_configs_str[func_index]
 
-        # func dir
         func_dir = os.path.join(self.save_dir, func_name)
         os.makedirs(func_dir, exist_ok=True)
         
@@ -719,7 +726,7 @@ class OptimizationResultsSingleMethod:
         for func_index in range(self.n_functions):
             trial_indices_not_cached_func = self._trial_indices_not_cached[func_index]
             for trial_index in trial_indices_not_cached_func:
-                if self.save_dir is None:
+                if self.save_dir is None or self.recompute_results:
                     is_cached = False
                 else:
                     result = self._get_cached_trial_result(
@@ -773,26 +780,27 @@ class OptimizationResultsSingleMethod:
                         func_index, trial_index, verbose=verbose)
                     if hasattr(self, 'pbar'):
                         self.pbar.update(1)
-
-                self._save_func_results(func_index)
+                
+                if self.save_dir is not None:
+                    self._save_func_results(func_index)
 
                 if n_funcs_to_optimize > 1:
                     pbar.update(1)
+                
+                trial_indices_not_cached[func_index] = []
             
             if self.objective_names is not None:
                 func_name = self.objective_names[func_index]
+            else:
+                func_name = f"Function_{func_index}"
+            
+            if self.save_dir is not None:
                 func_dir = os.path.join(self.save_dir, func_name)
                 results_dir = os.path.join(func_dir, "results")
                 func_opt_config_str = self.func_opt_configs_str[func_index]
                 opt_config_dir = os.path.join(results_dir, func_opt_config_str)
                 trials_dir = os.path.join(opt_config_dir, "trials")
-                
-                # for trial_index in range(self.n_trials_per_function):
-                #     trial_config_str = self.trial_configs_str[trial_index]
-                #     trial_file_path = os.path.join(trials_dir, trial_config_str + ".json")
-                #     print(f"Trial result saved to {trial_file_path}")
             else:
-                func_name = f"Function_{func_index}"
                 trials_dir = None
 
             result = aggregate_stats_list(results_func)

@@ -482,13 +482,12 @@ def get_gp(train_X:Optional[Tensor]=None,
         )
         # Make it so likelihood can't change by gradient-based optimization.
         likelihood.noise_covar.raw_noise.requires_grad_(False)
-    singletaskgp_kwargs = dict(
+    model = SingleTaskGP(
+        train_X, train_Y, 
         likelihood=likelihood, covar_module=covar_module,
         mean_module=mean_module, outcome_transform=outcome_transform,
         input_transform=input_transform
-    )
-    model = SingleTaskGP(
-        train_X, train_Y, **singletaskgp_kwargs).to(device)
+    ).to(device)
     if not has_data:
         model.remove_data()
     return model
@@ -992,16 +991,12 @@ def dict_to_hash(d: Dict[str, Any]) -> str:
 
 
 def hash_gpytorch_module(module,
-                         include_priors=True,
                          include_str=True,
                          hash_str=False):
-    if not include_priors:
-        named_priors_tuple_list = remove_priors(module)
-    
     serialized_state_dict = convert_to_json_serializable(
         module.state_dict(), hash_gpytorch_modules=True,
-        include_priors=include_priors, hash_include_str=False,
-        hash_str=True)
+        include_priors=True, hash_include_str=False,
+        hash_str=True, float_precision=14)
     
     if hash_str:
         hashed_result = dict_to_hash({
@@ -1015,9 +1010,6 @@ def hash_gpytorch_module(module,
         ret = f'{module!r}_{hashed_result}'
     else:
         ret = hashed_result
-
-    if not include_priors:
-        add_priors(named_priors_tuple_list)
     
     return ret
 
@@ -1026,10 +1018,11 @@ def convert_to_json_serializable(data,
                                  include_priors=True,
                                  hash_gpytorch_modules=True,
                                  hash_include_str=True,
-                                 hash_str=False):
+                                 hash_str=False,
+                                 float_precision=None):
     if isinstance(data, dict):
         return {k: convert_to_json_serializable(
-            v, include_priors, hash_gpytorch_modules, hash_include_str, hash_str)
+            v, include_priors, hash_gpytorch_modules, hash_include_str, hash_str, float_precision)
             for k, v in data.items()}
     if isinstance(data, np.ndarray):
         return data.tolist()
@@ -1037,30 +1030,33 @@ def convert_to_json_serializable(data,
         return data.cpu().numpy().tolist()
     if isinstance(data, (list, tuple)):
         return [convert_to_json_serializable(
-            x, include_priors, hash_gpytorch_modules, hash_include_str, hash_str)
+            x, include_priors, hash_gpytorch_modules, hash_include_str, hash_str, float_precision)
             for x in data]
     if isinstance(data, (int, float, str, bool, type(None))):
+        if isinstance(data, float) and float_precision is not None:
+            # Round to specified number of significant digits in scientific notation
+            return float(f'{data:.{float_precision}e}')
         return data
     if isinstance(data, gpytorch.Module):
+        if not include_priors:
+            named_priors_tuple_list = remove_priors(data)
         if hash_gpytorch_modules:
-            return hash_gpytorch_module(
-                data, include_priors, hash_include_str, hash_str)
+            ret = hash_gpytorch_module(data, hash_include_str, hash_str)
         else:
-            if not include_priors:
-                named_priors_tuple_list = remove_priors(data)
             ret = {
                 'module': str(data),
                 'state_dict': convert_to_json_serializable(
                     data.state_dict(), include_priors=True,
-                    hash_gpytorch_modules=False)
+                    hash_gpytorch_modules=False, float_precision=14)
             }
-            if not include_priors:
-                add_priors(named_priors_tuple_list)
-            return ret
+        if not include_priors:
+            add_priors(named_priors_tuple_list)
+        return ret
     if isinstance(data, type):
         # e.g. ExpectedImprovement instead of <class 'botorch.acquisition.analytic.ExpectedImprovement'>
         return data.__name__
     return str(data)
+
 
 def _json_serializable_to_numpy(data: Any, array_keys: Optional[set]=None):
     if isinstance(data, dict):
@@ -1076,6 +1072,7 @@ def _json_serializable_to_numpy(data: Any, array_keys: Optional[set]=None):
         return [_json_serializable_to_numpy(x, array_keys) for x in data]
     return data
 
+
 def json_serializable_to_numpy(data: Any,
                                array_keys: Optional[Union[list,tuple,set]]=None):
     if array_keys is not None:
@@ -1087,8 +1084,6 @@ def to_device(tensor, device):
     if tensor is None or device is None:
         return tensor
     return tensor.to(device)
-
-
 
 
 def dict_to_cmd_args(params, equals=False) -> list[str]:
@@ -1777,8 +1772,6 @@ def resize_iterable(it, new_len: Optional[int] = None, allow_repeats=False):
                                      "if it is not a SizedInfiniteIterableMixin")
                 it = _ResizedIterable(it, new_len, allow_repeats=allow_repeats)
     return it
-
-
 
 
 # Based on

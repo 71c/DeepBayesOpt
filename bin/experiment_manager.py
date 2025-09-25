@@ -133,21 +133,32 @@ def cmd_run(args):
     
     try:
         print(f"Running experiment: {args.name}")
-        
+
         if args.dry_run:
             print("DRY RUN MODE - no commands will be executed")
-        
+
+        # Validate recompute arguments
+        if getattr(args, 'recompute_bo', False) and getattr(args, 'recompute_non_nn_only', False):
+            print("Error: Cannot specify both --recompute-bo and --recompute-non-nn-only.")
+            return 1
+
         if args.training_only:
             returncode, stdout, stderr = runner.run_training_only(
                 args.name,
                 dry_run=args.dry_run,
-                no_submit=args.no_submit
+                no_submit=args.no_submit,
+                always_train=getattr(args, 'always_train', False),
+                recompute_bo=getattr(args, 'recompute_bo', False),
+                recompute_non_nn_only=getattr(args, 'recompute_non_nn_only', False)
             )
         else:
             returncode, stdout, stderr = runner.run_experiment(
-                args.name, 
-                dry_run=args.dry_run, 
-                no_submit=args.no_submit
+                args.name,
+                dry_run=args.dry_run,
+                no_submit=args.no_submit,
+                always_train=getattr(args, 'always_train', False),
+                recompute_bo=getattr(args, 'recompute_bo', False),
+                recompute_non_nn_only=getattr(args, 'recompute_non_nn_only', False)
             )
         
         if stdout:
@@ -262,12 +273,21 @@ def main():
     # Run command
     parser_run = subparsers.add_parser('run', help='Run an experiment')
     parser_run.add_argument('name', help='Name of the experiment')
-    parser_run.add_argument('--dry-run', action='store_true', 
+    parser_run.add_argument('--dry-run', action='store_true',
                           help='Show what would be executed without running')
-    parser_run.add_argument('--no-submit', action='store_true', 
+    parser_run.add_argument('--no-submit', action='store_true',
                           help='Prepare jobs but do not submit to SLURM')
     parser_run.add_argument('--training-only', action='store_true',
                           help='Run only the training part of the experiment')
+
+    # Recompute options for run command
+    run_recompute_group = parser_run.add_argument_group('recompute options')
+    run_recompute_group.add_argument('--always-train', action='store_true',
+                                   help='Recompute/overwrite existing NN training results')
+    run_recompute_group.add_argument('--recompute-bo', action='store_true',
+                                   help='Recompute/overwrite existing BO results (all types)')
+    run_recompute_group.add_argument('--recompute-non-nn-only', action='store_true',
+                                   help='Recompute/overwrite only non-NN BO results (GP and random search)')
     
     # Plot command
     parser_plot = subparsers.add_parser('plot', help='Generate plots for an experiment')

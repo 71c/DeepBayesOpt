@@ -95,7 +95,9 @@ class ExperimentRunner:
         except Exception as e:
             return 1, "", f"Error running status check: {str(e)}"
     
-    def run_experiment(self, name: str, dry_run: bool = False, no_submit: bool = False) -> Tuple[int, str, str]:
+    def run_experiment(self, name: str, dry_run: bool = False, no_submit: bool = False,
+                      always_train: bool = False, recompute_bo: bool = False,
+                      recompute_non_nn_only: bool = False) -> Tuple[int, str, str]:
         """Run an experiment."""
         try:
             args = self.registry.get_experiment_command_args(name)
@@ -121,7 +123,16 @@ class ExperimentRunner:
             # Add optional flags
             if no_submit:
                 cmd.append("--no_submit")
-                
+
+            if always_train:
+                cmd.append("--always_train")
+
+            if recompute_bo:
+                cmd.append("--recompute-bo")
+
+            if recompute_non_nn_only:
+                cmd.append("--recompute-non-nn-only")
+
             if dry_run:
                 print("Dry run - would execute command:")
                 print(" ".join(cmd))
@@ -134,7 +145,10 @@ class ExperimentRunner:
     
     def run_training_only(self, name: str,
                           dry_run: bool = False,
-                          no_submit: bool = False) -> Tuple[int, str, str]:
+                          no_submit: bool = False,
+                          always_train: bool = False,
+                          recompute_bo: bool = False,
+                          recompute_non_nn_only: bool = False) -> Tuple[int, str, str]:
         """Run only the training part of an experiment."""
         try:
             args = self.registry.get_experiment_command_args(name)
@@ -153,7 +167,12 @@ class ExperimentRunner:
             # Add optional flags
             if no_submit:
                 cmd.append("--no_submit")
-            
+
+            if always_train:
+                cmd.append("--always_train")
+
+            # Note: recompute_bo and recompute_non_nn_only don't apply to training-only mode
+
             if dry_run:
                 print("Dry run - would execute command:")
                 print(" ".join(cmd))

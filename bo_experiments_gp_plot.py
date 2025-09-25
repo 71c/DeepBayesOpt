@@ -442,8 +442,8 @@ def main():
 
     # Extract results
     results_list = []
-    for r in existing_results:
-        result_data = next(iter(r))[2]
+    for config, r in existing_cfgs_and_results:
+        func_name, trials_dir, result_data = next(iter(r))
         item = {}
         for k, v in result_data.items():
             try:
@@ -452,6 +452,8 @@ def main():
                 print(f"DEBUG IndexError: {k}: shape={getattr(v, 'shape', 'no shape')}, ndim={getattr(v, 'ndim', 'no ndim')}, type={type(v)}")
                 if hasattr(v, 'shape') and len(v.shape) > 0:
                     print(f"DEBUG IndexError: {k} first few values: {v.flat[:min(5, v.size)]}")
+                    print(f"{func_name=}, {trials_dir=}")
+                    print(f"{config=}")
                 raise  # Re-raise the error after printing debug info
         results_list.append(item)
 
