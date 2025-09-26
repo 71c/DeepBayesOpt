@@ -495,7 +495,7 @@ def _get_gp_stat_info(training_history_data, plot_maxei):
 
 def plot_acquisition_function_net_training_history_ax(
         ax, training_history_data, plot_maxei=False, plot_log_regret=False,
-        plot_name=None, label='', strict_colors=True):
+        plot_name=None, label='', color=None):
     stats_epochs, stat_name, gp_stat_name, is_loss, gp_test_stat = _get_gp_stat_info(
         training_history_data, plot_maxei)
     
@@ -503,6 +503,7 @@ def plot_acquisition_function_net_training_history_ax(
         label = f' ({label})'
     test_stat = np.array([epoch['test'][stat_name] for epoch in stats_epochs])
     
+    test_color = _FIT_METHOD_TO_INFO['nn']['color'] if color is None else color
     if plot_log_regret:
         if gp_test_stat is None:
             s = stats_epochs[0]['test']
@@ -518,7 +519,7 @@ def plot_acquisition_function_net_training_history_ax(
                 {
                     'label': 'Regret (NN)' + label,
                     'data': regret_data,
-                    'color': _FIT_METHOD_TO_INFO['nn']['color']
+                    'color': test_color
                 }
             ],
             'title': f'Test {stat_name} vs Epochs (regret)',
@@ -535,12 +536,12 @@ def plot_acquisition_function_net_training_history_ax(
                 {
                     'label': 'Train (NN)' + label,
                     'data': train_stat,
-                    'color': BLUE
+                    'color': BLUE if color is None else color
                 },
                 {
                     'label': 'Test (NN)' + label,
                     'data': test_stat,
-                    'color': _FIT_METHOD_TO_INFO['nn']['color']
+                    'color': test_color
                 }
             ],
             'title': f'Train and Test {stat_name} vs Epochs',
@@ -549,6 +550,9 @@ def plot_acquisition_function_net_training_history_ax(
             'log_scale_x': True,
             'log_scale_y': is_loss
         }
+        if color is not None:
+            # Make the train line dashed to distinguish it
+            to_plot['lines'][0]['linestyle'] = '--'
 
         if gp_test_stat is not None:
             to_plot['consts'] = [
@@ -562,9 +566,7 @@ def plot_acquisition_function_net_training_history_ax(
 
     epochs = np.arange(1, len(test_stat) + 1)
 
-    line_properties = ['label', 'marker', 'linestyle']
-    if strict_colors:
-        line_properties.append('color')
+    line_properties = ['label', 'marker', 'linestyle', 'color']
 
     lines = to_plot.get('lines')
     if lines is not None:
