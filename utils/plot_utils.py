@@ -23,6 +23,7 @@ from linear_operator.utils.warnings import NumericalWarning
 from nn_af.acquisition_function_net_save_utils import get_lamda_for_bo_of_nn
 from utils.constants import BO_PLOTS_FOLDER
 from datasets.acquisition_dataset import AcquisitionDataset
+from datasets.hpob_dataset import get_hpob_dataset_dimension
 from nn_af.acquisition_function_net import AcquisitionFunctionNet, AcquisitionFunctionNetAcquisitionFunction, ExpectedImprovementAcquisitionFunctionNet
 from utils.constants import PLOTS_DIR
 from utils.exact_gp_computations import calculate_EI_GP, calculate_gi_gp
@@ -495,7 +496,7 @@ def _get_gp_stat_info(training_history_data, plot_maxei):
 
 def plot_acquisition_function_net_training_history_ax(
         ax, training_history_data, plot_maxei=False, plot_log_regret=False,
-        plot_name=None, label='', color=None):
+        plot_name=None, label='', color=None, alpha=1.0):
     stats_epochs, stat_name, gp_stat_name, is_loss, gp_test_stat = _get_gp_stat_info(
         training_history_data, plot_maxei)
     
@@ -503,7 +504,9 @@ def plot_acquisition_function_net_training_history_ax(
         label = f' ({label})'
     test_stat = np.array([epoch['test'][stat_name] for epoch in stats_epochs])
     
-    test_color = _FIT_METHOD_TO_INFO['nn']['color'] if color is None else color
+    # array [R, G, B, A]
+    test_color = to_rgba_array(
+        _FIT_METHOD_TO_INFO['nn']['color'] if color is None else color, alpha=alpha)[0]
     if plot_log_regret:
         if gp_test_stat is None:
             s = stats_epochs[0]['test']
@@ -536,7 +539,7 @@ def plot_acquisition_function_net_training_history_ax(
                 {
                     'label': 'Train (NN)' + label,
                     'data': train_stat,
-                    'color': BLUE if color is None else color
+                    'color': to_rgba_array(BLUE if color is None else color, alpha=alpha)[0]
                 },
                 {
                     'label': 'Test (NN)' + label,
@@ -553,6 +556,8 @@ def plot_acquisition_function_net_training_history_ax(
         if color is not None:
             # Make the train line dashed to distinguish it
             to_plot['lines'][0]['linestyle'] = '--'
+            # Also add some transparency
+            to_plot['lines'][0]['color'][3] *= 0.7
 
         if gp_test_stat is not None:
             to_plot['consts'] = [
@@ -1414,7 +1419,12 @@ def _plot_key_value_to_str(k, v):
             priority = 1.2
     if k != "nn.lamda" and k.startswith("nn."):
         k = k[3:]
-    
+
+    # Special handling for HPO-B search space IDs to include dimension
+    if k == "objective.hpob_search_space_id" or k == "hpob_search_space_id":
+        dim = get_hpob_dataset_dimension(v)
+        return (priority, f"{k}={v} ({dim}D)")
+
     return (priority, f"{k}={v}")
 
 

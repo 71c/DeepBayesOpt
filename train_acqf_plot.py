@@ -211,15 +211,16 @@ def get_plot_ax_train_acqf_func(get_result_func):
             plot_name: Optional[str]=None,
             label='',
             color=None,
+            alpha=1.0,
             **plot_kwargs):
         if not isinstance(plot_config, int):
             import matplotlib.pyplot as plt
             prop_cycle = plt.rcParams['axes.prop_cycle']
-            cycler = prop_cycle()
+            c = prop_cycle()
             for label, value in plot_config.items():
                 train_acqf_plot_ax(
                     value['items'], ax, plot_name=plot_name,
-                    label=label, color=next(cycler)['color'], **plot_kwargs)
+                    label=label, color=next(c)['color'], alpha=0.7*alpha, **plot_kwargs)
             return
 
         info = get_result_func(plot_config)
@@ -232,11 +233,11 @@ def get_plot_ax_train_acqf_func(get_result_func):
         if attr_name == "0_training_history_train_test":
             plot_acquisition_function_net_training_history_ax(
                 ax, training_history_data, plot_maxei=False, plot_name=plot_name,
-                plot_log_regret=False, label=label, color=color)
+                plot_log_regret=False, label=label, color=color, alpha=alpha)
         elif attr_name == "1_training_history_test_log_regret":
             plot_acquisition_function_net_training_history_ax(
                 ax, training_history_data, plot_maxei=False, plot_name=plot_name,
-                plot_log_regret=True, label=label, color=color)
+                plot_log_regret=True, label=label, color=color, alpha=alpha)
         elif attr_name == "2_af_plot":
             aq_dataset = results['dataset_getter']()
 
