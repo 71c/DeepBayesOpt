@@ -404,7 +404,13 @@ def main():
         default=40,
         help='Number of iterations to plot for the acquisition function animation'
     )
-    
+    parser.add_argument(
+        '--variant',
+        type=str,
+        default='default',
+        help='Plot configuration variant to use (default: default)'
+    )
+
     ## Parse arguments
     args = parser.parse_args()
 

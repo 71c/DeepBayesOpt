@@ -295,6 +295,12 @@ def main():
     nn_base_config_name, nn_experiment_config_name = add_train_acqf_args(parser,
                                                                          train=False)
     add_plot_args(parser)
+    parser.add_argument(
+        '--variant',
+        type=str,
+        default='default',
+        help='Plot configuration variant to use (default: default)'
+    )
 
     ## Parse arguments
     args = parser.parse_args()

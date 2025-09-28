@@ -183,12 +183,12 @@ class ExperimentRunner:
         except Exception as e:
             return 1, "", f"Error running training: {str(e)}"
     
-    def generate_plots(self, name: str, plot_type: str = "bo_experiments", n_iterations: int = 30, 
+    def generate_plots(self, name: str, plot_type: str = "bo_experiments", n_iterations: int = 30,
                       center_stat: str = "mean", variant: str = "default", dry_run: bool = False) -> Tuple[int, str, str]:
         """Generate plots for an experiment."""
         try:
             args = self.registry.get_experiment_command_args(name)
-            
+
             if plot_type == "bo_experiments":
                 cmd = [
                     sys.executable, "bo_experiments_gp_plot.py",
@@ -198,43 +198,47 @@ class ExperimentRunner:
                     "--bo_experiment_config", args['BO_EXPERIMENT_CFG'].strip('"'),
                     "--seed", args['SEED']
                 ]
-                
+
                 # Add seeds configuration
                 seeds_cfg = args['SEEDS_CFG'].strip('"').split()
                 cmd.extend(seeds_cfg)
-                
+
                 # Add plots configuration
                 plots_cfg = args['PLOTS_CFG'].strip('"').split()
                 cmd.extend(plots_cfg)
-                
+
                 # Add BO plots configuration
                 bo_plots_name = args['BO_PLOTS_NAME'].strip('"')
                 cmd.extend([
                     "--center_stat", center_stat,
                     "--interval_of_center",
                     "--plots_name", bo_plots_name,
-                    "--n_iterations", str(n_iterations)
+                    "--n_iterations", str(n_iterations),
+                    "--variant", variant
                 ])
-                
+
             elif plot_type == "train_acqf":
                 cmd = [
                     sys.executable, "train_acqf_plot.py",
                     "--nn_base_config", "config/train_acqf.yml",
                     "--nn_experiment_config", args['NN_EXPERIMENT_CFG'].strip('"')
                 ]
-                
+
                 # Add plots configuration
                 plots_cfg = args['PLOTS_CFG'].strip('"').split()
                 cmd.extend(plots_cfg)
-                
+
+                # Add variant configuration
+                cmd.extend(["--variant", variant])
+
             else:
                 raise ValueError(f"Unknown plot type: {plot_type}")
-            
+
             if dry_run:
                 print("Dry run - would execute command:")
                 print(" ".join(cmd))
                 return 0, " ".join(cmd), ""
-            
+
             return self._run_command_with_streaming(cmd)
             
         except Exception as e:

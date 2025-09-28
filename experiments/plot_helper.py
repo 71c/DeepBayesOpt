@@ -104,7 +104,8 @@ def auto_configure_plotting(nn_experiment_config: str, plot_type: str, variant: 
 
 
 def apply_auto_plotting(nn_experiment_config: str, plot_type: str, 
-                       globals_dict: Dict[str, Any]) -> None:
+                       globals_dict: Dict[str, Any],
+                       variant: str = 'default') -> None:
     """
     Apply automatic plotting configuration to a script's global variables.
     
@@ -115,7 +116,7 @@ def apply_auto_plotting(nn_experiment_config: str, plot_type: str,
         plot_type: 'train_acqf' or 'bo_experiments'  
         globals_dict: The global namespace dictionary of the calling script
     """
-    pre, attr_a, attr_b = auto_configure_plotting(nn_experiment_config, plot_type)
+    pre, attr_a, attr_b = auto_configure_plotting(nn_experiment_config, plot_type, variant)
     
     # Update the global variables
     globals_dict['PRE'] = pre
@@ -154,13 +155,14 @@ def setup_plotting_from_args(args, plot_type: str, globals_dict: Dict[str, Any])
         globals_dict: The global namespace dictionary of the calling script
     """
     nn_config = getattr(args, 'nn_experiment_config', None)
+    variant = getattr(args, 'variant', 'default')
     if nn_config:
-        apply_auto_plotting(nn_config, plot_type, globals_dict)
-        
+        apply_auto_plotting(nn_config, plot_type, globals_dict, variant=variant)
+
         # Also try to set POST if available
         experiment_name = detect_experiment_from_config(nn_config)
         if experiment_name:
-            post_config = get_experiment_post_config(experiment_name, plot_type)
+            post_config = get_experiment_post_config(experiment_name, plot_type, variant)
             if post_config:
                 globals_dict['POST'] = post_config
             else:

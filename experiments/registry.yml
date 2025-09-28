@@ -1068,14 +1068,25 @@ experiments:
           attr_b:
           - max_history_input
           post:
-          - - learning_rate
+          - ['learning_rate']
+        alternatives:
+          version_2:
+            pre:
+            - ['hpob_search_space_id']
+            - ['layer_width', 'encoded_history_dim']
+            attr_a:
+            - x_cand_input
+            attr_b:
+            - max_history_input
+            post:
+            - ['learning_rate']
       bo_experiments:
         default:
           pre:
           - ['nn.layer_width', 'nn.encoded_history_dim']
           - ['nn.x_cand_input']
           attr_a:
-            - objective.hpob_search_space_id
+          - objective.hpob_search_space_id
           attr_b:
           - nn.max_history_input
           post:
@@ -1084,6 +1095,21 @@ experiments:
             - nn.learning_rate
           - - objective.id
             - bo_seed
+        alternatives:
+          version_2:
+            pre:
+            - ['objective.hpob_search_space_id']
+            - ['nn.layer_width', 'nn.encoded_history_dim']
+            attr_a:
+            - nn.x_cand_input
+            attr_b:
+            - nn.max_history_input
+            post:
+            - - lamda
+              - gp_af
+              - nn.learning_rate
+            - - objective.id
+              - bo_seed
 templates:
   basic_1d:
     description: Basic 1D experiment template

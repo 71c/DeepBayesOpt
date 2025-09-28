@@ -8,7 +8,10 @@
       "Bash(netstat:*)",
       "Bash(sbatch:*)",
       "Bash(salloc:*)",
-      "Bash(srun:*)"
+      "Bash(srun:*)",
+      "Bash(./bin/experiment_manager.py plot:*)",
+      "Bash(./bin/experiment_manager.py show:*)",
+      "Bash(./bin/experiment_manager.py plot-variants:*)"
     ],
     "deny": [],
     "ask": []

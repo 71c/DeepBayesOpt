@@ -2,15 +2,17 @@ parameters:
   dataset_type:
     value: hpob
   hpob_search_space_id:
-    values: ['5860', '5970', '6766', '4796', '5636', '5859', '5965', '6767']
+    values: ['4796', '5527', '5636', '5859', '5860', '5891', '5906', '5965', '5970', '5971', '6766', '6767', '6794', '7607', '7609', '5889']
+  min_history:
+    value: 5
   max_history:
-    value: 20
+    value: 25
   method:
     values: ['gittins']
   gi_loss_normalization:
     value: normal
   lamda:
-    value: 1.00e-02
+    values: [1.00e-03, 1.00e-02]
   samples_addition_amount:
     value: 5
   test_expansion_factor:
@@ -18,9 +20,9 @@ parameters:
   n_candidates:
     value: 1
   layer_width:
-    values: [8, 16]
+    values: [16]
   encoded_history_dim:
-    values: [8, 16]
+    values: [16]
   num_layers:
     values: [1]
   architecture:
@@ -34,7 +36,6 @@ parameters:
   x_cand_input:
     values:
     - "subtract-lossy"
-    - "subtract-local_only"
   pooling:
     values: ["max"]
   epochs:
