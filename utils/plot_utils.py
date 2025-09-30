@@ -1234,8 +1234,9 @@ def _get_figure_from_nested_structure(
         sorted_plot_config_items = list(sorted(
             plot_config.items(),
             key=lambda x: sorted(
-                [# _plot_key_value_to_str(a, b)
+                [
                     (a,
+                     _plot_key_value_to_str(a, b)[0], # priority
                      0 if b is None or b == "None" else 1,
                      b)
                     for a, b in x[1]["vals"].items()
@@ -1423,7 +1424,7 @@ def _plot_key_value_to_str(k, v):
     # Special handling for HPO-B search space IDs to include dimension
     if k == "objective.hpob_search_space_id" or k == "hpob_search_space_id":
         dim = get_hpob_dataset_dimension(v)
-        return (priority, f"{k}={v} ({dim}D)")
+        return (dim, f"{k}={v} ({dim}D)")
 
     return (priority, f"{k}={v}")
 
