@@ -93,8 +93,8 @@ def get_hpob_initialization(search_space_id: str,
             f"Dataset ID {dataset_id} not found in HPO-B test datasets for search "
             f"space ID {search_space_id}. Available datasets: {available_dataset_ids}")
     init_ids = _get_hpob_initialization_helper()[search_space_id][dataset_id][seed]
-    X = np.array(_get_hpob_dataset_json(search_space_id, 'test')[dataset_id]["X"])
-    return torch.tensor(X[init_ids])
+    X = _get_hpob_dataset_json(search_space_id, 'test')[dataset_id]["X"]
+    return torch.tensor([X[i] for i in init_ids])
 
 
 SURROGATES_STATS_PATH = os.path.join(HPOB_SAVED_SURROGATES_DIR, "summary-stats.json")
