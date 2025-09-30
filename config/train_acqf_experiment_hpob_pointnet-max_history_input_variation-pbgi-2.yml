@@ -2,11 +2,12 @@ parameters:
   dataset_type:
     value: hpob
   hpob_search_space_id:
-    values: ['4796', '5527', '5636', '5859', '5860', '5891', '5906', '5965', '5970', '5971', '6766', '6767', '6794', '7607', '7609', '5889']
+    # values: ['4796', '5527', '5636', '5859', '5860', '5891', '5906', '5965', '5970', '5971', '6766', '6767', '6794', '7607', '7609', '5889']
+    values: ['5860', '5970', '6766', '4796', '5636', '5859', '5965', '6767']
   min_history:
     value: 5
   max_history:
-    value: 25
+    values: [25, 105]
   method:
     values: ['gittins']
   gi_loss_normalization:
@@ -20,9 +21,9 @@ parameters:
   n_candidates:
     value: 1
   layer_width:
-    values: [16]
+    values: [8, 16]
   encoded_history_dim:
-    values: [16]
+    value: null # defaults to be same as layer_width
   num_layers:
     values: [1]
   architecture:

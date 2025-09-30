@@ -1047,7 +1047,7 @@ experiments:
             - nn.learning_rate
           - - bo_seed
   pointnet_max_history_pbgi_hpob:
-    description: 'Experiment of HPO-B PointNet PBGI: max_history_input (2, 4, 9, null), + dataset size'
+    description: 'Experiment of HPO-B PointNet PBGI: max_history_input (2, 4, 9, null), NN size, x_cand_input'
     created_date: '2025-09-18'
     parameters:
       seed: 8
@@ -1104,6 +1104,66 @@ experiments:
             - nn.x_cand_input
             attr_b:
             - nn.max_history_input
+            post:
+            - - lamda
+              - gp_af
+              - nn.learning_rate
+            - - objective.id
+              - bo_seed
+  pointnet_max_history_pbgi_hpob_2:
+    description: 'Experiment of HPO-B PointNet PBGI: max_history_input (2, 4, 9, null), NN size, max_history, lamda'
+    created_date: '2025-09-30'
+    parameters:
+      seed: 8
+      nn_experiment_config: config/train_acqf_experiment_hpob_pointnet-max_history_input_variation-pbgi-2.yml
+      bo_experiment_config: config/bo_config_experiment_2_torch.yml
+      sweep_name: 100iter_hpob_pointnet-max_history_input_variation-pbgi-2
+      use_hpob_seeds: true
+      plots_group_name: hpob_pointnet-max_history_input_variation-pbgi-2
+      bo_plots_name: results_100iter
+    plotting:
+      train_acqf:
+        default:
+          pre:
+          - ['layer_width', 'encoded_history_dim']
+          - ['lamda', 'max_history']
+          attr_a:
+          - hpob_search_space_id
+          attr_b:
+          - max_history_input
+          post:
+          - ['learning_rate']
+        alternatives:
+          version_2:
+            pre:
+            - ['hpob_search_space_id']
+            - ['layer_width', 'encoded_history_dim']
+            attr_a: ['lamda', 'max_history']
+            attr_b: ['max_history_input']
+            post:
+            - ['learning_rate']
+      bo_experiments:
+        default:
+          pre:
+          - ['nn.layer_width', 'nn.encoded_history_dim']
+          - ['lamda', 'nn.max_history']
+          attr_a:
+          - objective.hpob_search_space_id
+          attr_b:
+          - nn.max_history_input
+          post:
+          - - lamda
+            - gp_af
+            - nn.learning_rate
+          - - objective.id
+            - bo_seed
+        alternatives:
+          version_2:
+            pre:
+            - ['objective.hpob_search_space_id']
+            - ['nn.layer_width', 'nn.encoded_history_dim']
+            attr_a: ['lamda', 'nn.max_history']
+            attr_b: ['nn.max_history_input']
             post:
             - - lamda
               - gp_af
