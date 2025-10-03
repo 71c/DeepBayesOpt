@@ -266,5 +266,6 @@ If the NN training parameter is not a NN architecture parameter, then you will a
 ## Adding a new dataset type
 To add a new dataset type, you will need to do the following:
 - Add the dataset type to `config/train_acqf.yml`
-- Add a new dataset manager and add it to `dataset_factory.py`.
+- Add a new dataset manager in `datasets/` (e.g.
+  `datasets/hpob_acquisition_dataset_manager.py`) and add it to `dataset_factory.py`.
 - TODO

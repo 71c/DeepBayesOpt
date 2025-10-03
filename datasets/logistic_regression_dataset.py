@@ -220,13 +220,13 @@ class LogisticRegressionRandomDataset(
         return tuple(), dict(
             n_datapoints=self.n_datapoints,
             n_datapoints_random_gen=self.n_datapoints_random_gen,
-            n_samples_range=self.n_samples_range,
-            n_features_range=self.n_features_range,
-            bias_range=self.bias_range,
-            coefficient_std=self.coefficient_std,
-            noise_range=self.noise_range,
-            log_lambda_range=self.log_lambda_range,
-            log_uniform_sampling=self.log_uniform_sampling,
+            n_samples_range=self.objective_sampler.n_samples_range,
+            n_features_range=self.objective_sampler.n_features_range,
+            bias_range=self.objective_sampler.bias_range,
+            coefficient_std=self.objective_sampler.coefficient_std,
+            noise_range=self.objective_sampler.noise_range,
+            log_lambda_range=self.objective_sampler.log_lambda_range,
+            log_uniform_sampling=self.objective_sampler.log_uniform_sampling,
             device=self.device,
             dataset_size=self._size
         )
@@ -240,14 +240,9 @@ class LogisticRegressionRandomDataset(
         ret = self.__new__(self.__class__)
         ret.n_datapoints = self.n_datapoints
         ret.n_datapoints_random_gen = self.n_datapoints_random_gen
-        ret.n_samples_range = self.n_samples_range
-        ret.n_features_range = self.n_features_range
-        ret.bias_range = self.bias_range
-        ret.coefficient_std = self.coefficient_std
-        ret.noise_range = self.noise_range
-        ret.log_lambda_range = self.log_lambda_range
-        ret.log_uniform_sampling = self.log_uniform_sampling
+        ret.objective_sampler = self.objective_sampler
         ret.device = self.device
+        ret._model_sampler = None
         ret._size = dataset_size
         return ret
 
@@ -272,8 +267,9 @@ class LogisticRegressionRandomDataset(
         else:
             n_hyperparameter_evals = self.n_datapoints
             
-        # Now evaluate hyperparameter optimization: sample hyperparameter points and evaluate log-likelihood
-        x_hyperparams = torch.rand(n_hyperparameter_evals, 1, device=self.device)  # Hyperparameters in [0,1]
+        # Now evaluate hyperparameter optimization: sample hyperparameter points and
+        # evaluate log-likelihood
+        x_hyperparams = torch.rand(n_hyperparameter_evals, 1, device=self.device)
         objective_function = self.objective_sampler.sample()
         y_log_likelihoods = objective_function(x_hyperparams)
 
