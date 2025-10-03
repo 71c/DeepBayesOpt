@@ -1,7 +1,6 @@
 import argparse
 from datasets.hpob_dataset import get_hpob_dataset
-from acquisition_dataset_base import (
-    AcquisitionDatasetManager, add_common_acquisition_dataset_args)
+from acquisition_dataset_base import AcquisitionDatasetManager
 
 
 class HPOBAcquisitionDatasetManager(AcquisitionDatasetManager):
@@ -22,11 +21,6 @@ class HPOBAcquisitionDatasetManager(AcquisitionDatasetManager):
     def get_outcome_transform(self, args: argparse.Namespace, device=None):
         """Get HPO-B-specific outcome transform (always None)."""
         return None  # No outcome transform for HPO-B
-    
-    def add_dataset_args(self, parser: argparse.ArgumentParser):
-        """Add HPO-B-specific dataset arguments to the parser."""
-        add_hpob_args(parser)
-        add_common_acquisition_dataset_args(parser, add_train_test_size_args=False)
     
     def get_train_test_true_stats_flags(self):
         """HPO-B-specific stats flags - no GP stats."""

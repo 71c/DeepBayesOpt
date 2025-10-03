@@ -6,24 +6,24 @@ regardless of the underlying dataset type (GP, logistic regression, etc.).
 """
 
 import argparse
-from typing import Tuple, Any
+from typing import Tuple, Any, Type
 
 from gp_acquisition_dataset_manager import GPAcquisitionDatasetManager, add_gp_args
 from hpob_acquisition_dataset_manager import HPOBAcquisitionDatasetManager, add_hpob_args
 from lr_acquisition_dataset_manager import LogisticRegressionAcquisitionDatasetManager, add_lr_args
 
-from acquisition_dataset_base import add_lamda_args, add_common_acquisition_dataset_args 
+from acquisition_dataset_base import AcquisitionDatasetManager, add_lamda_args 
 
 
 # Mapping of dataset types to their respective manager classes
-MANAGER_CLASS_MAP = {
+MANAGER_CLASS_MAP: dict[str, Type[AcquisitionDatasetManager]] = {
     'gp': GPAcquisitionDatasetManager,
     'logistic_regression': LogisticRegressionAcquisitionDatasetManager,
     'hpob': HPOBAcquisitionDatasetManager
 }
 
 
-def get_dataset_manager(dataset_type: str, device: str = "cpu"):
+def get_dataset_manager(dataset_type: str, device: str = "cpu") -> AcquisitionDatasetManager:
     """Get the appropriate dataset manager class based on dataset_type."""
     try:
         manager_cls = MANAGER_CLASS_MAP[dataset_type]
@@ -91,6 +91,76 @@ def _validate_args_for_dataset_type(args: argparse.Namespace, dataset_type: str)
             raise ValueError(f"Argument 'dimension' should not be set for dataset_type '{dataset_type}'")
 
 
+def _add_common_acquisition_dataset_args(parser):
+    """Add common acquisition dataset arguments shared across dataset types."""
+    ## Dataset Train and Test Size
+    parser.add_argument(
+        '--train_samples_size', 
+        type=int, 
+        help='Size of the train samples dataset',
+        required=False
+    )
+    parser.add_argument(
+        '--test_samples_size',
+        type=int, 
+        help='Size of the test samples dataset',
+        required=False
+    )
+
+    ############################ Acquisition dataset settings ##########################
+    parser.add_argument(
+        '--train_acquisition_size', 
+        type=int, 
+        help='Size of the train acqusition dataset that is based on the train samples dataset',
+        required=True
+    )
+    parser.add_argument(
+        '--test_expansion_factor',
+        type=int,
+        default=1,
+        help='The factor that the test dataset samples is expanded to get the test acquisition dataset'
+    )
+    parser.add_argument(
+        '--replacement',
+        action='store_true',
+        help='Whether to sample with replacement for the acquisition dataset. Default is False.'
+    )
+    parser.add_argument(
+        '--train_n_candidates',
+        type=int,
+        default=15,
+        help='Number of candidate points for each item in the train dataset'
+    )
+    parser.add_argument(
+        '--test_n_candidates',
+        type=int,
+        default=50,
+        help='Number of candidate points for each item in the test dataset'
+    )
+    parser.add_argument(
+        '--min_history',
+        type=int,
+        help='Minimum number of history points.',
+        required=True
+    )
+    parser.add_argument(
+        '--max_history',
+        type=int,
+        help='Maximum number of history points.',
+        required=True
+    )
+    parser.add_argument(
+        '--samples_addition_amount',
+        type=int,
+        help='Number of samples to add to the history points.'
+    )
+    parser.add_argument(
+        '--standardize_dataset_outcomes', 
+        action='store_true', 
+        help='Whether to standardize the outcomes of the dataset (independently for each item). Default is False'
+    )
+
+
 def add_unified_dataset_args(
         parser: argparse.ArgumentParser, add_lamda_args_flag: bool = True):
     """
@@ -111,10 +181,11 @@ def add_unified_dataset_args(
         add_lamda_args(parser)
     
     # Add common acquisition dataset arguments that all datasets need
-    add_common_acquisition_dataset_args(parser)
+    _add_common_acquisition_dataset_args(parser)
     
     # Add GP arguments (made optional)
-    parser.add_argument('--dimension', type=int, help='Dimension of the optimization problem')
+    parser.add_argument(
+        '--dimension', type=int, help='Dimension of the optimization problem')
     add_gp_args(
         parser, "function samples", required=False, add_randomize_params=True)
     
@@ -127,7 +198,6 @@ def add_unified_dataset_args(
 
 def main():
     """CLI interface for dataset creation."""
-    import argparse
     parser = argparse.ArgumentParser(description='Create train/test acquisition datasets')
     add_unified_dataset_args(parser)
     

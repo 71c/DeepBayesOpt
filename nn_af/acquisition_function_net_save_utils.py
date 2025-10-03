@@ -13,10 +13,9 @@ from nn_af.acquisition_function_net import AcquisitionFunctionBodyPointnetV1and2
 from nn_af.train_acquisition_function_net import GI_NORMALIZATIONS, METHODS
 
 from datasets.dataset_with_models import RandomModelSampler
-from acquisition_dataset_base import FIX_TRAIN_ACQUISITION_DATASET, get_lamda_min_max
+from acquisition_dataset_base import FIX_TRAIN_ACQUISITION_DATASET, get_lamda_min_max, add_lamda_args
 from gp_acquisition_dataset_manager import GP_GEN_DEVICE
 from dataset_factory import add_unified_dataset_args, get_dataset_manager
-from acquisition_dataset_base import add_lamda_args
 
 
 MODELS_SUBDIR = "models"

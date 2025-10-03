@@ -220,9 +220,10 @@ def get_hpob_objective_function(
 if __name__ == "__main__":
     import matplotlib.pyplot as plt
 
-    search_space_id = '5970' # ranger (5), 2 dimensions
+    # search_space_id = '5970' # ranger (5), 2 dimensions
     # search_space_id = '5965' # ranger (9), 10 dimensions
     # search_space_id = '5636'
+    search_space_id = '6767'
     dataset_type = 'test'
     dataset = get_hpob_dataset(search_space_id, dataset_type)
     dataset_ids = get_hpob_dataset_ids(search_space_id, dataset_type)

@@ -263,3 +263,8 @@ If the NN training parameter is specifically a NN architecture parameter, then y
 If the NN training parameter is not a NN architecture parameter, then you will also need to:
 - modify `_get_training_config` in `nn_af/acquisition_function_net_save_utils.py`.
 - modify the function `run_train` in `run_train.py` to pass the new parameter to the `train_acquisition_function_net` function.
+## Adding a new dataset type
+To add a new dataset type, you will need to do the following:
+- Add the dataset type to `config/train_acqf.yml`
+- Add a new dataset manager and add it to `dataset_factory.py`.
+- TODO

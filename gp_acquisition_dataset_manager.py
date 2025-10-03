@@ -8,8 +8,7 @@ building on the abstract base class.
 import argparse
 from typing import Optional
 
-from acquisition_dataset_base import (
-    AcquisitionDatasetManager, add_common_acquisition_dataset_args)
+from acquisition_dataset_base import AcquisitionDatasetManager
 from datasets.function_samples_dataset import GaussianProcessRandomDataset
 from utils.utils import get_gp, get_kernel, get_standardized_exp_transform
 from botorch.utils.types import DEFAULT
@@ -63,15 +62,9 @@ class GPAcquisitionDatasetManager(AcquisitionDatasetManager):
         outcome_transform, _ = get_outcome_transform_from_args(args, device=device)
         return outcome_transform
     
-    def add_dataset_args(self, parser: argparse.ArgumentParser):
-        """Add GP-specific arguments to parser."""
-        add_gp_acquisition_dataset_args(parser)
-    
     def get_train_test_true_stats_flags(self):
         """GP-specific stats flags."""
         return GET_TRAIN_TRUE_GP_STATS, GET_TEST_TRUE_GP_STATS
-    
-    # create_train_test_datasets_helper now uses the shared implementation from base class
 
 
 def get_gp_model_from_args_no_outcome_transform(
@@ -119,9 +112,6 @@ def get_outcome_transform_from_args(args: argparse.Namespace, name_prefix="", de
     return outcome_transform, outcome_transform_args
 
 
-# Configuration logic moved into GPAcquisitionDatasetManager methods
-
-
 def add_gp_args(parser, thing_gp_used_for: str,
                 name_prefix="", required=False,
                 add_randomize_params=False):
@@ -160,16 +150,3 @@ def add_gp_args(parser, thing_gp_used_for: str,
             help='Set this to randomize the parameters of the GP for the '
                 f'{thing_gp_used_for}. Default is False.'
         )
-
-
-def add_gp_acquisition_dataset_args(parser):
-    """Add GP acquisition dataset arguments to parser."""
-    ############################# GP-specific settings #############################
-    parser.add_argument(
-        '--dimension', 
-        type=int, 
-        help='Dimension of the optimization problem',
-        required=True
-    )
-    add_gp_args(parser, "dataset", required=True, add_randomize_params=True)
-    add_common_acquisition_dataset_args(parser)

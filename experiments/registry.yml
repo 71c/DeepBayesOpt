@@ -1146,14 +1146,14 @@ experiments:
         default:
           pre:
           - ['nn.layer_width', 'nn.encoded_history_dim']
-          - ['lamda', 'nn.max_history']
+          - ['nn.lamda', 'nn.max_history']
           attr_a:
           - objective.hpob_search_space_id
           attr_b:
           - nn.max_history_input
           post:
-          - - lamda
-            - gp_af
+          - - gp_af
+            - lamda
             - nn.learning_rate
           - - objective.id
             - bo_seed
@@ -1162,11 +1162,11 @@ experiments:
             pre:
             - ['objective.hpob_search_space_id']
             - ['nn.layer_width', 'nn.encoded_history_dim']
-            attr_a: ['lamda', 'nn.max_history']
+            attr_a: ['nn.lamda', 'nn.max_history']
             attr_b: ['nn.max_history_input']
             post:
-            - - lamda
-              - gp_af
+            - - gp_af
+              - lamda
               - nn.learning_rate
             - - objective.id
               - bo_seed

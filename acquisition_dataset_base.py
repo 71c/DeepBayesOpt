@@ -9,7 +9,7 @@ import argparse
 import os
 import sys
 import traceback
-from typing import Any, List, Optional, Union
+from typing import List, Optional, Union
 from abc import ABC, abstractmethod
 
 from botorch.models.transforms.outcome import OutcomeTransform
@@ -65,77 +65,6 @@ def add_lamda_args(parser):
         '--lamda',
         type=float,
         help='Value of lambda (if using constant lambda). Only used if method=gittins.'
-    )
-
-
-def add_common_acquisition_dataset_args(parser, add_train_test_size_args: bool = True):
-    """Add common acquisition dataset arguments shared across dataset types."""
-    if add_train_test_size_args:
-        ## Dataset Train and Test Size
-        parser.add_argument(
-            '--train_samples_size', 
-            type=int, 
-            help='Size of the train samples dataset',
-            required=False
-        )
-        parser.add_argument(
-            '--test_samples_size',
-            type=int, 
-            help='Size of the test samples dataset',
-            required=False
-        )
-
-    ############################ Acquisition dataset settings ##########################
-    parser.add_argument(
-        '--train_acquisition_size', 
-        type=int, 
-        help='Size of the train acqusition dataset that is based on the train samples dataset',
-        required=True
-    )
-    parser.add_argument(
-        '--test_expansion_factor',
-        type=int,
-        default=1,
-        help='The factor that the test dataset samples is expanded to get the test acquisition dataset'
-    )
-    parser.add_argument(
-        '--replacement',
-        action='store_true',
-        help='Whether to sample with replacement for the acquisition dataset. Default is False.'
-    )
-    parser.add_argument(
-        '--train_n_candidates',
-        type=int,
-        default=15,
-        help='Number of candidate points for each item in the train dataset'
-    )
-    parser.add_argument(
-        '--test_n_candidates',
-        type=int,
-        default=50,
-        help='Number of candidate points for each item in the test dataset'
-    )
-    parser.add_argument(
-        '--min_history',
-        type=int,
-        help='Minimum number of history points.',
-        required=True
-    )
-    parser.add_argument(
-        '--max_history',
-        type=int,
-        help='Maximum number of history points.',
-        required=True
-    )
-    parser.add_argument(
-        '--samples_addition_amount',
-        type=int,
-        help='Number of samples to add to the history points.'
-    )
-    parser.add_argument(
-        '--standardize_dataset_outcomes', 
-        action='store_true', 
-        help='Whether to standardize the outcomes of the dataset (independently for each item). Default is False'
     )
 
 
@@ -267,7 +196,7 @@ class AcquisitionDatasetManager(ABC):
         """Get outcome transform specific to this dataset type."""
         pass
     
-    def get_dataset_configs(self, args: argparse.Namespace, device=None):
+    def _get_dataset_configs(self, args: argparse.Namespace, device=None):
         """Get complete dataset configuration using shared structure."""
         function_samples_config = self.get_function_samples_config(args, device)
         if self.dataset_type != 'gp':
@@ -275,11 +204,6 @@ class AcquisitionDatasetManager(ABC):
         outcome_transform = self.get_outcome_transform(args, device)
         return _build_config_dict_structure(
             args, function_samples_config, outcome_transform=outcome_transform)
-    
-    @abstractmethod
-    def add_dataset_args(self, parser: argparse.ArgumentParser):
-        """Add dataset-specific arguments to argument parser.""" 
-        pass
     
     def create_acquisition_dataset(
             self,
@@ -734,7 +658,7 @@ class AcquisitionDatasetManager(ABC):
             load_dataset: bool = True
         ):
         """Create train/test datasets from command line arguments."""
-        dataset_configs = self.get_dataset_configs(args, device=self.device)
+        dataset_configs = self._get_dataset_configs(args, device=self.device)
         
         dataset_kwargs = {
             **dataset_configs["function_samples_config"],

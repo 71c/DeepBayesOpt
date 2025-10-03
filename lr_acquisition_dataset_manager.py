@@ -7,8 +7,7 @@ building on the abstract base class.
 
 import argparse
 
-from acquisition_dataset_base import (
-    AcquisitionDatasetManager, add_common_acquisition_dataset_args)
+from acquisition_dataset_base import AcquisitionDatasetManager
 from datasets.logistic_regression_dataset import LogisticRegressionRandomDataset
 
 
@@ -43,15 +42,6 @@ class LogisticRegressionAcquisitionDatasetManager(AcquisitionDatasetManager):
             log_lambda_range=lr_log_lambda_range,
             log_uniform_sampling=lr_log_uniform_sampling,
 
-            #### Dimension for LR is always 1 (single hyperparameter lambda)
-            # dimension=1,
-
-            # #### No models for LR (procedural generation), but needed for compatibility
-            # models=[],
-            # model_probabilities=None,
-            # randomize_params=True,  # LR always randomizes parameters
-            # model_sampler=None,  # LR doesn't use model sampling
-
             #### Dataset size
             train_samples_size=args.train_samples_size,
             test_samples_size=args.test_samples_size,
@@ -60,10 +50,6 @@ class LogisticRegressionAcquisitionDatasetManager(AcquisitionDatasetManager):
     def get_outcome_transform(self, args: argparse.Namespace, device=None):
         """Get LR-specific outcome transform (always None)."""
         return None  # No outcome transform for logistic regression
-    
-    def add_dataset_args(self, parser: argparse.ArgumentParser):
-        """Add logistic regression-specific arguments to parser."""
-        add_logistic_regression_acquisition_dataset_args(parser)
     
     def get_train_test_true_stats_flags(self):
         """LR-specific stats flags - no GP stats."""
@@ -118,9 +104,3 @@ def add_lr_args(parser):
         action='store_true',
         help='Use log-uniform sampling for ranges in logistic regression datasets'
     )
-
-
-def add_logistic_regression_acquisition_dataset_args(parser):
-    """Add logistic regression acquisition dataset arguments to parser."""
-    add_lr_args(parser)
-    add_common_acquisition_dataset_args(parser)
