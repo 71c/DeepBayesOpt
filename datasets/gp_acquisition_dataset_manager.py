@@ -8,7 +8,7 @@ building on the abstract base class.
 import argparse
 from typing import Optional
 
-from acquisition_dataset_manager import AcquisitionDatasetManager
+from datasets.acquisition_dataset_manager import AcquisitionDatasetManager
 from datasets.function_samples_dataset import GaussianProcessRandomDataset
 from utils.utils import get_gp, get_kernel, get_standardized_exp_transform
 from botorch.utils.types import DEFAULT

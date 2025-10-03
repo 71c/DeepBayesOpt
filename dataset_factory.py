@@ -8,11 +8,11 @@ regardless of the underlying dataset type (GP, logistic regression, etc.).
 import argparse
 from typing import Tuple, Any, Type
 
-from gp_acquisition_dataset_manager import GPAcquisitionDatasetManager, add_gp_args
+from datasets.gp_acquisition_dataset_manager import GPAcquisitionDatasetManager, add_gp_args
 from hpob_acquisition_dataset_manager import HPOBAcquisitionDatasetManager, add_hpob_args
 from lr_acquisition_dataset_manager import LogisticRegressionAcquisitionDatasetManager, add_lr_args
 
-from acquisition_dataset_manager import AcquisitionDatasetManager 
+from datasets.acquisition_dataset_manager import AcquisitionDatasetManager 
 
 
 # Mapping of dataset types to their respective manager classes

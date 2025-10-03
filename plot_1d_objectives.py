@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from bayesopt.bayesopt import outcome_transform_function
-from gp_acquisition_dataset_manager import GPAcquisitionDatasetManager, get_gp_model_from_args_no_outcome_transform
+from datasets.gp_acquisition_dataset_manager import GPAcquisitionDatasetManager, get_gp_model_from_args_no_outcome_transform
 from lr_acquisition_dataset_manager import LogisticRegressionAcquisitionDatasetManager
 
 
