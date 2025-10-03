@@ -1,6 +1,6 @@
 import argparse
 from datasets.hpob_dataset import get_hpob_dataset
-from acquisition_dataset_base import AcquisitionDatasetManager
+from acquisition_dataset_manager import AcquisitionDatasetManager
 
 
 class HPOBAcquisitionDatasetManager(AcquisitionDatasetManager):

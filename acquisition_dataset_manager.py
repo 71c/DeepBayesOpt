@@ -47,27 +47,6 @@ def get_lamda_min_max(args: argparse.Namespace):
     return lamda_min, lamda_max
 
 
-def add_lamda_args(parser):
-    """Add lambda arguments to argument parser."""
-    parser.add_argument(
-        '--lamda_min',
-        type=float,
-        help=('Minimum value of lambda (if using variable lambda). '
-            'Only used if method=gittins.')
-    )
-    parser.add_argument(
-        '--lamda_max',
-        type=float,
-        help=('Maximum value of lambda (if using variable lambda). '
-            'Only used if method=gittins.')
-    )
-    parser.add_argument(
-        '--lamda',
-        type=float,
-        help='Value of lambda (if using constant lambda). Only used if method=gittins.'
-    )
-
-
 def _build_config_dict_structure(
         args: argparse.Namespace,
         function_samples_config: dict,
@@ -196,7 +175,7 @@ class AcquisitionDatasetManager(ABC):
         """Get outcome transform specific to this dataset type."""
         pass
     
-    def _get_dataset_configs(self, args: argparse.Namespace, device=None):
+    def get_dataset_configs(self, args: argparse.Namespace, device=None):
         """Get complete dataset configuration using shared structure."""
         function_samples_config = self.get_function_samples_config(args, device)
         if self.dataset_type != 'gp':
@@ -658,7 +637,7 @@ class AcquisitionDatasetManager(ABC):
             load_dataset: bool = True
         ):
         """Create train/test datasets from command line arguments."""
-        dataset_configs = self._get_dataset_configs(args, device=self.device)
+        dataset_configs = self.get_dataset_configs(args, device=self.device)
         
         dataset_kwargs = {
             **dataset_configs["function_samples_config"],
@@ -669,9 +648,7 @@ class AcquisitionDatasetManager(ABC):
 
         lamda_min, lamda_max = get_lamda_min_max(args)
         get_train_true_stats, get_test_true_stats = self.get_train_test_true_stats_flags()
-        
-        # Use global cache setting consistently like original code
-        
+                
         other_kwargs = dict(        
             get_train_true_stats=get_train_true_stats,
             get_test_true_stats=get_test_true_stats,

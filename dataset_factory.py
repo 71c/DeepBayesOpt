@@ -12,7 +12,7 @@ from gp_acquisition_dataset_manager import GPAcquisitionDatasetManager, add_gp_a
 from hpob_acquisition_dataset_manager import HPOBAcquisitionDatasetManager, add_hpob_args
 from lr_acquisition_dataset_manager import LogisticRegressionAcquisitionDatasetManager, add_lr_args
 
-from acquisition_dataset_base import AcquisitionDatasetManager, add_lamda_args 
+from acquisition_dataset_manager import AcquisitionDatasetManager 
 
 
 # Mapping of dataset types to their respective manager classes
@@ -158,6 +158,27 @@ def _add_common_acquisition_dataset_args(parser):
         '--standardize_dataset_outcomes', 
         action='store_true', 
         help='Whether to standardize the outcomes of the dataset (independently for each item). Default is False'
+    )
+
+
+def add_lamda_args(parser):
+    """Add lambda arguments to argument parser."""
+    parser.add_argument(
+        '--lamda_min',
+        type=float,
+        help=('Minimum value of lambda (if using variable lambda). '
+            'Only used if method=gittins.')
+    )
+    parser.add_argument(
+        '--lamda_max',
+        type=float,
+        help=('Maximum value of lambda (if using variable lambda). '
+            'Only used if method=gittins.')
+    )
+    parser.add_argument(
+        '--lamda',
+        type=float,
+        help='Value of lambda (if using constant lambda). Only used if method=gittins.'
     )
 
 
