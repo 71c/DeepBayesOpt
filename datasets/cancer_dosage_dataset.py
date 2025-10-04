@@ -141,6 +141,9 @@ class CancerDosageDataset(
             scale_intercept: Scaling factor for intercept.
             scale_coef: Scaling factor for linear coefficients.
             noise_std: Standard deviation of observation noise.
+            is_simplex: If True, assumes x sums to at most 1.
+                If False, assumes x is in [0, 1]^d, and scales coefficients
+                down by dim_x to keep coefs . x in [-scale_coef, scale_coef].
             seed: Random seed for reproducibility.
             n_datapoints: Number of dosage evaluations per sample (fixed).
             n_datapoints_random_gen: Generator for random number of dosage evaluations.

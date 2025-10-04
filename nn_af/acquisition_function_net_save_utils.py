@@ -15,7 +15,7 @@ from nn_af.train_acquisition_function_net import GI_NORMALIZATIONS, METHODS
 from datasets.dataset_with_models import RandomModelSampler
 from datasets.acquisition_dataset_manager import FIX_TRAIN_ACQUISITION_DATASET, get_lamda_min_max
 from datasets.gp_acquisition_dataset_manager import GP_GEN_DEVICE
-from dataset_factory import add_unified_dataset_args, get_dataset_manager, add_lamda_args
+from dataset_factory import add_unified_acquisition_dataset_args, get_dataset_manager, add_lamda_args
 
 
 MODELS_SUBDIR = "models"
@@ -661,7 +661,7 @@ def _get_run_train_parser():
 
     ################################ Dataset settings ##################################
     dataset_group = parser.add_argument_group("Dataset options")
-    add_unified_dataset_args(dataset_group, add_lamda_args_flag=False)
+    add_unified_acquisition_dataset_args(parser, dataset_group, add_lamda_args_flag=False)
 
     ############################ NN architecture settings ##############################
     nn_architecture_group = parser.add_argument_group("NN Architecture options")

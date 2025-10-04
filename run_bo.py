@@ -14,6 +14,7 @@ from botorch.exceptions import UnsupportedError
 from botorch.generation.gen import gen_candidates_scipy, gen_candidates_torch
 from botorch.utils.sampling import optimize_posterior_samples
 
+from datasets.cancer_dosage_acquisition_dataset_manager import add_cancer_dosage_args
 from utils.utils import (add_outcome_transform, dict_to_cmd_args,
                          dict_to_fname_str, dict_to_str, remove_priors)
 from utils.constants import RESULTS_DIR
@@ -165,12 +166,14 @@ def _add_bo_loop_args(parser, bo_policy_group, af_opt_group):
 @cache
 def _get_bo_loop_args_parser():
     parser = argparse.ArgumentParser()
-    ################## Objective function (can only be a GP for now) ###################
+    ################## Objective function ###################
+    ## TODO: Replace this part with using add_unified_function_dataset_args
+
     objective_function_group = parser.add_argument_group("Objective function")
     objective_function_group.add_argument(
         f'--{OBJECTIVE_NAME_PREFIX}_dataset_type',
-        choices=['gp', 'hpob'],
-        help='Whether the objective function is a random GP draw (gp) or from HPO-B (hpob)',
+        choices=['gp', 'hpob', 'cancer_dosage'],
+        help='Whether the objective function is a random GP draw (gp), from HPO-B (hpob), or cancer dosage synthetic function (cancer_dosage)',
         required=True
     )
     objective_function_group.add_argument(
@@ -195,12 +198,14 @@ def _get_bo_loop_args_parser():
     objective_function_group.add_argument(
         f'--{OBJECTIVE_NAME_PREFIX}_dimension', 
         type=int, 
-        help='Dimension of the objective function (only for dataset_type=gp)',
+        help='Dimension of the objective function (only for dataset_type=gp or cancer_dosage)',
         required=False
     )
     add_gp_args(objective_function_group, "objective function",
                 name_prefix=OBJECTIVE_NAME_PREFIX,
-                required=False, add_randomize_params=True)
+                add_randomize_params=True)
+    add_cancer_dosage_args(objective_function_group, "objective function",
+                           name_prefix=OBJECTIVE_NAME_PREFIX)
 
     ###################################### BO Policy ##################################
     bo_policy_group = parser.add_argument_group("BO policy and misc. settings")
@@ -261,7 +266,7 @@ def _get_bo_loop_args_parser():
             f"should not be specified."
     )
     add_gp_args(gp_af_group, "GP-based AF", name_prefix=GP_AF_NAME_PREFIX,
-                required=False, add_randomize_params=False)
+                add_randomize_params=False)
 
     # Add recompute options
     recompute_group = parser.add_argument_group("Recompute options")

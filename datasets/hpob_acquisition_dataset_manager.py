@@ -27,8 +27,14 @@ class HPOBAcquisitionDatasetManager(AcquisitionDatasetManager):
         return False, False
 
 
-def add_hpob_args(parser: argparse.ArgumentParser):
+def add_hpob_args(parser: argparse.ArgumentParser,
+                  thing_used_for: str,
+                  name_prefix=""):
     """Add HPO-B-specific arguments to the parser."""
+    if name_prefix:
+        name_prefix = f"{name_prefix}_"
     parser.add_argument(
-        '--hpob_search_space_id', type=str, default='5970',
-        help="HPO-B search space ID (default: '5970')")
+        f'--{name_prefix}hpob_search_space_id',
+        type=str,
+        help=f"HPO-B search space ID for the {thing_used_for}"
+    )

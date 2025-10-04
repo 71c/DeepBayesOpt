@@ -405,8 +405,13 @@ class AcquisitionDatasetManager(ABC):
                         **function_samples_dataset_kwargs,
                         dataset_size=samples_size,
                         n_datapoints_random_gen=n_datapoints_random_gen)
-                else:
-                    function_samples_dataset_kwargs['name'] = name
+                
+                # Pass the name to the dataset creation method so that it can
+                # use it if needed. Otherwise, create_function_samples_dataset
+                # can pop it out if not needed.
+                # (name is either "train" for train dataset, or "test" for 
+                # validation dataset)
+                function_samples_dataset_kwargs['name'] = name
 
                 # Use subclass method to create dataset-specific function samples dataset
                 function_samples_dataset = self.create_function_samples_dataset(

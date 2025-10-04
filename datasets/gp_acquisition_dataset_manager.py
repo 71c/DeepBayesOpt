@@ -28,6 +28,7 @@ class GPAcquisitionDatasetManager(AcquisitionDatasetManager):
     
     def create_function_samples_dataset(self, **kwargs):
         """Create GP function samples dataset."""
+        kwargs.pop('name')
         return GaussianProcessRandomDataset(**kwargs)
     
     def get_function_samples_config(self, args: argparse.Namespace, device=None):
@@ -112,8 +113,9 @@ def get_outcome_transform_from_args(args: argparse.Namespace, name_prefix="", de
     return outcome_transform, outcome_transform_args
 
 
-def add_gp_args(parser, thing_gp_used_for: str,
-                name_prefix="", required=False,
+def add_gp_args(parser,
+                thing_gp_used_for: str,
+                name_prefix="",
                 add_randomize_params=False):
     """Add GP-specific arguments to parser."""
     if name_prefix:
@@ -122,13 +124,13 @@ def add_gp_args(parser, thing_gp_used_for: str,
         f'--{name_prefix}kernel',
         choices=['RBF', 'Matern32', 'Matern52'],
         help=f'Kernel to use for the GP for the {thing_gp_used_for}',
-        required=required
+        required=False
     )
     parser.add_argument(
         f'--{name_prefix}lengthscale', 
         type=float, 
         help=f'Lengthscale of the GP for the {thing_gp_used_for}',
-        required=required
+        required=False
     )
     parser.add_argument(
         f'--{name_prefix}outcome_transform', 

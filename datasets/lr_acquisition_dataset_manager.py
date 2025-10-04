@@ -19,6 +19,7 @@ class LogisticRegressionAcquisitionDatasetManager(AcquisitionDatasetManager):
     
     def create_function_samples_dataset(self, **kwargs):
         """Create logistic regression function samples dataset."""
+        kwargs.pop('name')
         return LogisticRegressionRandomDataset(**kwargs)
     
     def get_function_samples_config(self, args: argparse.Namespace, device=None):
