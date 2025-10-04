@@ -25,6 +25,7 @@ class CancerDosageObjectiveSampler:
                  scale_intercept: float = 1.0,
                  scale_coef: float = 1.0,
                  noise_std: float = 0.1,
+                 is_simplex: bool = True,
                  seed: int = 0,
                  device = None):
         """Initializes a cancer dosage objective sampler.
@@ -40,6 +41,9 @@ class CancerDosageObjectiveSampler:
                 which makes it so that if x is >= 0 and sum(x) <= 1, then
                 coefs . x is in the range [-scale_coef, scale_coef].
             noise_std: Standard deviation of Gaussian observation noise.
+            is_simplex: If True, assumes x sums to at most 1.
+                If False, assumes x is in [0, 1]^d, and scales coefficients
+                down by dim_x to keep coefs . x in [-scale_coef, scale_coef].
             seed: Random seed for reproducibility.
             device: Torch device to use.
         """
@@ -60,7 +64,15 @@ class CancerDosageObjectiveSampler:
             nonzero_indices = self.rng.choice(n_cols, size=nnz_per_row, replace=False)
             vals = self.rng.standard_normal(size=nnz_per_row)
             vals /= np.sum(np.abs(vals))
-            vals *= scale_intercept if i == 0 else scale_coef
+            if i == 0:
+                vals *= scale_intercept
+            else:
+                vals *= scale_coef
+                if not is_simplex:
+                    # Scale down to keep coefs . x in [-scale_coef, scale_coef]
+                    # because if not is_simplex then we assume that x is in [0, 1]^d
+                    # rather than in the simplex, so sum(x) can be as large as dim_x.
+                    vals /= dim_x
             matrix[i, nonzero_indices] = vals
         self.matrix = matrix
     
@@ -114,6 +126,7 @@ class CancerDosageDataset(
                  scale_intercept: float = 1.0,
                  scale_coef: float = 1.0,
                  noise_std: float = 0.1,
+                 is_simplex: bool = True,
                  seed: int = 0,
                  n_datapoints: Optional[int] = None,
                  n_datapoints_random_gen = None,
@@ -144,6 +157,7 @@ class CancerDosageDataset(
 
         self.n_datapoints = n_datapoints
         self.n_datapoints_random_gen = n_datapoints_random_gen
+        self.is_simplex = is_simplex
 
         self.objective_sampler = CancerDosageObjectiveSampler(
             dim_x=dim_x,
@@ -152,13 +166,23 @@ class CancerDosageDataset(
             scale_intercept=scale_intercept,
             scale_coef=scale_coef,
             noise_std=noise_std,
+            is_simplex=is_simplex,
             seed=seed,
             device=device
         )
         self.device = self.objective_sampler.device
 
-        self._xvalue_distribution = torch.distributions.Dirichlet(
-            torch.ones(self.objective_sampler.dim_x + 1, device=device))
+        if is_simplex:
+            # Sample dosage points uniformly from the simplex
+            # (non-negative entries summing to at most 1)
+            # Use Dirichlet distribution with uniform parameters to sample from simplex
+            # Drop last coordinate to get sum <= 1
+            self._xvalue_distribution = torch.distributions.Dirichlet(
+                torch.ones(dim_x + 1, device=device))
+        else:
+            self._xvalue_distribution = torch.distributions.Uniform(
+                torch.zeros(dim_x, device=device),
+                torch.ones(dim_x, device=device))
 
         # Required for compatibility with FunctionSamplesDataset infrastructure
         self._model_sampler = None
@@ -229,11 +253,10 @@ class CancerDosageDataset(
         else:
             n_dosage_evals = self.n_datapoints
 
-        # Sample dosage points uniformly from the simplex
-        # (non-negative entries summing to at most 1)
-        # Use Dirichlet distribution with uniform parameters to sample from simplex
-        # Drop last coordinate to get sum <= 1
-        x_dosages = self._xvalue_distribution.sample((n_dosage_evals,))[:, :-1]
+        x_dosages = self._xvalue_distribution.sample((n_dosage_evals,))
+        if self.is_simplex:
+            # Drop last coordinate to get sum <= 1
+            x_dosages = x_dosages[:, :-1]
 
         objective_function, _ = self.objective_sampler.sample()
         output = objective_function(x_dosages).unsqueeze(-1)
@@ -251,12 +274,13 @@ if __name__ == "__main__":
 
     # Create a small dataset
     dataset = CancerDosageDataset(
-        dim_x=3,                # 3-dimensional dosage
-        dim_features=5,         # 5 random features
-        nnz_per_row=2,          # 2 non-zeros per row in coefficient matrix
+        dim_x=20,
+        dim_features=50,
+        nnz_per_row=10,
         scale_intercept=3.0,
         scale_coef=4.0,
         noise_std=0.1,
+        is_simplex=True,
         seed=42,
         n_datapoints=1000,       # dosage evaluations per function
         dataset_size=num_functions          # number of functions
