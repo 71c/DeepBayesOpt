@@ -1,6 +1,7 @@
 from collections import defaultdict
 import copy
 from functools import cache
+import itertools
 import math
 from typing import Any
 import argparse
@@ -14,9 +15,9 @@ from botorch.exceptions import UnsupportedError
 from botorch.generation.gen import gen_candidates_scipy, gen_candidates_torch
 from botorch.utils.sampling import optimize_posterior_samples
 
-from datasets.cancer_dosage_acquisition_dataset_manager import add_cancer_dosage_args
+from dataset_factory import add_unified_function_dataset_args, validate_args_for_dataset_type
 from utils.utils import (add_outcome_transform, dict_to_cmd_args,
-                         dict_to_fname_str, dict_to_str, remove_priors)
+                         dict_to_fname_str, dict_to_str, remove_priors, get_arg_names)
 from utils.constants import RESULTS_DIR
 from nn_af.acquisition_function_net_save_utils import load_nn_acqf_configs
 
@@ -24,6 +25,7 @@ from nn_af.acquisition_function_net import GittinsAcquisitionFunctionNet
 from nn_af.acquisition_function_net_save_utils import load_nn_acqf, nn_acqf_is_trained
 from datasets.dataset_with_models import RandomModelSampler
 from datasets.hpob_dataset import get_hpob_dataset_dimension, get_hpob_function_min_max, get_hpob_initialization, get_hpob_objective_function
+from datasets.cancer_dosage_dataset import CancerDosageObjectiveSampler, get_cancer_dosage_function_min_max
 from datasets.gp_acquisition_dataset_manager import (
     GP_GEN_DEVICE, add_gp_args, get_gp_model_from_args_no_outcome_transform,
     get_outcome_transform_from_args as get_outcome_transform)
@@ -45,8 +47,6 @@ GP_AF_DICT = {
 }
 
 
-def get_arg_names(p) -> list[str]:
-    return [action.dest for action in p._group_actions if action.dest != "help"]
 
 
 # Load the base configuration
@@ -167,15 +167,9 @@ def _add_bo_loop_args(parser, bo_policy_group, af_opt_group):
 def _get_bo_loop_args_parser():
     parser = argparse.ArgumentParser()
     ################## Objective function ###################
-    ## TODO: Replace this part with using add_unified_function_dataset_args
 
     objective_function_group = parser.add_argument_group("Objective function")
-    objective_function_group.add_argument(
-        f'--{OBJECTIVE_NAME_PREFIX}_dataset_type',
-        choices=['gp', 'hpob', 'cancer_dosage'],
-        help='Whether the objective function is a random GP draw (gp), from HPO-B (hpob), or cancer dosage synthetic function (cancer_dosage)',
-        required=True
-    )
+
     objective_function_group.add_argument(
         f'--{OBJECTIVE_NAME_PREFIX}_id',
         type=int,
@@ -186,26 +180,12 @@ def _get_bo_loop_args_parser():
         required=True
     )
 
-    # HPO-B-specific args
-    objective_function_group.add_argument(
-        f'--{OBJECTIVE_NAME_PREFIX}_hpob_search_space_id', 
-        type=str, 
-        help=f'If {OBJECTIVE_NAME_PREFIX}_dataset_type=hpob, this is the HPO-B search space ID',
-        required=False
+    objective_function_groups_arg_names = add_unified_function_dataset_args(
+        parser,
+        thing_used_for="objective function",
+        name_prefix=OBJECTIVE_NAME_PREFIX,
+        dataset_group=objective_function_group
     )
-
-    # GP-specific args
-    objective_function_group.add_argument(
-        f'--{OBJECTIVE_NAME_PREFIX}_dimension', 
-        type=int, 
-        help='Dimension of the objective function (only for dataset_type=gp or cancer_dosage)',
-        required=False
-    )
-    add_gp_args(objective_function_group, "objective function",
-                name_prefix=OBJECTIVE_NAME_PREFIX,
-                add_randomize_params=True)
-    add_cancer_dosage_args(objective_function_group, "objective function",
-                           name_prefix=OBJECTIVE_NAME_PREFIX)
 
     ###################################### BO Policy ##################################
     bo_policy_group = parser.add_argument_group("BO policy and misc. settings")
@@ -282,6 +262,7 @@ def _get_bo_loop_args_parser():
         'params_defaults': params_defaults,
         'methods_per_param_name': methods_per_param_name,
         'objective_function_arg_names': get_arg_names(objective_function_group),
+        'objective_function_groups_arg_names': objective_function_groups_arg_names,
         'bo_policy_arg_names': bo_policy_arg_names,
         'gp_af_arg_names': get_arg_names(gp_af_group),
         'optimize_acqf_arg_names': optimize_acqf_arg_names
@@ -296,10 +277,10 @@ def parse_bo_loop_args(cmd_args=None):
     return parser_info
 
 
-_objective_opt_cache = {}
+_gp_objective_opt_cache = {}
 def _get_gp_function_min_max(
         objective_fn, dimension, objective_name) -> tuple[Tensor, Tensor]:
-    if objective_name not in _objective_opt_cache:
+    if objective_name not in _gp_objective_opt_cache:
         # Need to handle an extra dimension at the beginning because for some reason,
         # in the new BoTorch version where it uses gen_candidates_scipy instead of
         # gen_candidates_torch as the old version did, it adds an extra dimension at the
@@ -322,7 +303,15 @@ def _get_gp_function_min_max(
             return_transformed=True 
         )
         # It maximizes by default
-        argmax, y_max = optimize_posterior_samples(**opt_kwargs, paths=fn)
+        try:
+            argmax, y_max = optimize_posterior_samples(**opt_kwargs, paths=fn)
+        except TypeError as e:
+            if e.args == ("gen_candidates_torch() got an unexpected keyword argument 'return_transformed'",):
+                # Old version of BoTorch that does not have return_transformed argument
+                opt_kwargs.pop('return_transformed')
+                argmax, y_max = optimize_posterior_samples(**opt_kwargs, paths=fn)
+            else:
+                raise
 
         # To minimize, optimize the negative.
         
@@ -339,8 +328,8 @@ def _get_gp_function_min_max(
         y_min = -y_min
         
         print(f"Optimized {objective_name} with {argmin=}, {y_min=}, {argmax=}, {y_max=}")
-        _objective_opt_cache[objective_name] = (y_min, y_max)
-    return _objective_opt_cache[objective_name]
+        _gp_objective_opt_cache[objective_name] = (y_min, y_max)
+    return _gp_objective_opt_cache[objective_name]
 
 
 # Cache the objective function things.
@@ -402,6 +391,20 @@ def _get_objective_things(objective_args):
         )
         objective_name = f"hpob_{search_space_id}_{dataset_id}"
         objective_gp = None
+    elif dataset_type == 'cancer_dosage':
+        tmp = dict(
+            dim_x=objective_args['dimension'],
+            dim_features=objective_args['dim_features'],
+            nnz_per_row=objective_args['nnz_per_row'],
+            scale_intercept=objective_args['scale_intercept'],
+            scale_coef=objective_args['scale_coef'],
+            noise_std=objective_args['noise_std'],
+            is_simplex=objective_args['is_simplex'],
+            seed=objective_args['id']
+        )
+        objective_fn, objective_fn_info = CancerDosageObjectiveSampler(**tmp).sample()
+        objective_name = f'cancer_dosage_{dict_to_fname_str(tmp)}'
+        objective_gp = None
 
     # Apply outcome transform to the objective function
     objective_octf, objective_octf_args = get_outcome_transform(
@@ -419,6 +422,15 @@ def _get_objective_things(objective_args):
     elif dataset_type == 'hpob':
         y_min, y_max = get_hpob_function_min_max(search_space_id, dataset_id)
         y_min, y_max = torch.tensor([y_min]), torch.tensor([y_max])
+    elif dataset_type == 'cancer_dosage':
+        y_min_val, y_max_val = get_cancer_dosage_function_min_max(
+            intercept=objective_fn_info['intercept'],
+            coefs=objective_fn_info['coefs'],
+            noise_std=objective_args['noise_std'],
+            is_simplex=objective_args['is_simplex'],
+            objective_name=objective_name
+        )
+        y_min, y_max = torch.tensor([y_min_val]), torch.tensor([y_max_val])
 
     return objective_gp, objective_octf, objective_fn, objective_name, y_min, y_max
 
@@ -444,39 +456,20 @@ def pre_run_bo(objective_args: dict[str, Any],
            load_weights: bool=True):
     info = _get_bo_loop_args_parser()
 
-    # GP-specific args that would be added by add_gp_args()
-    gp_specific_args = {
-        'kernel', 'lengthscale', 'outcome_transform', 'sigma', 'randomize_params'
-    }
+    validate_args_for_dataset_type(
+        argparse.Namespace(**{
+            f"{OBJECTIVE_NAME_PREFIX}_{k}": v for k, v in objective_args.items()
+        }),
+        groups_arg_names=info['objective_function_groups_arg_names'],
+        check_train_test_size=False,
+        prefix=OBJECTIVE_NAME_PREFIX
+    )
+
     hpob_search_space_id = objective_args.get('hpob_search_space_id', None)
     dataset_type = objective_args['dataset_type']
-    if dataset_type == 'gp':
-        if hpob_search_space_id is not None:
-            raise ValueError("If {OBJECTIVE_NAME_PREFIX}_dataset_type=gp, cannot specify "
-                             "{OBJECTIVE_NAME_PREFIX}_hpob_search_space_id")
-        if objective_args['dimension'] is None:
-            raise ValueError("If {OBJECTIVE_NAME_PREFIX}_dataset_type=gp, must specify objective_dimension")
-        if objective_args['dimension'] <= 0:
-            raise ValueError("{OBJECTIVE_NAME_PREFIX}_dimension must be > 0")
-        # Validate that required GP args are provided
-        for arg_name in ['kernel', 'lengthscale']:
-            if objective_args.get(arg_name) is None:
-                raise ValueError(
-                    f"If {OBJECTIVE_NAME_PREFIX}_dataset_type=gp, must specify {OBJECTIVE_NAME_PREFIX}_{arg_name}")
-    else:
-        if dataset_type == 'hpob':
-            if hpob_search_space_id is None:
-                raise ValueError("If {OBJECTIVE_NAME_PREFIX}_dataset_type=hpob, must specify "
-                                "{OBJECTIVE_NAME_PREFIX}_hpob_search_space_id")
-            if objective_args.get('dimension', None) is not None:
-                raise ValueError("If {OBJECTIVE_NAME_PREFIX}_dataset_type=hpob, cannot specify "
-                                f"{OBJECTIVE_NAME_PREFIX}_dimension")
-            # Validate that no GP args are provided for HPO-B
-            for arg_name in gp_specific_args:
-                if objective_args.get(arg_name) not in [None, False]:
-                    raise ValueError(
-                        f"If {OBJECTIVE_NAME_PREFIX}_dataset_type=hpob, cannot specify {OBJECTIVE_NAME_PREFIX}_{arg_name}")
-            objective_args[f'id'] = str(objective_args[f'id'])
+
+    if dataset_type == 'hpob':
+        objective_args['id'] = str(objective_args['id'])
 
     optimize_acqf_arg_names = info['optimize_acqf_arg_names']
 
@@ -494,9 +487,7 @@ def pre_run_bo(objective_args: dict[str, Any],
                     raise ValueError(f"Cannot specify {k} if {gen_candidates=} "
                                     f"(this is only for gen_candidates={tmp})")
     
-    dataset_type = objective_args['dataset_type']
-    
-    if dataset_type == 'gp':
+    if dataset_type in ['gp', 'cancer_dosage']:
         dimension = objective_args['dimension']
     elif dataset_type == 'hpob':
         dimension = get_hpob_dataset_dimension(hpob_search_space_id)
@@ -596,7 +587,7 @@ def pre_run_bo(objective_args: dict[str, Any],
                 if af_lengthscale is None and fit is None:
                     raise ValueError(
                         f"If using a GP AF and {GP_AF_NAME_PREFIX}_fit is None, "
-                        f"must specify {GP_AF_NAME_PREFIX}_lengthscale")                    
+                        f"must specify {GP_AF_NAME_PREFIX}_lengthscale")
                 
                 # Add priors if using MAP. If using MLE or no fitting, don't add priors
                 add_gp_af_priors_flag = fit == "map"
@@ -799,9 +790,13 @@ def main():
     info = parse_bo_loop_args()
     args = info['args']
 
+    objective_arg_names = list(itertools.chain.from_iterable(
+        info['objective_function_groups_arg_names'].values()
+    )) + info['objective_function_arg_names']
+
     objective_args = {
         k[len(OBJECTIVE_NAME_PREFIX)+1:]: getattr(args, k)
-        for k in info['objective_function_arg_names']
+        for k in objective_arg_names
     }
 
     bo_policy_args = {

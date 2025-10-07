@@ -124,13 +124,11 @@ def add_gp_args(parser,
         f'--{name_prefix}kernel',
         choices=['RBF', 'Matern32', 'Matern52'],
         help=f'Kernel to use for the GP for the {thing_gp_used_for}',
-        required=False
     )
     parser.add_argument(
         f'--{name_prefix}lengthscale', 
         type=float, 
         help=f'Lengthscale of the GP for the {thing_gp_used_for}',
-        required=False
     )
     parser.add_argument(
         f'--{name_prefix}outcome_transform', 

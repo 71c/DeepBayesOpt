@@ -42,31 +42,26 @@ def add_cancer_dosage_args(
     parser.add_argument(
         f'--{name_prefix}dim_features',
         type=int,
-        default=50,
         help=f'Number of random features for generating parameters for the {thing_used_for}'
     )
     parser.add_argument(
         f'--{name_prefix}nnz_per_row',
         type=int,
-        default=10,
         help=f'Number of non-zero entries per row in coefficient matrix for the {thing_used_for}'
     )
     parser.add_argument(
         f'--{name_prefix}scale_intercept',
         type=float,
-        default=1.0,
         help=f'Scaling factor for intercept coefficients for the {thing_used_for}'
     )
     parser.add_argument(
         f'--{name_prefix}scale_coef',
         type=float,
-        default=1.0,
         help=f'Scaling factor for linear coefficients for the {thing_used_for}'
     )
     parser.add_argument(
         f'--{name_prefix}noise_std',
         type=float,
-        default=0.1,
         help=f'Standard deviation of Gaussian observation noise for the {thing_used_for}'
     )
     parser.add_argument(

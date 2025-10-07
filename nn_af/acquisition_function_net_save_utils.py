@@ -15,7 +15,7 @@ from nn_af.train_acquisition_function_net import GI_NORMALIZATIONS, METHODS
 from datasets.dataset_with_models import RandomModelSampler
 from datasets.acquisition_dataset_manager import FIX_TRAIN_ACQUISITION_DATASET, get_lamda_min_max
 from datasets.gp_acquisition_dataset_manager import GP_GEN_DEVICE
-from dataset_factory import add_unified_acquisition_dataset_args, get_dataset_manager, add_lamda_args
+from dataset_factory import add_unified_acquisition_dataset_args, get_dataset_manager, add_lamda_args, validate_args_for_dataset_type
 
 
 MODELS_SUBDIR = "models"
@@ -309,10 +309,11 @@ def _load_empty_nn_acqf(model_and_info_path: str):
 
 
 def _parse_af_train_cmd_args(cmd_args:Optional[Sequence[str]]=None):
-    parser = _get_run_train_parser()
+    parser, groups_arg_names = _get_run_train_parser()
     args = parser.parse_args(args=cmd_args)
 
-    ######################## Check the arguments ###############################
+    validate_args_for_dataset_type(args, groups_arg_names)
+
     # Only have include_alpha=True when method=policy_gradient
     if args.method != 'policy_gradient' and args.include_alpha:
         raise ValueError("include_alpha should be True only if method=policy_gradient")
@@ -661,7 +662,8 @@ def _get_run_train_parser():
 
     ################################ Dataset settings ##################################
     dataset_group = parser.add_argument_group("Dataset options")
-    add_unified_acquisition_dataset_args(parser, dataset_group, add_lamda_args_flag=False)
+    groups_arg_names = add_unified_acquisition_dataset_args(
+        parser, dataset_group, add_lamda_args_flag=False)
 
     ############################ NN architecture settings ##############################
     nn_architecture_group = parser.add_argument_group("NN Architecture options")
@@ -924,4 +926,4 @@ def _get_run_train_parser():
             'Only used if method=mse_ei.')
     )
 
-    return parser
+    return parser, groups_arg_names

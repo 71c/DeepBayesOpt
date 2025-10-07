@@ -8,18 +8,20 @@ regardless of the underlying dataset type (GP, logistic regression, etc.).
 import argparse
 from typing import Optional, Tuple, Any, Type
 
+from numpy import isin
+
 from datasets.gp_acquisition_dataset_manager import GPAcquisitionDatasetManager, add_gp_args
 from datasets.hpob_acquisition_dataset_manager import HPOBAcquisitionDatasetManager, add_hpob_args
 from datasets.lr_acquisition_dataset_manager import LogisticRegressionAcquisitionDatasetManager, add_lr_args
 from datasets.cancer_dosage_acquisition_dataset_manager import CancerDosageAcquisitionDatasetManager, add_cancer_dosage_args
 from datasets.acquisition_dataset_manager import AcquisitionDatasetManager
-from run_bo import get_arg_names 
+from utils.utils import get_arg_names 
 
 
 # Mapping of dataset types to their respective manager classes
 MANAGER_CLASS_MAP: dict[str, Type[AcquisitionDatasetManager]] = {
     'gp': GPAcquisitionDatasetManager,
-    'logistic_regression': LogisticRegressionAcquisitionDatasetManager,
+    # 'logistic_regression': LogisticRegressionAcquisitionDatasetManager,
     'hpob': HPOBAcquisitionDatasetManager,
     'cancer_dosage': CancerDosageAcquisitionDatasetManager
 }
@@ -55,13 +57,12 @@ def create_train_test_acquisition_datasets_from_args(
     Returns:
         Tuple of (train_dataset, test_dataset, small_test_dataset)
     """
-    dataset_type = getattr(args, 'dataset_type', 'gp')  # Default to GP for backward compatibility
-    
-    # Validate required arguments for each dataset type
-    _validate_args_for_dataset_type(args, dataset_type, groups_arg_names)
+    validate_args_for_dataset_type(args, groups_arg_names)
 
     if getattr(args, 'samples_addition_amount', None) is None:
         args.samples_addition_amount = 5
+    
+    dataset_type = getattr(args, 'dataset_type', 'gp')
     
     manager = get_dataset_manager(dataset_type, device="cpu")
     
@@ -69,42 +70,87 @@ def create_train_test_acquisition_datasets_from_args(
             args, check_cached=check_cached, load_dataset=load_dataset)
 
 
-def _validate_args_for_dataset_type(
+def validate_args_for_dataset_type(
         args: argparse.Namespace,
-        dataset_type: str,
-        groups_arg_names: Optional[dict[str, list[str]]]=None):
-    """Validate that required arguments are present for the specified dataset type."""
-    if dataset_type in {'gp', 'logistic_regression', 'cancer_dosage'}:
-        # make sure has test_samples_size and train_samples_size
-        if getattr(args, 'train_samples_size', None) is None:
-            raise ValueError("Missing required argument: train_samples_size")
-        if getattr(args, 'test_samples_size', None) is None:
-            raise ValueError("Missing required argument: test_samples_size")
-    else:
-        # For HPO-B, these args are not needed
-        if getattr(args, 'train_samples_size', None) is not None:
-            raise ValueError("Argument 'train_samples_size' should not be set for HPO-B datasets")
-        if getattr(args, 'test_samples_size', None) is not None:
-            raise ValueError("Argument 'test_samples_size' should not be set for HPO-B datasets")
+        groups_arg_names: Optional[dict[str, list[str]]]=None,
+        check_train_test_size: bool = True,
+        prefix: str = ""):
+    """Validate that required arguments are present for the dataset type."""
+    if not isinstance(args, argparse.Namespace):
+        raise ValueError("args must be an argparse.Namespace instance")
 
-    if dataset_type == 'gp':
-        required_gp_args = ['dimension', 'kernel', 'lengthscale']
-        missing_args = [arg for arg in required_gp_args if getattr(args, arg, None) is None]
-        if missing_args:
-            raise ValueError(f"Missing required GP arguments: {missing_args}")
-    elif dataset_type == 'cancer_dosage':
-        if getattr(args, 'dimension', None) is None:
-            raise ValueError("Missing required argument for dataset_type=cancer_dosage: dimension")
-    else:
-        if getattr(args, 'dimension', None) is not None:
-            raise ValueError(f"Argument 'dimension' should not be set for dataset_type '{dataset_type}'")
+    prefix_ = f"{prefix}_" if prefix else prefix
+    def getattr_args(arg_name: str, strict=False):
+        if strict:
+            return getattr(args, f'{prefix_}{arg_name}')
+        return getattr(args, f'{prefix_}{arg_name}', None)
+    dataset_type = getattr_args('dataset_type', strict=True)
+
+    if check_train_test_size:
+        if dataset_type in {'gp', 'logistic_regression', 'cancer_dosage'}:
+            # make sure has test_samples_size and train_samples_size
+            if getattr_args('train_samples_size') is None:
+                raise ValueError("Missing required argument: train_samples_size")
+            if getattr_args('test_samples_size') is None:
+                raise ValueError("Missing required argument: test_samples_size")
+        else:
+            # For HPO-B, these args are not needed
+            if getattr_args('train_samples_size') is not None:
+                raise ValueError("Argument 'train_samples_size' should not be set "
+                                 "for HPO-B datasets")
+            if getattr_args('test_samples_size') is not None:
+                raise ValueError("Argument 'test_samples_size' should not be set "
+                                 "for HPO-B datasets")
     
-    # TODO: finish implementing this function;
-    # ensure proper usage of this function passing in groups_arg_names;
-    # make this function have an option of whether to check train_samples_size
-    # and test_samples_size (depending on if it is used for dataset or objective
-    # function), and make this function be used in the run_bo.py pre_run_bo.
+    dimension = getattr_args('dimension')
 
+    if groups_arg_names is None:
+        if dataset_type == 'gp':
+            required_gp_args = ['dimension', 'kernel', 'lengthscale']
+            missing_args = [arg for arg in required_gp_args
+                            if getattr_args(arg) is None]
+            if missing_args:
+                raise ValueError(f"Missing required GP arguments: {missing_args}")
+        elif dataset_type == 'cancer_dosage':
+            if getattr_args('dimension') is None:
+                raise ValueError(
+                    "Missing required argument for dataset_type=cancer_dosage: dimension")
+        else:
+            if getattr_args('dimension') is not None:
+                raise ValueError("Argument 'dimension' should not be set for "
+                                f"dataset_type '{dataset_type}'")
+    else:
+        missing_arguments = []
+        disallowed_arguments = []
+        for dataset_type_key, arg_names in groups_arg_names.items():
+            if dataset_type == dataset_type_key:
+                reqd_arg_names = [
+                    x for x in arg_names
+                    if x.endswith('kernel') or x.endswith('lengthscale')
+                ] if dataset_type == 'gp' else arg_names
+                if dataset_type in {'gp', 'cancer_dosage'}:
+                    reqd_arg_names.append(f'{prefix_}dimension')
+                missing_arguments.extend([arg_name for arg_name in reqd_arg_names
+                                            if getattr(args, arg_name, None) is None])
+            else:
+                disallowed_arguments.extend(
+                    [arg_name for arg_name in arg_names
+                     if getattr(args, arg_name, None) not in {None, False}])
+        if dataset_type not in {'gp', 'cancer_dosage'}:
+            if dimension is not None:
+                disallowed_arguments.append(f'{prefix_}dimension')
+        if missing_arguments or disallowed_arguments:
+            error_msgs = []
+            if missing_arguments:
+                error_msgs.append(f"Missing required arguments for dataset_type={dataset_type}: "
+                                  f"{missing_arguments}")
+            if disallowed_arguments:
+                error_msgs.append(f"Arguments that should not be set for dataset_type={dataset_type}: "
+                                  f"{disallowed_arguments}")
+            raise ValueError(" ; ".join(error_msgs))
+    
+    if dimension is not None and dimension <= 0:
+        raise ValueError("dimension must be > 0")
 
 def _add_common_acquisition_dataset_args(parser):
     """Add common acquisition dataset arguments shared across dataset types."""
@@ -133,12 +179,14 @@ def _add_common_acquisition_dataset_args(parser):
         '--test_expansion_factor',
         type=int,
         default=1,
-        help='The factor that the test dataset samples is expanded to get the test acquisition dataset'
+        help='The factor that the test dataset samples is expanded to get the test '
+             'acquisition dataset'
     )
     parser.add_argument(
         '--replacement',
         action='store_true',
-        help='Whether to sample with replacement for the acquisition dataset. Default is False.'
+        help='Whether to sample with replacement for the acquisition dataset. '
+             'Default is False.'
     )
     parser.add_argument(
         '--train_n_candidates',
@@ -172,7 +220,8 @@ def _add_common_acquisition_dataset_args(parser):
     parser.add_argument(
         '--standardize_dataset_outcomes', 
         action='store_true', 
-        help='Whether to standardize the outcomes of the dataset (independently for each item). Default is False'
+        help='Whether to standardize the outcomes of the dataset '
+             '(independently for each item). Default is False'
     )
 
 
@@ -201,7 +250,7 @@ def add_unified_function_dataset_args(
         parser: argparse.ArgumentParser,
         thing_used_for: str,
         name_prefix: str = "",
-        dataset_group: Optional[argparse._ArgumentGroup] = None):
+        dataset_group: Optional[argparse._ArgumentGroup] = None) -> dict[str, list[str]]:
     if dataset_group is None:
         dataset_group = parser
     
@@ -212,37 +261,40 @@ def add_unified_function_dataset_args(
         f'--{name_prefix_}dataset_type',
         choices=list(MANAGER_CLASS_MAP),
         default='gp',
-        help=f'Type of {thing_used_for}'
+        help=f'Type of {thing_used_for}',
+        required=True # Maybe not?
     )
-    
-    ret = {}
-    
+
     dataset_group.add_argument(
-        f'--{name_prefix_}dimension', type=int, help='(Only for dataset_type=gp or dataset_type=cancer_dosage) Dimension of the optimization problem')
+        f'--{name_prefix_}dimension', type=int,
+        help='(Only for dataset_type=gp or dataset_type=cancer_dosage) '
+             'Dimension of the optimization problem')
     
-    gp_group = parser.add_argument_group('GP dataset arguments')
+    groups_arg_names = {}
+    
+    gp_group = parser.add_argument_group(f'GP {thing_used_for} arguments')
     add_gp_args(gp_group, thing_used_for, name_prefix=name_prefix, add_randomize_params=True)
-    ret['gp'] = get_arg_names(gp_group)
+    groups_arg_names['gp'] = get_arg_names(gp_group)
     
-    lr_group = parser.add_argument_group('Logistic Regression dataset arguments')
-    add_lr_args(lr_group)
-    ret['logistic_regression'] = get_arg_names(lr_group)
+    # lr_group = parser.add_argument_group(f'Logistic Regression {thing_used_for} arguments')
+    # add_lr_args(lr_group)
+    # groups_arg_names['logistic_regression'] = get_arg_names(lr_group)
 
-    hpob_group = parser.add_argument_group('HPO-B arguments')
+    hpob_group = parser.add_argument_group(f'HPO-B {thing_used_for} arguments')
     add_hpob_args(hpob_group, thing_used_for, name_prefix=name_prefix)
-    ret['hpob'] = get_arg_names(hpob_group)
+    groups_arg_names['hpob'] = get_arg_names(hpob_group)
 
-    cancer_dosage_group = parser.add_argument_group('Cancer Dosage dataset arguments')
+    cancer_dosage_group = parser.add_argument_group(f'Cancer Dosage {thing_used_for} arguments')
     add_cancer_dosage_args(cancer_dosage_group, thing_used_for, name_prefix=name_prefix)
-    ret['cancer_dosage'] = get_arg_names(cancer_dosage_group)
+    groups_arg_names['cancer_dosage'] = get_arg_names(cancer_dosage_group)
 
-    return ret
+    return groups_arg_names
 
 
 def add_unified_acquisition_dataset_args(
         parser: argparse.ArgumentParser,
         dataset_group: Optional[argparse._ArgumentGroup] = None,
-        add_lamda_args_flag: bool = True):
+        add_lamda_args_flag: bool = True) -> dict[str, list[str]]:
     """
     Add unified dataset arguments that support all dataset types.
     
@@ -258,7 +310,7 @@ def add_unified_acquisition_dataset_args(
     # Add common acquisition dataset arguments that all datasets need
     _add_common_acquisition_dataset_args(dataset_group)
 
-    add_unified_function_dataset_args(
+    return add_unified_function_dataset_args(
         parser=parser, thing_used_for="function samples",
         name_prefix="",
         dataset_group=dataset_group

@@ -110,7 +110,11 @@ class CancerDosageObjectiveSampler:
                 linear_output = linear_output + noise
             return torch.sigmoid(linear_output)
 
-        return func, torch.tensor(features, device=self.device)
+        return func, {
+            'features': torch.tensor(features, device=self.device),
+            'intercept': intercept,
+            'coefs': coefs
+        }
 
 
 class CancerDosageDataset(
@@ -265,6 +269,74 @@ class CancerDosageDataset(
         output = objective_function(x_dosages).unsqueeze(-1)
 
         return FunctionSamplesItem(x_dosages, output)
+
+
+# Cache for cancer dosage function min/max values
+_cancer_dosage_opt_cache = {}
+
+def get_cancer_dosage_function_min_max(
+        intercept: torch.Tensor,
+        coefs: torch.Tensor,
+        noise_std: float,
+        is_simplex: bool,
+        objective_name: str) -> tuple[float, float]:
+    """Get exact min and max values for a cancer dosage objective function
+    sigmoid(intercept + coefs @ x + noise).
+    
+    Args:
+        intercept: Intercept term of the linear function.
+        coefs: Coefficient vector for the linear function.
+        noise_std: Standard deviation of observation noise.
+        is_simplex: If True, x is constrained to simplex (x >= 0, sum(x) <= 1).
+                   If False, x is constrained to hypercube (x in [0, 1]^d).
+        objective_name: Name for caching purposes.
+        
+    Returns:
+        Tuple of (min_value, max_value) after applying sigmoid.
+    """
+    if objective_name not in _cancer_dosage_opt_cache:
+        # Solve linear program: min/max coefs @ x subject to constraints
+        coefs_cpu = coefs.cpu().numpy()
+        
+        if is_simplex:
+            # Simplex constraint: x >= 0, sum(x) <= 1
+            # For max: put all weight on coordinate with largest positive coefficient
+            # For min: put all weight on coordinate with most negative coefficient
+            max_coef_idx = np.argmax(coefs_cpu)
+            min_coef_idx = np.argmin(coefs_cpu)
+            
+            linear_max = max(coefs_cpu[max_coef_idx], 0.0)  # Could be 0 if all coefs negative
+            linear_min = min(coefs_cpu[min_coef_idx], 0.0)  # Could be 0 if all coefs positive
+        else:
+            # Hypercube constraint: x in [0, 1]^d
+            # For max: set x[i] = 1 if coefs[i] > 0, else x[i] = 0
+            # For min: set x[i] = 0 if coefs[i] > 0, else x[i] = 1
+            linear_max = np.sum(np.maximum(coefs_cpu, 0.0))
+            linear_min = np.sum(np.minimum(coefs_cpu, 0.0))
+        
+        # Add intercept
+        intercept_val = intercept.cpu().item()
+        pre_link_max = linear_max + intercept_val
+        pre_link_min = linear_min + intercept_val
+        
+        # Adjust for noise if present (before applying sigmoid)
+        if noise_std > 0:
+            noise_adjustment = 2.0 * noise_std
+            pre_link_max += noise_adjustment
+            pre_link_min -= noise_adjustment
+        
+        # Apply sigmoid to get final bounds
+        y_min = torch.sigmoid(torch.tensor(pre_link_min)).item()
+        y_max = torch.sigmoid(torch.tensor(pre_link_max)).item()
+        
+        print(f"Optimized {objective_name} with intercept={intercept_val}, "
+              f"coefs={coefs_cpu}, {noise_std=}, {is_simplex=}: "
+              f"pre_link_min={pre_link_min:.4f}, pre_link_max={pre_link_max:.4f}, "
+              f"y_min={y_min:.4f}, y_max={y_max:.4f}")
+        
+        _cancer_dosage_opt_cache[objective_name] = (y_min, y_max)
+    
+    return _cancer_dosage_opt_cache[objective_name]
 
 
 if __name__ == "__main__":

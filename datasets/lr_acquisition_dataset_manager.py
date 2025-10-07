@@ -63,41 +63,35 @@ def add_lr_args(parser):
         '--lr_n_samples_range',
         nargs=2,
         type=int,
-        default=[50, 2000],
         help='Range (min, max) for number of samples in each logistic regression dataset'
     )
     parser.add_argument(
         '--lr_n_features_range',
         nargs=2,
         type=int,
-        default=[5, 100],
         help='Range (min, max) for number of features in each logistic regression dataset'
     )
     parser.add_argument(
         '--lr_bias_range',
         nargs=2,
         type=float,
-        default=[-2.0, 2.0],
         help='Range (min, max) for bias term b'
     )
     parser.add_argument(
         '--lr_coefficient_std',
         type=float,
-        default=1.0,
         help='Standard deviation for coefficient vector elements'
     )
     parser.add_argument(
         '--lr_noise_range',
         nargs=2,
         type=float,
-        default=[0.01, 1.0],
         help='Range (min, max) for noise standard deviation'
     )
     parser.add_argument(
         '--lr_log_lambda_range',
         nargs=2,
         type=float,
-        default=[-6, 2],
         help='Range (min, max) for log(lambda) mapping from [0,1] hyperparameter space'
     )
     parser.add_argument(
