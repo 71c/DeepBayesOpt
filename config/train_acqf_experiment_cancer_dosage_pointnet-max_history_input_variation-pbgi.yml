@@ -8,9 +8,9 @@ parameters:
   nnz_per_row:
     value: 10
   scale_intercept:
-    value: 3.0
-  scale_coef:
     value: 4.0
+  scale_coef:
+    value: 20.0
   noise_std:
     values: [0.0]
   is_simplex:
@@ -26,13 +26,11 @@ parameters:
   gi_loss_normalization:
     value: normal
   lamda:
-    values: [1.00e-03, 1.00e-02]
+    values: [1.00e-03]
   train_samples_size:
     values: [40, 320] # 2560
   samples_addition_amount:
-    values: [5, 30, 180, 2000]
-  samples_addition_amount:
-    value: 5
+    values: [180, 2000]
   test_samples_size:
     value: 1000
   test_expansion_factor:
@@ -52,7 +50,7 @@ parameters:
   subtract_best_y:
     values: [false]
   max_history_input:
-    values: [2, 4, 9, null]
+    values: [2, 4, 9, 30, null]
   x_cand_input:
     values:
     - "subtract-lossy"

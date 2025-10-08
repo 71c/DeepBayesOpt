@@ -10,6 +10,7 @@ class CancerDosageAcquisitionDatasetManager(AcquisitionDatasetManager):
     def create_function_samples_dataset(self, **kwargs):
         name = kwargs.pop('name')
         kwargs['seed'] = {'train': 0, 'test': 1}[name]
+        kwargs.pop('dataset_type')
         return CancerDosageDataset(**kwargs)
     
     def get_function_samples_config(self, args: argparse.Namespace, device=None):
@@ -21,6 +22,7 @@ class CancerDosageAcquisitionDatasetManager(AcquisitionDatasetManager):
             scale_coef=args.scale_coef,
             noise_std=args.noise_std,
             is_simplex=args.is_simplex,
+            matrix_seed=args.matrix_seed,
             #### Dataset size
             train_samples_size=args.train_samples_size,
             test_samples_size=args.test_samples_size,

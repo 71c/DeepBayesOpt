@@ -368,15 +368,16 @@ if __name__ == "__main__":
 
     # Create a small dataset
     dataset = CancerDosageDataset(
-        dim_x=20,
+        dim_x=5,
         dim_features=50,
         nnz_per_row=10,
-        scale_intercept=3.0,
-        scale_coef=4.0,
-        noise_std=0.1,
-        is_simplex=True,
+        scale_intercept=4.0,
+        scale_coef=20.0,
+        noise_std=0.0,
+        is_simplex=False,
         seed=42,
-        n_datapoints=1000,       # dosage evaluations per function
+        matrix_seed=123,
+        n_datapoints=100,       # dosage evaluations per function
         dataset_size=num_functions          # number of functions
     )
 
@@ -427,7 +428,7 @@ if __name__ == "__main__":
         axes[i].axis('off')
 
     plt.tight_layout()
-    plt.show()
+    # plt.show()
 
     # save the figure 
     fig.savefig("cancer_dosage_dataset_histograms.pdf")
