@@ -135,7 +135,7 @@ def get_nn_af_args_configs_model_paths_from_cmd_args(
     dataset_type = getattr(args, 'dataset_type', 'gp')
     manager = get_dataset_manager(dataset_type, device="cpu")
     gp_af_dataset_configs = manager.get_dataset_configs(args, device=GP_GEN_DEVICE)
-    if dataset_type == 'gp':
+    if dataset_type in {'gp', 'cancer_dosage'}:
         dimension = None # already in args.dimension
     elif dataset_type == 'logistic_regression':
         dimension = 1

@@ -44,6 +44,13 @@ def get_cmd_options_train_acqf(options: dict[str, Any]):
         cmd_opts_sample_dataset.update({
             'hpob_search_space_id': options.get('hpob_search_space_id')
         })
+    elif dataset_type == 'cancer_dosage':
+        cmd_opts_sample_dataset.update({
+            k: options.get(k)
+            for k in ['dimension', 'dim_features', 'nnz_per_row',
+                      'scale_intercept', 'scale_coef', 'noise_std',
+                      'is_simplex', 'matrix_seed']
+        })
     else:
         raise ValueError(f"Unknown dataset_type: {dataset_type}")
 

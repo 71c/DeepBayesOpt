@@ -28,6 +28,26 @@ parameters:
               parameters:
                 hpob_search_space_id:
                   value: "5970"
+        - value: cancer_dosage
+          parameters:
+            cancer_dosage:
+              parameters:
+                dimension:
+                  values: [10, 20, 50]
+                dim_features:
+                  values: [50, 100, 200]
+                nnz_per_row:
+                  values: [5, 10, 20]
+                scale_intercept:
+                  values: [1.0, 2.0, 3.0]
+                scale_coef:
+                  values: [1.0, 2.0, 4.0]
+                noise_std:
+                  values: [0.0, 0.1, 0.2]
+                is_simplex:
+                  values: [true, false]
+                matrix_seed:
+                  values: [0]
       standardize_outcomes:
         value: false
       train_samples_size:

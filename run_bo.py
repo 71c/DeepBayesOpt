@@ -400,7 +400,8 @@ def _get_objective_things(objective_args):
             scale_coef=objective_args['scale_coef'],
             noise_std=objective_args['noise_std'],
             is_simplex=objective_args['is_simplex'],
-            seed=objective_args['id']
+            seed=objective_args['id'],
+            matrix_seed=objective_args['matrix_seed']
         )
         objective_fn, objective_fn_info = CancerDosageObjectiveSampler(**tmp).sample()
         objective_name = f'cancer_dosage_{dict_to_fname_str(tmp)}'

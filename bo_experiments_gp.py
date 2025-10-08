@@ -5,6 +5,7 @@ import warnings
 import torch
 from botorch.exceptions import UnsupportedError
 
+from dataset_factory import DATASET_TYPES
 from datasets.hpob_dataset import get_hpob_dataset_ids
 from nn_af.acquisition_function_net_save_utils import get_lamda_for_bo_of_nn
 from utils.utils import dict_to_str, group_by
@@ -40,7 +41,7 @@ def _generate_bo_commands(
         else:
             assert n_bo_seeds is not None
             bo_seeds = seeds[:n_bo_seeds]
-    elif dataset_type == 'gp':
+    elif dataset_type in {'gp', 'cancer_dosage'}:
         assert n_objectives is not None
         assert n_bo_seeds is not None
         bo_seeds = seeds[:n_bo_seeds]
@@ -117,27 +118,33 @@ def _gp_bo_jobs_spec_and_cfgs(
     for nn_options in options_list:
         ## Determine dataset_type and get objective_args
         dataset_type = nn_options.get('function_samples_dataset.dataset_type', 'gp')
-        if dataset_type not in {'gp', 'hpob'}:
+        if dataset_type not in DATASET_TYPES:
             raise UnsupportedError(
-                f"Unsupported dataset type: {dataset_type}. Must be 'gp' or 'hpob'.")
-        gp_options = {
-            k.split('.')[-1]: v for k, v in nn_options.items()
-            if k.startswith("function_samples_dataset.gp.")
-        }
-        hpob_options = {
-            k.split('.')[-1]: v for k, v in nn_options.items()
-            if k.startswith("function_samples_dataset.hpob.")
-        }
-        if dataset_type == 'gp':
-            assert len(gp_options) != 0 and len(hpob_options) == 0, \
-                "If dataset_type is 'gp', then there must be some "\
-                "gp options and no hpob options."
-            objective_args = gp_options
-        elif dataset_type == 'hpob':
-            assert len(gp_options) == 0 and len(hpob_options) != 0, \
-                "If dataset_type is 'hpob', then there must be some "\
-                "hpob options and no gp options."
-            objective_args = hpob_options
+                f"Unsupported dataset type: {dataset_type}. "
+                f"Must be one of {DATASET_TYPES}.")
+
+        dataset_options = {}        
+        for dataset_type_name in DATASET_TYPES:
+            prefix = f"function_samples_dataset.{dataset_type_name}."
+            options = {
+                k.split('.')[-1]: v for k, v in nn_options.items()
+                if k.startswith(prefix)
+            }
+            dataset_options[dataset_type_name] = options
+        
+        # Validate that only the selected dataset type has options
+        current_dataset_options = dataset_options[dataset_type]
+        other_dataset_options = {k: v for k, v in dataset_options.items() 
+                               if k != dataset_type and len(v) > 0}
+        
+        assert len(current_dataset_options) != 0, \
+            f"If dataset_type is '{dataset_type}', then there must be some " \
+            f"{dataset_type} options."
+        assert len(other_dataset_options) == 0, \
+            f"If dataset_type is '{dataset_type}', then there must be no " \
+            f"options for other dataset types. Found options for: {list(other_dataset_options.keys())}"
+        
+        objective_args = current_dataset_options
 
         objective_args['dataset_type'] = dataset_type
         
@@ -205,10 +212,7 @@ def _gp_bo_jobs_spec_and_cfgs(
             lamda_vals = {1e-4}
 
         dataset_type = objective_args['dataset_type']
-        if dataset_type == 'hpob':
-            # Use the default GP fit settings of the latest BoTorch version (0.15.1)
-            gp_af_fit_args = {'fit': 'map', 'kernel': 'RBF'}
-        elif dataset_type == 'gp':
+        if dataset_type == 'gp':
             if objective_args['randomize_params']:
                 gp_af_fit_args = {
                     k: v for k, v in objective_args
@@ -217,6 +221,9 @@ def _gp_bo_jobs_spec_and_cfgs(
                 gp_af_fit_args['fit'] = 'map'
             else:
                 gp_af_fit_args = {'fit': 'exact'}
+        else:
+            # Use the default GP fit settings of the latest BoTorch version (0.15.1)
+            gp_af_fit_args = {'fit': 'map', 'kernel': 'RBF'}
 
         # Add all the GP AF commands
         for gp_af_name in GP_AF_DICT:
@@ -328,34 +335,36 @@ def _validate_bo_experiments_args(args: argparse.Namespace, dataset_types):
     n_seeds = getattr(args, 'n_seeds', None)
     n_objectives = getattr(args, 'n_objectives', None)
     use_hpob_seeds = args.use_hpob_seeds
+
+    has_gp_or_cancer_dosage = 'gp' in dataset_types or 'cancer_dosage' in dataset_types
     
     if n_seeds is None:
-        if 'gp' in dataset_types:
+        if has_gp_or_cancer_dosage:
             raise ValueError("If any of the objective functions are GP, then --n_seeds "
                             "must be specified.")
         if not use_hpob_seeds:
             raise ValueError("If --n_seeds is not specified, then --use_hpob_seeds "
                              "must be set.")
     else:
-        if 'gp' not in dataset_types and use_hpob_seeds:
+        if not has_gp_or_cancer_dosage and use_hpob_seeds:
             raise ValueError("Cannot set both --n_seeds and --use_hpob_seeds if none "
-                             "of the objective functions are GP.")
+                             "of the objective functions are gp or cancer_dosage.")
         if n_seeds <= 0:
             raise ValueError("If specified, --n_seeds must be a positive integer.")
     
     if n_objectives is None:
-        if 'gp' in dataset_types:
-            raise ValueError("If any of the objective functions are GP, then "
-                             "--n_objectives must be specified.")
+        if has_gp_or_cancer_dosage:
+            raise ValueError("If any of the objective functions are gp or "
+                             "cancer_dosage, then --n_objectives must be specified.")
         if 'hpob' not in dataset_types:
             # This should never happen, but just in case -- maybe more dataset types
             # will be added in the future.
-            raise ValueError("If --n_objectives is not specified, then at least one of the "
-                             "objective functions must be HPO-B.")
+            raise ValueError("If --n_objectives is not specified, then at least one of "
+                             "the objective functions must be HPO-B.")
     else:
-        if 'gp' not in dataset_types:
+        if not has_gp_or_cancer_dosage:
             raise ValueError("If --n_objectives is specified, then at least one of the "
-                             "objective functions must be GP.")
+                             "objective functions must be gp or cancer_dosage.")
         if 'hpob' in dataset_types:
             warnings.warn("Warning: --n_objectives is specified, but some of the objective "
                   "functions are HPO-B. The HPO-B functions will use their own "
@@ -420,7 +429,7 @@ def generate_gp_bo_job_specs(args: argparse.Namespace,
         pr = cProfile.Profile()
         pr.enable()
     
-    jobs_spec, new_cfgs, existing_cfgs_and_results = _gp_bo_jobs_spec_and_cfgs(
+    jobs_spec, new_cfgs, existing_cfgs_and_results =  _gp_bo_jobs_spec_and_cfgs(
         nn_options_list, bo_options_list, bo_options_list_random_search,
         seeds,
         n_objectives=getattr(args, 'n_objectives', None),

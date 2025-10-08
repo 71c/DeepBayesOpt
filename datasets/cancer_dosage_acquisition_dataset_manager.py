@@ -69,3 +69,8 @@ def add_cancer_dosage_args(
         action='store_true',
         help=f' whether to use simplex x for the {thing_used_for}. If True, assumes x sums to at most 1. If False, assumes x is in [0, 1]^d'
     )
+    parser.add_argument(
+        f'--{name_prefix}matrix_seed',
+        type=int,
+        help=f'Random seed for generating the coefficient matrix for the {thing_used_for}'
+    )

@@ -22,11 +22,12 @@ class CancerDosageObjectiveSampler:
                  dim_x: int,
                  dim_features: int,
                  nnz_per_row: int,
+                 seed: int,
+                 matrix_seed: int,
                  scale_intercept: float = 1.0,
                  scale_coef: float = 1.0,
                  noise_std: float = 0.1,
                  is_simplex: bool = True,
-                 seed: int = 0,
                  device = None):
         """Initializes a cancer dosage objective sampler.
 
@@ -34,6 +35,8 @@ class CancerDosageObjectiveSampler:
             dim_x: Dimensionality of the input domain x.
             dim_features: Number of random features for generating parameters.
             nnz_per_row: Number of non-zero entries per row in coefficient matrix.
+            seed: Random seed for sampling objective functions.
+            matrix_seed: Random seed for generating the coefficient matrix.
             scale_intercept: Scaling factor for intercept coefficients.
                 intercept will be in the range [-scale_intercept, scale_intercept].
             scale_coef: Scaling factor for linear coefficients.
@@ -44,25 +47,31 @@ class CancerDosageObjectiveSampler:
             is_simplex: If True, assumes x sums to at most 1.
                 If False, assumes x is in [0, 1]^d, and scales coefficients
                 down by dim_x to keep coefs . x in [-scale_coef, scale_coef].
-            seed: Random seed for reproducibility.
             device: Torch device to use.
         """
         if not (0 < nnz_per_row <= dim_features):
             raise ValueError("nnz_per_row must be in the range (0, dim_features]")
-        self.rng = np.random.default_rng(seed)
 
         self.dim_x = dim_x
         self.dim_features = dim_features
         self.noise_std = noise_std
         self.device = device
+        self.scale_intercept = scale_intercept
+        self.scale_coef = scale_coef
+        self.nnz_per_row = nnz_per_row
+        self.seed = seed
+        self.matrix_seed = matrix_seed
+        self.is_simplex = is_simplex
+
+        rng = np.random.default_rng(matrix_seed)
 
         # Construct the coefficient matrix
         n_rows = dim_x + 1 # First row is intercept
         n_cols = dim_features
         matrix = np.zeros((n_rows, n_cols))
         for i in range(n_rows):
-            nonzero_indices = self.rng.choice(n_cols, size=nnz_per_row, replace=False)
-            vals = self.rng.standard_normal(size=nnz_per_row)
+            nonzero_indices = rng.choice(n_cols, size=nnz_per_row, replace=False)
+            vals = rng.standard_normal(size=nnz_per_row)
             vals /= np.sum(np.abs(vals))
             if i == 0:
                 vals *= scale_intercept
@@ -75,6 +84,8 @@ class CancerDosageObjectiveSampler:
                     vals /= dim_x
             matrix[i, nonzero_indices] = vals
         self.matrix = matrix
+
+        self.rng = np.random.default_rng(seed)
     
     def sample(self):
         """Samples a new objective function and its generating features.
@@ -127,11 +138,12 @@ class CancerDosageDataset(
                  dim_x: int,
                  dim_features: int,
                  nnz_per_row: int,
+                 seed: int,
+                 matrix_seed: int,
                  scale_intercept: float = 1.0,
                  scale_coef: float = 1.0,
                  noise_std: float = 0.1,
                  is_simplex: bool = True,
-                 seed: int = 0,
                  n_datapoints: Optional[int] = None,
                  n_datapoints_random_gen = None,
                  device = None,
@@ -142,13 +154,17 @@ class CancerDosageDataset(
             dim_x: Dimensionality of dosage input.
             dim_features: Number of random features for parameter generation.
             nnz_per_row: Number of non-zero entries per row in coefficient matrix.
+            seed: Random seed for sampling objective functions.
+            matrix_seed: Random seed for generating the coefficient matrix.
             scale_intercept: Scaling factor for intercept.
             scale_coef: Scaling factor for linear coefficients.
             noise_std: Standard deviation of observation noise.
             is_simplex: If True, assumes x sums to at most 1.
                 If False, assumes x is in [0, 1]^d, and scales coefficients
                 down by dim_x to keep coefs . x in [-scale_coef, scale_coef].
-            seed: Random seed for reproducibility.
+            seed: Random seed for sampling objective functions.
+            matrix_seed: If provided, seed for generating
+                the matrix used . If None, uses `seed`.
             n_datapoints: Number of dosage evaluations per sample (fixed).
             n_datapoints_random_gen: Generator for random number of dosage evaluations.
             device: torch.device for computations.
@@ -170,11 +186,12 @@ class CancerDosageDataset(
             dim_x=dim_x,
             dim_features=dim_features,
             nnz_per_row=nnz_per_row,
+            seed=seed,
+            matrix_seed=matrix_seed,
             scale_intercept=scale_intercept,
             scale_coef=scale_coef,
             noise_std=noise_std,
             is_simplex=is_simplex,
-            seed=seed,
             device=device
         )
         self.device = self.objective_sampler.device
@@ -217,7 +234,9 @@ class CancerDosageDataset(
             scale_intercept=self.objective_sampler.scale_intercept,
             scale_coef=self.objective_sampler.scale_coef,
             noise_std=self.objective_sampler.noise_std,
+            is_simplex=self.objective_sampler.is_simplex,
             seed=self.objective_sampler.seed,
+            matrix_seed=self.objective_sampler.matrix_seed,
             n_datapoints=self.n_datapoints,
             n_datapoints_random_gen=self.n_datapoints_random_gen,
             device=self.device,

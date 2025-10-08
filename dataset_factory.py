@@ -8,8 +8,6 @@ regardless of the underlying dataset type (GP, logistic regression, etc.).
 import argparse
 from typing import Optional, Tuple, Any, Type
 
-from numpy import isin
-
 from datasets.gp_acquisition_dataset_manager import GPAcquisitionDatasetManager, add_gp_args
 from datasets.hpob_acquisition_dataset_manager import HPOBAcquisitionDatasetManager, add_hpob_args
 from datasets.lr_acquisition_dataset_manager import LogisticRegressionAcquisitionDatasetManager, add_lr_args
@@ -26,6 +24,8 @@ MANAGER_CLASS_MAP: dict[str, Type[AcquisitionDatasetManager]] = {
     'cancer_dosage': CancerDosageAcquisitionDatasetManager
 }
 
+DATASET_TYPES = set(MANAGER_CLASS_MAP.keys())
+
 
 def get_dataset_manager(dataset_type: str, device: str = "cpu") -> AcquisitionDatasetManager:
     """Get the appropriate dataset manager class based on dataset_type."""
@@ -33,7 +33,7 @@ def get_dataset_manager(dataset_type: str, device: str = "cpu") -> AcquisitionDa
         manager_cls = MANAGER_CLASS_MAP[dataset_type]
     except KeyError:
         raise ValueError(f"Unsupported dataset_type: {dataset_type}. "
-                         f"Supported types: {list(MANAGER_CLASS_MAP.keys())}")
+                         f"Supported types: {list(DATASET_TYPES)}")
     return manager_cls(device=device)
 
 
@@ -259,7 +259,7 @@ def add_unified_function_dataset_args(
     # Add dataset type selector
     dataset_group.add_argument(
         f'--{name_prefix_}dataset_type',
-        choices=list(MANAGER_CLASS_MAP),
+        choices=list(DATASET_TYPES),
         default='gp',
         help=f'Type of {thing_used_for}',
         required=True # Maybe not?

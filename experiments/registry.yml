@@ -1170,6 +1170,67 @@ experiments:
               - nn.learning_rate
             - - objective.id
               - bo_seed
+  pointnet_max_history_pbgi_cancer_dosage:
+    description: 'Experiment of cancer dosage PointNet PBGI: max_history_input (2, 4, 9, null), NN size, max_history, lamda'
+    created_date: '2025-10-07'
+    parameters:
+      seed: 8
+      nn_experiment_config: config/train_acqf_experiment_cancer_dosage_pointnet-max_history_input_variation-pbgi.yml
+      bo_experiment_config: config/bo_config_experiment_2_torch.yml
+      sweep_name: 100iter_cancer_dosage_pointnet-max_history_input_variation-pbgi
+      n_seeds: 64
+      n_objectives: 1
+      plots_group_name: cancer_dosage_pointnet-max_history_input_variation-pbgi
+      bo_plots_name: results_100iter
+    plotting:
+      train_acqf:
+        default:
+          pre:
+          - ['layer_width', 'encoded_history_dim']
+          - ['lamda', 'max_history']
+          attr_a:
+          - dimension
+          attr_b:
+          - max_history_input
+          post:
+          - ['learning_rate']
+        alternatives:
+          version_2:
+            pre:
+            - ['dimension']
+            - ['layer_width', 'encoded_history_dim']
+            attr_a: ['lamda', 'max_history']
+            attr_b: ['max_history_input']
+            post:
+            - ['learning_rate']
+      bo_experiments:
+        default:
+          pre:
+          - ['nn.layer_width', 'nn.encoded_history_dim']
+          - ['nn.lamda', 'nn.max_history']
+          attr_a:
+          - objective.dimension
+          attr_b:
+          - nn.max_history_input
+          post:
+          - - gp_af
+            - lamda
+            - nn.learning_rate
+          - - objective.id
+            - bo_seed
+        alternatives:
+          version_2:
+            pre:
+            - ['objective.dimension']
+            - ['nn.layer_width', 'nn.encoded_history_dim']
+            attr_a: ['nn.lamda', 'nn.max_history']
+            attr_b: ['nn.max_history_input']
+            post:
+            - - gp_af
+              - lamda
+              - nn.learning_rate
+            - - objective.id
+              - bo_seed
 templates:
   basic_1d:
     description: Basic 1D experiment template
