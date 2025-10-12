@@ -26,11 +26,11 @@ parameters:
   gi_loss_normalization:
     value: normal
   lamda:
-    values: [1.00e-03] # [1.00e-4, 1.00e-03, 1.00e-2]
+    values: [1.00e-4, 1.00e-03, 1.00e-2]
   train_samples_size:
-    values: [40, 320] # 2560
+    values: [320]
   samples_addition_amount:
-    values: [180, 2000]
+    values: [2000]
   test_samples_size:
     value: 1000
   test_expansion_factor:
@@ -38,7 +38,7 @@ parameters:
   n_candidates:
     value: 1
   layer_width:
-    values: [8, 16] # [8, 16, 32, 64]
+    values: [8, 16, 32, 64]
   encoded_history_dim:
     value: null # defaults to be same as layer_width
   num_layers:
@@ -50,10 +50,15 @@ parameters:
   subtract_best_y:
     values: [false]
   max_history_input:
-    values: [2, 4, 9, 30, null]
+    values: [30]
   x_cand_input:
     values:
+    - "local_and_final"
+    - "local_only"
+    - "final_only"
     - "subtract-lossy"
+    - "subtract-local_only"
+    - "subtract-final_only"
   pooling:
     values: ["max"]
   epochs:

@@ -1171,7 +1171,7 @@ experiments:
             - - objective.id
               - bo_seed
   pointnet_max_history_pbgi_cancer_dosage:
-    description: 'Experiment of cancer dosage PointNet PBGI: max_history_input (2, 4, 9, null), NN size, max_history, lamda'
+    description: 'Experiment of cancer dosage PointNet PBGI: max_history_input (2, 4, 9, null), NN size'
     created_date: '2025-10-07'
     parameters:
       seed: 8
@@ -1186,30 +1186,23 @@ experiments:
       train_acqf:
         default:
           pre:
-          - ['layer_width', 'encoded_history_dim']
-          - ['lamda', 'max_history']
+          - ['train_samples_size']
+          - ['samples_addition_amount', 'lamda']
           attr_a:
-          - dimension
+          - layer_width
+          - encoded_history_dim
           attr_b:
           - max_history_input
           post:
           - ['learning_rate']
-        alternatives:
-          version_2:
-            pre:
-            - ['dimension']
-            - ['layer_width', 'encoded_history_dim']
-            attr_a: ['lamda', 'max_history']
-            attr_b: ['max_history_input']
-            post:
-            - ['learning_rate']
       bo_experiments:
         default:
           pre:
-          - ['nn.layer_width', 'nn.encoded_history_dim']
-          - ['nn.lamda', 'nn.max_history']
+          - ['nn.train_samples_size']
+          - ['nn.samples_addition_amount', 'nn.lamda']
           attr_a:
-          - objective.dimension
+          - nn.layer_width
+          - nn.encoded_history_dim
           attr_b:
           - nn.max_history_input
           post:
@@ -1218,19 +1211,47 @@ experiments:
             - nn.learning_rate
           - - objective.id
             - bo_seed
-        alternatives:
-          version_2:
-            pre:
-            - ['objective.dimension']
-            - ['nn.layer_width', 'nn.encoded_history_dim']
-            attr_a: ['nn.lamda', 'nn.max_history']
-            attr_b: ['nn.max_history_input']
-            post:
-            - - gp_af
-              - lamda
-              - nn.learning_rate
-            - - objective.id
-              - bo_seed
+  pointnet_max_history_pbgi_cancer_dosage_2:
+    description: 'Experiment of cancer dosage PointNet PBGI: max_history_input (2, 4, 9, null), NN size, lamda, x_cand_input'
+    created_date: '2025-10-12'
+    parameters:
+      seed: 8
+      nn_experiment_config: config/train_acqf_experiment_cancer_dosage_pointnet-max_history_input_variation-pbgi-2.yml
+      bo_experiment_config: config/bo_config_experiment_2_torch.yml
+      sweep_name: 100iter_cancer_dosage_pointnet-max_history_input_variation-pbgi-2
+      n_seeds: 16
+      n_objectives: 8
+      plots_group_name: cancer_dosage_pointnet-max_history_input_variation-pbgi-2
+      bo_plots_name: results_100iter
+    plotting:
+      train_acqf:
+        default:
+          pre:
+          - ['lamda']
+          - ['x_cand_input']
+          attr_a:
+          - layer_width
+          - encoded_history_dim
+          attr_b:
+          - max_history_input
+          post:
+          - ['learning_rate']
+      bo_experiments:
+        default:
+          pre:
+          - ['nn.lamda']
+          - ['nn.x_cand_input']
+          attr_a:
+          - nn.layer_width
+          - nn.encoded_history_dim
+          attr_b:
+          - nn.max_history_input
+          post:
+          - - gp_af
+            - lamda
+            - nn.learning_rate
+          - - objective.id
+            - bo_seed
 templates:
   basic_1d:
     description: Basic 1D experiment template

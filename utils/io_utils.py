@@ -1,6 +1,8 @@
 import json
 import os
 import random
+import sys
+import traceback
 
 
 def safe_issubclass(obj, parent):
@@ -35,4 +37,10 @@ def save_json(data, fname, **kwargs):
 
 def load_json(fname, **kwargs):
     with open(fname, 'r') as json_file:
-        return json.load(json_file, **kwargs)
+        try:
+            return json.load(json_file, **kwargs)
+        except json.JSONDecodeError as e:
+            print(f"Failed to decode JSON from file {fname}.\\Error message:\n",
+                  file=sys.stderr)
+            traceback.print_exception(type(e), e, e.__traceback__, file=sys.stderr)
+            exit(66)

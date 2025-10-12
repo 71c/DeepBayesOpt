@@ -186,13 +186,19 @@ else
         # Handle GPU errors the same way as CUDA unavailable errors
         handle_gpu_error_and_exit "$new_err
 GPU-related runtime error detected. Requeuing job." "GPU runtime error, Requeuing job"
-    elif [ "$is_exit_code_1_or_2" = true ]; then
+    elif [ "$is_exit_code_1_or_2" = true ] && [ "$is_gpu_error" = false ]; then
         new_err="$new_err
 This is likely a user error. Not requeuing.
 Please check ${fail_name}.err and ${fail_name}.out for details.
 Canceling the job array ${SLURM_ARRAY_JOB_ID}_*."
         rm -f "$attempt_file"
         subject="Canceling job array"
+    elif [ "$exit_code" -eq 66 ] && [ "$is_gpu_error" = false ]; then
+        new_err="$new_err
+This is likely a JSON decode error. Not requeuing.
+Please check ${fail_name}.err and ${fail_name}.out for details."
+        rm -f "$attempt_file"
+        subject="JSON decode error"
     else
         requeue_job
         subject="Requeuing job"
