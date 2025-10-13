@@ -255,7 +255,7 @@ To add a new parameter to the experiments, you should at least add to `config/tr
 To add a new NN training parameter to the experiments,
 you will need to do the following:
 - Add the parameter to the function `get_cmd_options_train_acqf` in `train_acqf.py`
-- Modify the function `_parse_af_train_cmd_args` in `nn_af/acquisition_function_net_save_utils.py` as appropriate to parse the new parameter.
+- Modify the function `_parse_af_train_cmd_args` in `nn_af/acquisition_function_net_save_utils.py` as appropriate (only if needed) to parse the new parameter.
 - Add the parameter to `_get_run_train_parser` in `nn_af/acquisition_function_net_save_utils.py`.
 ### Adding a NN architecture parameter
 If the NN training parameter is specifically a NN architecture parameter, then you will also need to modify `_get_model` in `nn_af/acquisition_function_net_save_utils.py`.
