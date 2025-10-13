@@ -137,11 +137,14 @@ def forward(self, x_hist, y_hist, x_cand, acqf_params_dict=None, acqf_params=Non
 
 ## Dataset and Training Integration
 
-### 1. Dataset Parameter Dictionary Creation
+### 1. Function Samples Dataset GP Posterior Computation
+
+**Key Insight:** For training datasets, we need to fit GPs to the **original function samples** from `FunctionSamplesDataset`, not to the sampled acquisition history. This is because:
+
+1. **Training**: Each acquisition dataset item is derived from a function sample, and we want the GP posterior from the **entire function** for the NN to learn optimal acquisition behavior
+2. **BO loops**: We fit MAP GP to the **evaluation history** to get the posterior at candidate points
 
 **Location:** `nn_af/train_acquisition_function_net.py`
-
-Add preprocessing step to convert tensor-based `acqf_params` to dictionary format and compute GP posterior when enabled:
 
 ```python
 def train_acquisition_function_net(nn_model, train_dataset, ...):
@@ -173,51 +176,185 @@ def _nn_expects_param_dict(nn_model) -> bool:
     return False
 
 def _convert_dataset_to_param_dict(dataset, nn_model, verbose=False):
-    """Convert acqf_params tensor to dictionary format and add GP posterior if needed"""
+    """Convert acqf_params tensor to dictionary format and add GP posterior if needed.
+    
+    This handles both fixed datasets (where items can be modified in-place) and
+    sampled datasets (where items are generated on-the-fly) by using a wrapper class.
+    """
     from botorch.fit import fit_gpytorch_mll
     from gpytorch.mlls import ExactMarginalLogLikelihood
     from utils.utils import get_gp
     
     if verbose:
-        print(f"Converting dataset to parameter dictionary format for {len(dataset)} items...")
+        if dataset.data_is_fixed:
+            print(f"Converting fixed dataset to parameter dictionary format for {len(dataset)} items...")
+        else:
+            print(f"Creating parameter dictionary wrapper for sampled dataset...")
     
     # Get model configuration
     af_body = nn_model.base_model.af_body if hasattr(nn_model, 'base_model') else nn_model.af_body
     gp_routing = getattr(af_body, 'param_routing', {}).get("gp_posterior", None)
     
-    # Create copy if dataset has models to preserve original
-    if dataset.has_models:
-        dataset = dataset.copy_with_new_size(None)
+    if dataset.data_is_fixed:
+        # For fixed datasets: modify items in-place (original approach)
+        # Create copy if dataset has models to preserve original
+        if dataset.has_models:
+            dataset = dataset.copy_with_new_size(None)
+        
+        for item in (tqdm(dataset) if verbose else dataset):
+            # Start building parameter dictionary
+            param_dict = {}
+            
+            # Add GP posterior if routing is specified (enabled)
+            if gp_routing is not None:
+                # **CRITICAL**: For training, fit GP to ORIGINAL function samples, not acquisition history
+                gp_model = _fit_gp_to_function_samples(item)
+                with torch.no_grad():
+                    posterior = gp_model.posterior(item.x_cand)
+                    mu = posterior.mean.squeeze(-1)  # (n_cand,)
+                    log_sigma = posterior.variance.sqrt().log().squeeze(-1)  # (n_cand,)
+                    gp_posterior = torch.stack([mu, log_sigma], dim=-1)  # (n_cand, 2)
+                param_dict["gp_posterior"] = gp_posterior
+            
+            # Add existing acqf_params as default type (for lambda, cost, etc.)
+            if hasattr(item, 'acqf_params') and item.acqf_params is not None:
+                param_dict["lambda"] = item.acqf_params  # Assume existing params are lambda/cost
+            
+            # Replace acqf_params with dictionary
+            item.acqf_params_dict = param_dict
+            item.acqf_params = None  # Clear old tensor format for clarity
+        
+        return dataset
+    else:
+        # For sampled datasets: use wrapper class that converts on-the-fly
+        return ParamDictDatasetWrapper(dataset, gp_routing, verbose)
+
+class ParamDictDatasetWrapper:
+    """Wrapper for sampled datasets that converts acqf_params to dictionary format on-the-fly.
     
-    for item in (tqdm(dataset) if verbose else dataset):
-        # Start building parameter dictionary
-        param_dict = {}
+    This class wraps acquisition datasets that generate items dynamically (data_is_fixed=False)
+    and converts acqf_params to the new parameter dictionary format during iteration.
+    It preserves all original dataset properties and methods while adding GP posterior computation.
+    """
+    def __init__(self, base_dataset, gp_routing, verbose=False):
+        self.base_dataset = base_dataset
+        self.gp_routing = gp_routing
+        self.verbose = verbose
         
-        # Add GP posterior if routing is specified (enabled)
-        if gp_routing is not None:
-            # Fit GP model and compute posterior
-            gp_model = _fit_gp_model_for_item(item)
-            with torch.no_grad():
-                posterior = gp_model.posterior(item.x_cand)
-                mu = posterior.mean.squeeze(-1)  # (n_cand,)
-                log_sigma = posterior.variance.sqrt().log().squeeze(-1)  # (n_cand,)
-                gp_posterior = torch.stack([mu, log_sigma], dim=-1)  # (n_cand, 2)
-            param_dict["gp_posterior"] = gp_posterior
-        
-        # Add existing acqf_params as default type (for lambda, cost, etc.)
-        if hasattr(item, 'acqf_params') and item.acqf_params is not None:
-            param_dict["lambda"] = item.acqf_params  # Assume existing params are lambda/cost
-        
-        # Replace acqf_params with dictionary
-        item.acqf_params_dict = param_dict
-        item.acqf_params = None  # Clear old tensor format for clarity
+        # Forward all attributes to the base dataset
+        self.__dict__.update({
+            attr: getattr(base_dataset, attr) 
+            for attr in dir(base_dataset) 
+            if not attr.startswith('_') and attr not in ['__iter__']
+        })
     
-    return dataset
+    def __getattr__(self, name):
+        """Forward any missing attributes to the base dataset"""
+        return getattr(self.base_dataset, name)
+    
+    def __iter__(self):
+        """Iterate over base dataset and convert items to parameter dictionary format"""
+        for item in self.base_dataset:
+            # Start building parameter dictionary
+            param_dict = {}
+            
+            # Add GP posterior if routing is specified (enabled)
+            if self.gp_routing is not None:
+                # **CRITICAL**: For training, fit GP to ORIGINAL function samples, not acquisition history
+                gp_model = _fit_gp_to_function_samples(item)
+                with torch.no_grad():
+                    posterior = gp_model.posterior(item.x_cand)
+                    mu = posterior.mean.squeeze(-1)  # (n_cand,)
+                    log_sigma = posterior.variance.sqrt().log().squeeze(-1)  # (n_cand,)
+                    gp_posterior = torch.stack([mu, log_sigma], dim=-1)  # (n_cand, 2)
+                param_dict["gp_posterior"] = gp_posterior
+            
+            # Add existing acqf_params as default type (for lambda, cost, etc.)
+            if hasattr(item, 'acqf_params') and item.acqf_params is not None:
+                param_dict["lambda"] = item.acqf_params  # Assume existing params are lambda/cost
+            
+            # Create new item with parameter dictionary
+            # Use the same class as the original item for consistency
+            new_item = type(item)(
+                item.x_hist, item.y_hist, item.x_cand, item.vals_cand,
+                model=getattr(item, '_model', None),
+                model_params=getattr(item, 'model_params', None),
+                give_improvements=item.give_improvements
+            )
+            
+            # Add the parameter dictionary
+            new_item.acqf_params_dict = param_dict
+            new_item.acqf_params = None  # Clear old tensor format for clarity
+            
+            yield new_item
+    
+    def copy_with_new_size(self, size=None):
+        """Create a copy with new size, preserving the wrapper"""
+        base_copy = self.base_dataset.copy_with_new_size(size)
+        return ParamDictDatasetWrapper(base_copy, self.gp_routing, self.verbose)
+    
+    def random_split(self, lengths):
+        """Split the dataset while preserving the wrapper"""
+        base_splits = self.base_dataset.random_split(lengths)
+        return [ParamDictDatasetWrapper(split, self.gp_routing, self.verbose) 
+                for split in base_splits]
+
+def _fit_gp_to_function_samples(acquisition_item):
+    """Fit GP to original function samples, preserving original GP for non-GP datasets"""
+    # For GP datasets: use the original underlying GP model if available
+    if hasattr(acquisition_item, 'model') and acquisition_item.model is not None:
+        # Return the original GP model - this preserves the "true" GP statistics
+        return acquisition_item.model
+    
+    # For non-GP datasets (logistic regression, HPO-B): fit MAP GP to function samples
+    # Get the original function samples from the acquisition dataset item
+    if hasattr(acquisition_item, 'function_sample'):
+        function_x = acquisition_item.function_sample.x_values
+        function_y = acquisition_item.function_sample.y_values
+    else:
+        # Fallback: construct from x_hist + x_cand and their function values
+        # This requires access to the original function evaluation
+        raise NotImplementedError("Need access to original function samples for non-GP datasets")
+    
+    # Fit MAP GP with RBF kernel to the function samples
+    gp_model = _create_map_gp(function_x, function_y)
+    _fit_gp_map(gp_model, function_x, function_y)
+    return gp_model
+
+def _create_map_gp(train_x, train_y):
+    """Create GP model for MAP fitting"""
+    from utils.utils import get_gp, get_kernel
+    # Use RBF kernel for MAP fitting
+    kernel = get_kernel(
+        dimension=train_x.shape[-1],
+        kernel="RBF",
+        add_priors=False,  # MAP fitting without priors
+        lengthscale=None,  # Let it be learned
+        device=train_x.device
+    )
+    return get_gp(
+        dimension=train_x.shape[-1],
+        observation_noise=False,
+        covar_module=kernel,
+        device=train_x.device,
+        outcome_transform=None
+    )
+
+def _fit_gp_map(gp_model, train_x, train_y):
+    """Fit GP using MAP estimation"""
+    from botorch.fit import fit_gpytorch_mll
+    from gpytorch.mlls import ExactMarginalLogLikelihood
+    
+    gp_model.set_train_data(train_x, train_y, strict=False)
+    mll = ExactMarginalLogLikelihood(gp_model.likelihood, gp_model)
+    fit_gpytorch_mll(mll)
 ```
 
 ## Bayesian Optimization Integration
 
 ### 1. Modify `NNAcquisitionOptimizer`
+
+**Key Insight:** For BO loops, we fit MAP GP to the **evaluation history** (`self.x`, `self.y`) to get the posterior at candidate points. This is different from training where we use the entire function samples.
 
 ```python
 class NNAcquisitionOptimizer:
@@ -232,7 +369,8 @@ class NNAcquisitionOptimizer:
             gp_routing = getattr(af_body, 'param_routing', {}).get("gp_posterior", None)
             
             if gp_routing is not None:
-                gp_model = self._fit_gp_for_posterior()
+                # **CRITICAL**: For BO, fit GP to EVALUATION HISTORY, not function samples
+                gp_model = self._fit_gp_to_evaluation_history()
                 return AcquisitionFunctionNetModelWithParamDict(
                     self.model, self.x.to(nn_device), y.to(nn_device), gp_model=gp_model
                 )
@@ -245,6 +383,13 @@ class NNAcquisitionOptimizer:
             return AcquisitionFunctionNetModel(
                 self.model, self.x.to(nn_device), y.to(nn_device)
             )
+    
+    def _fit_gp_to_evaluation_history(self):
+        """Fit MAP GP to the current evaluation history"""
+        y = self.y if self.maximize else -self.y
+        gp_model = _create_map_gp(self.x, y)
+        _fit_gp_map(gp_model, self.x, y)
+        return gp_model
 
 class AcquisitionFunctionNetModelWithParamDict(AcquisitionFunctionNetModel):
     def __init__(self, model, train_X, train_Y, gp_model=None):
@@ -344,11 +489,44 @@ architecture:
         values: ["final_only", "local_only", "local_and_final"]
 ```
 
-## Backwards Compatibility
+## Dataset-Specific GP Handling
+
+### 1. GP Datasets: Preserving Original Statistics
+
+**Critical Requirement:** When the original dataset is GP-based (`dataset_type: gp`), we must preserve the **original GP model** for computing GP statistics, while also providing the **MAP-fitted GP posterior** as input to the neural network.
+
+```python
+def _fit_gp_to_function_samples(acquisition_item):
+    """Fit GP to original function samples, preserving original GP for non-GP datasets"""
+    # For GP datasets: use the original underlying GP model if available
+    if hasattr(acquisition_item, 'model') and acquisition_item.model is not None:
+        # Return the original GP model - this preserves the "true" GP statistics
+        return acquisition_item.model
+    
+    # For non-GP datasets: fit MAP GP to function samples  
+    # ... (as shown above)
+```
+
+**Key Points:**
+1. **GP Datasets**: Use the original GP model, which maintains the exact GP that generated the function samples
+2. **Non-GP Datasets**: Fit MAP GP with RBF kernel to the function samples
+3. **BO Loops**: Always fit MAP GP to evaluation history regardless of original dataset type
+
+### 3. Dual GP Usage Pattern
+
+For GP datasets, this creates a **dual GP usage pattern**:
+
+1. **Original GP Model**: Used for computing "true" GP statistics (Expected Improvement, UCB, etc.) for comparison and evaluation
+2. **MAP-fitted GP Posterior**: Used as input features to the neural network acquisition function
+
+This allows the NN to learn from GP posterior information while preserving the ability to compute exact GP-based acquisition function values for comparison.
+
+### 2. Backward Compatibility
 
 - **Existing tensor-based `acqf_params` still works**: Forward method handles both `acqf_params` and `acqf_params_dict`
 - **Existing `acqf_params_input` still works**: Used when parameter routing dictionary is not specified
 - **Lambda/cost parameters preserved**: Existing lambda and cost parameters work without changes
+- **Original GP statistics preserved**: GP datasets continue to use original GP models for statistical evaluation
 - **Gradual migration**: Can add parameter types incrementally without breaking existing functionality
 
 ## Implementation Plan
@@ -402,11 +580,26 @@ python run_train.py \
 
 ## Key Advantages of This Approach
 
-1. **Maximum flexibility**: Any parameter type can be routed to any combination of network parts
-2. **Clean separation**: Each parameter type is handled independently 
-3. **Extensible**: Adding new parameter types requires no hardcoded changes
-4. **Backward compatible**: Existing lambda/cost parameters work unchanged
-5. **Simple configuration**: Flat YAML/CLI structure despite powerful internal dictionary handling
-6. **Type-aware**: Network understands semantic meaning of different parameter types
+### 1. Flexible Dataset Handling
+- **Fixed datasets**: Items modified in-place for efficiency (preserves memory and allows caching)
+- **Sampled datasets**: Wrapper class converts items on-the-fly without breaking the sampling pattern
+- **Transparent operation**: The wrapper perfectly mimics the original dataset interface
+- **Memory efficient**: No need to pre-compute GP posteriors for infinite/large datasets
 
-This dictionary-based approach provides maximum flexibility while maintaining a clean, extensible architecture.
+### 2. Architecture Flexibility
+- **Maximum routing flexibility**: Any parameter type can be routed to any combination of network parts
+- **Clean separation**: Each parameter type is handled independently 
+- **Extensible**: Adding new parameter types requires no hardcoded changes
+- **Type-aware**: Network understands semantic meaning of different parameter types
+
+### 3. Backward Compatibility
+- **Existing lambda/cost parameters work unchanged**: All current functionality preserved
+- **Gradual migration**: Can add parameter types incrementally without breaking existing functionality
+- **Simple configuration**: Flat YAML/CLI structure despite powerful internal dictionary handling
+
+### 4. GP Handling Robustness
+- **Dataset-aware GP fitting**: Uses original GP for GP datasets, MAP fitting for others
+- **Dual GP usage**: Preserves original GP statistics while providing NN with GP posterior features
+- **Efficient computation**: GP fitting happens on-demand during iteration, not pre-computed
+
+This hybrid approach (in-place modification + wrapper class) handles the diversity of dataset types in the codebase while providing maximum flexibility and maintaining a clean, extensible architecture.
