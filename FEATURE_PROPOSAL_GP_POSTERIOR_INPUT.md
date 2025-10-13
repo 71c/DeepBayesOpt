@@ -28,105 +28,50 @@ When `input_gp_posterior=True`, the implementation will **always use fitted RBF 
 
 #### 1.1 New Architecture Parameter
 
-Add a new boolean parameter `input_gp_posterior` to the **acquisition function head** classes that control whether the NN expects GP posterior inputs.
+Add a new boolean parameter `input_gp_posterior` to `TwoPartAcquisitionFunctionNet` to control whether the NN expects GP posterior inputs.
 
-**Key Design Decision:** The GP posterior (μ, ln(σ)) represents point-wise statistics about individual candidates and should be handled by the **head** (final MLP), not the body. The body extracts features from (x_hist, y_hist, x_cand), while the head uses those features plus optional per-candidate statistics to compute the final acquisition value.
+**Key Design Decision:** The GP posterior (μ, ln(σ)) represents point-wise statistics about individual candidates. All logic for handling GP posterior is contained entirely within `TwoPartAcquisitionFunctionNet` - the head classes remain completely unchanged. This keeps the design maximally simple.
 
 **Affected Classes:**
-- `AcquisitionFunctionHead` (abstract base class)
-- `AcquisitionFunctionNetFinalMLP` (concrete implementation)
-- `AcquisitionFunctionNetFinalMLPSoftmaxExponentiate` (concrete implementation)
+- `TwoPartAcquisitionFunctionNet` - stores the flag, adjusts head input dimension, and handles concatenation
 
-**Changes to `AcquisitionFunctionHead`:**
-```python
-class AcquisitionFunctionHead(nn.Module, SaveableObject):
-    @property
-    @abstractmethod
-    def input_gp_posterior(self) -> bool:
-        """Returns whether this head expects GP posterior (mu, log_sigma) as input"""
-        pass
-```
+**Head classes require NO changes:**
+- `AcquisitionFunctionHead` - no changes
+- `AcquisitionFunctionNetFinalMLP` - no changes
+- `AcquisitionFunctionNetFinalMLPSoftmaxExponentiate` - no changes
 
-**Changes to `AcquisitionFunctionNetFinalMLP.__init__`:**
+#### 1.2 Changes to `TwoPartAcquisitionFunctionNet`
+
+**Changes to `TwoPartAcquisitionFunctionNet.__init__`:**
 - Add parameter: `input_gp_posterior: bool = False`
 - Store as buffer: `self.register_buffer("input_gp_posterior", torch.as_tensor(input_gp_posterior))`
-- Adjust `input_dim` to account for 2 additional features when `input_gp_posterior=True`:
+- Adjust the `input_dim` passed to head to account for GP posterior features:
   ```python
   def __init__(self,
-               input_dim: int,
-               hidden_dims: Sequence[int]=[256, 64],
-               output_dim=1,
-               activation="relu",
-               layer_norm_before_end=False,
-               layer_norm_at_end=False,
-               dropout=None,
+               af_body: AcquisitionFunctionBody,
+               af_head: Type[AcquisitionFunctionHead],
+               af_head_init_params: Dict[str, Any],
                input_gp_posterior: bool = False):  # NEW parameter
       super().__init__()
 
-      # Adjust input dimension if GP posterior is expected
-      effective_input_dim = input_dim + (2 if input_gp_posterior else 0)
+      self.af_body = af_body
 
-      self.dense = Dense(effective_input_dim,  # Use adjusted dimension
-                         hidden_dims,
-                         output_dim,
-                         activation=activation,
-                         activation_at_end=False,
-                         layer_norm_before_end=layer_norm_before_end,
-                         layer_norm_at_end=False,
-                         dropout=dropout,
-                         dropout_at_end=False)
-
-      self.register_buffer("_input_dim", torch.as_tensor(input_dim))
-      self.register_buffer("_output_dim", torch.as_tensor(output_dim))
-      self.register_buffer("layer_norm_at_end", torch.as_tensor(layer_norm_at_end))
+      # Store the flag
       self.register_buffer("input_gp_posterior", torch.as_tensor(input_gp_posterior))
+
+      # Adjust input_dim for head if GP posterior will be concatenated
+      head_input_dim = af_body.features_dim + (2 if input_gp_posterior else 0)
+
+      # Create the head with adjusted input_dim
+      self.af_head = af_head(
+          input_dim=head_input_dim,
+          **af_head_init_params
+      )
   ```
-
-**Changes to `AcquisitionFunctionNetFinalMLP.forward`:**
-- Add optional parameters: `gp_posterior_mu: Optional[Tensor] = None`, `gp_posterior_log_sigma: Optional[Tensor] = None`
-- Add validation logic:
-  ```python
-  def forward(self, features,
-              x_hist, y_hist, x_cand,
-              hist_mask=None, cand_mask=None, stdvs=None,
-              gp_posterior_mu: Optional[Tensor] = None,  # NEW
-              gp_posterior_log_sigma: Optional[Tensor] = None,  # NEW
-              **other_kwargs) -> Tensor:
-      # Validate GP posterior inputs
-      if self.input_gp_posterior:
-          if gp_posterior_mu is None or gp_posterior_log_sigma is None:
-              raise ValueError(
-                  "gp_posterior_mu and gp_posterior_log_sigma must be provided "
-                  "when input_gp_posterior=True")
-          # Concatenate GP posterior to features
-          # features shape: (*, n_cand, input_dim)
-          # gp_posterior_mu shape: (*, n_cand, 1)
-          # gp_posterior_log_sigma shape: (*, n_cand, 1)
-          features = torch.cat([features, gp_posterior_mu, gp_posterior_log_sigma], dim=-1)
-      else:
-          if gp_posterior_mu is not None or gp_posterior_log_sigma is not None:
-              raise ValueError(
-                  "gp_posterior_mu and gp_posterior_log_sigma must be None "
-                  "when input_gp_posterior=False")
-
-      # Continue with existing logic
-      acquisition_values = self.dense(features)
-      # ... rest of existing code ...
-  ```
-
-**Similar changes for `AcquisitionFunctionNetFinalMLPSoftmaxExponentiate`:**
-- Add the same `input_gp_posterior` parameter to `__init__`
-- Adjust `input_dim` calculation
-- Add the same validation and concatenation logic in `forward()`
-
-#### 1.2 Propagate Changes Through Two-Part Architecture
-
-**Changes to `TwoPartAcquisitionFunctionNet.__init__`:**
-- No changes needed - the head's `input_gp_posterior` is already encapsulated in `af_head_init_params`
 
 **Changes to `TwoPartAcquisitionFunctionNet.forward`:**
 - Add optional parameters: `gp_posterior_mu: Optional[Tensor] = None`, `gp_posterior_log_sigma: Optional[Tensor] = None`
-- Pass these parameters through to `self.af_head.forward()` call:
+- Concatenate GP posterior to features before passing to head:
   ```python
   def forward(self, x_hist:Tensor, y_hist:Tensor, x_cand:Tensor,
               acqf_params:Optional[Tensor]=None,
@@ -141,12 +86,28 @@ class AcquisitionFunctionHead(nn.Module, SaveableObject):
       features = self.af_body(x_hist, y_hist, x_cand,
                               acqf_params=acqf_params,
                               hist_mask=hist_mask, cand_mask=cand_mask)
+
+      # NEW: Concatenate GP posterior if expected
+      if self.input_gp_posterior:
+          if gp_posterior_mu is None or gp_posterior_log_sigma is None:
+              raise ValueError(
+                  "gp_posterior_mu and gp_posterior_log_sigma must be provided "
+                  "when input_gp_posterior=True")
+          # Concatenate GP posterior to features
+          # features shape: (*, n_cand, features_dim)
+          # gp_posterior_mu shape: (*, n_cand, 1)
+          # gp_posterior_log_sigma shape: (*, n_cand, 1)
+          features = torch.cat([features, gp_posterior_mu, gp_posterior_log_sigma], dim=-1)
+      else:
+          if gp_posterior_mu is not None or gp_posterior_log_sigma is not None:
+              raise ValueError(
+                  "gp_posterior_mu and gp_posterior_log_sigma must be None "
+                  "when input_gp_posterior=False")
+
       # batch_shape x n_cand x output_dim
       return self.af_head(features, x_hist, y_hist, x_cand,
                           hist_mask=hist_mask, cand_mask=cand_mask,
                           stdvs=stdvs,
-                          gp_posterior_mu=gp_posterior_mu,  # NEW
-                          gp_posterior_log_sigma=gp_posterior_log_sigma,  # NEW
                           **kwargs)
   ```
 
@@ -221,14 +182,14 @@ It should be defined in `train_acquisition_function_net.py` and also either dupl
 ```python
 def _nn_expects_gp_posterior_input(nn_model: AcquisitionFunctionNet) -> bool:
     """Check if NN model expects GP posterior (mu, log_sigma) as input"""
-    # Navigate through the model hierarchy to find the head
+    # Navigate through the model hierarchy to find TwoPartAcquisitionFunctionNet
     if hasattr(nn_model, 'base_model'):  # GittinsAcquisitionFunctionNet or ExpectedImprovementAcquisitionFunctionNet
         model = nn_model.base_model
     else:
         model = nn_model
 
-    if hasattr(model, 'af_head'):  # TwoPartAcquisitionFunctionNet
-        return model.af_head.input_gp_posterior
+    if hasattr(model, 'input_gp_posterior'):  # TwoPartAcquisitionFunctionNet
+        return bool(model.input_gp_posterior)
 
     return False
 ```

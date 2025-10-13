@@ -731,6 +731,15 @@ def _get_run_train_parser():
         default='max'
     )
     nn_architecture_group.add_argument(
+        '--input_gp_posterior',
+        action='store_true',
+        help=('Whether to input GP posterior (mu, log_sigma) to the NN final MLP. '
+            'If enabled, a GP will be fitted using MAP to the history, and '
+            'the posterior mean and log-standard-deviation at each candidate '
+            'point will be concatenated with the features before the final MLP. '
+            'Default is False.')
+    )
+    nn_architecture_group.add_argument(
         '--dropout',
         type=float,
         help='Dropout rate. Default is None.'

@@ -87,6 +87,8 @@ parameters:
         values: [false, true]
       max_history_input:
         values: [null, 4]
+      input_gp_posterior:
+        values: [false, true]
       architecture: # TODO: Will change/improve this in the future
         values:
         - value: pointnet
