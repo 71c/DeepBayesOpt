@@ -451,6 +451,23 @@ _POINTNET_X_CAND_INPUT_OPTIONS = {
     )
 }
 
+POINTNET_ACQF_PARAMS_INPUT_DEFAULT = 'final_only'
+
+POINTNET_ACQF_PARAMS_INPUT_OPTIONS = {
+    "local_and_final": dict(
+        input_acqf_params_to_local_nn=True,
+        input_acqf_params_to_final_mlp=True
+    ),
+    "local_only": dict(
+        input_acqf_params_to_local_nn=True,
+        input_acqf_params_to_final_mlp=False
+    ),
+    "final_only": dict(
+        input_acqf_params_to_local_nn=False,
+        input_acqf_params_to_final_mlp=True
+    )
+}
+
 
 def _get_model(args: argparse.Namespace, dimension:Optional[int]=None):
     architecture = args.architecture
@@ -481,12 +498,24 @@ def _get_model(args: argparse.Namespace, dimension:Optional[int]=None):
             af_body_init_params_base['max_history_input'] = args.max_history_input
         
         try:
-            more_params = _POINTNET_X_CAND_INPUT_OPTIONS[args.x_cand_input]
+            extra_params = _POINTNET_X_CAND_INPUT_OPTIONS[args.x_cand_input]
         except KeyError:
             raise ValueError(
                 f"Unknown x_cand_input option '{args.x_cand_input}' for PointNet. "
                 f"Available options are: {list(_POINTNET_X_CAND_INPUT_OPTIONS)}")
-        af_body_init_params = dict(**af_body_init_params_base, **more_params)
+        
+        if args.acqf_params_input == POINTNET_ACQF_PARAMS_INPUT_DEFAULT:
+            args.acqf_params_input = None
+        if args.acqf_params_input is not None:
+            try:
+                extra_params_acqf = POINTNET_ACQF_PARAMS_INPUT_OPTIONS[args.acqf_params_input]
+            except KeyError:
+                raise ValueError(
+                    f"Unknown acqf_params_input option '{args.acqf_params_input}' for PointNet. "
+                    f"Available options are: {list(POINTNET_ACQF_PARAMS_INPUT_OPTIONS)}")
+            extra_params = dict(**extra_params, **extra_params_acqf)
+
+        af_body_init_params = dict(**af_body_init_params_base, **extra_params)
     elif architecture == "transformer":
         body_cls = AcquisitionFunctionBodyTransformerNP
         af_body_init_params = dict(
@@ -700,6 +729,13 @@ def _get_run_train_parser():
              'Default is "local_and_final".'
     )
     nn_architecture_group.add_argument(
+        '--acqf_params_input',
+        type=str,
+        choices=list(POINTNET_ACQF_PARAMS_INPUT_OPTIONS),
+        help=('(Only for PointNet) How to use the acquisition function parameters '
+              f'as input to the NN. Default is "{POINTNET_ACQF_PARAMS_INPUT_DEFAULT}".'),
+    )
+    nn_architecture_group.add_argument(
         '--encoded_history_dim',
         type=int,
         help=('(Only for PointNet) The feature dimension of the input to the NN. '
@@ -729,15 +765,6 @@ def _get_run_train_parser():
         help=('(Only for PointNet) The pooling method to use in the history encoder. '
               'Default is "max".'),
         default='max'
-    )
-    nn_architecture_group.add_argument(
-        '--input_gp_posterior',
-        action='store_true',
-        help=('Whether to input GP posterior (mu, log_sigma) to the NN final MLP. '
-            'If enabled, a GP will be fitted using MAP to the history, and '
-            'the posterior mean and log-standard-deviation at each candidate '
-            'point will be concatenated with the features before the final MLP. '
-            'Default is False.')
     )
     nn_architecture_group.add_argument(
         '--dropout',

@@ -87,8 +87,6 @@ parameters:
         values: [false, true]
       max_history_input:
         values: [null, 4]
-      input_gp_posterior:
-        values: [false, true]
       architecture: # TODO: Will change/improve this in the future
         values:
         - value: pointnet
@@ -101,6 +99,12 @@ parameters:
               - "subtract-lossy"
               - "subtract-local_only"
               - "subtract-final_only"
+            acqf_params_input:
+              values:
+              - null
+              - "local_and_final"
+              - "local_only"
+              - "final_only"
             encoded_history_dim: # This is K, the feature dimension
               values: [null] # defaults to being the same as `layer_width`
             pooling:

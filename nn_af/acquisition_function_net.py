@@ -10,6 +10,7 @@ from botorch.acquisition.acquisition import AcquisitionFunction
 from botorch.exceptions import UnsupportedError
 from botorch.utils.transforms import t_batch_mode_transform, match_batch_shape
 from abc import abstractmethod
+from nn_af.acquisition_function_net_save_utils import POINTNET_ACQF_PARAMS_INPUT_DEFAULT, POINTNET_ACQF_PARAMS_INPUT_OPTIONS
 from utils.saveable_object import SaveableObject
 from utils.utils import safe_issubclass, to_device, standardize_y_hist
 
@@ -784,6 +785,14 @@ def _get_xy_hist_and_cand(x_hist, y_hist, x_cand, hist_mask=None, include_y=True
         return xy_hist, x_hist_and_cand, mask
 
 
+_POINTNET_ACQF_PARAMS_INPUT_DEFAULT_OPTIONS = \
+    POINTNET_ACQF_PARAMS_INPUT_OPTIONS[POINTNET_ACQF_PARAMS_INPUT_DEFAULT]
+_ACQF_PARAMS_LOCAL_DEFAULT = \
+    _POINTNET_ACQF_PARAMS_INPUT_DEFAULT_OPTIONS["input_acqf_params_to_local_nn"]
+_ACQF_PARAMS_FINAL_DEFAULT = \
+    _POINTNET_ACQF_PARAMS_INPUT_DEFAULT_OPTIONS["input_acqf_params_to_final_mlp"]
+
+
 class AcquisitionFunctionBodyPointnetV1and2(
     AcquisitionFunctionBodyFixedHistoryOutputDim):
     def __init__(self,
@@ -798,6 +807,9 @@ class AcquisitionFunctionBodyPointnetV1and2(
                  input_xcand_to_final_mlp=False,
                 
                  subtract_x_cand_from_x_hist=False,
+
+                 input_acqf_params_to_local_nn=_ACQF_PARAMS_LOCAL_DEFAULT,
+                 input_acqf_params_to_final_mlp=_ACQF_PARAMS_FINAL_DEFAULT,
                  
                  activation_at_end_pointnet=True,
                  layer_norm_pointnet=False,
@@ -861,6 +873,8 @@ class AcquisitionFunctionBodyPointnetV1and2(
                               "must be True.")
         self.input_xcand_to_local_nn = input_xcand_to_local_nn
         self.input_xcand_to_final_mlp = input_xcand_to_final_mlp
+        self.input_acqf_params_to_local_nn = input_acqf_params_to_local_nn
+        self.input_acqf_params_to_final_mlp = input_acqf_params_to_final_mlp
         self.subtract_x_cand_from_x_hist = subtract_x_cand_from_x_hist
 
         if not (isinstance(n_acqf_params, int) and n_acqf_params >= 0):
@@ -869,7 +883,8 @@ class AcquisitionFunctionBodyPointnetV1and2(
         self._n_hist_out = n_hist_out
 
         input_dim = dimension + n_hist_out + int(include_best_y) * n_hist_out \
-            + (dimension + n_acqf_params if input_xcand_to_local_nn else 0)
+            + (dimension if input_xcand_to_local_nn else 0) \
+            + (n_acqf_params if input_acqf_params_to_local_nn else 0)
 
         history_encoder = "pointnet" # Temporary
         if history_encoder == "pointnet":
@@ -893,7 +908,8 @@ class AcquisitionFunctionBodyPointnetV1and2(
                     kwargs_list, use_local_features=True)
 
             self._features_dim = encoded_history_dim + \
-                (dimension + n_acqf_params if input_xcand_to_final_mlp else 0)
+                (dimension if input_xcand_to_final_mlp else 0) \
+                + (n_acqf_params if input_acqf_params_to_final_mlp else 0)
         self.dimension = dimension
         self.include_best_y = include_best_y
         self.subtract_best_y = subtract_best_y
@@ -960,8 +976,13 @@ class AcquisitionFunctionBodyPointnetV1and2(
         else:
             must_truncate_history_length = False
         
-        if self.input_xcand_to_local_nn or self.subtract_x_cand_from_x_hist \
-            or must_truncate_history_length:
+        input_xcand_local = self.input_xcand_to_local_nn
+        input_acqf_params_local = self.n_acqf_params > 0 and \
+            self.input_acqf_params_to_local_nn
+        input_local = input_xcand_local or input_acqf_params_local \
+            or self.subtract_x_cand_from_x_hist or must_truncate_history_length
+        
+        if input_local:
             # shape (*, n_cand, n_hist, dimension)
             x_cand_expanded = expand_dim(x_cand.unsqueeze(-2), -2, n_hist)
 
@@ -996,18 +1017,17 @@ class AcquisitionFunctionBodyPointnetV1and2(
                 hist_mask_expanded, -2,
                 topk_indices.expand(*topk_indices.shape[:-1], hist_mask_expanded.size(-1)))
 
-        if self.input_xcand_to_local_nn or self.subtract_x_cand_from_x_hist \
-            or must_truncate_history_length:
+        if input_local:
             inputs = [
                 x_hist_expanded - x_cand_expanded \
                     if self.subtract_x_cand_from_x_hist else x_hist_expanded,
                 y_hist_expanded]
-            if self.input_xcand_to_local_nn:
-                if self.n_acqf_params > 0:
-                    # shape (*, n_cand, n_hist, n_acqf_params)
-                    acqf_params_expanded = expand_dim(
-                        acqf_params.unsqueeze(-2), -2, n_hist)
-                    inputs = [acqf_params_expanded] + inputs
+            if input_acqf_params_local:
+                # shape (*, n_cand, n_hist, n_acqf_params)
+                acqf_params_expanded = expand_dim(
+                    acqf_params.unsqueeze(-2), -2, n_hist)
+                inputs = [acqf_params_expanded] + inputs
+            if input_xcand_local:
                 inputs = [x_cand_expanded] + inputs
             
             # shape (*, n_cand, n_hist, input_dim)
@@ -1025,12 +1045,14 @@ class AcquisitionFunctionBodyPointnetV1and2(
             # shape (*, n_cand, encoded_history_dim)
             out = expand_dim(out, -2, n_cand)
         
-        if self.input_xcand_to_final_mlp:
-            items = [x_cand]
-            if self.n_acqf_params > 0:
-                items += [acqf_params]
-            items += [out]
-            # shape (*, n_cand, dimension+n_acqf_params+encoded_history_dim)
+        add_x_cand = self.input_xcand_to_final_mlp
+        add_acqf_params = self.n_acqf_params > 0 and self.input_acqf_params_to_final_mlp
+        if add_x_cand or add_acqf_params:
+            items = [out]
+            if add_acqf_params:
+                items = [acqf_params] + items
+            if add_x_cand:
+                items = [x_cand] + items
             out = torch.cat(items, dim=-1)
 
         return out
