@@ -1,701 +1,412 @@
-# Technical Feature Proposal: GP Posterior (μ, ln(σ)) Input to Neural Network
+# Technical Feature Proposal: Flexible Acquisition Function Parameter Types
 
 ## Overview
 
-This proposal outlines the implementation of an optional feature to pass GP posterior parameters (mean μ and log-standard-deviation ln(σ)) as additional inputs to the acquisition function neural network. The GP will be fitted using Maximum A Posteriori (MAP) estimation on the evaluation history.
+This proposal outlines the implementation of a flexible system for handling different types of acquisition function parameters, starting with GP posterior parameters (mean μ and log-standard-deviation ln(σ)). The system allows arbitrary parameter types to be routed to the local NN, final MLP, or both using a generic dictionary-based approach.
+
+## Key Design Insight
+
+Instead of concatenating different parameter types into a single tensor, we use a dictionary-based approach where different parameter types can be routed independently to different parts of the network. The configuration remains flat (YAML/command-line), but internally the system uses a clean dictionary structure for maximum flexibility.
 
 ## Motivation
 
-The current neural network architecture learns acquisition functions from history (x, y) pairs without explicit uncertainty estimates. By providing the NN with GP posterior statistics (μ, ln(σ)) at each candidate point, we can potentially improve the NN's ability to:
-1. Distinguish between areas of high uncertainty and low uncertainty
-2. Better approximate acquisition functions that rely on uncertainty (e.g., Expected Improvement, UCB)
-3. Leverage both learned patterns from training and model-based uncertainty estimates during inference
+The current neural network architecture handles acquisition function parameters (like lambda for Gittins index, or lambda*cost for cost-aware optimization) as a single concatenated tensor. However, different parameter types may benefit from being routed to different parts of the network. This proposal enables:
 
-## Key Design Decision: Consistent RBF GP Models for Training
-
-When `input_gp_posterior=True`, the implementation will **always use fitted RBF GP models with default priors** for computing posterior statistics during training, regardless of the original dataset type:
-
-- **GP Datasets** (already have models): **Create a copy** of the dataset and replace models with fitted RBF GP models in the copy
-- **Non-GP Datasets** (no models): Fitted RBF GP models are **created and attached** (can modify in-place since no original models to preserve)
-
-**Rationale:** This ensures consistent GP posterior statistics across all dataset types. The NN learns to use standardized uncertainty estimates rather than dataset-specific model characteristics.
-
-**Important:** The original dataset remains unchanged - model replacement only affects the copy used during training.
+1. **Flexible routing**: GP posterior (μ, ln(σ)) to final MLP, lambda parameters to local NN, etc.
+2. **Type-aware processing**: Each parameter type is handled according to its semantic meaning
+3. **Easy extensibility**: Adding new parameter types requires no hardcoded changes
+4. **Backward compatibility**: Existing lambda/cost parameters continue to work unchanged
 
 ## Architecture Changes
 
-### 1. Neural Network Architecture (`nn_af/acquisition_function_net.py`)
+### 1. New Flexible Parameter Routing Configuration
 
-#### 1.1 New Architecture Parameter
+**Current API (backward compatible):**
+- `acqf_params_input`: `"local_only"` | `"final_only"` | `"local_and_final"` | `null`
 
-Add a new boolean parameter `input_gp_posterior` to `TwoPartAcquisitionFunctionNet` to control whether the NN expects GP posterior inputs.
-
-**Key Design Decision:** The GP posterior (μ, ln(σ)) represents point-wise statistics about individual candidates. All logic for handling GP posterior is contained entirely within `TwoPartAcquisitionFunctionNet` - the head classes remain completely unchanged. This keeps the design maximally simple.
-
-**Affected Classes:**
-- `TwoPartAcquisitionFunctionNet` - stores the flag, adjusts head input dimension, and handles concatenation
-
-**Head classes require NO changes:**
-- `AcquisitionFunctionHead` - no changes
-- `AcquisitionFunctionNetFinalMLP` - no changes
-- `AcquisitionFunctionNetFinalMLPSoftmaxExponentiate` - no changes
-
-#### 1.2 Changes to `TwoPartAcquisitionFunctionNet`
-
-**Changes to `TwoPartAcquisitionFunctionNet.__init__`:**
-- Add parameter: `input_gp_posterior: bool = False`
-- Store as buffer: `self.register_buffer("input_gp_posterior", torch.as_tensor(input_gp_posterior))`
-- Adjust the `input_dim` passed to head to account for GP posterior features:
-  ```python
-  def __init__(self,
-               af_body: AcquisitionFunctionBody,
-               af_head: Type[AcquisitionFunctionHead],
-               af_head_init_params: Dict[str, Any],
-               input_gp_posterior: bool = False):  # NEW parameter
-      super().__init__()
-
-      self.af_body = af_body
-
-      # Store the flag
-      self.register_buffer("input_gp_posterior", torch.as_tensor(input_gp_posterior))
-
-      # Adjust input_dim for head if GP posterior will be concatenated
-      head_input_dim = af_body.features_dim + (2 if input_gp_posterior else 0)
-
-      # Create the head with adjusted input_dim
-      self.af_head = af_head(
-          input_dim=head_input_dim,
-          **af_head_init_params
-      )
-  ```
-
-**Changes to `TwoPartAcquisitionFunctionNet.forward`:**
-- Add optional parameters: `gp_posterior_mu: Optional[Tensor] = None`, `gp_posterior_log_sigma: Optional[Tensor] = None`
-- Concatenate GP posterior to features before passing to head:
-  ```python
-  def forward(self, x_hist:Tensor, y_hist:Tensor, x_cand:Tensor,
-              acqf_params:Optional[Tensor]=None,
-              hist_mask:Optional[Tensor]=None,
-              cand_mask:Optional[Tensor]=None,
-              gp_posterior_mu: Optional[Tensor] = None,  # NEW
-              gp_posterior_log_sigma: Optional[Tensor] = None,  # NEW
-              **kwargs) -> Tensor:
-      # ... existing preprocessing ...
-
-      # batch_shape x n_cand x features_dim
-      features = self.af_body(x_hist, y_hist, x_cand,
-                              acqf_params=acqf_params,
-                              hist_mask=hist_mask, cand_mask=cand_mask)
-
-      # NEW: Concatenate GP posterior if expected
-      if self.input_gp_posterior:
-          if gp_posterior_mu is None or gp_posterior_log_sigma is None:
-              raise ValueError(
-                  "gp_posterior_mu and gp_posterior_log_sigma must be provided "
-                  "when input_gp_posterior=True")
-          # Concatenate GP posterior to features
-          # features shape: (*, n_cand, features_dim)
-          # gp_posterior_mu shape: (*, n_cand, 1)
-          # gp_posterior_log_sigma shape: (*, n_cand, 1)
-          features = torch.cat([features, gp_posterior_mu, gp_posterior_log_sigma], dim=-1)
-      else:
-          if gp_posterior_mu is not None or gp_posterior_log_sigma is not None:
-              raise ValueError(
-                  "gp_posterior_mu and gp_posterior_log_sigma must be None "
-                  "when input_gp_posterior=False")
-
-      # batch_shape x n_cand x output_dim
-      return self.af_head(features, x_hist, y_hist, x_cand,
-                          hist_mask=hist_mask, cand_mask=cand_mask,
-                          stdvs=stdvs,
-                          **kwargs)
-  ```
-
-**Changes to wrapper classes:**
-- `GittinsAcquisitionFunctionNet.forward`: Add the two optional GP posterior parameters and pass through to `self.base_model()`
-- `ExpectedImprovementAcquisitionFunctionNet.forward`: Add the two optional GP posterior parameters and pass through to `self.base_model()`
-
-### 2. Dataset Management (`datasets/`)
-
-Each dataset item in the acquisition dataset already has a `model` attribute that can store GP models. The implementation will leverage this existing infrastructure.
-
-**Key insight from code review:**
-- `datasets/dataset_with_models.py` already provides infrastructure for attaching models to dataset items
-- `datasets/acquisition_dataset.py` defines the `AcquisitionDataset` base class with `has_models` property
-- Training loop in `train_acquisition_function_net.py` already accesses `batch.model` when models are available
-
-#### 2.1 Pre-fit GP Models During Dataset Creation
-
-**Location:** `nn_af/train_acquisition_function_net.py` - function `train_acquisition_function_net()`
-
-Add a preprocessing step at the beginning of the function (before training loop):
-
-```python
-def train_acquisition_function_net(
-        nn_model: AcquisitionFunctionNet,
-        train_dataset: AcquisitionDataset,
-        ...
-    ):
-    # Existing parameter validation...
-
-    # NEW: Check if NN expects GP posterior input
-    nn_expects_gp_posterior = _nn_expects_gp_posterior_input(nn_model)
-
-    if nn_expects_gp_posterior:
-        # Strategy for handling GP models:
-        # For GP posterior input, we ALWAYS want to use fitted RBF MAP models,
-        # regardless of what models the dataset originally had (if any).
-        # This ensures consistent GP posterior statistics across all dataset types.
-        #
-        # Implementation:
-        # - If dataset has models: Create a copy using built-in copy_with_new_size()
-        #   and replace models in the copy
-        # - If dataset has no models: Can modify in-place (no original models to preserve)
-
-        if train_dataset.has_models:
-            # Create a copy to avoid modifying the original dataset
-            # copy_with_new_size(None) creates a copy with the same size
-            train_dataset = train_dataset.copy_with_new_size(None)
-        _replace_with_fitted_rbf_gp_models(train_dataset, verbose=verbose)
-
-        if test_dataset is not None:
-            if test_dataset.has_models:
-                test_dataset = test_dataset.copy_with_new_size(None)
-            _replace_with_fitted_rbf_gp_models(test_dataset, verbose=verbose)
-
-        if small_test_dataset is not None:
-            if small_test_dataset.has_models:
-                small_test_dataset = small_test_dataset.copy_with_new_size(None)
-            _replace_with_fitted_rbf_gp_models(small_test_dataset, verbose=verbose)
-
-    # Continue with existing training loop...
+**New Flat Configuration Format:**
+```yaml
+acqf_params_input:
+  gp_posterior: "final_only"       # GP posterior μ, ln(σ) routing
+  lambda: "local_and_final"        # lambda parameter routing (existing)
+  cost: "final_only"               # cost parameter routing (existing)
+  default: "final_only"            # default routing for unspecified types
 ```
 
-**Helper function `_nn_expects_gp_posterior_input`:**
+### 2. New Command-Line Arguments
 
-This function will be needed in multiple places:
-- `nn_af/train_acquisition_function_net.py` (for training)
-- `bayesopt/bayesopt.py` (for BO loops)
+```bash
+--gp_posterior_routing "final_only"     # Where to route GP posterior (null/unspecified = disabled)
+--param_routing_default "final_only"    # Default routing for parameter types
+```
 
-It should be defined in `train_acquisition_function_net.py` and also either duplicated or imported in `bayesopt.py`.
+### 3. Dictionary-Based Internal Structure
+
+Instead of concatenating parameters, the forward method receives:
+```python
+acqf_params_dict = {
+    "gp_posterior": tensor,  # shape: (..., 2) for μ, ln(σ)
+    "lambda": tensor,        # shape: (..., 1) for lambda values  
+    "cost": tensor,          # shape: (..., 1) for cost values
+    # ... other parameter types
+}
+```
+
+### 4. Implementation in `AcquisitionFunctionBodyPointnetV1and2`
+
+**Changes to `__init__`:**
+```python
+def __init__(self,
+             # ... existing parameters ...
+             param_routing=None,                                 # NEW: dict mapping param types to routing
+             param_routing_default="final_only",                 # NEW: default routing for unspecified types  
+             ):
+    # Store parameter routing configuration
+    self.param_routing = param_routing or {}                    # {"gp_posterior": "final_only", "lambda": "local_and_final", ...}
+    self.param_routing_default = param_routing_default
+    
+    # Calculate total dimensions for each parameter type that will be used
+    total_local_param_dim = 0
+    total_final_param_dim = 0
+    
+    # Handle GP posterior dimensions (enabled when routing is specified)
+    gp_routing = self.param_routing.get("gp_posterior", None)
+    if gp_routing is not None:
+        if gp_routing in ["local_only", "local_and_final"]:
+            total_local_param_dim += 2  # μ, ln(σ)
+        if gp_routing in ["final_only", "local_and_final"]:
+            total_final_param_dim += 2  # μ, ln(σ)
+    
+    # Handle existing acqf_params (lambda, cost, etc.) with default routing
+    if n_acqf_params > 0:
+        default_routing = param_routing_default
+        if default_routing in ["local_only", "local_and_final"]:
+            total_local_param_dim += n_acqf_params
+        if default_routing in ["final_only", "local_and_final"]:
+            total_final_param_dim += n_acqf_params
+    
+    # Calculate input dimensions
+    input_dim = dimension + n_hist_out + int(include_best_y) * n_hist_out \
+        + (dimension if input_xcand_to_local_nn else 0) \
+        + total_local_param_dim
+    
+    # Calculate features dimension for final MLP  
+    self._features_dim = encoded_history_dim + \
+        (dimension if input_xcand_to_final_mlp else 0) \
+        + total_final_param_dim
+```
+
+**Changes to `forward`:**
+```python
+def forward(self, x_hist, y_hist, x_cand, acqf_params_dict=None, acqf_params=None, hist_mask=None, cand_mask=None, **kwargs):
+    # Handle backward compatibility: convert old acqf_params tensor to dict
+    if acqf_params_dict is None and acqf_params is not None:
+        # Legacy mode: treat as default parameter type with default routing
+        acqf_params_dict = {"default": acqf_params}
+    
+    # Build local NN input components  
+    local_components = []
+    final_components = []
+    
+    if acqf_params_dict is not None:
+        for param_type, param_tensor in acqf_params_dict.items():
+            routing = self.param_routing.get(param_type, self.param_routing_default)
+            
+            if routing in ["local_only", "local_and_final"]:
+                local_components.append(param_tensor)
+            if routing in ["final_only", "local_and_final"]:
+                final_components.append(param_tensor)
+    
+    # Concatenate local parameter components for local NN
+    local_acqf_params = torch.cat(local_components, dim=-1) if local_components else None
+    
+    # ... existing local NN processing with local_acqf_params ...
+    
+    # Build final MLP inputs
+    final_items = [out]  # encoded history features
+    if final_components:
+        final_items.extend(final_components)
+    if self.input_xcand_to_final_mlp:
+        final_items.append(x_cand)
+    
+    if len(final_items) > 1:
+        out = torch.cat(final_items, dim=-1)
+    
+    return out
+```
+
+## Dataset and Training Integration
+
+### 1. Dataset Parameter Dictionary Creation
+
+**Location:** `nn_af/train_acquisition_function_net.py`
+
+Add preprocessing step to convert tensor-based `acqf_params` to dictionary format and compute GP posterior when enabled:
 
 ```python
-def _nn_expects_gp_posterior_input(nn_model: AcquisitionFunctionNet) -> bool:
-    """Check if NN model expects GP posterior (mu, log_sigma) as input"""
-    # Navigate through the model hierarchy to find TwoPartAcquisitionFunctionNet
-    if hasattr(nn_model, 'base_model'):  # GittinsAcquisitionFunctionNet or ExpectedImprovementAcquisitionFunctionNet
+def train_acquisition_function_net(nn_model, train_dataset, ...):
+    # Check if NN expects parameter dictionary format
+    if _nn_expects_param_dict(nn_model):
+        # Convert datasets to parameter dictionary format
+        train_dataset = _convert_dataset_to_param_dict(train_dataset, nn_model, verbose=verbose)
+        if test_dataset is not None:
+            test_dataset = _convert_dataset_to_param_dict(test_dataset, nn_model, verbose=verbose)
+        # ... handle small_test_dataset similarly
+    
+    # Continue with existing training loop
+```
+
+### 2. Helper Functions
+
+```python
+def _nn_expects_param_dict(nn_model) -> bool:
+    """Check if NN model expects parameter dictionary format"""
+    # Navigate to the body to check for new parameter routing system
+    if hasattr(nn_model, 'base_model'):
         model = nn_model.base_model
     else:
         model = nn_model
-
-    if hasattr(model, 'input_gp_posterior'):  # TwoPartAcquisitionFunctionNet
-        return bool(model.input_gp_posterior)
-
+    
+    if hasattr(model, 'af_body') and hasattr(model.af_body, 'param_routing'):
+        return True
+    
     return False
-```
 
-**Helper function `_replace_with_fitted_rbf_gp_models`:**
-```python
-def _replace_with_fitted_rbf_gp_models(dataset: AcquisitionDataset, verbose: bool = False):
-    """Replace dataset models with fitted RBF GP models using MAP estimation.
-
-    This modifies the dataset in-place by creating a new RBF GP model with default priors
-    for each item, fitting it to that item's history using MAP estimation, and replacing
-    any existing models with these fitted models.
-
-    The purpose is to ensure consistent GP posterior statistics across all dataset types,
-    regardless of what models (if any) the dataset originally had.
-
-    IMPORTANT: If the dataset originally has models that should be preserved, the caller
-    should pass a copy of the dataset to this function (e.g., `dataset.copy_with_new_size(None)`),
-    not the original.
-
-    Args:
-        dataset: The acquisition dataset to replace models in (will be modified in-place)
-        verbose: Whether to print progress information
-    """
+def _convert_dataset_to_param_dict(dataset, nn_model, verbose=False):
+    """Convert acqf_params tensor to dictionary format and add GP posterior if needed"""
     from botorch.fit import fit_gpytorch_mll
     from gpytorch.mlls import ExactMarginalLogLikelihood
-    from botorch.models.transforms.outcome import Standardize
     from utils.utils import get_gp
-    import warnings
-
+    
     if verbose:
-        if dataset.has_models:
-            print(f"Replacing existing models in {len(dataset)} dataset items with fitted RBF GP models using MAP estimation...")
+        print(f"Converting dataset to parameter dictionary format for {len(dataset)} items...")
+    
+    # Get model configuration
+    af_body = nn_model.base_model.af_body if hasattr(nn_model, 'base_model') else nn_model.af_body
+    gp_routing = getattr(af_body, 'param_routing', {}).get("gp_posterior", None)
+    
+    # Create copy if dataset has models to preserve original
+    if dataset.has_models:
+        dataset = dataset.copy_with_new_size(None)
+    
+    for item in (tqdm(dataset) if verbose else dataset):
+        # Start building parameter dictionary
+        param_dict = {}
+        
+        # Add GP posterior if routing is specified (enabled)
+        if gp_routing is not None:
+            # Fit GP model and compute posterior
+            gp_model = _fit_gp_model_for_item(item)
+            with torch.no_grad():
+                posterior = gp_model.posterior(item.x_cand)
+                mu = posterior.mean.squeeze(-1)  # (n_cand,)
+                log_sigma = posterior.variance.sqrt().log().squeeze(-1)  # (n_cand,)
+                gp_posterior = torch.stack([mu, log_sigma], dim=-1)  # (n_cand, 2)
+            param_dict["gp_posterior"] = gp_posterior
+        
+        # Add existing acqf_params as default type (for lambda, cost, etc.)
+        if hasattr(item, 'acqf_params') and item.acqf_params is not None:
+            param_dict["lambda"] = item.acqf_params  # Assume existing params are lambda/cost
+        
+        # Replace acqf_params with dictionary
+        item.acqf_params_dict = param_dict
+        item.acqf_params = None  # Clear old tensor format for clarity
+    
+    return dataset
+```
+
+## Bayesian Optimization Integration
+
+### 1. Modify `NNAcquisitionOptimizer`
+
+```python
+class NNAcquisitionOptimizer:
+    def get_model(self):
+        y = self.y if self.maximize else -self.y
+        nn_device = next(self.model.parameters()).device
+        
+        # Check if we need parameter dictionary format
+        if _nn_expects_param_dict(self.model):
+            # Check if GP posterior is needed
+            af_body = self.model.base_model.af_body if hasattr(self.model, 'base_model') else self.model.af_body
+            gp_routing = getattr(af_body, 'param_routing', {}).get("gp_posterior", None)
+            
+            if gp_routing is not None:
+                gp_model = self._fit_gp_for_posterior()
+                return AcquisitionFunctionNetModelWithParamDict(
+                    self.model, self.x.to(nn_device), y.to(nn_device), gp_model=gp_model
+                )
+            else:
+                return AcquisitionFunctionNetModelWithParamDict(
+                    self.model, self.x.to(nn_device), y.to(nn_device)
+                )
         else:
-            print(f"Creating and fitting RBF GP models for {len(dataset)} dataset items using MAP estimation...")
-
-    # We need to get the dimension from the first item
-    first_item = next(iter(dataset))
-    dimension = first_item.x_hist.size(-1)
-
-    n_fitted = 0
-    n_failed = 0
-
-    for i, item in enumerate(tqdm(dataset) if verbose else dataset):
-        x_hist = item.x_hist  # shape: (n_hist, d)
-        y_hist = item.y_hist  # shape: (n_hist, 1) or (n_hist,)
-        hist_mask = item.hist_mask  # shape: (n_hist,) or (n_hist, 1) or None
-
-        # Remove padding if there is a mask
-        if hist_mask is not None:
-            mask_flat = hist_mask.squeeze() if hist_mask.dim() > 1 else hist_mask
-            x_hist = x_hist[mask_flat.bool()]
-            y_hist = y_hist[mask_flat.bool()]
-
-        # Ensure y_hist has correct shape for BoTorch
-        if y_hist.dim() == 1:
-            y_hist = y_hist.unsqueeze(-1)
-
-        # Create a new RBF GP model with default priors and outcome standardization
-        # This matches the default configuration used in BO loops
-        model = get_gp(
-            dimension=dimension,
-            observation_noise=False,
-            outcome_transform=Standardize(m=1)
-        )
-
-        # Set training data (this also handles outcome transforms if present)
-        model.set_train_data_with_transforms(x_hist, y_hist, strict=False, train=True)
-
-        # Fit hyperparameters using MAP (priors are kept by default in get_gp)
-        model.train()
-        mll = ExactMarginalLogLikelihood(model.likelihood, model)
-
-        try:
-            fit_gpytorch_mll(mll)
-            n_fitted += 1
-        except Exception as e:
-            # If fitting fails, keep the model with initial hyperparameters
-            n_failed += 1
-            warnings.warn(
-                f"Failed to fit GP for dataset item {i}: {e}. "
-                f"Using initial hyperparameters.",
-                RuntimeWarning)
-
-        # Set to eval mode for posterior computation
-        model.eval()
-
-        # Replace the item's model with the newly fitted RBF GP model
-        # This works whether the item previously had a model or not
-        item._model = model
-        item.model_params = None  # No randomized params since we fitted to data
-
-    # If the dataset didn't have models before, we need to mark it as having models now
-    # Note: If it already had models, has_models should still be True
-    if not dataset.has_models:
-        # Need to set up _model_sampler or equivalent to make has_models return True
-        # This may require creating a dummy RandomModelSampler or similar
-        # The exact mechanism depends on the dataset_with_models.py implementation
-        pass  # TODO: Investigate and implement proper way to mark dataset as having models
-
-    if verbose:
-        print(f"GP model replacement complete: {n_fitted} models successfully fitted, {n_failed} fitting failures")
-```
-
-#### 2.2 Compute GP Posterior During Training
-
-**Location:** `nn_af/train_acquisition_function_net.py` - function `train_or_test_loop()`
-
-Modify the section where NN forward pass is called (around lines 636-652):
-
-```python
-if nn_model is not None:
-    # ... existing code to prepare inputs ...
-
-    # NEW: Compute GP posterior if NN expects it
-    if _nn_expects_gp_posterior_input(nn_model):
-        # Models are accessed from batch when has_models is True (line ~600-601)
-        gp_posterior_mu_nn, gp_posterior_log_sigma_nn = _compute_gp_posterior_batch(
-            x_hist_nn, y_hist_nn, x_cand_nn, hist_mask_nn, models, nn_device
-        )
-    else:
-        gp_posterior_mu_nn = None
-        gp_posterior_log_sigma_nn = None
-
-    with torch.set_grad_enabled(train and not is_degenerate_batch):
-        if method == 'gittins':
-            # ... existing code ...
-            nn_output = nn_model(
-                x_hist_nn, y_hist_nn, x_cand_nn,
-                lambda_cand=lambda_cand_nn,
-                hist_mask=hist_mask_nn, cand_mask=cand_mask_nn,
-                is_log=True,
-                gp_posterior_mu=gp_posterior_mu_nn,
-                gp_posterior_log_sigma=gp_posterior_log_sigma_nn
+            # Legacy tensor-based approach
+            return AcquisitionFunctionNetModel(
+                self.model, self.x.to(nn_device), y.to(nn_device)
             )
-        else:  # method = 'mse_ei' or 'policy_gradient'
-            nn_output = nn_model(
-                x_hist_nn, y_hist_nn, x_cand_nn, hist_mask_nn, cand_mask_nn,
-                exponentiate=(method == "mse_ei"),
-                softmax=(method == "policy_gradient"),
-                gp_posterior_mu=gp_posterior_mu_nn,
-                gp_posterior_log_sigma=gp_posterior_log_sigma_nn
-            )
-        # ... rest of existing code ...
+
+class AcquisitionFunctionNetModelWithParamDict(AcquisitionFunctionNetModel):
+    def __init__(self, model, train_X, train_Y, gp_model=None):
+        super().__init__(model, train_X, train_Y)
+        self.gp_model = gp_model
+    
+    def forward(self, X, **kwargs):
+        # Build parameter dictionary
+        param_dict = {}
+        
+        # Add GP posterior if available
+        if self.gp_model is not None:
+            with torch.no_grad():
+                posterior = self.gp_model.posterior(X)
+                mu = posterior.mean.squeeze(-1)
+                log_sigma = posterior.variance.sqrt().log().squeeze(-1)
+                gp_posterior = torch.stack([mu, log_sigma], dim=-1)  # (n_cand, 2)
+            param_dict["gp_posterior"] = gp_posterior
+        
+        # Add existing acqf_params as lambda type (backward compatibility)
+        if 'acqf_params' in kwargs and kwargs['acqf_params'] is not None:
+            param_dict["lambda"] = kwargs['acqf_params']
+        
+        # Replace acqf_params with dictionary
+        if param_dict:
+            kwargs['acqf_params_dict'] = param_dict
+            kwargs.pop('acqf_params', None)  # Remove old format
+        
+        return self.model(self.train_X, self.train_Y, X, **kwargs)
 ```
 
-**Helper function `_compute_gp_posterior_batch`:**
-```python
-def _compute_gp_posterior_batch(
-        x_hist: Tensor,
-        y_hist: Tensor,
-        x_cand: Tensor,
-        hist_mask: Optional[Tensor],
-        models: List[GPyTorchModel],
-        device
-    ) -> Tuple[Tensor, Tensor]:
-    """Compute GP posterior (mu, log_sigma) for a batch of candidates.
+## Configuration and Command-Line Interface
 
-    Args:
-        x_hist: shape (batch_size, n_hist, d)
-        y_hist: shape (batch_size, n_hist, 1)
-        x_cand: shape (batch_size, n_cand, d)
-        hist_mask: shape (batch_size, n_hist, 1) or None
-        models: list of fitted GP models, length batch_size
-        device: torch device
+### 1. New Command-Line Arguments
 
-    Returns:
-        mu: shape (batch_size, n_cand, 1) - posterior mean
-        log_sigma: shape (batch_size, n_cand, 1) - log of posterior standard deviation
-    """
-    batch_size = x_hist.size(0)
-    n_cand = x_cand.size(1)
-
-    mus = []
-    log_sigmas = []
-
-    for i in range(batch_size):
-        x_hist_i = x_hist[i]  # (n_hist, d)
-        y_hist_i = y_hist[i]  # (n_hist, 1)
-        x_cand_i = x_cand[i]  # (n_cand, d)
-        model_i = models[i]
-
-        # Remove padding if mask exists
-        if hist_mask is not None:
-            mask_i = hist_mask[i].squeeze()  # (n_hist,)
-            x_hist_i = x_hist_i[mask_i.bool()]
-            y_hist_i = y_hist_i[mask_i.bool()]
-
-        # Set model to eval mode
-        model_i.eval()
-
-        # Update training data (should already be set from pre-fitting, but just in case)
-        # Note: set_train_data_with_transforms with train=False will not refit
-        model_i.set_train_data_with_transforms(x_hist_i, y_hist_i, strict=False, train=False)
-
-        # Compute posterior
-        with torch.no_grad():
-            posterior = model_i.posterior(x_cand_i)
-            mu_i = posterior.mean  # shape (n_cand, 1)
-            # Get standard deviation (not variance)
-            sigma_i = posterior.variance.sqrt()  # shape (n_cand, 1)
-            log_sigma_i = sigma_i.log()
-
-        mus.append(mu_i)
-        log_sigmas.append(log_sigma_i)
-
-    mu = torch.stack(mus, dim=0).to(device)  # (batch_size, n_cand, 1)
-    log_sigma = torch.stack(log_sigmas, dim=0).to(device)  # (batch_size, n_cand, 1)
-
-    return mu, log_sigma
-```
-
-### 3. Bayesian Optimization Loop Integration (`bayesopt/bayesopt.py`)
-
-#### 3.1 Modify NNAcquisitionOptimizer
-
-**Changes to `NNAcquisitionOptimizer.get_model()`:**
-
-Currently this method creates an `AcquisitionFunctionNetModel` wrapper. We need to extend it to compute GP posterior when needed.
-
-```python
-def get_model(self):
-    y = self.y if self.maximize else -self.y
-    nn_device = next(self.model.parameters()).device
-
-    # Check if NN expects GP posterior
-    gp_model = None
-    if _nn_expects_gp_posterior_input(self.model):
-        gp_model = self._fit_gp_for_posterior()
-
-    return AcquisitionFunctionNetModel(
-        self.model,
-        self.x.to(nn_device),
-        y.to(nn_device),
-        gp_model=gp_model
-    )
-```
-
-Add helper method to `NNAcquisitionOptimizer`:
-
-```python
-def _fit_gp_for_posterior(self):
-    """Fit a GP model to current optimization history using MAP estimation.
-
-    Returns:
-        Fitted SingleTaskGP model
-    """
-    from botorch.models.gp_regression import SingleTaskGP
-    from botorch.models.transforms.outcome import Standardize
-    from botorch.fit import fit_gpytorch_mll
-    from gpytorch.mlls import ExactMarginalLogLikelihood
-    import warnings
-
-    # Create GP model with outcome standardization (standard practice)
-    gp_model = SingleTaskGP(
-        self.x,
-        self.y if self.maximize else -self.y,
-        outcome_transform=Standardize(m=1)
-    )
-
-    # Fit using MAP (priors are kept by default)
-    gp_model.train()
-    mll = ExactMarginalLogLikelihood(gp_model.likelihood, gp_model)
-
-    try:
-        fit_gpytorch_mll(mll)
-    except Exception as e:
-        warnings.warn(f"GP fitting failed during BO: {e}. Using initial hyperparameters.", RuntimeWarning)
-
-    gp_model.eval()
-    return gp_model
-```
-
-#### 3.2 Modify AcquisitionFunctionNetModel and AcquisitionFunctionNetAcquisitionFunction
-
-**Changes to `AcquisitionFunctionNetModel.__init__`:**
-
-Store optional GP model for posterior computation:
-
-```python
-def __init__(self,
-             model: AcquisitionFunctionNet,
-             train_X: Optional[Tensor]=None,
-             train_Y: Optional[Tensor]=None,
-             gp_model: Optional[GPyTorchModel]=None):  # NEW parameter
-    super().__init__()
-    # ... existing code ...
-    self.gp_model = gp_model  # NEW
-```
-
-**Changes to `AcquisitionFunctionNetModel.forward`:**
-
-```python
-def forward(self, X: Tensor, **kwargs) -> Tensor:
-    if self.train_X is None:
-        raise RuntimeError("Cannot make predictions without conditioning on data.")
-
-    # NEW: Compute GP posterior if model expects it
-    if _nn_expects_gp_posterior_input(self.model):
-        if self.gp_model is None:
-            raise RuntimeError("NN expects GP posterior input but no GP model was provided")
-
-        # Compute posterior for the candidate points X
-        with torch.no_grad():
-            posterior = self.gp_model.posterior(X)
-            gp_posterior_mu = posterior.mean  # shape (n_cand, 1)
-            gp_posterior_log_sigma = posterior.variance.sqrt().log()  # shape (n_cand, 1)
-
-        kwargs['gp_posterior_mu'] = gp_posterior_mu
-        kwargs['gp_posterior_log_sigma'] = gp_posterior_log_sigma
-
-    ret = self.model(self.train_X, self.train_Y, X, **kwargs)
-    assert ret.shape[:-1] == X.shape[:-1]
-    return ret
-```
-
-### 4. Configuration and Command-Line Interface
-
-#### 4.1 Add Command-Line Argument
-
-**Location:** `nn_af/acquisition_function_net_save_utils.py` - function `_get_run_train_parser()`
-
-Add to the `nn_architecture_group`:
+**Location:** `nn_af/acquisition_function_net_save_utils.py`
 
 ```python
 nn_architecture_group.add_argument(
-    '--input_gp_posterior',
-    action='store_true',
-    help=('Whether to input GP posterior (mu, log_sigma) to the NN final MLP. '
-          'If enabled, a GP will be fitted using MAP to the history, and '
-          'the posterior mean and log-standard-deviation at each candidate '
-          'point will be concatenated with the features before the final MLP. '
-          'Default is False.')
+    '--gp_posterior_routing',
+    type=str,
+    choices=['local_only', 'final_only', 'local_and_final'],
+    default=None,
+    help='Where to route GP posterior parameters. If not specified (null), GP posterior is disabled. '
+         'A GP will be fitted using MAP to the history during training and BO when enabled.'
+)
+
+nn_architecture_group.add_argument(
+    '--param_routing_default',
+    type=str,
+    choices=['local_only', 'final_only', 'local_and_final'],
+    default='final_only',
+    help='Default routing for parameter types not explicitly specified. Default is "final_only".'
 )
 ```
 
-#### 4.2 Update Model Creation
-
-**Location:** `nn_af/acquisition_function_net_save_utils.py` - function `_get_model()`
-
-Update the head initialization parameters:
+### 2. Update Model Creation
 
 ```python
-af_head_init_params = dict(
-    hidden_dims=hidden_dims,
-    activation="relu",
-    layer_norm_before_end=False,
-    layer_norm_at_end=False,
-    dropout=args.dropout,
-    input_gp_posterior=args.input_gp_posterior,  # NEW
-)
+def _get_model(args):
+    # ... existing code ...
+    
+    if architecture == "pointnet":
+        # Build parameter routing configuration
+        param_routing = {}
+        
+        # Add GP posterior routing if specified (not None)
+        if getattr(args, 'gp_posterior_routing', None) is not None:
+            param_routing["gp_posterior"] = args.gp_posterior_routing
+        
+        # Add parameter routing to model initialization
+        if param_routing or hasattr(args, 'param_routing_default'):
+            af_body_init_params['param_routing'] = param_routing
+            af_body_init_params['param_routing_default'] = getattr(args, 'param_routing_default', 'final_only')
+        else:
+            # Use existing acqf_params_input system for backward compatibility
+            extra_params = _POINTNET_X_CAND_INPUT_OPTIONS[args.x_cand_input]
+            if args.acqf_params_input is not None:
+                extra_params_acqf = POINTNET_ACQF_PARAMS_INPUT_OPTIONS[args.acqf_params_input]
+                extra_params = dict(**extra_params, **extra_params_acqf)
+            af_body_init_params = dict(**af_body_init_params_base, **extra_params)
 ```
 
-This applies to all acquisition function types (Gittins, MSE EI, Policy Gradient).
-
-#### 4.3 Update Training Configuration
-
-**Location:** `nn_af/acquisition_function_net_save_utils.py` - function `_get_training_config()`
-
-No changes needed here - the architecture parameter is saved as part of the model's init dict, not the training config.
-
-### 5. YAML Configuration Support
+### 3. YAML Configuration
 
 **Location:** `config/train_acqf.yml`
-
-Add to the architecture section:
 
 ```yaml
 architecture:
   values:
-    # ... existing values ...
-    input_gp_posterior:
-      - false
-      - true
+  - value: pointnet
+    parameters:
+      # ... existing parameters ...
+      gp_posterior_routing:
+        values: [null, "final_only", "local_only", "local_and_final"]
+      param_routing_default:
+        values: ["final_only", "local_only", "local_and_final"]
 ```
-
-## Implementation Plan
-
-### Phase 1: Core NN Architecture Changes
-1. Add `input_gp_posterior` property to `AcquisitionFunctionHead` base class
-2. Implement in `AcquisitionFunctionNetFinalMLP`
-   - Add parameter to `__init__`
-   - Adjust `input_dim` for the Dense layer
-   - Add validation and concatenation in `forward()`
-3. Implement in `AcquisitionFunctionNetFinalMLPSoftmaxExponentiate`
-4. Propagate through `TwoPartAcquisitionFunctionNet`, `GittinsAcquisitionFunctionNet`, `ExpectedImprovementAcquisitionFunctionNet`
-
-### Phase 2: Training Infrastructure
-1. Implement helper function `_nn_expects_gp_posterior_input()` in `train_acquisition_function_net.py`
-2. Implement `_replace_with_fitted_rbf_gp_models()` function
-   - Create RBF GP models using `get_gp()`
-   - Fit to each item's history using MAP
-   - Replace existing models (or add new ones) on items in-place
-   - **Important:** If dataset didn't have models initially, mark it as `has_models=True`
-3. Implement `_compute_gp_posterior_batch()` function
-4. Modify `train_acquisition_function_net()` to:
-   - Create a copy of datasets if they have models (using `dataset.copy_with_new_size(None)`)
-   - Call `_replace_with_fitted_rbf_gp_models()` on the copy (or original if no models)
-5. Modify `train_or_test_loop()` to compute and pass GP posterior
-
-### Phase 3: BO Loop Integration
-1. Add or import `_nn_expects_gp_posterior_input()` helper in `bayesopt.py`
-2. Add `_fit_gp_for_posterior()` method to `NNAcquisitionOptimizer`
-3. Modify `NNAcquisitionOptimizer.get_model()` to fit GP when needed
-4. Add `gp_model` parameter to `AcquisitionFunctionNetModel.__init__`
-5. Modify `AcquisitionFunctionNetModel.forward()` to compute and pass GP posterior
-
-### Phase 4: Configuration and CLI
-1. Add command-line argument `--input_gp_posterior`
-2. Update `_get_model()` to pass the parameter to head init
-3. Add to YAML config files
-4. Test with example configurations
-
-### Phase 5: Testing and Validation
-1. Unit tests for NN forward pass with/without GP posterior
-2. Integration tests for training with GP posterior input
-3. Integration tests for BO loops with GP posterior input
-4. Validation experiments comparing with/without GP posterior input
-
-## Testing Strategy
-
-### Unit Tests
-1. Test NN `forward()` with `input_gp_posterior=True` and valid inputs
-2. Test NN `forward()` with `input_gp_posterior=True` and missing inputs (should raise ValueError)
-3. Test NN `forward()` with `input_gp_posterior=False` and GP inputs provided (should raise ValueError)
-4. Test shape consistency of GP posterior computation
-
-### Integration Tests
-1. Train a small NN with `input_gp_posterior=True` on a small dataset
-2. Run a BO loop with `input_gp_posterior=True`
-3. Verify models save and load correctly with the new parameter
-4. Test backwards compatibility (models without this feature still work)
-
-### Validation Experiments
-1. Compare BO performance with/without GP posterior input on synthetic functions
-2. Analyze training curves to see if GP posterior helps convergence
-3. Visualize learned acquisition functions to understand the effect
 
 ## Backwards Compatibility
 
-- Default value of `input_gp_posterior=False` ensures existing code continues to work
-- Models trained without this feature can still be loaded and used
-- No changes to existing configurations required
-- The feature is purely additive - no breaking changes
+- **Existing tensor-based `acqf_params` still works**: Forward method handles both `acqf_params` and `acqf_params_dict`
+- **Existing `acqf_params_input` still works**: Used when parameter routing dictionary is not specified
+- **Lambda/cost parameters preserved**: Existing lambda and cost parameters work without changes
+- **Gradual migration**: Can add parameter types incrementally without breaking existing functionality
 
-## Potential Issues and Mitigations
+## Implementation Plan
 
-### Issue 1: GP Fitting Failures
-**Mitigation:** Wrap `fit_gpytorch_mll()` in try-except, fall back to initial hyperparameters with warning
+### Phase 1: Core Architecture Extension (2-3 hours)
+1. Extend `AcquisitionFunctionBodyPointnetV1and2` to support parameter routing dictionary
+2. Add dictionary-based parameter handling in `forward()` method
+3. Update dimension calculations for local NN and final MLP
 
-### Issue 2: Computational Overhead
-**Mitigation:**
-- Pre-fit GPs once per dataset item (not per batch/epoch)
-- Posterior computation is fast (linear algebra operation)
-- Can be disabled by setting `input_gp_posterior=False`
+### Phase 2: Dataset Integration (2-3 hours)
+1. Implement `_convert_dataset_to_param_dict()` function
+2. Implement GP fitting helpers for GP posterior computation
+3. Integrate with training pipeline in `train_acquisition_function_net()`
 
-### Issue 3: Memory Overhead
-**Mitigation:**
-- Store only one GP model per dataset item
-- Posterior computation doesn't require storing full covariance
+### Phase 3: BO Integration (1-2 hours)
+1. Create `AcquisitionFunctionNetModelWithParamDict` class
+2. Update `NNAcquisitionOptimizer.get_model()` method
 
-### Issue 4: Dataset Copying and Model Replacement
-**Mitigation:**
-- Use built-in `dataset.copy_with_new_size(None)` method to copy dataset when it has models
-- This method creates a proper copy by re-initializing with same parameters
-- If dataset initially had no models, need to properly mark `dataset.has_models = True` after replacement
-- Test that model replacement works correctly for both GP datasets and non-GP datasets
+### Phase 4: CLI and Configuration (1 hour)
+1. Add new command-line arguments for GP posterior and parameter routing
+2. Update model creation logic to build parameter routing configuration
+3. Add YAML configuration options
 
-## Open Questions
+### Phase 5: Testing (1-2 hours)
+1. Test parameter routing with GP posterior enabled/disabled
+2. Verify backward compatibility with existing lambda/cost parameters
+3. Test BO integration with parameter dictionary format
 
-1. **Should we support MLE instead of MAP?**
-   - Proposal: Default to MAP (keep priors), add optional flag for MLE if needed later
+**Total estimated time:** 7-11 hours
 
-2. **Should we cache GP hyperparameters across epochs?**
-   - Proposal: Fit once before training starts, don't refit per epoch
+## Example Usage
 
-3. **What if the dataset outcome transform differs from GP outcome transform?**
-   - Proposal: Use same outcome transform (Standardize) for both dataset and GP fitting
+```bash
+# GP posterior only to final MLP, other params use default routing
+python run_train.py \
+    --gp_posterior_routing "final_only" \
+    --param_routing_default "final_only" \
+    # ... other args
 
-4. **How to properly mark dataset as `has_models=True` after replacing/adding models?**
-   - Need to investigate `dataset_with_models.py` to understand the relationship between `has_models` property and internal state
-   - The property checks for `_model_sampler` attribute - may need to create a dummy `RandomModelSampler` or find another approach
-   - Only relevant when dataset initially had `has_models=False` - if it was already True, replacement maintains that state
+# GP posterior to both local and final, lambda params to local only  
+python run_train.py \
+    --gp_posterior_routing "local_and_final" \
+    --param_routing_default "local_only" \
+    # ... other args (lambda/cost will route to local_only)
 
-## Files to Modify
+# No GP posterior (disabled), only lambda/cost params with default routing
+python run_train.py \
+    --param_routing_default "final_only" \
+    # ... other args (no --gp_posterior_routing means it's disabled)
+```
 
-1. `nn_af/acquisition_function_net.py` (~150 lines of changes)
-2. `nn_af/train_acquisition_function_net.py` (~150 lines of changes)
-3. `nn_af/acquisition_function_net_save_utils.py` (~20 lines of changes)
-4. `bayesopt/bayesopt.py` (~50 lines of changes)
-5. `config/train_acqf.yml` (~5 lines of changes)
+## Key Advantages of This Approach
 
-**Total estimated changes:** ~375 lines of code
+1. **Maximum flexibility**: Any parameter type can be routed to any combination of network parts
+2. **Clean separation**: Each parameter type is handled independently 
+3. **Extensible**: Adding new parameter types requires no hardcoded changes
+4. **Backward compatible**: Existing lambda/cost parameters work unchanged
+5. **Simple configuration**: Flat YAML/CLI structure despite powerful internal dictionary handling
+6. **Type-aware**: Network understands semantic meaning of different parameter types
 
-## Timeline Estimate
-
-- Phase 1: 2-3 hours
-- Phase 2: 3-4 hours
-- Phase 3: 2-3 hours
-- Phase 4: 1 hour
-- Phase 5: 3-4 hours
-
-**Total estimated time:** 11-15 hours
-
-## References
-
-- BoTorch GP posterior computation: `botorch.models.model.Model.posterior()`
-- GP fitting with MAP: `botorch.fit.fit_gpytorch_mll()` with priors
-- Existing GP fitting code: `bayesopt/bayesopt.py:442-460`, `utils/exact_gp_computations.py:115-126`
+This dictionary-based approach provides maximum flexibility while maintaining a clean, extensible architecture.
