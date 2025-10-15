@@ -10,7 +10,7 @@ from botorch.acquisition.acquisition import AcquisitionFunction
 from botorch.exceptions import UnsupportedError
 from botorch.utils.transforms import t_batch_mode_transform, match_batch_shape
 from abc import abstractmethod
-from nn_af.acquisition_function_net_save_utils import POINTNET_ACQF_PARAMS_INPUT_DEFAULT, POINTNET_ACQF_PARAMS_INPUT_OPTIONS
+from nn_af.acquisition_function_net_constants import POINTNET_ACQF_PARAMS_INPUT_DEFAULT, POINTNET_ACQF_PARAMS_INPUT_OPTIONS
 from utils.saveable_object import SaveableObject
 from utils.utils import safe_issubclass, to_device, standardize_y_hist
 

@@ -327,7 +327,7 @@ ATTR_GROUPS = [
     # ["per_iteration_decisions"],
     # ["best_y"],
     ["normalized_regret"],
-    ["model_fitting_errors"],
+    # ["model_fitting_errors"],
     # ["regret"],
     # ["x"],
     # ["best_y", "x"]

@@ -11,6 +11,7 @@ from utils.constants import MODELS_DIR, MODELS_VERSION
 
 from nn_af.acquisition_function_net import AcquisitionFunctionBodyPointnetV1and2, AcquisitionFunctionBodyTransformerNP, AcquisitionFunctionNet, AcquisitionFunctionNetFinalMLP, ExpectedImprovementAcquisitionFunctionNet, GittinsAcquisitionFunctionNet, TwoPartAcquisitionFunctionNetFixedHistoryOutputDim
 from nn_af.train_acquisition_function_net import GI_NORMALIZATIONS, METHODS
+from nn_af.acquisition_function_net_constants import POINTNET_ACQF_PARAMS_INPUT_DEFAULT, POINTNET_ACQF_PARAMS_INPUT_OPTIONS
 
 from datasets.dataset_with_models import RandomModelSampler
 from datasets.acquisition_dataset_manager import FIX_TRAIN_ACQUISITION_DATASET, get_lamda_min_max
@@ -448,23 +449,6 @@ _POINTNET_X_CAND_INPUT_OPTIONS = {
         input_xcand_to_local_nn=False,
         input_xcand_to_final_mlp=True,
         subtract_x_cand_from_x_hist=True
-    )
-}
-
-POINTNET_ACQF_PARAMS_INPUT_DEFAULT = 'final_only'
-
-POINTNET_ACQF_PARAMS_INPUT_OPTIONS = {
-    "local_and_final": dict(
-        input_acqf_params_to_local_nn=True,
-        input_acqf_params_to_final_mlp=True
-    ),
-    "local_only": dict(
-        input_acqf_params_to_local_nn=True,
-        input_acqf_params_to_final_mlp=False
-    ),
-    "final_only": dict(
-        input_acqf_params_to_local_nn=False,
-        input_acqf_params_to_final_mlp=True
     )
 }
 
