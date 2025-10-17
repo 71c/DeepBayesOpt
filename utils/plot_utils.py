@@ -6,6 +6,7 @@ import sys
 from typing import Literal, Optional, List
 import warnings
 
+from matplotlib.ticker import MaxNLocator
 from tqdm import tqdm
 import numpy as np
 import scipy.stats as stats
@@ -116,13 +117,34 @@ def plot_error_bars(
         center, lower, upper,
         label=None,
         shade=True):
-    x = list(range(1, len(center)+1))
+    min_x, max_x = 0, len(center) - 1
+    x = list(range(min_x, max_x + 1))
     if shade:
         ax.plot(x, center, label=label)
         ax.fill_between(x, lower, upper, alpha=0.3)
     else:
         ax.errorbar(x, center, yerr=[center-lower, upper-center],
                     fmt='-o', capsize=4, markersize=5, capthick=None, label=label)
+    ax.xaxis.set_major_locator(MaxNLocator(
+        integer=True, nbins='auto', steps=[1, 2, 5, 10], prune=None))
+    
+    ticks = ax.get_xticks()
+
+    def has_val(val, arr, tol=0.0):
+        return np.any(np.isclose(arr, val, rtol=0, atol=tol))
+
+    new_ticks = list(ticks)
+    if not has_val(min_x, ticks):
+        new_ticks.append(min_x)
+    if not has_val(max_x, ticks):
+        new_ticks.append(max_x)
+    new_ticks = np.array(new_ticks)
+
+    # Make sure within limits. e.g. if min_x=0, max_x=23, then
+    # ax.get_xticks() = [-5.,  0.,  5., 10., 15., 20., 25.]
+    new_ticks = new_ticks[(new_ticks >= min_x) & (new_ticks <= max_x)]
+    
+    ax.set_xticks(new_ticks)
 
 
 def plot_optimization_trajectories_error_bars(

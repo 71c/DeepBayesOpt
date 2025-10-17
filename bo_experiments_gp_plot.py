@@ -739,7 +739,9 @@ def main():
                     # Slice the data if max_iterations_to_plot is specified
                     data_value = results[attr_name]
                     if args.max_iterations_to_plot is not None:
-                        data_value = data_value[:args.max_iterations_to_plot]
+                        # +1 to include the initial value before doing BO
+                        # (when we only have evaluated at the sobol points)
+                        data_value = data_value[:args.max_iterations_to_plot+1]
 
                     ret = {
                         attr_name: data_value,
