@@ -116,15 +116,20 @@ def plot_error_bars(
         ax,
         center, lower, upper,
         label=None,
-        shade=True):
+        shade=True,
+        add_grid=False,
+        add_markers=False):
     min_x, max_x = 0, len(center) - 1
     x = list(range(min_x, max_x + 1))
     if shade:
-        ax.plot(x, center, label=label)
+        tmp = dict(marker='o', markersize=3.5) if add_markers else {}
+        ax.plot(x, center, label=label, **tmp)
         ax.fill_between(x, lower, upper, alpha=0.3)
     else:
         ax.errorbar(x, center, yerr=[center-lower, upper-center],
                     fmt='-o', capsize=4, markersize=5, capthick=None, label=label)
+    if add_grid:
+        ax.grid(True)
     ax.xaxis.set_major_locator(MaxNLocator(
         integer=True, nbins='auto', steps=[1, 2, 5, 10], prune=None))
     
@@ -929,7 +934,9 @@ def get_plot_ax_bo_stats_vs_iteration_func(get_result_func):
                     assume_normal=plot_kwargs['assume_normal']
                 )
                 plot_error_bars(ax, center, lower, upper,
-                                label=legend_name, shade=plot_kwargs['shade'])
+                                label=legend_name, shade=plot_kwargs['shade'],
+                                add_grid=plot_kwargs.get('add_grid', False),
+                                add_markers=plot_kwargs.get('add_markers', False))
                 # ax.set_xscale('log')
                 if attr_name in {'regret', 'normalized_regret'}:
                     ax.set_yscale('log')

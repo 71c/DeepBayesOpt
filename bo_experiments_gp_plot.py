@@ -392,12 +392,28 @@ def add_plot_interval_args(parser):
     return interval_group
 
 
+def add_plot_formatting_args(parser):
+    plot_formatting_group = parser.add_argument_group("Plot formatting")
+    plot_formatting_group.add_argument(
+        '--add_grid',
+        action='store_true',
+        help='If set, add a grid to the plots'
+    )
+    plot_formatting_group.add_argument(
+        '--add_markers',
+        action='store_true',
+        help='If set, add markers to the lines in the plots at each iteration'
+    )
+    return plot_formatting_group
+
+
 def main():
     ## Create parser
     (parser, nn_base_config_name, nn_experiment_config_name, bo_base_config_name,
      bo_experiment_config_name) = get_bo_experiments_parser(train=False)
     add_plot_args(parser)
     interval_group = add_plot_interval_args(parser)
+    plot_formatting_group = add_plot_formatting_args(parser)
     parser.add_argument(
         '--n_iterations',
         type=int,
@@ -430,6 +446,8 @@ def main():
             print(f"Auto-plotting failed, using manual configuration: {e}")
 
     interval_kwargs = {k: getattr(args, k) for k in get_arg_names(interval_group)}
+    plot_formatting_kwargs = {
+        k: getattr(args, k) for k in get_arg_names(plot_formatting_group)}
 
     ## Get the configurations and corresponding results
     jobs_spec, new_cfgs, existing_cfgs_and_results, refined_config \
@@ -502,6 +520,7 @@ def main():
         aspect=1.618,
         scale=1.0,
         shade=True,
+        **plot_formatting_kwargs,
         **interval_kwargs
     )
 

@@ -191,6 +191,8 @@ def cmd_plot(args):
             center_stat=args.center_stat,
             variant=args.variant,
             max_iterations_to_plot=args.max_iterations_to_plot,
+            add_grid=getattr(args, 'add_grid', False),
+            add_markers=getattr(args, 'add_markers', False),
             dry_run=args.dry_run
         )
 
@@ -304,6 +306,10 @@ def main():
                                 '(must be <= n_iter ran). If not specified, all iterations will be plotted.')
     parser_plot.add_argument('--center-stat', choices=['mean', 'median'], default='mean',
                            help='Center statistic for plots. Default is mean.')
+    parser_plot.add_argument('--add-grid', action='store_true',
+                           help='If set, add a grid to the plots')
+    parser_plot.add_argument('--add-markers', action='store_true',
+                           help='If set, add markers to the lines in the plots at each iteration')
     parser_plot.add_argument('--dry-run', action='store_true',
                            help='Show what would be executed without running')
     
