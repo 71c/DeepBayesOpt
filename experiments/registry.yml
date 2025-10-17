@@ -1277,6 +1277,18 @@ experiments:
           - max_history_input
           post:
           - ['learning_rate']
+        alternatives:
+          version_2:
+            pre:
+            - ['max_history_input']
+            - ['lamda']
+            attr_a:
+            - layer_width
+            - encoded_history_dim
+            attr_b:
+            - x_cand_input
+            post:
+            - ['learning_rate']
       bo_experiments:
         default:
           pre:
@@ -1293,6 +1305,22 @@ experiments:
             - nn.learning_rate
           - - objective.id
             - bo_seed
+        alternatives:
+          version_2:
+            pre:
+            - ['nn.max_history_input']
+            - ['nn.lamda']
+            attr_a:
+            - nn.layer_width
+            - nn.encoded_history_dim
+            attr_b:
+            - nn.x_cand_input
+            post:
+            - - gp_af
+              - lamda
+              - nn.learning_rate
+            - - objective.id
+              - bo_seed  
 templates:
   basic_1d:
     description: Basic 1D experiment template

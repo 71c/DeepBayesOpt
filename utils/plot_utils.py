@@ -1366,7 +1366,7 @@ def save_figures_from_nested_structure(
         all_seeds=True,
         **plot_kwargs):
     n_plots = _count_num_plots(
-        plot_config, all_seeds=all_seeds)
+        plot_config, level_names=level_names.copy(), all_seeds=all_seeds)
     pbar = tqdm(total=n_plots, desc="Saving figures") if print_pbar else None
     _save_figures_from_nested_structure(
         plot_config, plot_ax_func, attrs_groups_list, level_names,
@@ -1379,22 +1379,29 @@ def save_figures_from_nested_structure(
         pbar.close()
 
 
-def _count_num_plots(plot_config, all_seeds=True):
+def _count_num_plots(plot_config: dict, level_names: list[str], all_seeds=True):
     # Count the number of plots in the plot_config
+    next_level_names = level_names[1:] if len(level_names) > 1 else []
     n_plots = 0
     for k, v in plot_config.items():
         items = v["items"]
 
         if all_seeds:
-            if isinstance(items, dict):
-                n_plots += _count_num_plots(items, all_seeds=all_seeds)
-            else:
+            if len(next_level_names) >= 1 and next_level_names[0] == "line":
                 n_plots += 1
+            else:
+                if isinstance(items, dict):
+                    n_plots += _count_num_plots(
+                        items, next_level_names, all_seeds=all_seeds)
+                else:
+                    n_plots += 1
         else:
+            # TODO: handle non-all_seeds case properly with level_names (if desired)
             if isinstance(items, dict):
                 itemss = [v["items"] for v in items.values()]
                 if all(isinstance(i, dict) for i in itemss):
-                    n_plots += _count_num_plots(items, all_seeds=all_seeds)
+                    n_plots += _count_num_plots(
+                        items, next_level_names, all_seeds=all_seeds)
                 elif any(isinstance(i, dict) for i in itemss):
                     raise ValueError("Invalid plot config")
                 else:
