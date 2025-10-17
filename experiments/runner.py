@@ -184,7 +184,8 @@ class ExperimentRunner:
             return 1, "", f"Error running training: {str(e)}"
     
     def generate_plots(self, name: str, plot_type: str = "bo_experiments", n_iterations: int = 30,
-                      center_stat: str = "mean", variant: str = "default", dry_run: bool = False) -> Tuple[int, str, str]:
+                      center_stat: str = "mean", variant: str = "default",
+                      max_iterations_to_plot: Optional[int] = None, dry_run: bool = False) -> Tuple[int, str, str]:
         """Generate plots for an experiment."""
         try:
             args = self.registry.get_experiment_command_args(name)
@@ -216,6 +217,10 @@ class ExperimentRunner:
                     "--n_iterations", str(n_iterations),
                     "--variant", variant
                 ])
+
+                # Add max_iterations_to_plot if specified
+                if max_iterations_to_plot is not None:
+                    cmd.extend(["--max_iterations_to_plot", str(max_iterations_to_plot)])
 
             elif plot_type == "train_acqf":
                 cmd = [

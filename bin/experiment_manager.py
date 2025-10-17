@@ -177,29 +177,30 @@ def cmd_plot(args):
     """Generate plots for an experiment."""
     registry = ExperimentRegistry()
     runner = ExperimentRunner(registry)
-    
+
     try:
         print(f"Generating {args.type} plots for experiment: {args.name}")
-        
+
         if args.dry_run:
             print("DRY RUN MODE - no commands will be executed")
-        
+
         returncode, stdout, stderr = runner.generate_plots(
             args.name,
             plot_type=args.type,
             n_iterations=args.n_iterations,
             center_stat=args.center_stat,
             variant=args.variant,
+            max_iterations_to_plot=args.max_iterations_to_plot,
             dry_run=args.dry_run
         )
-        
+
         if stdout:
             print(stdout)
         if stderr:
             print(f"Errors:\n{stderr}")
-        
+
         return returncode
-    
+
     except ValueError as e:
         print(f"Error: {e}")
         return 1
@@ -292,12 +293,15 @@ def main():
     # Plot command
     parser_plot = subparsers.add_parser('plot', help='Generate plots for an experiment')
     parser_plot.add_argument('name', help='Name of the experiment')
-    parser_plot.add_argument('--type', choices=['bo_experiments', 'train_acqf'], 
+    parser_plot.add_argument('--type', choices=['bo_experiments', 'train_acqf'],
                            default='bo_experiments', help='Type of plots to generate')
     parser_plot.add_argument('--variant', default='default',
                            help='Plot configuration variant to use (default: default)')
     parser_plot.add_argument('--n-iterations', type=int, default=30,
-                           help='Number of iterations for BO plots')
+                           help='Number of iterations for BO plots (for animations)')
+    parser_plot.add_argument('--max-iterations-to-plot', type=int, default=None,
+                           help='Maximum number of iterations to display in BO regret plots '
+                                '(must be <= n_iter ran). If not specified, all iterations will be plotted.')
     parser_plot.add_argument('--center-stat', choices=['mean', 'median'], default='mean',
                            help='Center statistic for plots. Default is mean.')
     parser_plot.add_argument('--dry-run', action='store_true',

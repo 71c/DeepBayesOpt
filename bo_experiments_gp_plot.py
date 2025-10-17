@@ -405,6 +405,13 @@ def main():
         help='Number of iterations to plot for the acquisition function animation'
     )
     parser.add_argument(
+        '--max_iterations_to_plot',
+        type=int,
+        default=None,
+        help='Maximum number of iterations to display in the BO regret plots (must be <= n_iter ran). '
+             'If not specified, all iterations will be plotted.'
+    )
+    parser.add_argument(
         '--variant',
         type=str,
         default='default',
@@ -725,12 +732,17 @@ def main():
                 idx = cfg['index']
                 results = results_list[idx]
                 attr_name = cfg['attr_name']
-                
+
                 # bo_policy_args = existing_cfgs[idx]['bo_policy_args']
-                
+
                 if attr_name in results:
+                    # Slice the data if max_iterations_to_plot is specified
+                    data_value = results[attr_name]
+                    if args.max_iterations_to_plot is not None:
+                        data_value = data_value[:args.max_iterations_to_plot]
+
                     ret = {
-                        attr_name: results[attr_name],
+                        attr_name: data_value,
                         'attr_name': attr_name,
                         'index': idx
                     }
