@@ -186,6 +186,140 @@ On the other hand, if you run the same command above but additionally with the f
 This means that each figure (file) corresponds to its own dimension, each subplot with in a figure corresponds to a combination of layer width and training samples size, error bar ("line") corresponds to a different BO policy, and the seed is the source of randomness for the error bar.
 Enabling `--use_rows` and/or `use_cols` is more compact since it fits multiple subplots in a single figure so you can view them side by side.
 
+
+# Experiment Manager CLI
+
+The `bin/experiment_manager.py` script provides a centralized command-line interface for managing experiments through the experiment registry system. It offers a higher-level alternative to directly calling `bo_experiments_gp.py`, `bo_experiments_gp_status.py`, and `bo_experiments_gp_plot.py`.
+
+## Basic Usage
+
+Run `python bin/experiment_manager.py --help` to see all available commands.
+
+### List Available Experiments
+```bash
+python bin/experiment_manager.py list
+```
+
+### List Available Templates
+```bash
+python bin/experiment_manager.py list-templates
+```
+
+### Show Experiment Details
+```bash
+# Show configuration
+python bin/experiment_manager.py show <experiment_name>
+
+# Show commands that would be executed
+python bin/experiment_manager.py show <experiment_name> --commands
+```
+
+### Check Experiment Status
+```bash
+# Check status of a specific experiment
+python bin/experiment_manager.py status <experiment_name>
+
+# Check status of all experiments
+python bin/experiment_manager.py status
+
+# Dry run (show what would be checked without executing)
+python bin/experiment_manager.py status <experiment_name> --dry-run
+```
+
+### Run Experiments
+```bash
+# Run a full experiment (training + BO loops)
+python bin/experiment_manager.py run <experiment_name>
+
+# Run only the training part
+python bin/experiment_manager.py run <experiment_name> --training-only
+
+# Dry run (show what would be executed without running)
+python bin/experiment_manager.py run <experiment_name> --dry-run
+
+# Prepare jobs but don't submit to SLURM
+python bin/experiment_manager.py run <experiment_name> --no-submit
+```
+
+#### Recompute Options
+```bash
+# Recompute/overwrite existing NN training results
+python bin/experiment_manager.py run <experiment_name> --always-train
+
+# Recompute/overwrite all existing BO results
+python bin/experiment_manager.py run <experiment_name> --recompute-bo
+
+# Recompute/overwrite only non-NN BO results (GP and random search)
+python bin/experiment_manager.py run <experiment_name> --recompute-non-nn-only
+```
+
+Note: `--recompute-bo` and `--recompute-non-nn-only` are mutually exclusive.
+
+### Generate Plots
+```bash
+# Generate default BO experiment plots
+python bin/experiment_manager.py plot <experiment_name>
+
+# Generate training plots
+python bin/experiment_manager.py plot <experiment_name> --type train_acqf
+
+# Use a specific plot variant
+python bin/experiment_manager.py plot <experiment_name> --variant compact
+
+# Customize plot appearance
+python bin/experiment_manager.py plot <experiment_name> --center-stat median --add-grid --add-markers
+
+# Limit the number of iterations displayed
+python bin/experiment_manager.py plot <experiment_name> --max-iterations-to-plot 20
+```
+
+### List Plot Variants
+```bash
+# List all available plot variants for an experiment
+python bin/experiment_manager.py plot-variants <experiment_name>
+
+# List variants for a specific plot type
+python bin/experiment_manager.py plot-variants <experiment_name> --type bo_experiments
+```
+
+### Show Commands
+```bash
+# Display the commands that would be executed (similar to commands.txt)
+python bin/experiment_manager.py commands <experiment_name>
+```
+
+## Advantages of Using the Experiment Manager
+
+1. **Centralized Configuration**: Experiments are defined in `experiments/registry.py` with structured configurations
+2. **Simpler Commands**: No need to specify multiple config files and parameters each time
+3. **Consistency**: Ensures experiments are run with validated, versioned configurations
+4. **Documentation**: Each experiment includes a description and creation date
+5. **Plot Management**: Multiple plot variants can be defined and easily selected
+6. **Status Tracking**: Built-in status checking across all experiments
+
+## Example Workflow
+
+```bash
+# List available experiments
+python bin/experiment_manager.py list
+
+# Show what an experiment will do
+python bin/experiment_manager.py show my_experiment --commands
+
+# Run the experiment
+python bin/experiment_manager.py run my_experiment
+
+# Check status
+python bin/experiment_manager.py status my_experiment
+
+# Generate plots once complete
+python bin/experiment_manager.py plot my_experiment
+
+# Try different plot variants
+python bin/experiment_manager.py plot-variants my_experiment
+python bin/experiment_manager.py plot my_experiment --variant compact
+```
+
 # Overview of the rest of the codebase
 
 ## Datasets
