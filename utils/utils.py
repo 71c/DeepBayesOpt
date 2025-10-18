@@ -961,12 +961,46 @@ def sanitize_file_name(file_name: str) -> str:
 
     return sanitized_name
 
+def _get_dict_item_sort_key(item):
+    """
+    Generate a sort key for dictionary items that sorts by:
+    1. Parameter name (alphabetically)
+    2. Numeric value if the value is a number
+
+    This ensures that parameters with numeric values are sorted numerically
+    rather than lexicographically (e.g., 0.01, 0.0003, 0.00173 instead of
+    0.0003, 0.00173, 0.01).
+    """
+    key, value = item
+
+    # Try to extract numeric value for proper sorting
+    numeric_value = None
+    if isinstance(value, (int, float)):
+        numeric_value = float(value)
+    elif isinstance(value, str):
+        try:
+            # Try to parse as float (handles scientific notation like 5.2e-05)
+            numeric_value = float(value)
+        except (ValueError, TypeError):
+            # Not a number, will sort by string representation
+            pass
+
+    # Return a sort key: (param_name, numeric_value_or_string_repr)
+    # If numeric_value is None, use string representation for sorting
+    if numeric_value is not None:
+        return (key, 0, numeric_value)  # 0 to prioritize numeric sorting
+    else:
+        return (key, 1, str(value))  # 1 to sort non-numeric values after numeric
+
+
 def _to_str(x, include_space=False) -> str:
     sep = ', ' if include_space else ','
     if type(x) is dict:
+        # Sort items using the custom sort key
+        sorted_items = sorted(x.items(), key=_get_dict_item_sort_key)
         return '(' + sep.join(
             key + '=' + _to_str(value)
-            for key, value in sorted(x.items())
+            for key, value in sorted_items
         ) + ')'
     if type(x) is list:
         return '[' + sep.join(map(_to_str, x)) + ']'
@@ -1317,6 +1351,40 @@ def _group_by_nested_attrs(items: List[dict[K, Any]],
     #                         for key, value in initial_grouped_items.items()}
     initial_grouped_items.update(new_grouped_items)
 
+    # Sort the grouped items by their values to ensure consistent legend ordering
+    # Sort by the actual parameter values (not just the string representation)
+    def _sort_key_for_grouped_items(item):
+        """
+        Create a sort key for grouped items based on their parameter values.
+        Sort by numeric values when possible, fall back to string comparison.
+        """
+        key, value_dict = item
+        vals = value_dict['vals']
+
+        # Create a sort key that considers both parameter names and values
+        sort_components = []
+        for param_name in sorted(vals.keys()):
+            param_value = vals[param_name]
+
+            # Try to convert to numeric for proper sorting
+            numeric_value = None
+            if isinstance(param_value, (int, float)):
+                numeric_value = float(param_value)
+            elif isinstance(param_value, str):
+                try:
+                    numeric_value = float(param_value)
+                except (ValueError, TypeError):
+                    pass
+
+            if numeric_value is not None:
+                sort_components.append((param_name, 0, numeric_value))
+            else:
+                sort_components.append((param_name, 1, str(param_value)))
+
+        return tuple(sort_components)
+
+    sorted_items = sorted(initial_grouped_items.items(), key=_sort_key_for_grouped_items)
+
     next_attrs = attrs_groups_list[1:]
     return {
         k: {
@@ -1324,7 +1392,7 @@ def _group_by_nested_attrs(items: List[dict[K, Any]],
                                 indices=v['items'], return_single=return_single),
             'vals': v['vals']
         }
-        for k, v in initial_grouped_items.items()
+        for k, v in sorted_items
     }
 
 

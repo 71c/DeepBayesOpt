@@ -1445,29 +1445,63 @@ def _count_num_plots(plot_config: dict, level_names: list[str], all_seeds=True):
     return n_plots
 
 
-def _plot_key_value_to_str(k, v):
-    if k == "attr_name":
-        return (2, v)
+def _get_sort_key_for_param(k, v):
+    """
+    Generate a sort key for legend parameters that handles both parameter names
+    and their values intelligently.
+
+    Returns a tuple of (priority, param_name, numeric_value_for_sorting)
+    """
     priority = 1
+
+    if k == "attr_name":
+        return (2, k, 0, v)
+
     if k == "gp_af":
         if v == "EI" or v == "LogEI":
             priority = 1.1
         else:
             priority = 1.2
+
     if k == "nn.method":
         if v == "mse_ei":
             priority = 1.1
         else:
             priority = 1.2
+
+    # Strip "nn." prefix for cleaner display (except for nn.lamda)
+    display_key = k
     if k != "nn.lamda" and k.startswith("nn."):
-        k = k[3:]
+        display_key = k[3:]
 
     # Special handling for HPO-B search space IDs to include dimension
     if k == "objective.hpob_search_space_id" or k == "hpob_search_space_id":
         dim = get_hpob_dataset_dimension(v)
-        return (dim, f"{k}={v} ({dim}D)")
+        return (dim, display_key, 0, f"{display_key}={v} ({dim}D)")
 
-    return (priority, f"{k}={v}")
+    # Try to extract numeric value for proper sorting
+    numeric_value = 0
+    if isinstance(v, (int, float)):
+        numeric_value = float(v)
+    elif isinstance(v, str):
+        try:
+            # Try to parse as float (handles scientific notation like 5.2e-05)
+            numeric_value = float(v)
+        except (ValueError, TypeError):
+            # Not a number, keep as 0 (will sort alphabetically by string)
+            pass
+
+    return (priority, display_key, numeric_value, f"{display_key}={v}")
+
+
+def _plot_key_value_to_str(k, v):
+    """
+    Convert a key-value pair to a string for plotting legend.
+    Returns a tuple of (sort_key, formatted_string).
+    """
+    sort_key = _get_sort_key_for_param(k, v)
+    # Return (sort_key[:-1], formatted_string) - exclude the formatted string from sort key
+    return (sort_key[:-1], sort_key[-1])
 
 
 def plot_dict_to_str(d):
