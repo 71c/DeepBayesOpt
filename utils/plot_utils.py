@@ -972,6 +972,164 @@ def get_plot_ax_bo_stats_vs_iteration_func(get_result_func):
     return ret
 
 
+def get_plot_ax_loss_vs_regret_func(get_result_func):
+    """
+    Create a scatter plot showing validation loss vs. mean BO regret.
+
+    This function creates a plot where:
+    - X axis: Log(mean regret after N iterations of BO), averaged across seeds
+    - Y axis: Log(best validation loss from training)
+    - Each point represents a different configuration
+    """
+    def ret(plot_config: dict,
+            ax,
+            plot_name: Optional[str]=None,
+            attr_name_to_title: dict[str, str] = {},
+            **plot_kwargs):
+
+        # Extract parameters from plot_kwargs
+        iteration_to_plot = plot_kwargs.get('iteration_to_plot', -1)  # -1 means final iteration
+        center_stat = plot_kwargs.get('center_stat', 'mean')
+        scale = plot_kwargs.get('scale', 1.0)
+        s_default = scale * 80.0  # marker size
+        plot_mode = plot_kwargs.get('plot_mode', 'scatter')  # 'scatter' or 'density'
+
+        # Storage for plot data
+        x_data = []  # regret values
+        y_data = []  # validation loss values
+        labels = []
+        colors = []
+
+        for legend_name, data in plot_config.items():
+            for k, v in data["items"].items():
+                data_index = v["items"]
+                if isinstance(data_index, list):
+                    print([get_result_func(i) for i in data_index])
+                    raise ValueError("Expected single data index, got list")
+
+                info = get_result_func(data_index)
+                if info is None:
+                    continue
+
+                # Extract BO regret data
+                if 'normalized_regret' in info:
+                    regret_data = info['normalized_regret']
+                    if len(regret_data.shape) != 2:
+                        raise ValueError(f"Expected 2D regret array, got {regret_data.shape=}")
+
+                    # regret_data has shape (n_seeds, n_iterations+1)
+                    # Extract regret at the specified iteration across all seeds
+                    regret_at_iter = regret_data[:, iteration_to_plot]
+
+                    # Compute mean or median across seeds
+                    if center_stat == 'mean':
+                        mean_regret = np.mean(regret_at_iter)
+                    elif center_stat == 'median':
+                        mean_regret = np.median(regret_at_iter)
+                    else:
+                        raise ValueError(f"Unknown center_stat: {center_stat}")
+
+                    # Clip small values to avoid log(0)
+                    min_regret = plot_kwargs.get('min_regret_for_plot', 1e-6)
+                    mean_regret = max(mean_regret, min_regret)
+                else:
+                    print(f"Warning: No normalized_regret found for {legend_name}")
+                    continue
+
+                # Extract validation loss from training history
+                if 'training_history_data' in info:
+                    training_history = info['training_history_data']
+                    stats_epochs = training_history.get('stats_epochs', [])
+
+                    if len(stats_epochs) == 0:
+                        print(f"Warning: No stats_epochs found for {legend_name}")
+                        continue
+
+                    # Get the stat name (e.g., 'mse' or 'gittins_loss')
+                    stat_name = training_history.get('stat_name', 'mse')
+
+                    # Extract test losses across all epochs
+                    test_losses = [epoch['test'][stat_name] for epoch in stats_epochs]
+
+                    # Use the best (minimum) validation loss
+                    best_val_loss = np.min(test_losses)
+
+                    # Clip small values to avoid log(0)
+                    min_loss = plot_kwargs.get('min_loss_for_plot', 1e-10)
+                    best_val_loss = max(best_val_loss, min_loss)
+                else:
+                    print(f"Warning: No training_history_data found for {legend_name}")
+                    continue
+
+                # Add to plot data
+                x_data.append(mean_regret)
+                y_data.append(best_val_loss)
+                labels.append(legend_name)
+
+                # Use line color if available
+                line_color = data.get('color', BLUE)
+                colors.append(line_color)
+
+        if len(x_data) == 0:
+            raise ValueError("No data to plot for loss vs regret scatter plot")
+
+        # Convert to arrays
+        x_data = np.array(x_data)
+        y_data = np.array(y_data)
+
+        # Create plot based on mode
+        if plot_mode == 'scatter':
+            # Scatter plot: one point per configuration
+            for i, (x, y, label, color) in enumerate(zip(x_data, y_data, labels, colors)):
+                ax.scatter(x, y, s=s_default, alpha=0.7, color=color, label=label)
+            # Add legend for scatter mode
+            ax.legend()
+
+        elif plot_mode == 'density':
+            # 2D density heatmap/histogram
+            # Take log of data for better visualization
+            log_x = np.log10(x_data)
+            log_y = np.log10(y_data)
+
+            # Create 2D histogram
+            bins = plot_kwargs.get('density_bins', 30)
+            hist, xedges, yedges = np.histogram2d(log_x, log_y, bins=bins)
+
+            # Plot as heatmap
+            extent = [10**xedges[0], 10**xedges[-1], 10**yedges[0], 10**yedges[-1]]
+            im = ax.imshow(hist.T, origin='lower', extent=extent, aspect='auto',
+                          cmap='viridis', interpolation='nearest', norm=plt.matplotlib.colors.LogNorm())
+
+            # Add colorbar
+            plt.colorbar(im, ax=ax, label='Count')
+
+        else:
+            raise ValueError(f"Unknown plot_mode: {plot_mode}")
+
+        # Set log scales (for scatter mode, density mode handles internally)
+        if plot_mode == 'scatter':
+            ax.set_xscale('log')
+            ax.set_yscale('log')
+
+        # Set labels
+        iter_label = f"iteration {iteration_to_plot}" if iteration_to_plot >= 0 else "final iteration"
+        ax.set_xlabel(f'Mean Normalized Regret ({iter_label})')
+        ax.set_ylabel('Best Validation Loss')
+
+        # Set title
+        mode_str = "Scatter" if plot_mode == 'scatter' else "Density"
+        if plot_name:
+            ax.set_title(f"{plot_name} (Loss vs Regret - {mode_str})")
+        else:
+            ax.set_title(f'Validation Loss vs. BO Regret ({mode_str})')
+
+        # Add grid if requested
+        if plot_kwargs.get('add_grid', False):
+            ax.grid(True, alpha=0.3)
+
+    return ret
+
+
 N_CANDIDATES_PLOT = 2_000
 LOGSCALE_EI_AF_ITERATIONS_PLOTS = True
 

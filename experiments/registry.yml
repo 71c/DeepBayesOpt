@@ -1320,7 +1320,21 @@ experiments:
               - lamda
               - nn.learning_rate
             - - objective.id
-              - bo_seed  
+              - bo_seed
+      combined_plot:
+        default:
+          pre: []
+          attr_a: []
+          attr_b: []
+          post:
+          - - nn.x_cand_input
+            - nn.layer_width
+            - nn.encoded_history_dim
+            - nn.max_history_input
+            - nn.lamda
+            - nn.learning_rate
+          - - objective.id
+            - bo_seed  
 templates:
   basic_1d:
     description: Basic 1D experiment template

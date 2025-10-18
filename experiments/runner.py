@@ -199,7 +199,7 @@ class ExperimentRunner:
     def generate_plots(self, name: str, plot_type: str = "bo_experiments", n_iterations: int = 30,
                       center_stat: str = "mean", variant: str = "default",
                       max_iterations_to_plot: Optional[int] = None, add_grid: bool = False,
-                      add_markers: bool = False, dry_run: bool = False) -> Tuple[int, str, str]:
+                      add_markers: bool = False, plot_mode: str = "scatter", dry_run: bool = False) -> Tuple[int, str, str]:
         """Generate plots for an experiment."""
         try:
             args = self.registry.get_experiment_command_args(name)
@@ -255,6 +255,45 @@ class ExperimentRunner:
 
                 # Add variant configuration
                 cmd.extend(["--variant", variant])
+
+            elif plot_type == "combined_plot":
+                cmd = [
+                    sys.executable, "bo_experiments_combined_plot.py",
+                    "--nn_base_config", "config/train_acqf.yml",
+                    "--nn_experiment_config", args['NN_EXPERIMENT_CFG'].strip('"'),
+                    "--bo_base_config", "config/bo_config.yml",
+                    "--bo_experiment_config", args['BO_EXPERIMENT_CFG'].strip('"'),
+                    "--seed", args['SEED']
+                ]
+
+                # Add seeds configuration
+                seeds_cfg = args['SEEDS_CFG'].strip('"').split()
+                cmd.extend(seeds_cfg)
+
+                # Add plots configuration
+                plots_cfg = args['PLOTS_CFG'].strip('"').split()
+                cmd.extend(plots_cfg)
+
+                # Add combined plots configuration
+                bo_plots_name = args['BO_PLOTS_NAME'].strip('"')
+                cmd.extend([
+                    "--center_stat", center_stat,
+                    "--interval_of_center",
+                    "--plots_name", f"{bo_plots_name}_combined",
+                    "--variant", variant
+                ])
+
+                # Add iteration_to_plot if max_iterations_to_plot is specified
+                # (use it as the iteration to evaluate regret at)
+                if max_iterations_to_plot is not None:
+                    cmd.extend(["--iteration_to_plot", str(max_iterations_to_plot)])
+
+                # Add formatting options if specified
+                if add_grid:
+                    cmd.append("--add_grid")
+
+                # Add plot mode
+                cmd.extend(["--plot-mode", plot_mode])
 
             else:
                 raise ValueError(f"Unknown plot type: {plot_type}")
