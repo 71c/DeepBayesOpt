@@ -1457,17 +1457,26 @@ def _get_sort_key_for_param(k, v):
     if k == "attr_name":
         return (2, k, 0, v)
 
+    # NN methods should come first (lowest priority values)
+    if k == "nn.method":
+        if v == "mse_ei":
+            priority = 0.1
+        else:
+            priority = 0.2
+
+    # GP methods should come after NN methods (medium priority values)
     if k == "gp_af":
         if v == "EI" or v == "LogEI":
             priority = 1.1
         else:
             priority = 1.2
 
-    if k == "nn.method":
-        if v == "mse_ei":
-            priority = 1.1
+    # "method" field is used for random search (highest priority when set)
+    if k == "method":
+        if v == "random search":
+            priority = 2.0
         else:
-            priority = 1.2
+            priority = 0.5
 
     # Strip "nn." prefix for cleaner display (except for nn.lamda)
     display_key = k
