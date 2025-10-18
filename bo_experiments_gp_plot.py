@@ -1,6 +1,7 @@
 import copy
 import os
 import cProfile, pstats
+import numpy as np
 
 from nn_af.acquisition_function_net_save_utils import load_nn_acqf
 from utils.plot_utils import (
@@ -392,6 +393,84 @@ def add_plot_interval_args(parser):
     return interval_group
 
 
+def compute_auto_max_iterations(
+        results_list,
+        attr_name='normalized_regret',
+        threshold=1e-6,
+        buffer_fraction=0.25,
+        min_buffer=5):
+    """
+    Automatically determine the optimal number of iterations to plot.
+
+    This function analyzes all BO methods to find which ones achieve regret below
+    the threshold, determines when they first cross that threshold, and returns
+    a sensible max iteration count with a buffer for aesthetic plotting.
+
+    Args:
+        results_list: List of result dictionaries from BO runs
+        attr_name: The attribute to analyze (default: 'normalized_regret')
+        threshold: The regret threshold to consider as "converged" (default: 1e-6)
+        buffer_fraction: Fraction of extra iterations to add as buffer (default: 0.25)
+        min_buffer: Minimum number of iterations to add as buffer (default: 5)
+
+    Returns:
+        int or None: The suggested max iterations to plot, or None if auto-detection
+                     should not be applied
+    """
+    if attr_name not in {'normalized_regret', 'regret'}:
+        # Auto-detection only works for regret metrics
+        return None
+
+    convergence_iterations = []
+    max_available_iterations = 0
+
+    for result in results_list:
+        if attr_name not in result:
+            continue
+
+        data = result[attr_name]
+        if len(data.shape) != 2:
+            continue
+
+        # data has shape (n_seeds, n_iterations+1)
+        # We look at each seed separately
+        n_seeds, n_iters_plus_one = data.shape
+        n_iters = n_iters_plus_one - 1
+        max_available_iterations = max(max_available_iterations, n_iters)
+
+        for seed_idx in range(n_seeds):
+            seed_data = data[seed_idx, :]
+
+            # Find first iteration where regret goes below threshold
+            below_threshold = seed_data < threshold
+            if np.any(below_threshold):
+                # Find the first index where it goes below threshold
+                first_below_idx = np.argmax(below_threshold)
+                convergence_iterations.append(first_below_idx)
+
+    if len(convergence_iterations) == 0:
+        # No method converged below threshold, don't auto-limit
+        return None
+
+    # Take the maximum convergence iteration across all methods/seeds that converged
+    max_convergence_iter = max(convergence_iterations)
+
+    # Add buffer
+    buffer_iters = max(
+        int(max_convergence_iter * buffer_fraction),
+        min_buffer
+    )
+    suggested_max = max_convergence_iter + buffer_iters
+
+    # Cap at available iterations
+    suggested_max = min(suggested_max, max_available_iterations)
+
+    # Make sure we show at least some iterations (minimum 10)
+    suggested_max = max(suggested_max, 10)
+
+    return suggested_max
+
+
 def add_plot_formatting_args(parser):
     plot_formatting_group = parser.add_argument_group("Plot formatting")
     plot_formatting_group.add_argument(
@@ -411,6 +490,20 @@ def add_plot_formatting_args(parser):
         help='Minimum regret value to display in log-scale plots. Values below this '
              'will be clipped to this value to prevent extremely small regrets from '
              'compressing the y-axis range. Default: 1e-6'
+    )
+    plot_formatting_group.add_argument(
+        '--auto_max_iterations_buffer',
+        type=float,
+        default=0.25,
+        help='When auto-detecting max_iterations_to_plot, add this fraction as a buffer '
+             'beyond the convergence point (default: 0.25 = 25%% extra iterations)'
+    )
+    plot_formatting_group.add_argument(
+        '--auto_max_iterations_min_buffer',
+        type=int,
+        default=5,
+        help='Minimum number of iterations to add as buffer when auto-detecting '
+             'max_iterations_to_plot (default: 5)'
     )
     return plot_formatting_group
 
@@ -545,7 +638,26 @@ def main():
         else:
             plot_af_iterations = False
             attr_names = [a for a in attr_names if a in all_keys]
-        
+
+        # Auto-detect max_iterations_to_plot if not specified and plotting regret
+        effective_max_iterations = args.max_iterations_to_plot
+        if (not plot_af_iterations and
+            args.max_iterations_to_plot is None and
+            len(attr_names) == 1 and
+            attr_names[0] in {'normalized_regret', 'regret'}):
+
+            auto_max = compute_auto_max_iterations(
+                results_list,
+                attr_name=attr_names[0],
+                threshold=args.min_regret_for_plot,
+                buffer_fraction=args.auto_max_iterations_buffer,
+                min_buffer=args.auto_max_iterations_min_buffer
+            )
+            if auto_max is not None:
+                effective_max_iterations = auto_max
+                print(f"Auto-detected max_iterations_to_plot: {effective_max_iterations} "
+                      f"(based on threshold={args.min_regret_for_plot})")
+
         post = copy.deepcopy(POST)
         attr_a = copy.deepcopy(ATTR_A)
         put_attr_a_into_line = plot_af_iterations
@@ -763,12 +875,12 @@ def main():
                 # bo_policy_args = existing_cfgs[idx]['bo_policy_args']
 
                 if attr_name in results:
-                    # Slice the data if max_iterations_to_plot is specified
+                    # Slice the data if max_iterations_to_plot is specified (or auto-detected)
                     data_value = results[attr_name]
-                    if args.max_iterations_to_plot is not None:
+                    if effective_max_iterations is not None:
                         # +1 to include the initial value before doing BO
                         # (when we only have evaluated at the sobol points)
-                        data_value = data_value[:args.max_iterations_to_plot+1]
+                        data_value = data_value[:effective_max_iterations+1]
 
                     ret = {
                         attr_name: data_value,

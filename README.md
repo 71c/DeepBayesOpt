@@ -174,10 +174,29 @@ The plotting script supports several formatting options to improve plot readabil
 - `--add_grid`: Add a grid to the plots for easier reading
 - `--add_markers`: Add markers to the lines at each iteration point
 - `--min_regret_for_plot`: Set the minimum regret value displayed in log-scale plots (default: 1e-6). Values below this threshold will be clipped to prevent extremely small regrets from compressing the y-axis range. For example, use `--min_regret_for_plot 1e-8` to allow smaller regret values to be displayed.
+- `--max_iterations_to_plot`: Manually specify the maximum number of BO iterations to display in plots. If not specified, the script will automatically determine an optimal value when plotting regret metrics.
 
-Example with formatting options:
+### Automatic Max Iterations Detection
+
+When plotting regret metrics (`normalized_regret` or `regret`) without specifying `--max_iterations_to_plot`, the script automatically determines an optimal number of iterations to display. This feature:
+
+1. Analyzes all BO methods to find which ones achieve regret below the threshold (specified by `--min_regret_for_plot`)
+2. Identifies the maximum number of iterations required across all methods to reach the threshold
+3. Adds a buffer (default: 25% more iterations, minimum 5) to show convergence stability
+4. Focuses the plot on the "interesting" convergence region while avoiding excessive flat regions
+
+You can control the auto-detection behavior with these parameters:
+- `--auto_max_iterations_buffer`: Fraction of extra iterations to add as buffer (default: 0.25 for 25%)
+- `--auto_max_iterations_min_buffer`: Minimum number of iterations to add as buffer (default: 5)
+
+Example with formatting options and auto-detection:
 ```bash
-python bo_experiments_gp_plot.py --nn_base_config config/train_acqf.yml --nn_experiment_config config/train_acqf_experiment_1dim_example.yml --bo_base_config config/bo_config.yml --n_gp_draws 2 --seed 8 --use_rows --use_cols --add_grid --add_markers --min_regret_for_plot 1e-8 --plots_group_name test_plots --plots_name results
+python bo_experiments_gp_plot.py --nn_base_config config/train_acqf.yml --nn_experiment_config config/train_acqf_experiment_1dim_example.yml --bo_base_config config/bo_config.yml --n_gp_draws 2 --seed 8 --use_rows --use_cols --add_grid --add_markers --min_regret_for_plot 1e-8 --auto_max_iterations_buffer 0.3 --plots_group_name test_plots --plots_name results
+```
+
+Example with manual max iterations (disables auto-detection):
+```bash
+python bo_experiments_gp_plot.py --nn_base_config config/train_acqf.yml --nn_experiment_config config/train_acqf_experiment_1dim_example.yml --bo_base_config config/bo_config.yml --n_gp_draws 2 --seed 8 --max_iterations_to_plot 50 --plots_group_name test_plots --plots_name results
 ```
 This means that at the highest level it will vary the layer width and the training samples size, then the lambda, the GP acquisition function or NN method, and finally the seed for the GP. The GP seed corresponds to individual BO runs that together comprise an error bar that is in the legend of a specific subplot. The higher levels make up subplots within a figure, figures (which correspond to `.pdf` files), and folders containing the figures. 
 The script will output something like the following to indicate to the user the structure of the plots:
