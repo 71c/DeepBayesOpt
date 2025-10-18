@@ -16,7 +16,9 @@
       "Bash(git log -1 --format='%an %ae')",
       "Bash(git add .claude/settings.local.json utils/plot_utils.py)",
       "Bash(git commit --amend --no-edit)",
-      "Bash(chmod +x bo_experiments_combined_plot.py)"
+      "Bash(chmod +x bo_experiments_combined_plot.py)",
+      "Bash(pkill -f \"bo_experiments_combined_plot.py\")",
+      "Bash(git add bo_experiments_combined_plot.py)"
     ],
     "deny": [],
     "ask": []

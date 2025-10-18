@@ -267,6 +267,9 @@ def main():
         this_reformatted_configs = [{**cfg, 'attr_name': 'loss_vs_regret', 'index': i}
              for i, cfg in enumerate(reformatted_configs)]
 
+        # print attrs_groups_list
+        print(f"Attribute groups for plotting: {attrs_groups_list}")
+
         def get_result_func(i):
             return combined_results_list[i]
 
@@ -276,7 +279,7 @@ def main():
             attrs_groups_list)
 
         # Define level names for plotting
-        level_names = ['row', 'col', 'line']
+        level_names = ['fname']
         if len(attrs_groups_list) > 3:
             level_names = ['folder'] * (len(attrs_groups_list) - 3) + level_names
 

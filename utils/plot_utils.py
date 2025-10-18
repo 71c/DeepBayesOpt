@@ -1540,7 +1540,7 @@ def _save_figures_from_nested_structure(
                 save_json(info_dict,
                         os.path.join(base_folder, "vals_per_figure.json"), indent=2)
         else:
-            raise ValueError
+            raise ValueError(f"Invalid level name: {this_level_name}")
 
         # Log the caught warnings using the specific logger
         for w in caught_warnings:
@@ -1558,6 +1558,28 @@ def save_figures_from_nested_structure(
         print_pbar=True,
         all_seeds=True,
         **plot_kwargs):
+    if type(plot_config) is tuple and len(plot_config) == 2 and \
+        type(plot_config[0]) is dict and type(plot_config[1]) is list:
+        plot_config = plot_config[0]
+    elif type(plot_config) is not dict:
+        print(f"{type(plot_config)=}", file=sys.stderr)
+        if type(plot_config) in {list, tuple}:
+            print(f"  len(plot_config)={len(plot_config)}", file=sys.stderr)
+            for i, pc in enumerate(plot_config):
+                print(f"  {i}: {type(pc)=}", file=sys.stderr)
+                if type(pc) is dict:
+                    print(f"    plot_config[{i}] type: dict with {len(pc)} keys",
+                          file=sys.stderr)
+                elif type(pc) is list:
+                    print(f"    plot_config[{i}] type: list with {len(pc)} items",
+                          file=sys.stderr)
+                    for j, item in enumerate(pc):
+                        print(f"      item {j}: type {type(item)}, value {item}",
+                              file=sys.stderr)
+                else:
+                    print(f"    plot_config[{i}] type: {type(pc)}", file=sys.stderr)
+        raise ValueError("plot_config should be a dict")
+
     n_plots = _count_num_plots(
         plot_config, level_names=level_names.copy(), all_seeds=all_seeds)
     pbar = tqdm(total=n_plots, desc="Saving figures") if print_pbar else None
