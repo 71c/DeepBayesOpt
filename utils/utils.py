@@ -1352,34 +1352,52 @@ def _group_by_nested_attrs(items: List[dict[K, Any]],
     initial_grouped_items.update(new_grouped_items)
 
     # Sort the grouped items by their values to ensure consistent legend ordering
-    # Sort by the actual parameter values (not just the string representation)
+    # Import plot_utils to use the same sort key logic for consistency
+    from utils.plot_utils import _get_sort_key_for_param
+
     def _sort_key_for_grouped_items(item):
         """
         Create a sort key for grouped items based on their parameter values.
-        Sort by numeric values when possible, fall back to string comparison.
+        Uses the same priority logic as _get_sort_key_for_param to ensure
+        consistent legend ordering (NN methods before GP methods before random search).
         """
         key, value_dict = item
         vals = value_dict['vals']
 
-        # Create a sort key that considers both parameter names and values
-        sort_components = []
+        # Determine the primary category (NN, GP, or random search) based on the parameters
+        # This ensures the main grouping is correct before sorting by other parameters
+        primary_priority = 1.0  # Default priority for other parameters
+
+        # Check for method-identifying parameters
+        if 'method' in vals:
+            if vals['method'] == 'random search':
+                primary_priority = 2.0  # Random search last
+            else:
+                primary_priority = 0.5  # Other methods
+        elif 'gp_af' in vals:
+            primary_priority = 1.1  # GP methods in the middle
+        elif 'nn.method' in vals:
+            primary_priority = 0.1 if vals['nn.method'] == 'mse_ei' else 0.2  # NN methods first
+        elif any(k.startswith('nn.') for k in vals.keys()):
+            # If there are NN parameters but no explicit method, assume it's an NN method
+            primary_priority = 0.15  # Between mse_ei and other NN methods
+        elif any(k.startswith('gp_af.') for k in vals.keys()):
+            # If there are GP parameters but no explicit gp_af, assume it's a GP method
+            primary_priority = 1.15
+
+        # Create a sort key using the same logic as _get_sort_key_for_param
+        # Start with the primary priority to ensure main grouping
+        sort_components = [(primary_priority,)]
+
+        # Then add individual parameter sort keys
         for param_name in sorted(vals.keys()):
             param_value = vals[param_name]
 
-            # Try to convert to numeric for proper sorting
-            numeric_value = None
-            if isinstance(param_value, (int, float)):
-                numeric_value = float(param_value)
-            elif isinstance(param_value, str):
-                try:
-                    numeric_value = float(param_value)
-                except (ValueError, TypeError):
-                    pass
-
-            if numeric_value is not None:
-                sort_components.append((param_name, 0, numeric_value))
-            else:
-                sort_components.append((param_name, 1, str(param_value)))
+            # Use the same sorting logic as plot_dict_to_str
+            sort_key = _get_sort_key_for_param(param_name, param_value)
+            # sort_key is (priority, display_key, numeric_value, formatted_string)
+            # We use (priority, display_key, numeric_value) for sorting
+            sort_components.append(sort_key[:-1])
 
         return tuple(sort_components)
 
