@@ -912,14 +912,19 @@ def get_plot_ax_bo_stats_vs_iteration_func(get_result_func):
                         val = val[:, 0]
                     else:
                         assert len(val.shape) == 1
-                    
+
+                    # Clip regret values to prevent extremely small values from compressing the plot
+                    if attr_name in {'regret', 'normalized_regret'}:
+                        min_regret = plot_kwargs.get('min_regret_for_plot', 1e-6)
+                        val = np.maximum(val, min_regret)
+
                     val_id = f"{info['index']}_{attr_name}"
                     this_ids.append(val_id)
                     this_data.append(val)
-                        
+
             if len(this_ids) == 0:
                 continue
-            
+
             if attr_name == 'x':
                 # Only plot one seed
                 x_vals = this_data[0]

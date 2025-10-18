@@ -166,6 +166,19 @@ An example command is as follows:
 ```bash
 python bo_experiments_gp_plot.py --nn_base_config config/train_acqf.yml --nn_experiment_config config/train_acqf_experiment_1dim_example.yml --bo_base_config config/bo_config.yml --bo_experiment_config config/bo_config_experiment_2_20iter_160.yml --n_gp_draws 2 --seed 8 --use_rows --use_cols --center_stat mean --interval_of_center --plots_group_name test_1dim_maxhistory20_example --plots_name results_20iter
 ```
+
+## Plot Formatting Options
+
+The plotting script supports several formatting options to improve plot readability:
+
+- `--add_grid`: Add a grid to the plots for easier reading
+- `--add_markers`: Add markers to the lines at each iteration point
+- `--min_regret_for_plot`: Set the minimum regret value displayed in log-scale plots (default: 1e-6). Values below this threshold will be clipped to prevent extremely small regrets from compressing the y-axis range. For example, use `--min_regret_for_plot 1e-8` to allow smaller regret values to be displayed.
+
+Example with formatting options:
+```bash
+python bo_experiments_gp_plot.py --nn_base_config config/train_acqf.yml --nn_experiment_config config/train_acqf_experiment_1dim_example.yml --bo_base_config config/bo_config.yml --n_gp_draws 2 --seed 8 --use_rows --use_cols --add_grid --add_markers --min_regret_for_plot 1e-8 --plots_group_name test_plots --plots_name results
+```
 This means that at the highest level it will vary the layer width and the training samples size, then the lambda, the GP acquisition function or NN method, and finally the seed for the GP. The GP seed corresponds to individual BO runs that together comprise an error bar that is in the legend of a specific subplot. The higher levels make up subplots within a figure, figures (which correspond to `.pdf` files), and folders containing the figures. 
 The script will output something like the following to indicate to the user the structure of the plots:
 ```

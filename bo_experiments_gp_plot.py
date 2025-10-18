@@ -404,6 +404,14 @@ def add_plot_formatting_args(parser):
         action='store_true',
         help='If set, add markers to the lines in the plots at each iteration'
     )
+    plot_formatting_group.add_argument(
+        '--min_regret_for_plot',
+        type=float,
+        default=1e-6,
+        help='Minimum regret value to display in log-scale plots. Values below this '
+             'will be clipped to this value to prevent extremely small regrets from '
+             'compressing the y-axis range. Default: 1e-6'
+    )
     return plot_formatting_group
 
 
