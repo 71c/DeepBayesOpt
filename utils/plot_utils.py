@@ -1287,7 +1287,8 @@ def _get_figure_from_nested_structure(
                                   plot_name=None, attr_name_to_title=attr_name_to_title,
                                   **plot_kwargs)
             row_names = [x[0] for x in sorted_plot_config_items]
-            add_headers(fig, row_headers=row_names, col_headers=col_names)
+            add_headers(fig, row_headers=row_names, col_headers=col_names,
+                        size='xx-large')
         elif this_level_name == "row" or this_level_name == "col":
             assert next_level_names[0] == "line"
             if this_level_name == "col":

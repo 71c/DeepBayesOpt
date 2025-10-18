@@ -7,6 +7,7 @@ Handles execution of experiments defined in the registry.
 import os
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 from .registry import ExperimentRegistry
@@ -20,49 +21,61 @@ class ExperimentRunner:
         self.registry = registry or ExperimentRegistry()
     
     def _run_command_with_streaming(self, cmd: List[str]) -> Tuple[int, str, str]:
-        """Run command with real-time output streaming."""
+        """Run command with real-time output streaming using threads to avoid blocking."""
         stdout_lines = []
         stderr_lines = []
-        
+
+        def stream_output(pipe, output_list, output_file):
+            """Read from pipe and write to output file in real-time."""
+            try:
+                for line in iter(pipe.readline, ''):
+                    if line:
+                        # Print immediately for real-time streaming
+                        print(line.rstrip(), file=output_file, flush=True)
+                        output_list.append(line)
+            except Exception:
+                pass
+            finally:
+                pipe.close()
+
         try:
+            # Add -u flag to Python commands to force unbuffered output
+            modified_cmd = cmd.copy()
+            if modified_cmd[0] == sys.executable:
+                modified_cmd.insert(1, '-u')
+
             process = subprocess.Popen(
-                cmd,
+                modified_cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
                 bufsize=1,
                 universal_newlines=True
             )
-            
-            # Read stdout and stderr in real-time
-            while True:
-                # Check if process has finished
-                if process.poll() is not None:
-                    break
-                
-                # Read stdout
-                stdout_line = process.stdout.readline()
-                if stdout_line:
-                    print(stdout_line.rstrip())
-                    stdout_lines.append(stdout_line)
-                
-                # Read stderr
-                stderr_line = process.stderr.readline()
-                if stderr_line:
-                    print(stderr_line.rstrip(), file=sys.stderr)
-                    stderr_lines.append(stderr_line)
-            
-            # Read any remaining output
-            remaining_stdout, remaining_stderr = process.communicate()
-            if remaining_stdout:
-                print(remaining_stdout.rstrip())
-                stdout_lines.append(remaining_stdout)
-            if remaining_stderr:
-                print(remaining_stderr.rstrip(), file=sys.stderr)
-                stderr_lines.append(remaining_stderr)
-            
-            return process.returncode, ''.join(stdout_lines), ''.join(stderr_lines)
-            
+
+            # Create threads to read stdout and stderr concurrently
+            stdout_thread = threading.Thread(
+                target=stream_output,
+                args=(process.stdout, stdout_lines, sys.stdout)
+            )
+            stderr_thread = threading.Thread(
+                target=stream_output,
+                args=(process.stderr, stderr_lines, sys.stderr)
+            )
+
+            # Start threads
+            stdout_thread.start()
+            stderr_thread.start()
+
+            # Wait for process to complete
+            returncode = process.wait()
+
+            # Wait for threads to finish reading all output
+            stdout_thread.join()
+            stderr_thread.join()
+
+            return returncode, ''.join(stdout_lines), ''.join(stderr_lines)
+
         except Exception as e:
             return 1, "", f"Error running command: {str(e)}"
     

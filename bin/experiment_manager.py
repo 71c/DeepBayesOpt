@@ -97,10 +97,13 @@ def cmd_status(args):
             print(f"Checking status of experiment: {args.name}")
             returncode, stdout, stderr = runner.run_status_check(args.name, dry_run=args.dry_run)
 
-            if stdout:
+            # Output is already streamed in real-time by the runner
+            # For dry run, we need to print the command
+            if args.dry_run and stdout:
                 print(stdout)
-            if stderr:
-                print(f"Errors:\n{stderr}")
+
+            if returncode != 0 and stderr and not stderr.strip():
+                print(f"Command failed with return code {returncode}", file=sys.stderr)
 
             return returncode
         else:
@@ -114,9 +117,9 @@ def cmd_status(args):
                 returncode, stdout, stderr = runner.run_status_check(exp_name, dry_run=args.dry_run)
 
                 if returncode == 0:
-                    # Parse and summarize stdout
+                    # Parse and summarize stdout (already printed in real-time)
                     lines = stdout.strip().split('\n')
-                    if lines:
+                    if lines and args.dry_run:
                         print(f"  Status: {lines[-1] if lines else 'Unknown'}")
                 else:
                     print(f"  Error checking status")
@@ -130,7 +133,7 @@ def cmd_run(args):
     """Run an experiment."""
     registry = ExperimentRegistry()
     runner = ExperimentRunner(registry)
-    
+
     try:
         print(f"Running experiment: {args.name}")
 
@@ -160,14 +163,17 @@ def cmd_run(args):
                 recompute_bo=getattr(args, 'recompute_bo', False),
                 recompute_non_nn_only=getattr(args, 'recompute_non_nn_only', False)
             )
-        
-        if stdout:
+
+        # Output is already streamed in real-time by the runner
+        # For dry run, we need to print the command
+        if args.dry_run and stdout:
             print(stdout)
-        if stderr:
-            print(f"Errors:\n{stderr}")
-        
+
+        if returncode != 0 and stderr and not stderr.strip():
+            print(f"Command failed with return code {returncode}", file=sys.stderr)
+
         return returncode
-    
+
     except ValueError as e:
         print(f"Error: {e}")
         return 1
@@ -196,10 +202,10 @@ def cmd_plot(args):
             dry_run=args.dry_run
         )
 
-        if stdout:
-            print(stdout)
-        if stderr:
-            print(f"Errors:\n{stderr}")
+        # Output is already streamed in real-time by the runner
+        # Only print if there was an error and stderr wasn't empty
+        if returncode != 0 and stderr and not stderr.strip():
+            print(f"Command failed with return code {returncode}", file=sys.stderr)
 
         return returncode
 

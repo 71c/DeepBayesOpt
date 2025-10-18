@@ -11,7 +11,11 @@
       "Bash(srun:*)",
       "Bash(./bin/experiment_manager.py plot:*)",
       "Bash(./bin/experiment_manager.py show:*)",
-      "Bash(./bin/experiment_manager.py plot-variants:*)"
+      "Bash(./bin/experiment_manager.py plot-variants:*)",
+      "Read(//home/adj53/.conda/envs/nn_bo/lib/python3.12/site-packages/**)",
+      "Bash(git log -1 --format='%an %ae')",
+      "Bash(git add .claude/settings.local.json utils/plot_utils.py)",
+      "Bash(git commit --amend --no-edit)"
     ],
     "deny": [],
     "ask": []
