@@ -1333,8 +1333,8 @@ experiments:
             - nn.max_history_input
             - nn.lamda
             - nn.learning_rate
-          - - objective.id
-            - bo_seed  
+          # NOTE: bo_seed and objective.id are implicitly aggregated by grouping
+          # We don't list them here, so all runs with same hyperparameters get grouped together
 templates:
   basic_1d:
     description: Basic 1D experiment template

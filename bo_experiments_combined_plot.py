@@ -42,12 +42,17 @@ PRE = []
 ATTR_A = []
 ATTR_B = []
 POST = [
+    # We still need to group by hyperparameters, but plot function will aggregate
     ["lamda", "gp_af", "nn.method", "nn.learning_rate"],
-    ["bo_seed"]
 ]
 
+# NEW: Flag to control whether to create one combined plot or separate plots
+CREATE_SINGLE_COMBINED_PLOT = True
+
 ONE_FIGURE = True
-PLOT_ALL_SEEDS = False
+# Set to True because we're using list-based aggregation in the plotting function
+# (The name is misleading - it controls the plot structure, not whether we aggregate)
+PLOT_ALL_SEEDS = True
 
 # Plot type to generate
 ATTR_GROUPS = [
@@ -219,13 +224,21 @@ def main():
             if random_search:
                 item['gp_af_args']['gp_af'] = 'random search'
 
-        reformatted_configs.append({
+        reformatted_config = {
             **{k if k == 'dimension' else f'objective.{k}': v
                for k, v in item['objective_args'].items()},
             **{k: v for k, v in bo_policy_args.items() if k != 'random_search'},
             **{k if k == 'gp_af' else f'gp_af.{k}': v
                for k, v in item['gp_af_args'].items()}
-        })
+        }
+
+        # Remove seed-related attributes that we want to aggregate over
+        # instead of creating separate groups for
+        keys_to_remove = ['bo_seed', 'objective.id', 'objective.gp_seed', 'hpob_seed']
+        for key in keys_to_remove:
+            reformatted_config.pop(key, None)
+
+        reformatted_configs.append(reformatted_config)
 
     # Folder name
     save_dir = create_plot_directory(args.plots_name, args.plots_group_name, is_bo=True)
@@ -267,21 +280,40 @@ def main():
         this_reformatted_configs = [{**cfg, 'attr_name': 'loss_vs_regret', 'index': i}
              for i, cfg in enumerate(reformatted_configs)]
 
-        # print attrs_groups_list
-        print(f"Attribute groups for plotting: {attrs_groups_list}")
+        # Debug: Check if seed attributes were successfully removed
+        if len(this_reformatted_configs) > 0:
+            sample_config = this_reformatted_configs[0]
+            print(f"DEBUG: Sample config keys: {sorted(sample_config.keys())}")
+            seed_keys = ['bo_seed', 'objective.id', 'objective.gp_seed', 'hpob_seed']
+            for key in seed_keys:
+                if key in sample_config:
+                    print(f"WARNING: {key} still in config with value: {sample_config[key]}")
 
         def get_result_func(i):
             return combined_results_list[i]
 
         # Group by attributes
-        grouped_plot_config = group_by_nested_attrs(
+        grouped_plot_config, final_attrs_groups_list = group_by_nested_attrs(
             this_reformatted_configs,
             attrs_groups_list)
 
         # Define level names for plotting
-        level_names = ['fname']
-        if len(attrs_groups_list) > 3:
-            level_names = ['folder'] * (len(attrs_groups_list) - 3) + level_names
+        # We expect 2 levels: attr_name and hyperparameters (seeds are aggregated)
+        level_names = ['fname', 'line']
+
+        final_attrs_groups_list = [{'attr_name'}] + final_attrs_groups_list
+
+        if len(final_attrs_groups_list) > 2:
+            level_names = ['folder'] * (len(final_attrs_groups_list) - 2) + level_names
+        
+        print(f"{attrs_groups_list=}")
+        print(f"{final_attrs_groups_list=}")
+        print(f"{level_names=}")
+        print(f"DEBUG: grouped_plot_config type: {type(grouped_plot_config)}")
+        if isinstance(grouped_plot_config, dict):
+            first_key = list(grouped_plot_config.keys())[0]
+            print(f"DEBUG: grouped_plot_config keys (first 5): {list(grouped_plot_config.keys())[:5]}")
+            print(f"DEBUG: First item structure: {grouped_plot_config[first_key]}")
 
         # Create the plot
         plot_ax_func = get_plot_ax_loss_vs_regret_func(get_result_func)
@@ -289,19 +321,53 @@ def main():
         attr_name_to_title = copy.deepcopy(ATTR_NAME_TO_TITLE)
         attr_name_to_title['loss_vs_regret'] = 'Validation Loss vs. BO Regret'
 
-        save_figures_from_nested_structure(
-            grouped_plot_config,
-            plot_ax_func,
-            attrs_groups_list,
-            level_names,
-            base_folder=save_dir,
-            attr_name_to_title=attr_name_to_title,
-            print_pbar=True,
-            all_seeds=PLOT_ALL_SEEDS,
-            **script_plot_kwargs
-        )
+        if CREATE_SINGLE_COMBINED_PLOT:
+            # Create a single combined plot with all data points
+            import matplotlib.pyplot as plt
+            from utils.plot_utils import BLUE
 
-        print(f"Saved plots to {save_dir}")
+            fig, ax = plt.subplots(1, 1, figsize=(8, 6))
+
+            # Create a plot config where each configuration is separate (not aggregated)
+            # This ensures each configuration creates its own point
+            simple_plot_config = {}
+            for i in range(len(combined_results_list)):
+                # Each configuration gets a unique key and its own index (not as a list)
+                simple_plot_config[f'config_{i}'] = {
+                    'items': i  # Single index, not a list
+                }
+
+            # Call the plotting function
+            plot_ax_func(
+                plot_config=simple_plot_config,
+                ax=ax,
+                plot_name='Validation Loss vs. BO Regret',
+                attr_name_to_title=attr_name_to_title,
+                **script_plot_kwargs
+            )
+
+            # Save the figure
+            os.makedirs(save_dir, exist_ok=True)
+            fig_path = os.path.join(save_dir, 'combined_scatter.pdf')
+            fig.savefig(fig_path, dpi=300, format='pdf', bbox_inches='tight')
+            plt.close(fig)
+
+            print(f"Saved single combined plot to {fig_path}")
+        else:
+            # Original behavior - save separate figures
+            save_figures_from_nested_structure(
+                grouped_plot_config,
+                plot_ax_func,
+                attrs_groups_list,
+                level_names,
+                base_folder=save_dir,
+                attr_name_to_title=attr_name_to_title,
+                print_pbar=True,
+                all_seeds=PLOT_ALL_SEEDS,
+                **script_plot_kwargs
+            )
+
+            print(f"Saved plots to {save_dir}")
 
     t_plot_end = time.time()
     t_total = t_plot_end - t_start

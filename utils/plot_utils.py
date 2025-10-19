@@ -1000,75 +1000,159 @@ def get_plot_ax_loss_vs_regret_func(get_result_func):
         labels = []
         colors = []
 
-        for legend_name, data in plot_config.items():
-            for k, v in data["items"].items():
-                data_index = v["items"]
-                if isinstance(data_index, list):
-                    print([get_result_func(i) for i in data_index])
-                    raise ValueError("Expected single data index, got list")
+        def process_data_index(data_index, legend_name, data):
+            """Helper function to extract and process a single data index or aggregate multiple indices"""
+            if isinstance(data_index, list):
+                # Multiple indices - aggregate them into a single point
+                # Collect all regret values at the specified iteration
+                all_regret_values = []
+                validation_loss = None
 
-                info = get_result_func(data_index)
-                if info is None:
-                    continue
-
-                # Extract BO regret data
-                if 'normalized_regret' in info:
-                    regret_data = info['normalized_regret']
-                    if len(regret_data.shape) != 2:
-                        raise ValueError(f"Expected 2D regret array, got {regret_data.shape=}")
-
-                    # regret_data has shape (n_seeds, n_iterations+1)
-                    # Extract regret at the specified iteration across all seeds
-                    regret_at_iter = regret_data[:, iteration_to_plot]
-
-                    # Compute mean or median across seeds
-                    if center_stat == 'mean':
-                        mean_regret = np.mean(regret_at_iter)
-                    elif center_stat == 'median':
-                        mean_regret = np.median(regret_at_iter)
-                    else:
-                        raise ValueError(f"Unknown center_stat: {center_stat}")
-
-                    # Clip small values to avoid log(0)
-                    min_regret = plot_kwargs.get('min_regret_for_plot', 1e-6)
-                    mean_regret = max(mean_regret, min_regret)
-                else:
-                    print(f"Warning: No normalized_regret found for {legend_name}")
-                    continue
-
-                # Extract validation loss from training history
-                if 'training_history_data' in info:
-                    training_history = info['training_history_data']
-                    stats_epochs = training_history.get('stats_epochs', [])
-
-                    if len(stats_epochs) == 0:
-                        print(f"Warning: No stats_epochs found for {legend_name}")
+                for idx in data_index:
+                    info = get_result_func(idx)
+                    if info is None:
                         continue
 
-                    # Get the stat name (e.g., 'mse' or 'gittins_loss')
-                    stat_name = training_history.get('stat_name', 'mse')
+                    # Extract BO regret data
+                    if 'normalized_regret' in info:
+                        regret_data = info['normalized_regret']
+                        if len(regret_data.shape) != 2:
+                            raise ValueError(f"Expected 2D regret array, got {regret_data.shape=}")
 
-                    # Extract test losses across all epochs
-                    test_losses = [epoch['test'][stat_name] for epoch in stats_epochs]
+                        # regret_data has shape (n_seeds, n_iterations+1)
+                        # Use the last available iteration if requested iteration is out of bounds
+                        iter_to_use = iteration_to_plot if iteration_to_plot >= 0 else -1
+                        if iter_to_use >= regret_data.shape[1]:
+                            iter_to_use = -1
 
-                    # Use the best (minimum) validation loss
-                    best_val_loss = np.min(test_losses)
+                        # Extract regret at the specified iteration for all seeds in this run
+                        regret_at_iter = regret_data[:, iter_to_use]
+                        all_regret_values.extend(regret_at_iter.flatten())
 
-                    # Clip small values to avoid log(0)
-                    min_loss = plot_kwargs.get('min_loss_for_plot', 1e-10)
-                    best_val_loss = max(best_val_loss, min_loss)
+                    # Extract validation loss (same for all indices since they share the same model)
+                    if validation_loss is None and 'training_history_data' in info:
+                        training_history = info['training_history_data']
+                        stats_epochs = training_history.get('stats_epochs', [])
+
+                        if len(stats_epochs) > 0:
+                            stat_name = training_history.get('stat_name', 'mse')
+                            test_losses = [epoch['test'][stat_name] for epoch in stats_epochs]
+                            validation_loss = np.min(test_losses)
+
+                if len(all_regret_values) == 0:
+                    print(f"Warning: No regret data found for {legend_name}")
+                    return
+
+                if validation_loss is None:
+                    print(f"Warning: No validation loss found for {legend_name}")
+                    return
+
+                # Compute mean or median across all seeds and objectives
+                if center_stat == 'mean':
+                    aggregated_regret = np.mean(all_regret_values)
+                elif center_stat == 'median':
+                    aggregated_regret = np.median(all_regret_values)
                 else:
-                    print(f"Warning: No training_history_data found for {legend_name}")
-                    continue
+                    raise ValueError(f"Unknown center_stat: {center_stat}")
 
-                # Add to plot data
-                x_data.append(mean_regret)
-                y_data.append(best_val_loss)
+                # Clip small values to avoid log(0)
+                min_regret = plot_kwargs.get('min_regret_for_plot', 1e-6)
+                min_loss = plot_kwargs.get('min_loss_for_plot', 1e-10)
+                aggregated_regret = max(aggregated_regret, min_regret)
+                validation_loss = max(validation_loss, min_loss)
+
+                # Add aggregated point to plot data
+                x_data.append(aggregated_regret)
+                y_data.append(validation_loss)
                 labels.append(legend_name)
+                colors.append(data.get('color', BLUE))
+                return
 
-                # Use line color if available
-                line_color = data.get('color', BLUE)
-                colors.append(line_color)
+            info = get_result_func(data_index)
+            if info is None:
+                return
+
+            # Extract BO regret data
+            if 'normalized_regret' in info:
+                regret_data = info['normalized_regret']
+                if len(regret_data.shape) != 2:
+                    raise ValueError(f"Expected 2D regret array, got {regret_data.shape=}")
+
+                # regret_data has shape (n_seeds, n_iterations+1)
+                # Extract regret at the specified iteration across all seeds
+                n_iterations_available = regret_data.shape[1] - 1  # -1 because includes initial point
+
+                # Use the last available iteration if requested iteration is out of bounds
+                iter_to_use = iteration_to_plot if iteration_to_plot >= 0 else -1
+                if iter_to_use >= regret_data.shape[1]:
+                    # Out of bounds - use last iteration
+                    iter_to_use = -1
+
+                regret_at_iter = regret_data[:, iter_to_use]
+
+                # Compute mean or median across seeds
+                if center_stat == 'mean':
+                    mean_regret = np.mean(regret_at_iter)
+                elif center_stat == 'median':
+                    mean_regret = np.median(regret_at_iter)
+                else:
+                    raise ValueError(f"Unknown center_stat: {center_stat}")
+
+                # Clip small values to avoid log(0)
+                min_regret = plot_kwargs.get('min_regret_for_plot', 1e-6)
+                mean_regret = max(mean_regret, min_regret)
+            else:
+                print(f"Warning: No normalized_regret found for {legend_name}")
+                return
+
+            # Extract validation loss from training history
+            if 'training_history_data' in info:
+                training_history = info['training_history_data']
+                stats_epochs = training_history.get('stats_epochs', [])
+
+                if len(stats_epochs) == 0:
+                    print(f"Warning: No stats_epochs found for {legend_name}")
+                    return
+
+                # Get the stat name (e.g., 'mse' or 'gittins_loss')
+                stat_name = training_history.get('stat_name', 'mse')
+
+                # Extract test losses across all epochs
+                test_losses = [epoch['test'][stat_name] for epoch in stats_epochs]
+
+                # Use the best (minimum) validation loss
+                best_val_loss = np.min(test_losses)
+
+                # Clip small values to avoid log(0)
+                min_loss = plot_kwargs.get('min_loss_for_plot', 1e-10)
+                best_val_loss = max(best_val_loss, min_loss)
+            else:
+                print(f"Warning: No training_history_data found for {legend_name}")
+                return
+
+            # Add to plot data
+            x_data.append(mean_regret)
+            y_data.append(best_val_loss)
+            labels.append(legend_name)
+
+            # Use line color if available
+            line_color = data.get('color', BLUE)
+            colors.append(line_color)
+
+        for legend_name, data in plot_config.items():
+            items = data["items"]
+
+            # Handle both nested and flat structures
+            # Nested: items = {k: {'items': data_index}}
+            # Flat: items = data_index (int or list)
+            if isinstance(items, dict) and not isinstance(items, (int, list)):
+                # Nested structure - iterate over sub-items
+                for k, v in items.items():
+                    data_index = v["items"]
+                    process_data_index(data_index, legend_name, data)
+            else:
+                # Flat structure - items is directly the data_index
+                process_data_index(items, legend_name, data)
 
         if len(x_data) == 0:
             raise ValueError("No data to plot for loss vs regret scatter plot")
@@ -1080,10 +1164,9 @@ def get_plot_ax_loss_vs_regret_func(get_result_func):
         # Create plot based on mode
         if plot_mode == 'scatter':
             # Scatter plot: one point per configuration
-            for i, (x, y, label, color) in enumerate(zip(x_data, y_data, labels, colors)):
-                ax.scatter(x, y, s=s_default, alpha=0.7, color=color, label=label)
-            # Add legend for scatter mode
-            ax.legend()
+            # Plot all points with the same color and NO legend
+            ax.scatter(x_data, y_data, s=s_default, alpha=0.7, color=BLUE)
+            # No legend in scatter mode
 
         elif plot_mode == 'density':
             # 2D density heatmap/histogram
@@ -1328,6 +1411,11 @@ def _get_figure_from_nested_structure(
     except IndexError:
         this_attrs_group = set()
         next_attrs_groups = [set()]
+
+    # Ensure next_attrs_groups is not empty
+    if not next_attrs_groups:
+        next_attrs_groups = [set()]
+
     try:
         this_level_name = level_names[0]
         next_level_names = level_names[1:]
@@ -1527,8 +1615,19 @@ def _save_figures_from_nested_structure(
                 if "vals" in data:
                     info_dict[fname_desc] = data["vals"]
 
+                # Wrap items in expected dictionary structure for the line level
+                # The plotting function expects: {legend_name: {'items': data}}
+                if isinstance(items, list):
+                    # If items is a list of indices, wrap it in the expected structure
+                    items_wrapped = {fname_desc: {'items': items}}
+                    if "vals" in data:
+                        items_wrapped[fname_desc]['vals'] = data['vals']
+                else:
+                    # If items is already a dict, use it as-is
+                    items_wrapped = items
+
                 fig = _get_figure_from_nested_structure(
-                    items, plot_ax_func, attr_name_to_title, next_attrs_groups,
+                    items_wrapped, plot_ax_func, attr_name_to_title, next_attrs_groups,
                     next_level_names, fname_desc, pbar=pbar, **plot_kwargs)
                 
                 fname = f"{fname_desc}.pdf"
