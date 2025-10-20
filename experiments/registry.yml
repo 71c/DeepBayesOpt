@@ -1335,6 +1335,45 @@ experiments:
             - nn.learning_rate
           # NOTE: bo_seed and objective.id are implicitly aggregated by grouping
           # We don't list them here, so all runs with same hyperparameters get grouped together
+  pointnet_pbgi_cancer_dosage_pbgi_5d_dataset_size:
+    description: 'Experiment of cancer dosage PointNet PBGI, 5D, dataset size, x_cand_input, max_history_input experiment'
+    created_date: '2025-10-20'
+    parameters:
+      seed: 8
+      nn_experiment_config: config/train_acqf_experiment_cancer_dosage_pointnet-pbgi-5d-dataset_size.yml
+      bo_experiment_config: config/bo_config_experiment_2_torch.yml
+      sweep_name: 100iter_cancer_dosage_pointnet-pbgi-5d-dataset_size
+      n_seeds: 16
+      n_objectives: 8
+      plots_group_name: cancer_dosage_pointnet-pbgi-5d-dataset_size
+      bo_plots_name: results_100iter
+    plotting:
+      train_acqf:
+        default:
+          pre:
+          - ['lamda']
+          - ['train_samples_size']
+          attr_a:
+          - x_cand_input
+          attr_b:
+          - max_history_input
+          post:
+          - ['learning_rate']
+      bo_experiments:
+        default:
+          pre:
+          - ['nn.lamda']
+          - ['nn.train_samples_size']
+          attr_a:
+          - nn.x_cand_input
+          attr_b:
+          - nn.max_history_input
+          post:
+          - - gp_af
+            - lamda
+            - nn.learning_rate
+          - - objective.id
+            - bo_seed
 templates:
   basic_1d:
     description: Basic 1D experiment template
