@@ -1374,6 +1374,39 @@ experiments:
             - nn.learning_rate
           - - objective.id
             - bo_seed
+  pointnet_pbgi_cancer_dosage_1to4d:
+    description: 'Experiment of cancer dosage PointNet PBGI, 1-4D'
+    created_date: '2025-10-24'
+    parameters:
+      seed: 8
+      nn_experiment_config: config/train_acqf_experiment_cancer_dosage_pointnet-pbgi-1to4d.yml
+      bo_experiment_config: config/bo_config_experiment_2_torch.yml
+      sweep_name: 100iter_cancer_dosage_pointnet-pbgi-1to4d
+      n_seeds: 16
+      n_objectives: 8
+      plots_group_name: cancer_dosage_pointnet-pbgi-1to4d
+      bo_plots_name: results_100iter
+    plotting:
+      train_acqf:
+        default:
+          pre: []
+          attr_a:
+          - dimension
+          attr_b:
+          - max_history_input
+      bo_experiments:
+        default:
+          pre: []
+          attr_a:
+          - nn.dimension
+          attr_b:
+          - nn.max_history_input
+          post:
+          - - gp_af
+            - lamda
+            - nn.learning_rate
+          - - objective.id
+            - bo_seed
 templates:
   basic_1d:
     description: Basic 1D experiment template
