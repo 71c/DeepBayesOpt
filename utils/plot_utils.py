@@ -441,7 +441,11 @@ def plot_nn_vs_gp_acquisition_function_1d(
     if objective is not None:
         objective_vals = objective(
             torch.from_numpy(sorted_x_cand)
-        )[:, 0].detach().numpy()
+        )
+        print(f"{objective_vals.dim()=}")
+        if objective_vals.dim() > 1: # = 2
+            objective_vals = objective_vals[:, 0]
+        objective_vals = objective_vals.detach().numpy()
 
     if plot_data_y or plot_data_x:
         x_hist_varying_index = x_hist[:, varying_index]
@@ -1433,10 +1437,18 @@ def _get_figure_from_nested_structure(
     row_and_col = False
     col_names = None
 
+    next_attrs_groups_0 = next_attrs_groups[0] if len(next_attrs_groups) > 0 else set()
+    
+    # Handle None values -- hacky fix, not sure if it's what I want
+    if next_attrs_groups_0 is None:
+        next_attrs_groups_0 = set()
+    if this_attrs_group is None:
+        this_attrs_group = set()
+
     tmp_this = "attr_name" in this_attrs_group or "nn.method" in this_attrs_group \
                 or "method" in this_attrs_group or "gp_af" in this_attrs_group
-    tmp_next = "attr_name" in next_attrs_groups[0] or "nn.method" in next_attrs_groups[0] \
-                or "method" in next_attrs_groups[0] or "gp_af" in next_attrs_groups[0]
+    tmp_next = "attr_name" in next_attrs_groups_0 or "nn.method" in next_attrs_groups_0 \
+                or "method" in next_attrs_groups_0 or "gp_af" in next_attrs_groups_0
 
     if this_level_name == "line":
         n_rows = 1

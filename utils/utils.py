@@ -17,6 +17,7 @@ from utils.io_utils import load_json, safe_issubclass, save_json
 torch.set_default_dtype(torch.float64)
 from torch import Tensor
 
+import botorch
 import gpytorch
 from gpytorch.likelihoods import GaussianLikelihood
 from gpytorch.constraints.constraints import GreaterThan
@@ -1890,7 +1891,14 @@ def fit_model(model, x_hist, y_hist, fit_params, mle):
         if hasattr(model, "initial_params"):
             model.initialize(**model.initial_params)
         mll = ExactMarginalLogLikelihood(model.likelihood, model)
-        fit_gpytorch_mll(mll)
+        try:
+            fit_gpytorch_mll(mll)
+        except botorch.exceptions.errors.ModelFittingError as e:
+            warnings.warn(
+                "Model fitting error: " + str(e) +
+                " Proceeding with unfitted model.",
+                RuntimeWarning
+            )
 
         if mle: # add back the priors
             add_priors(named_priors_tuple_list)
