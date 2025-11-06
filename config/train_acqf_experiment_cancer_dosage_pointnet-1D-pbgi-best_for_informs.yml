@@ -1,0 +1,80 @@
+parameters:
+  dataset_type:
+    value: cancer_dosage
+  dimension:
+    values: [1]
+  dim_features:
+    value: 50
+  nnz_per_row:
+    value: 10
+  scale_intercept:
+    value: 4.0
+  scale_coef:
+    value: 20.0
+  noise_std:
+    values: [0.0]
+  is_simplex:
+    values: [false]
+  matrix_seed:
+    value: 11
+  min_history:
+    value: 1
+  max_history:
+    value: 100
+  method:
+    values: ['gittins']
+  gi_loss_normalization:
+    value: normal
+  lamda:
+    values: [1.00e-2]
+  train_samples_size:
+    values: [320]
+  samples_addition_amount:
+    values: [2000]
+  test_samples_size:
+    value: 1000
+  test_expansion_factor:
+    value: 100
+  n_candidates:
+    value: 1
+  layer_width:
+    values: [32]
+  encoded_history_dim:
+    value: null # defaults to be same as layer_width
+  num_layers:
+    values: [1]
+  architecture:
+    value: pointnet
+  include_best_y:
+    values: [false]
+  subtract_best_y:
+    values: [false]
+  max_history_input:
+    values: [2]
+  x_cand_input:
+    values:
+    - "local_only"
+  pooling:
+    values: ["max"]
+  epochs:
+    value: 4000
+  learning_rate:
+    values: [1.73e-03]
+  batch_size:
+    value: 512
+  dropout:
+    values: [null]
+  weight_decay:
+    values: [null]
+  lr_scheduler:
+    values: [null]
+  lr_scheduler_patience:
+    value: 300
+  lr_scheduler_factor:
+    value: 0.5
+  early_stopping:
+    value: false
+  patience:
+    value: 1000
+  min_delta:
+    value: 1.00e-09

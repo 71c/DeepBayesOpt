@@ -1321,6 +1321,18 @@ experiments:
               - nn.learning_rate
             - - objective.id
               - bo_seed
+          individual_files:
+            pre:
+            - ['nn.max_history_input']
+            - ['nn.lamda']
+            - ['nn.layer_width', 'nn.encoded_history_dim']
+            - ['nn.x_cand_input']
+            - ['nn.learning_rate']
+            post:
+            - - gp_af
+              - lamda
+            - - objective.id
+              - bo_seed
       combined_plot:
         default:
           pre: []
@@ -1335,6 +1347,27 @@ experiments:
             - nn.learning_rate
           # NOTE: bo_seed and objective.id are implicitly aggregated by grouping
           # We don't list them here, so all runs with same hyperparameters get grouped together
+  pointnet_1d_pbgi_cancer_dosage_best_for_informs:
+    description: 'Experiment of cancer dosage PointNet PBGI, 1D'
+    created_date: '2025-10-15'
+    parameters:
+      seed: 8
+      nn_experiment_config: config/train_acqf_experiment_cancer_dosage_pointnet-1D-pbgi-best_for_informs.yml
+      bo_experiment_config: config/bo_config_experiment_2_torch.yml
+      sweep_name: 100iter_cancer_dosage_pointnet-1D-pbgi-best_for_informs
+      n_seeds: 16
+      n_objectives: 8
+      plots_group_name: cancer_dosage_pointnet-1D-pbgi-best_for_informs
+      bo_plots_name: results_100iter
+    plotting:
+      bo_experiments:
+        default:
+          post:
+          - - gp_af
+            - lamda
+            - nn.learning_rate ## NEED TO INCLUDE THIS OTHERWISE ERROR (not ideal)
+          - - objective.id
+            - bo_seed
   pointnet_pbgi_cancer_dosage_pbgi_5d_dataset_size:
     description: 'Experiment of cancer dosage PointNet PBGI, 5D, dataset size, x_cand_input, max_history_input experiment'
     created_date: '2025-10-20'

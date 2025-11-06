@@ -1031,7 +1031,7 @@ def hash_gpytorch_module(module,
     serialized_state_dict = convert_to_json_serializable(
         module.state_dict(), hash_gpytorch_modules=True,
         include_priors=True, hash_include_str=False,
-        hash_str=True, float_precision=14)
+        hash_str=True, float_precision=12)
     
     if hash_str:
         hashed_result = dict_to_hash({
@@ -1082,7 +1082,7 @@ def convert_to_json_serializable(data,
                 'module': str(data),
                 'state_dict': convert_to_json_serializable(
                     data.state_dict(), include_priors=True,
-                    hash_gpytorch_modules=False, float_precision=14)
+                    hash_gpytorch_modules=False, float_precision=12)
             }
         if not include_priors:
             add_priors(named_priors_tuple_list)
@@ -1443,8 +1443,13 @@ def group_by_nested_attrs(items: List[dict[K, Any]],
     # print(f"{attrs_groups_list=}")
     # print(f"{constant_keys=}")
 
-    attrs_groups_list = [z - constant_keys for z in attrs_groups_list]
+    ## TEMPORARY COMMENT THIS LINE OUT FOR INFORMS; TODO: DEBUG.
+    ## PROBLEM: When there is only one NN in the "line" level, then it
+    ## groups the NN with the PBGI GP method (this is what was observed)
+    # attrs_groups_list = [z - constant_keys for z in attrs_groups_list]
+
     attrs_groups_list = [z for z in attrs_groups_list if len(z) != 0]
+
     # if len(attrs_groups_list) == 0:
     #     raise ValueError("No attributes to group by")
 
