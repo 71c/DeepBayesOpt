@@ -8,7 +8,7 @@ from botorch.exceptions import UnsupportedError
 from dataset_factory import DATASET_TYPES
 from datasets.hpob_dataset import get_hpob_dataset_ids
 from nn_af.acquisition_function_net_save_utils import get_lamda_for_bo_of_nn
-from utils.utils import dict_to_str, group_by
+from utils.utils import dict_to_hash, dict_to_str, group_by, str_to_hash
 from utils.experiments.experiment_config_utils import add_config_args, get_config_options_list
 from utils.experiments.submit_dependent_jobs import add_slurm_args, submit_jobs_sweep_from_args
 
@@ -20,6 +20,8 @@ CPROFILE = False
 
 N_HPOB_SEEDS = 5 # They provide 5 predefined seeds for HPO-B experiments
 HPOB_SEEDS = [f"test{i}" for i in range(N_HPOB_SEEDS)]
+
+TRANSFER_BO_BASELINE_NAMES = ['FSBO']
 
 
 def _generate_bo_commands(
@@ -77,11 +79,11 @@ def _generate_bo_commands(
                 should_recompute = True
             elif recompute_non_nn_only:
                 # Check if this is a non-NN result (GP or random search)
-                is_nn = bo_policy_args.get('nn_model_name') is not None
+                # is_nn = bo_policy_args.get('nn_model_name') is not None
                 is_random_search = bo_policy_args.get('random_search', False)
                 has_gp_af = len(gp_af_args) > 0 and gp_af_args.get('gp_af') is not None
                 is_non_nn = is_random_search or has_gp_af
-                should_recompute = is_non_nn and not is_nn
+                should_recompute = is_non_nn # and not is_nn
 
             if does_not_have_result or should_recompute:
                 # Need to get the result
@@ -122,8 +124,21 @@ def _gp_bo_jobs_spec_and_cfgs(
             raise UnsupportedError(
                 f"Unsupported dataset type: {dataset_type}. "
                 f"Must be one of {DATASET_TYPES}.")
-
-        dataset_options = {}        
+        
+        #### Extract function_samples_dataset_args
+        function_samples_dataset_args = {
+            k.split('.')[-1]: v for k, v in nn_options.items()
+            if k.startswith("function_samples_dataset.")
+        }
+        function_samples_and_acquisition_dataset_args = {
+            k: v for k, v in nn_options.items()
+            if k.startswith("function_samples_dataset.") \
+            or k.startswith("acquisition_dataset.")
+        }
+        function_samples_ds_str = dict_to_str(function_samples_dataset_args)
+        
+        #### Extract objective args for this dataset type
+        dataset_options = {}
         for dataset_type_name in DATASET_TYPES:
             prefix = f"function_samples_dataset.{dataset_type_name}."
             options = {
@@ -131,31 +146,31 @@ def _gp_bo_jobs_spec_and_cfgs(
                 if k.startswith(prefix)
             }
             dataset_options[dataset_type_name] = options
-        
         # Validate that only the selected dataset type has options
-        current_dataset_options = dataset_options[dataset_type]
-        other_dataset_options = {k: v for k, v in dataset_options.items() 
-                               if k != dataset_type and len(v) > 0}
-        
-        assert len(current_dataset_options) != 0, \
+        objective_args = dataset_options[dataset_type]
+        other_dataset_options = {k: v for k, v in dataset_options.items()
+                                 if k != dataset_type and len(v) > 0}
+        assert len(objective_args) != 0, \
             f"If dataset_type is '{dataset_type}', then there must be some " \
             f"{dataset_type} options."
         assert len(other_dataset_options) == 0, \
             f"If dataset_type is '{dataset_type}', then there must be no " \
             f"options for other dataset types. Found options for: {list(other_dataset_options.keys())}"
-        
-        objective_args = current_dataset_options
-
+        # Add dataset_type to objective_args
         objective_args['dataset_type'] = dataset_type
-        
+        # Add to objective_args_dict
         objective_args_str = dict_to_str(objective_args)
-
         if objective_args_str not in objective_args_dict:
             objective_args_dict[objective_args_str] = {
                 'objective_args': objective_args,
-                'lamda_vals': set()
+                'lamda_vals': set(),
+                'function_samples_dataset_args_dict': {}
             }
-
+        # Add function_samples_dataset_args to objective_args_dict
+        tmp = objective_args_dict[objective_args_str]['function_samples_dataset_args_dict']
+        if function_samples_ds_str not in tmp:
+            tmp[function_samples_ds_str] = function_samples_and_acquisition_dataset_args
+        # Get lamda values if applicable
         if nn_options['training.method'] == 'gittins':
             # then there will be lambda value(s) specified
             lamda = nn_options.get('training.lamda_config.lamda')
@@ -166,10 +181,10 @@ def _gp_bo_jobs_spec_and_cfgs(
             objective_args_dict[objective_args_str]['lamda_vals'].add(lamda)
         else:
             lamda = None
-
+        
+        # Get model_and_info_name for this NN
         (cmd_dataset, cmd_opts_dataset,
          cmd_nn_train, cmd_opts_nn) = get_cmd_options_train_acqf(nn_options)
-        
         (args_nn, af_dataset_configs, pre_model, model_and_info_name, models_path
         ) = cmd_opts_nn_to_model_and_info_name(cmd_opts_nn)
 
@@ -192,6 +207,38 @@ def _gp_bo_jobs_spec_and_cfgs(
             existing_bo_configs_and_results.extend(existing_cfgs_and_results)
         if all_new_cmds_this_nn:
             included.append((nn_options, all_new_cmds_this_nn))
+    
+    # Add baseline transfer BO commands
+    for options in objective_args_dict.values():
+        objective_args = options['objective_args']
+        for function_samples_ds_str, function_samples_and_acquisition_dataset_args in \
+                options['function_samples_dataset_args_dict'].items():
+            function_samples_ds_hash = str_to_hash(function_samples_ds_str)
+            for transfer_bo_method_name in TRANSFER_BO_BASELINE_NAMES:
+                # TODO: Add FSBO to _generate_bo_commands
+                new_cmds, new_cfgs, existing_cfgs_and_results = _generate_bo_commands(
+                    seeds,
+                    objective_args=objective_args,
+                    bo_policy_args={'transfer_bo_method': transfer_bo_method_name,
+                                    'dataset_hash': function_samples_ds_hash},
+                    gp_af_args={},
+                    n_objectives=n_objectives,
+                    n_bo_seeds=n_bo_seeds,
+                    use_hpob_seeds=use_hpob_seeds,
+                    recompute_bo=recompute_bo,
+                    recompute_non_nn_only=False
+                )
+                new_bo_configs.extend(new_cfgs)
+                existing_bo_configs_and_results.extend(existing_cfgs_and_results)
+                if new_cmds:
+                    # Note: the baseline options don't actually need the "acquisition
+                    # dataset" args (those are only used for our own NN-based methods),
+                    # but we include them as a hacky way to make these commands work
+                    # with the dependency structure of depending on dataset creation.
+                    baseline_options = {
+                        'transfer_bo_method': transfer_bo_method_name,
+                        **function_samples_and_acquisition_dataset_args}
+                    included.append((baseline_options, new_cmds))
 
     if included:
         options_list, nn_bo_loop_commands_list = zip(*included)
@@ -382,16 +429,15 @@ def generate_gp_bo_job_specs(args: argparse.Namespace,
                              dependents_slurm_options:dict[str, Any]={},
                              recompute_bo: bool = False,
                              recompute_non_nn_only: bool = False):
+    # Get the BO and NN config options lists
     bo_options_list, bo_refined_config = get_config_options_list(
         bo_base_config, bo_experiment_config)
-    
     nn_options_list, nn_refined_config = get_config_options_list(
         nn_base_config, nn_experiment_config)
     
     # Determine the dataset type for purpose of args validation
     dataset_types = {
         item['function_samples_dataset.dataset_type'] for item in nn_options_list}
-
     # Since generate_gp_bo_job_specs is always called after get_bo_experiments_parser
     # and parser.parse_args(), we can do this here.
     _validate_bo_experiments_args(args, dataset_types)

@@ -509,6 +509,15 @@ def pre_run_bo(objective_args: dict[str, Any],
     random_search = bo_policy_args.get('random_search', False)
     gp_af = gp_af_args.get(GP_AF_NAME_PREFIX)
 
+    transfer_bo_baseline_method = bo_policy_args.get('transfer_bo_method', None)
+    dataset_hash = bo_policy_args.get('dataset_hash', None)
+    if transfer_bo_baseline_method is not None:
+        if dataset_hash is None:
+            raise ValueError("If using transfer_bo_method, must specify dataset_hash")
+    else:
+        if dataset_hash is not None:
+            raise ValueError("Cannot specify dataset_hash if not using transfer_bo_method")
+
     if gp_af is None:
         for k, v in gp_af_args.items():
             if v is not None:
@@ -521,23 +530,34 @@ def pre_run_bo(objective_args: dict[str, Any],
 
     af_options = {}
     
-    if random_search: # Using random search
+    if random_search or transfer_bo_baseline_method is not None:
+        if random_search and transfer_bo_baseline_method is not None:
+            raise ValueError("Cannot use both random_search and transfer_bo_method")
+        method_name = "random search" if random_search else transfer_bo_baseline_method
         if nn_model_name is not None:
-            raise ValueError("Cannot specify nn_model_name if using random search")
+            raise ValueError(f"Cannot specify nn_model_name if using {method_name}")
         if gp_af is not None:
-            raise ValueError(f"Cannot specify {GP_AF_NAME_PREFIX} if using random search")
+            raise ValueError(f"Cannot specify {GP_AF_NAME_PREFIX} if using {method_name}")
         for k in optimize_acqf_arg_names:
             if bo_policy_args.get(k) is not None:
-                raise ValueError(f"Cannot specify {k} if using random search")
+                raise ValueError(f"Cannot specify {k} if using {method_name}")
         if lamda is not None:
-            raise ValueError("If using random search, cannot specify lamda")
-        optimizer_class = RandomSearch
+            raise ValueError(f"If using {method_name}, cannot specify lamda")
+        
+        if random_search:
+            optimizer_class = RandomSearch
+        else: # transfer BO baseline
+            # TODO: implement for transfer BO methods based on transfer_bo_baseline_method
+            optimizer_class = None
+
+            af_options['dataset_hash'] = dataset_hash
+        results_print_data = {**results_print_data, 'method': method_name}
     else:
         # Using BO with optimize_acqf
         # optimize_acqf_arg_names = num_restarts, raw_samples, gen_candidates
         missing_args = []
         for k in optimize_acqf_arg_names:
-            v = bo_policy_args[k]
+            v = bo_policy_args.get(k)
             if v is None:
                 missing_args.append(k)
                 continue

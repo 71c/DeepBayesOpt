@@ -11,6 +11,7 @@ from nn_af.acquisition_function_net_save_utils import (
 from dataset_factory import create_train_test_acquisition_datasets_from_args
 
 
+# TODO: Make this also work for the baseline transfer BO methods (e.g. FSBO)
 def get_cmd_options_train_acqf(options: dict[str, Any]):
     # TODO: In the future, could do this more automatically rather than hard-coding
     # everything.
@@ -69,57 +70,60 @@ def get_cmd_options_train_acqf(options: dict[str, Any]):
         }
     }
 
-    cmd_opts_architecture = {
-        k: options.get(k)
-        for k in [
-            'layer_width', 'standardize_nn_history_outcomes',
-            'architecture', 'include_best_y', 'subtract_best_y',
-            'x_cand_input', 'encoded_history_dim', 'pooling',
-            'num_heads', 'num_layers',
-            'dropout', 'max_history_input', 'acqf_params_input'
-        ]
-    }
-
-    cmd_opts_training = {
-        k: options.get(k)
-        for k in [
-            'method', 'learning_rate', 'batch_size', 'epochs', 'use_maxei',
-            # early stopping
-            'early_stopping', 'patience', 'min_delta', 'cumulative_delta',
-            # learning rate scheduler
-            ## ReduceLROnPlateau
-            'lr_scheduler', 'lr_scheduler_patience', 'lr_scheduler_factor',
-            'lr_scheduler_min_lr', 'lr_scheduler_cooldown',
-            ## power
-            'lr_scheduler_power', 'lr_scheduler_burnin',
-            # weight decay
-            'weight_decay',
-            # method=policy_gradient
-            'include_alpha', 'learn_alpha', 'initial_alpha', 'alpha_increment',
-            # method=gittins
-            'gi_loss_normalization',
-            # 'lamda_min', 'lamda_max', 'lamda', # already in cmd_opts_acquisition_dataset
-            # method=mse_ei
-            'learn_tau', 'initial_tau', 'softplus_batchnorm',
-            'softplus_batchnorm_momentum', 'positive_linear_at_end',
-            'gp_ei_computation'
-        ]
-    }
-
-    cmd_opts_dataset = {
-        **cmd_opts_sample_dataset, **cmd_opts_acquisition_dataset
-    }
+    cmd_opts_dataset = {**cmd_opts_sample_dataset, **cmd_opts_acquisition_dataset}
     cmd_args_dataset = dict_to_cmd_args(cmd_opts_dataset)
     cmd_dataset = "python dataset_factory.py " + " ".join(cmd_args_dataset)
 
-    cmd_opts_nn_no_dataset = {
-        **cmd_opts_architecture, **cmd_opts_training
-    }
-    cmd_nn_train = " ".join(["python run_train.py",
-                             *cmd_args_dataset,
-                             *dict_to_cmd_args(cmd_opts_nn_no_dataset)])
+    transfer_bo_method = options.get('transfer_bo_method', None)
+    if transfer_bo_method is not None:
+        cmd_opts_nn = {'transfer_bo_method': transfer_bo_method,
+                       **cmd_opts_sample_dataset}
+        # TODO: write train_transfer_bo_baseline.py
+        cmd_nn_train = " ".join(["python train_transfer_bo_baseline.py",
+                                *dict_to_cmd_args(cmd_opts_nn)])
+    else:
+        cmd_opts_architecture = {
+            k: options.get(k)
+            for k in [
+                'layer_width', 'standardize_nn_history_outcomes',
+                'architecture', 'include_best_y', 'subtract_best_y',
+                'x_cand_input', 'encoded_history_dim', 'pooling',
+                'num_heads', 'num_layers',
+                'dropout', 'max_history_input', 'acqf_params_input'
+            ]
+        }
 
-    cmd_opts_nn = {**cmd_opts_nn_no_dataset, **cmd_opts_dataset}
+        cmd_opts_training = {
+            k: options.get(k)
+            for k in [
+                'method', 'learning_rate', 'batch_size', 'epochs', 'use_maxei',
+                # early stopping
+                'early_stopping', 'patience', 'min_delta', 'cumulative_delta',
+                # learning rate scheduler
+                ## ReduceLROnPlateau
+                'lr_scheduler', 'lr_scheduler_patience', 'lr_scheduler_factor',
+                'lr_scheduler_min_lr', 'lr_scheduler_cooldown',
+                ## power
+                'lr_scheduler_power', 'lr_scheduler_burnin',
+                # weight decay
+                'weight_decay',
+                # method=policy_gradient
+                'include_alpha', 'learn_alpha', 'initial_alpha', 'alpha_increment',
+                # method=gittins
+                'gi_loss_normalization',
+                # 'lamda_min', 'lamda_max', 'lamda', # already in cmd_opts_acquisition_dataset
+                # method=mse_ei
+                'learn_tau', 'initial_tau', 'softplus_batchnorm',
+                'softplus_batchnorm_momentum', 'positive_linear_at_end',
+                'gp_ei_computation'
+            ]
+        }
+
+        cmd_opts_nn_no_dataset = {**cmd_opts_architecture, **cmd_opts_training}
+        cmd_nn_train = " ".join(["python run_train.py",
+                                *cmd_args_dataset,
+                                *dict_to_cmd_args(cmd_opts_nn_no_dataset)])
+        cmd_opts_nn = {**cmd_opts_nn_no_dataset, **cmd_opts_dataset}
     return cmd_dataset, cmd_opts_dataset, cmd_nn_train, cmd_opts_nn
 
 
@@ -169,13 +173,12 @@ def create_dependency_structure_train_acqf(
         if always_train:
             train_nn = True
         else:
-            # Determine whether or not the NN is already cached
+            # TODO: Make this part work also for baseline transfer BO methods
+
+            # Train the NN iff it has not already been trained
             (args_nn, af_dataset_configs, pre_model, model_and_info_name, models_path
             ) = cmd_opts_nn_to_model_and_info_name(cmd_opts_nn)
-            
-            model_already_trained = nn_acqf_is_trained(model_and_info_name)
-            # Train the NN iff it has not already been trained
-            train_nn = not model_already_trained
+            train_nn = not nn_acqf_is_trained(model_and_info_name)
         
         if train_nn:
             # Determine whether or not the dataset is already cached
