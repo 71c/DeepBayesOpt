@@ -136,7 +136,7 @@ def _gp_bo_jobs_spec_and_cfgs(
             # For unique saving of the transfer BO baselines,
             # add number of evals per function based on current behavior of the code,
             # only when there's samples_size specified (this is hacky).
-            # TODO: use the same logic in run_train_transfer_bo_baseline.py
+            # NOTE: Uses the same logic in run_train_transfer_bo_baseline.py
             function_samples_dataset_args['evals_per_function'] = \
                 acquisition_dataset_args['max_history'] + \
                 acquisition_dataset_args['samples_addition_amount'] + \

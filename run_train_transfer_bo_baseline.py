@@ -1,12 +1,17 @@
 """NOTE: This script has some arguments that are not actually needed for the transfer
 BO baselines, but are included for compatibility with the existing code structure."""
 import argparse
+import os
 from typing import Optional, Sequence
 
 from dataset_factory import (add_unified_acquisition_dataset_args,
                              create_train_test_acquisition_datasets_from_args,
                              validate_args_for_dataset_type)
 from datasets.hpob_dataset import get_hpob_dataset_dimension
+from train_acqf import get_cmd_options_sample_dataset
+from transfer_bo_baselines.fsbo.fsbo_modules import FSBO
+from utils.constants import MODELS_DIR
+from utils.utils import dict_to_hash
 
 
 TRANSFER_BO_BASELINE_NAMES = ['FSBO']
@@ -55,6 +60,22 @@ def run_train(cmd_args: Optional[Sequence[str]]=None):
 
     print("\nValidation function samples dataset:")
     print(test_aq_dataset.base_dataset)
+
+    function_samples_dataset_args = get_cmd_options_sample_dataset(vars(args))
+    function_samples_dataset_args['evals_per_function'] = \
+        args.max_history + args.samples_addition_amount + \
+        args.train_n_candidates # args.train_n_candidates == args.test_n_candidates
+
+    function_samples_ds_hash = dict_to_hash(function_samples_dataset_args)
+
+    checkpoint_path = os.path.join(MODELS_DIR, "transfer_bo_baselines",
+                                   args.transfer_bo_method, dataset_type,
+                                   function_samples_ds_hash)
+
+    if args.transfer_bo_method == 'FSBO':
+        # TODO: Read FSBO code and change it so that it works with my dataset structure
+        fsbo_model = FSBO(train_data=train_data, valid_data=valid_data,
+                          checkpoint_path=checkpoint_path)
 
 
 if __name__ == "__main__":

@@ -1,6 +1,7 @@
 import argparse
 from typing import Any, Optional
 import os
+from webbrowser import get
 
 from utils.utils import dict_to_cmd_args, dict_to_str, save_json
 from utils.experiments.experiment_config_utils import CONFIG_DIR, add_config_args, get_config_options_list
@@ -11,11 +12,7 @@ from nn_af.acquisition_function_net_save_utils import (
 from dataset_factory import create_train_test_acquisition_datasets_from_args
 
 
-# TODO: Make this also work for the baseline transfer BO methods (e.g. FSBO)
-def get_cmd_options_train_acqf(options: dict[str, Any]):
-    # TODO: In the future, could do this more automatically rather than hard-coding
-    # everything.
-    options = {k.split('.')[-1]: v for k, v in options.items()}
+def get_cmd_options_sample_dataset(options: dict[str, Any]):
     # Extract dataset_type to determine which parameters to include
     dataset_type = options.get('dataset_type', 'gp')
     
@@ -54,6 +51,16 @@ def get_cmd_options_train_acqf(options: dict[str, Any]):
         })
     else:
         raise ValueError(f"Unknown dataset_type: {dataset_type}")
+    
+    return cmd_opts_sample_dataset
+
+
+def get_cmd_options_train_acqf(options: dict[str, Any]):
+    # TODO: In the future, could do this more automatically rather than hard-coding
+    # everything.
+    options = {k.split('.')[-1]: v for k, v in options.items()}
+    
+    cmd_opts_sample_dataset = get_cmd_options_sample_dataset(options)
 
     cmd_opts_acquisition_dataset = {
         'train_acquisition_size': options['train_acquisition_size'],
@@ -77,7 +84,10 @@ def get_cmd_options_train_acqf(options: dict[str, Any]):
     transfer_bo_method = options.get('transfer_bo_method', None)
     if transfer_bo_method is not None:
         # Baseline transfer BO method
-        cmd_opts_nn = {'transfer_bo_method': transfer_bo_method, **cmd_opts_dataset}
+        cmd_opts_dataset_no_lamda = {k: v for k, v in cmd_opts_dataset.items()
+                                     if k not in ['lamda', 'lamda_min', 'lamda_max']}
+        cmd_opts_nn = {'transfer_bo_method': transfer_bo_method,
+                       **cmd_opts_dataset_no_lamda}
         cmd_nn_train = " ".join(["python run_train_transfer_bo_baseline.py",
                                 *dict_to_cmd_args(cmd_opts_nn)])
     else:
