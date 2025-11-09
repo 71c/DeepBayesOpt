@@ -41,7 +41,8 @@ def create_train_test_acquisition_datasets_from_args(
         args: argparse.Namespace,
         groups_arg_names=None,
         check_cached: bool = False, 
-        load_dataset: bool = True
+        load_dataset: bool = True,
+        fix_test_acquisition_dataset: bool = True
     ) -> Tuple[Any, Any, Any]:
     """
     Create train/test acquisition datasets based on dataset_type in args.
@@ -67,7 +68,8 @@ def create_train_test_acquisition_datasets_from_args(
     manager = get_dataset_manager(dataset_type, device="cpu")
     
     return manager.create_train_test_datasets_from_args(
-            args, check_cached=check_cached, load_dataset=load_dataset)
+            args, check_cached=check_cached, load_dataset=load_dataset,
+            fix_test_acquisition_dataset=fix_test_acquisition_dataset)
 
 
 def validate_args_for_dataset_type(
@@ -112,11 +114,11 @@ def validate_args_for_dataset_type(
             if missing_args:
                 raise ValueError(f"Missing required GP arguments: {missing_args}")
         elif dataset_type == 'cancer_dosage':
-            if getattr_args('dimension') is None:
+            if dimension is None:
                 raise ValueError(
                     "Missing required argument for dataset_type=cancer_dosage: dimension")
         else:
-            if getattr_args('dimension') is not None:
+            if dimension is not None:
                 raise ValueError("Argument 'dimension' should not be set for "
                                 f"dataset_type '{dataset_type}'")
     else:
@@ -218,7 +220,7 @@ def _add_common_acquisition_dataset_args(parser):
         help='Number of samples to add to the history points.'
     )
     parser.add_argument(
-        '--standardize_dataset_outcomes', 
+        '--standardize_outcomes', 
         action='store_true', 
         help='Whether to standardize the outcomes of the dataset '
              '(independently for each item). Default is False'

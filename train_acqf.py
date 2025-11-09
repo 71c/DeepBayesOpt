@@ -24,7 +24,7 @@ def get_cmd_options_train_acqf(options: dict[str, Any]):
         'dataset_type': dataset_type,
         'train_samples_size': options.get('train_samples_size'),
         'test_samples_size': options.get('test_samples_size'),
-        'standardize_dataset_outcomes': options['standardize_outcomes']
+        'standardize_outcomes': options['standardize_outcomes']
     }
     
     # Add dataset-specific parameters
@@ -76,10 +76,9 @@ def get_cmd_options_train_acqf(options: dict[str, Any]):
 
     transfer_bo_method = options.get('transfer_bo_method', None)
     if transfer_bo_method is not None:
-        cmd_opts_nn = {'transfer_bo_method': transfer_bo_method,
-                       **cmd_opts_sample_dataset}
-        # TODO: write train_transfer_bo_baseline.py
-        cmd_nn_train = " ".join(["python train_transfer_bo_baseline.py",
+        # Baseline transfer BO method
+        cmd_opts_nn = {'transfer_bo_method': transfer_bo_method, **cmd_opts_dataset}
+        cmd_nn_train = " ".join(["python run_train_transfer_bo_baseline.py",
                                 *dict_to_cmd_args(cmd_opts_nn)])
     else:
         cmd_opts_architecture = {
@@ -173,12 +172,15 @@ def create_dependency_structure_train_acqf(
         if always_train:
             train_nn = True
         else:
-            # TODO: Make this part work also for baseline transfer BO methods
-
             # Train the NN iff it has not already been trained
-            (args_nn, af_dataset_configs, pre_model, model_and_info_name, models_path
-            ) = cmd_opts_nn_to_model_and_info_name(cmd_opts_nn)
-            train_nn = not nn_acqf_is_trained(model_and_info_name)
+            transfer_bo_method = options.get('transfer_bo_method', None)
+            if transfer_bo_method is not None:
+                # TODO: Make this part work also for baseline transfer BO methods
+                train_nn = True
+            else:
+                (args_nn, af_dataset_configs, pre_model, model_and_info_name, models_path
+                ) = cmd_opts_nn_to_model_and_info_name(cmd_opts_nn)
+                train_nn = not nn_acqf_is_trained(model_and_info_name)
         
         if train_nn:
             # Determine whether or not the dataset is already cached

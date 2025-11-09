@@ -556,7 +556,8 @@ class OptimizationResultsSingleMethod:
                 for fn_kwargs in self.optimizer_kwargs_per_function]
             func_opt_configs_list = [
                 {**opt_config_json, **fn_config,
-                 'optimizer_class': optimizer_class.__name__}
+                 # This is a fix to make incomplete code work. TODO: remove this check of whether it's None
+                 'optimizer_class': None if optimizer_class is None else optimizer_class.__name__}
                 for fn_config in extra_fn_configs
             ]
             # self.func_opt_configs_str is fucked up

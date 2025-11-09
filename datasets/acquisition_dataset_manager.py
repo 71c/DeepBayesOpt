@@ -42,7 +42,7 @@ _GLOBAL_DATA_CACHE = {}
 def get_lamda_min_max(args: argparse.Namespace):
     """Extract lambda min/max values from arguments."""
     lamda = getattr(args, 'lamda', None)
-    lamda_min = lamda if lamda is not None else args.lamda_min
+    lamda_min = lamda if lamda is not None else getattr(args, 'lamda_min', None)
     lamda_max = getattr(args, 'lamda_max', None)
     return lamda_min, lamda_max
 
@@ -50,7 +50,8 @@ def get_lamda_min_max(args: argparse.Namespace):
 def _build_config_dict_structure(
         args: argparse.Namespace,
         function_samples_config: dict,
-        outcome_transform=None
+        outcome_transform=None,
+        fix_test_acquisition_dataset=True
     ) -> dict:
     """Build standard configuration dictionary structure shared across dataset types."""
     
@@ -60,8 +61,10 @@ def _build_config_dict_structure(
         fix_train_samples_dataset=True,
         small_test_proportion_of_test=1.0,
         replacement=getattr(args, 'replacement', False),
-        fix_test_samples_dataset=False,
-        fix_test_acquisition_dataset=True,
+        # Changed fix_test_samples_dataset from False to True for consistency when
+        # running baseline transfer BO methods
+        fix_test_samples_dataset=True,
+        fix_test_acquisition_dataset=fix_test_acquisition_dataset,
     )
     
     if not acquisition_dataset_config['fix_train_samples_dataset']:
@@ -96,7 +99,7 @@ def _build_config_dict_structure(
 
     dataset_transform_config = dict(
         outcome_transform=outcome_transform,
-        standardize_outcomes=getattr(args, 'standardize_dataset_outcomes', False)
+        standardize_outcomes=getattr(args, 'standardize_outcomes', False)
     )
 
     return {
@@ -175,14 +178,16 @@ class AcquisitionDatasetManager(ABC):
         """Get outcome transform specific to this dataset type."""
         pass
     
-    def get_dataset_configs(self, args: argparse.Namespace, device=None):
+    def get_dataset_configs(self, args: argparse.Namespace, device=None,
+                            fix_test_acquisition_dataset=True) -> dict:
         """Get complete dataset configuration using shared structure."""
         function_samples_config = self.get_function_samples_config(args, device)
         if self.dataset_type != 'gp':
             function_samples_config['dataset_type'] = self.dataset_type
         outcome_transform = self.get_outcome_transform(args, device)
         return _build_config_dict_structure(
-            args, function_samples_config, outcome_transform=outcome_transform)
+            args, function_samples_config, outcome_transform=outcome_transform,
+            fix_test_acquisition_dataset=fix_test_acquisition_dataset)
     
     def create_acquisition_dataset(
             self,
@@ -639,10 +644,13 @@ class AcquisitionDatasetManager(ABC):
             self, 
             args: argparse.Namespace, 
             check_cached: bool = False, 
-            load_dataset: bool = True
+            load_dataset: bool = True,
+            fix_test_acquisition_dataset: bool = True
         ):
         """Create train/test datasets from command line arguments."""
-        dataset_configs = self.get_dataset_configs(args, device=self.device)
+        dataset_configs = self.get_dataset_configs(
+            args, device=self.device,
+            fix_test_acquisition_dataset=fix_test_acquisition_dataset)
         
         dataset_kwargs = {
             **dataset_configs["function_samples_config"],

@@ -427,8 +427,8 @@ class FunctionSamplesAcquisitionDataset(
                             f"but got replacement={replacement}")
 
         if acquisition_size is not None:
-            if not isinstance(acquisition_size, int) or acquisition_size <= 0:
-                raise ValueError("acquisition_size should be a positive integer, "
+            if not isinstance(acquisition_size, int) or acquisition_size < 0:
+                raise ValueError("acquisition_size should be a non-negative integer, "
                                  f"but got {acquisition_size=}")
 
         # Need to save these so that we can copy in random_split
@@ -475,22 +475,26 @@ class FunctionSamplesAcquisitionDataset(
             assert callable(getattr(dataset, "__getitem__", None))
 
             base_dataset_size = len(dataset)
-            if not isinstance(base_dataset_size, int) or base_dataset_size <= 0:
-                raise ValueError("len(dataset) should be a positive integer, "
+            if not isinstance(base_dataset_size, int) or base_dataset_size < 0:
+                raise ValueError("len(dataset) should be a non-negative integer, "
                                  f"but got len(dataset)={base_dataset_size}")
             if acquisition_size is None:
                 self._size = base_dataset_size
             else:
                 self._size = acquisition_size
-            self._data_iterable = DataLoader(
-                dataset,
-                batch_size=None,
-                sampler=torch.utils.data.RandomSampler(
+            
+            if self._size == 0:
+                self._data_iterable = []
+            else:
+                self._data_iterable = DataLoader(
                     dataset,
-                    replacement=replacement,
-                    num_samples=self._size
+                    batch_size=None,
+                    sampler=torch.utils.data.RandomSampler(
+                        dataset,
+                        replacement=replacement,
+                        num_samples=self._size
+                    )
                 )
-            )
     
     def _init_params(self):
         return (self.base_dataset,), dict(

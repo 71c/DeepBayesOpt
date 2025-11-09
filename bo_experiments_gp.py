@@ -2,6 +2,7 @@ import argparse
 from typing import Any, Optional
 import cProfile, pstats
 import warnings
+from run_train_transfer_bo_baseline import TRANSFER_BO_BASELINE_NAMES
 import torch
 from botorch.exceptions import UnsupportedError
 
@@ -20,8 +21,6 @@ CPROFILE = False
 
 N_HPOB_SEEDS = 5 # They provide 5 predefined seeds for HPO-B experiments
 HPOB_SEEDS = [f"test{i}" for i in range(N_HPOB_SEEDS)]
-
-TRANSFER_BO_BASELINE_NAMES = ['FSBO']
 
 
 def _generate_bo_commands(
@@ -124,17 +123,24 @@ def _gp_bo_jobs_spec_and_cfgs(
             raise UnsupportedError(
                 f"Unsupported dataset type: {dataset_type}. "
                 f"Must be one of {DATASET_TYPES}.")
-        
-        #### Extract function_samples_dataset_args
+
         function_samples_dataset_args = {
             k.split('.')[-1]: v for k, v in nn_options.items()
             if k.startswith("function_samples_dataset.")
         }
-        function_samples_and_acquisition_dataset_args = {
-            k: v for k, v in nn_options.items()
-            if k.startswith("function_samples_dataset.") \
-            or k.startswith("acquisition_dataset.")
+        acquisition_dataset_args = {
+            k.split('.')[-1]: v for k, v in nn_options.items()
+            if k.startswith("acquisition_dataset.")
         }
+        if function_samples_dataset_args.get('train_samples_size', None) is not None:
+            # For unique saving of the transfer BO baselines,
+            # add number of evals per function based on current behavior of the code,
+            # only when there's samples_size specified (this is hacky).
+            # TODO: use the same logic in run_train_transfer_bo_baseline.py
+            function_samples_dataset_args['evals_per_function'] = \
+                acquisition_dataset_args['max_history'] + \
+                acquisition_dataset_args['samples_addition_amount'] + \
+                acquisition_dataset_args['n_candidates']
         function_samples_ds_str = dict_to_str(function_samples_dataset_args)
         
         #### Extract objective args for this dataset type
@@ -166,10 +172,6 @@ def _gp_bo_jobs_spec_and_cfgs(
                 'lamda_vals': set(),
                 'function_samples_dataset_args_dict': {}
             }
-        # Add function_samples_dataset_args to objective_args_dict
-        tmp = objective_args_dict[objective_args_str]['function_samples_dataset_args_dict']
-        if function_samples_ds_str not in tmp:
-            tmp[function_samples_ds_str] = function_samples_and_acquisition_dataset_args
         # Get lamda values if applicable
         if nn_options['training.method'] == 'gittins':
             # then there will be lambda value(s) specified
@@ -180,7 +182,19 @@ def _gp_bo_jobs_spec_and_cfgs(
             lamda = get_lamda_for_bo_of_nn(lamda, lamda_min, lamda_max)
             objective_args_dict[objective_args_str]['lamda_vals'].add(lamda)
         else:
-            lamda = None
+            lamda, lamda_min, lamda_max = None, None, None
+        # Add function_samples_dataset_args to objective_args_dict
+        tmp = objective_args_dict[objective_args_str]['function_samples_dataset_args_dict']
+        if function_samples_ds_str not in tmp:
+            function_samples_and_acquisition_dataset_args = \
+                {**function_samples_dataset_args, **acquisition_dataset_args}
+            if nn_options['training.method'] == 'gittins':
+                # This helps make it so that it doesn't try to create the same dataset
+                # twice with and without lamda args
+                function_samples_and_acquisition_dataset_args['lamda'] = lamda
+                function_samples_and_acquisition_dataset_args['lamda_min'] = lamda_min
+                function_samples_and_acquisition_dataset_args['lamda_max'] = lamda_max
+            tmp[function_samples_ds_str] = function_samples_and_acquisition_dataset_args
         
         # Get model_and_info_name for this NN
         (cmd_dataset, cmd_opts_dataset,
@@ -208,29 +222,40 @@ def _gp_bo_jobs_spec_and_cfgs(
         if all_new_cmds_this_nn:
             included.append((nn_options, all_new_cmds_this_nn))
     
-    # Add baseline transfer BO commands
+    #### Add baseline transfer BO commands
+    # Get only unique (n_iter, n_initial_samples) combinations for baselines
+    num_iter_and_initial_samples_args_list = [
+        {'n_iter': u['n_iter'], 'n_initial_samples': u['n_initial_samples']}
+        for u in bo_loop_args_list
+    ]
+    num_iter_and_initial_samples_args_list = list({
+        dict_to_str(d): d for d in num_iter_and_initial_samples_args_list}.values())
     for options in objective_args_dict.values():
         objective_args = options['objective_args']
         for function_samples_ds_str, function_samples_and_acquisition_dataset_args in \
                 options['function_samples_dataset_args_dict'].items():
             function_samples_ds_hash = str_to_hash(function_samples_ds_str)
             for transfer_bo_method_name in TRANSFER_BO_BASELINE_NAMES:
-                # TODO: Add FSBO to _generate_bo_commands
-                new_cmds, new_cfgs, existing_cfgs_and_results = _generate_bo_commands(
-                    seeds,
-                    objective_args=objective_args,
-                    bo_policy_args={'transfer_bo_method': transfer_bo_method_name,
-                                    'dataset_hash': function_samples_ds_hash},
-                    gp_af_args={},
-                    n_objectives=n_objectives,
-                    n_bo_seeds=n_bo_seeds,
-                    use_hpob_seeds=use_hpob_seeds,
-                    recompute_bo=recompute_bo,
-                    recompute_non_nn_only=False
-                )
-                new_bo_configs.extend(new_cfgs)
-                existing_bo_configs_and_results.extend(existing_cfgs_and_results)
-                if new_cmds:
+                all_new_cmds_this_nn = []
+                for num_iter_and_initial_samples_args in \
+                        num_iter_and_initial_samples_args_list:
+                    new_cmds, new_cfgs, existing_cfgs_and_results = _generate_bo_commands(
+                        seeds,
+                        objective_args=objective_args,
+                        bo_policy_args={'transfer_bo_method': transfer_bo_method_name,
+                                        'dataset_hash': function_samples_ds_hash,
+                                        **num_iter_and_initial_samples_args},
+                        gp_af_args={},
+                        n_objectives=n_objectives,
+                        n_bo_seeds=n_bo_seeds,
+                        use_hpob_seeds=use_hpob_seeds,
+                        recompute_bo=recompute_bo,
+                        recompute_non_nn_only=False
+                    )
+                    all_new_cmds_this_nn.extend(new_cmds)
+                    new_bo_configs.extend(new_cfgs)
+                    existing_bo_configs_and_results.extend(existing_cfgs_and_results)
+                if all_new_cmds_this_nn:
                     # Note: the baseline options don't actually need the "acquisition
                     # dataset" args (those are only used for our own NN-based methods),
                     # but we include them as a hacky way to make these commands work
@@ -238,7 +263,7 @@ def _gp_bo_jobs_spec_and_cfgs(
                     baseline_options = {
                         'transfer_bo_method': transfer_bo_method_name,
                         **function_samples_and_acquisition_dataset_args}
-                    included.append((baseline_options, new_cmds))
+                    included.append((baseline_options, all_new_cmds_this_nn))
 
     if included:
         options_list, nn_bo_loop_commands_list = zip(*included)
