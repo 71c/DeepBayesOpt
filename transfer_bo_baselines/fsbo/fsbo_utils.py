@@ -1,4 +1,5 @@
-
+# Taken from:
+# https://github.com/machinelearningnuremberg/FSBO/blob/main/fsbo_utils.py
 import numpy as np
 from scipy.stats import norm
 import torch
@@ -24,9 +25,9 @@ class Metric(object):
         self.message=prefix + "loss: {loss:.2f} - noise: {log_var:.2f} - mse: {mse:.2f}"
         
     def update(self,loss,noise,mse):
-        self.loss.append(np.asscalar(loss))
-        self.noise.append(np.asscalar(noise))
-        self.mse.append(np.asscalar(mse))
+        self.loss.append(loss.item())
+        self.noise.append(noise.item())
+        self.mse.append(mse.item())
     
     def reset(self,):
         self.loss = []

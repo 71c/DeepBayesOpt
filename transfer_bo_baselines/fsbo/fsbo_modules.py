@@ -1,4 +1,10 @@
-
+# Taken from:
+# https://github.com/machinelearningnuremberg/FSBO/blob/main/fsbo_modules.py
+# Adapted to work within our codebase:
+# - Changed the dataset input format of FSBO to use
+# MapFunctionSamplesDataset instead of dictionaries of JSON.
+# - Does not use MinMaxScaler on the function values anymore (if we wanted to do that,
+# then we would need to do the min-max scaling before passing the datasets to FSBO).
 """
 This FSBO implementation is based on the original implementation from Hadi Samer Jomaa
 for his work on "Transfer Learning for Bayesian HPO with End-to-End Landmark Meta-Features"
@@ -9,9 +15,9 @@ https://docs.gpytorch.ai/en/stable/examples/06_PyTorch_NN_Integration_DKL/KISSGP
 
 """
 
+from datasets.function_samples_dataset import MapFunctionSamplesDataset
 import torch
 import torch.nn as nn
-from sklearn.preprocessing import MinMaxScaler
 import copy 
 import numpy as np
 import os
@@ -19,7 +25,7 @@ from torch.utils.tensorboard import SummaryWriter
 import time
 import gpytorch
 import logging
-from fsbo_utils import totorch, Metric, EI
+from transfer_bo_baselines.fsbo.fsbo_utils import totorch, Metric, EI
 import xgboost as xgb
 import json 
 from scipy.optimize import differential_evolution
@@ -179,7 +185,10 @@ class DeepKernelGP(nn.Module):
 
     
 class FSBO(nn.Module):
-    def __init__(self, train_data,valid_data, checkpoint_path, batch_size = 64, test_batch_size = 64,
+    def __init__(self,
+                 train_data: MapFunctionSamplesDataset,
+                 valid_data: MapFunctionSamplesDataset,
+                 checkpoint_path, batch_size = 64, test_batch_size = 64,
                  n_inner_steps = 1, kernel = "matern", ard = False, nu=2.5, hidden_size = [32,32,32,32] ):
         super(FSBO, self).__init__()
         ## GP parameters
@@ -190,8 +199,7 @@ class FSBO(nn.Module):
         self.n_inner_steps = n_inner_steps
         self.checkpoint_path = checkpoint_path
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        first_dataset = list(self.train_data.keys())[0]
-        self.input_size = len(train_data[first_dataset]["X"][0])
+        self.input_size = train_data[0].x_values.size(1)
         self.hidden_size = hidden_size
         self.feature_extractor =  MLP(self.input_size, hidden_size = self.hidden_size).to(self.device)
         self.kernel_config = {"kernel": kernel, "ard": ard, "nu": nu}
@@ -218,8 +226,8 @@ class FSBO(nn.Module):
         self.valid_summary_writer = SummaryWriter(valid_log_dir)        
         
     def get_tasks(self,):
-        self.tasks = list(self.train_data.keys())
-        self.valid_tasks = list(self.valid_data.keys())
+        self.tasks = list(range(len(self.train_data)))
+        self.valid_tasks = list(range(len(self.valid_data)))
         
     def get_model_likelihood_mll(self, train_size):
         train_x=torch.ones(train_size, self.feature_extractor.out_features).to(self.device)
@@ -297,19 +305,18 @@ class FSBO(nn.Module):
         return mse,loss
 
     def get_batch(self,task):
-        Lambda,response =     np.array(self.train_data[task]["X"]), MinMaxScaler().fit_transform(np.array(self.train_data[task]["y"])).reshape(-1,)
+        Lambda,response = self.train_data[task].x_values, self.train_data[task].y_values.reshape(-1,)
         card, dim = Lambda.shape
         support_ids = RandomSupportGenerator.choice(np.arange(card),
                                               replace=False,size= min(self.batch_size, card))
-
         
         inputs,labels = Lambda[support_ids], response[support_ids]
-        inputs,labels = totorch(inputs,device=self.device), totorch(labels.reshape(-1,),device=self.device)
+        inputs,labels = inputs.to(self.device), labels.to(self.device)
         return inputs, labels
         
     def get_support_and_queries(self,task, train=False):
         hpo_data = self.valid_data if not train else self.train_data
-        Lambda,response =     np.array(hpo_data[task]["X"]), MinMaxScaler().fit_transform(np.array(hpo_data[task]["y"])).reshape(-1,)
+        Lambda,response = hpo_data[task].x_values, hpo_data[task].y_values.reshape(-1,)
         card, dim = Lambda.shape
 
         support_ids = RandomSupportGenerator.choice(np.arange(card),
@@ -320,8 +327,8 @@ class FSBO(nn.Module):
         support_x,support_y = Lambda[support_ids], response[support_ids]
         query_x,query_y = Lambda[query_ids], response[query_ids]
         
-        return (totorch(support_x,self.device),totorch(support_y.reshape(-1,),self.device)),\
-    (totorch(query_x,self.device),totorch(query_y.reshape(-1,),self.device))
+        return (support_x.to(self.device),support_y.to(self.device)),\
+    (query_x.to(self.device),query_y.to(self.device))
         
     def save_checkpoint(self, checkpoint):
         gp_state_dict         = self.model.state_dict()

@@ -1,5 +1,7 @@
 """NOTE: This script has some arguments that are not actually needed for the transfer
-BO baselines, but are included for compatibility with the existing code structure."""
+BO baselines (specifically, those to do with acquisition dataset sampling), but for
+ease of integration with the existing codebase, they are included for compatibility with
+the way the existing code loads datasets."""
 import argparse
 import os
 from typing import Optional, Sequence
@@ -31,6 +33,12 @@ def run_train(cmd_args: Optional[Sequence[str]]=None):
         help='Transfer BO baseline method to use.'
     )
 
+    fsbo_group = parser.add_argument_group("FSBO specific options")
+    fsbo_group.add_argument(
+        '--fsbo_epochs', help='Meta-Train epochs', type=int,
+        default=100000 # default number of epochs in the original FSBO script
+    )
+
     args = parser.parse_args(args=cmd_args)
     validate_args_for_dataset_type(args, groups_arg_names)
 
@@ -55,11 +63,8 @@ def run_train(cmd_args: Optional[Sequence[str]]=None):
      small_test_aq_dataset) = create_train_test_acquisition_datasets_from_args(
          args, fix_test_acquisition_dataset=False)
     
-    print("Train function samples dataset:")
-    print(train_aq_dataset.base_dataset)
-
-    print("\nValidation function samples dataset:")
-    print(test_aq_dataset.base_dataset)
+    train_data = train_aq_dataset.base_dataset
+    valid_data = test_aq_dataset.base_dataset
 
     function_samples_dataset_args = get_cmd_options_sample_dataset(vars(args))
     function_samples_dataset_args['evals_per_function'] = \
@@ -69,13 +74,12 @@ def run_train(cmd_args: Optional[Sequence[str]]=None):
     function_samples_ds_hash = dict_to_hash(function_samples_dataset_args)
 
     checkpoint_path = os.path.join(MODELS_DIR, "transfer_bo_baselines",
-                                   args.transfer_bo_method, dataset_type,
-                                   function_samples_ds_hash)
+                                   args.transfer_bo_method, function_samples_ds_hash)
 
     if args.transfer_bo_method == 'FSBO':
-        # TODO: Read FSBO code and change it so that it works with my dataset structure
         fsbo_model = FSBO(train_data=train_data, valid_data=valid_data,
                           checkpoint_path=checkpoint_path)
+        fsbo_model.meta_train(epochs=args.fsbo_epochs)
 
 
 if __name__ == "__main__":
