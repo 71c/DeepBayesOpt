@@ -2,7 +2,7 @@ import argparse
 from typing import Any, Optional
 import cProfile, pstats
 import warnings
-from run_train_transfer_bo_baseline import TRANSFER_BO_BASELINE_NAMES
+from run_train_transfer_bo_baseline import TRANSFER_BO_BASELINE_NAMES, get_dataset_hash_for_transfer_bo_baselines
 import torch
 from botorch.exceptions import UnsupportedError
 
@@ -124,24 +124,13 @@ def _gp_bo_jobs_spec_and_cfgs(
                 f"Unsupported dataset type: {dataset_type}. "
                 f"Must be one of {DATASET_TYPES}.")
 
-        function_samples_dataset_args = {
+        function_samples_and_acquisition_dataset_args = {
             k.split('.')[-1]: v for k, v in nn_options.items()
-            if k.startswith("function_samples_dataset.")
+            if k.startswith("function_samples_dataset.") \
+                or k.startswith("acquisition_dataset.")
         }
-        acquisition_dataset_args = {
-            k.split('.')[-1]: v for k, v in nn_options.items()
-            if k.startswith("acquisition_dataset.")
-        }
-        if function_samples_dataset_args.get('train_samples_size', None) is not None:
-            # For unique saving of the transfer BO baselines,
-            # add number of evals per function based on current behavior of the code,
-            # only when there's samples_size specified (this is hacky).
-            # NOTE: Uses the same logic in run_train_transfer_bo_baseline.py
-            function_samples_dataset_args['evals_per_function'] = \
-                acquisition_dataset_args['max_history'] + \
-                acquisition_dataset_args['samples_addition_amount'] + \
-                acquisition_dataset_args['n_candidates']
-        function_samples_ds_str = dict_to_str(function_samples_dataset_args)
+        dataset_hash = get_dataset_hash_for_transfer_bo_baselines(
+            function_samples_and_acquisition_dataset_args)
         
         #### Extract objective args for this dataset type
         dataset_options = {}
@@ -185,16 +174,14 @@ def _gp_bo_jobs_spec_and_cfgs(
             lamda, lamda_min, lamda_max = None, None, None
         # Add function_samples_dataset_args to objective_args_dict
         tmp = objective_args_dict[objective_args_str]['function_samples_dataset_args_dict']
-        if function_samples_ds_str not in tmp:
-            function_samples_and_acquisition_dataset_args = \
-                {**function_samples_dataset_args, **acquisition_dataset_args}
+        if dataset_hash not in tmp:
             if nn_options['training.method'] == 'gittins':
                 # This helps make it so that it doesn't try to create the same dataset
                 # twice with and without lamda args
                 function_samples_and_acquisition_dataset_args['lamda'] = lamda
                 function_samples_and_acquisition_dataset_args['lamda_min'] = lamda_min
                 function_samples_and_acquisition_dataset_args['lamda_max'] = lamda_max
-            tmp[function_samples_ds_str] = function_samples_and_acquisition_dataset_args
+            tmp[dataset_hash] = function_samples_and_acquisition_dataset_args
         
         # Get model_and_info_name for this NN
         (cmd_dataset, cmd_opts_dataset,
@@ -232,9 +219,8 @@ def _gp_bo_jobs_spec_and_cfgs(
         dict_to_str(d): d for d in num_iter_and_initial_samples_args_list}.values())
     for options in objective_args_dict.values():
         objective_args = options['objective_args']
-        for function_samples_ds_str, function_samples_and_acquisition_dataset_args in \
+        for dataset_hash, function_samples_and_acquisition_dataset_args in \
                 options['function_samples_dataset_args_dict'].items():
-            function_samples_ds_hash = str_to_hash(function_samples_ds_str)
             for transfer_bo_method_name in TRANSFER_BO_BASELINE_NAMES:
                 all_new_cmds_this_nn = []
                 for num_iter_and_initial_samples_args in \
@@ -243,7 +229,7 @@ def _gp_bo_jobs_spec_and_cfgs(
                         seeds,
                         objective_args=objective_args,
                         bo_policy_args={'transfer_bo_method': transfer_bo_method_name,
-                                        'dataset_hash': function_samples_ds_hash,
+                                        'dataset_hash': dataset_hash,
                                         **num_iter_and_initial_samples_args},
                         gp_af_args={},
                         n_objectives=n_objectives,

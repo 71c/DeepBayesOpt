@@ -246,6 +246,9 @@ class FSBO(nn.Module):
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, epochs, eta_min=1e-7)
         for epoch in range(epochs):
             self.train_loop(epoch, optimizer, scheduler)
+        # Write a file that training is done
+        with open(os.path.join(self.checkpoint_path, "training_done.txt"), "w") as f:
+            f.write("Training done")
         
     def train_loop(self, epoch, optimizer, scheduler=None):
         self.epoch_end()

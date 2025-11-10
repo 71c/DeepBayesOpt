@@ -3,6 +3,7 @@ BO baselines (specifically, those to do with acquisition dataset sampling), but 
 ease of integration with the existing codebase, they are included for compatibility with
 the way the existing code loads datasets."""
 import argparse
+from math import e
 import os
 from typing import Optional, Sequence
 
@@ -19,7 +20,40 @@ from utils.utils import dict_to_hash
 TRANSFER_BO_BASELINE_NAMES = ['FSBO']
 
 
-def run_train(cmd_args: Optional[Sequence[str]]=None):
+def get_dataset_hash_for_transfer_bo_baselines(
+        function_samples_and_acquisition_dataset_args: dict) -> str:
+    function_samples_dataset_args = get_cmd_options_sample_dataset(
+        function_samples_and_acquisition_dataset_args)
+    if function_samples_dataset_args.get('train_samples_size', None) is not None:
+        try:
+            n_candidates = function_samples_and_acquisition_dataset_args['n_candidates']
+        except KeyError:
+            # In our current setup, we always have
+            # train_n_candidates == test_n_candidates == n_candidates
+            n_candidates = function_samples_and_acquisition_dataset_args['train_n_candidates']
+        function_samples_dataset_args['evals_per_function'] = \
+            function_samples_and_acquisition_dataset_args['max_history'] + \
+            function_samples_and_acquisition_dataset_args['samples_addition_amount'] + \
+            n_candidates
+    return dict_to_hash(function_samples_dataset_args)
+
+
+def get_checkpoint_path_for_transfer_bo_baseline(
+        transfer_bo_method: str, dataset_hash: str) -> str:
+    return os.path.join(MODELS_DIR, "transfer_bo_baselines",
+                        transfer_bo_method, dataset_hash)
+
+
+def transfer_bo_baseline_is_trained(transfer_bo_method: str, dataset_hash: str) -> bool:
+    checkpoint_path = get_checkpoint_path_for_transfer_bo_baseline(
+        transfer_bo_method, dataset_hash)
+    # Currently, all transfer BO baselines are expected to create a file
+    # "training_done.txt" in the checkpoint path when training is complete.
+    saved_path = os.path.join(checkpoint_path, "training_done.txt")
+    return os.path.exists(saved_path)
+
+
+def run_train_transfer_bo_baseline(cmd_args: Optional[Sequence[str]]=None):
     parser = argparse.ArgumentParser()
     dataset_group = parser.add_argument_group("Dataset options")
     groups_arg_names = add_unified_acquisition_dataset_args(
@@ -36,7 +70,7 @@ def run_train(cmd_args: Optional[Sequence[str]]=None):
     fsbo_group = parser.add_argument_group("FSBO specific options")
     fsbo_group.add_argument(
         '--fsbo_epochs', help='Meta-Train epochs', type=int,
-        default=100000 # default number of epochs in the original FSBO script
+        default=3#100000 # default number of epochs in the original FSBO script
     )
 
     args = parser.parse_args(args=cmd_args)
@@ -66,15 +100,10 @@ def run_train(cmd_args: Optional[Sequence[str]]=None):
     train_data = train_aq_dataset.base_dataset
     valid_data = test_aq_dataset.base_dataset
 
-    function_samples_dataset_args = get_cmd_options_sample_dataset(vars(args))
-    function_samples_dataset_args['evals_per_function'] = \
-        args.max_history + args.samples_addition_amount + \
-        args.train_n_candidates # args.train_n_candidates == args.test_n_candidates
+    function_samples_ds_hash = get_dataset_hash_for_transfer_bo_baselines(vars(args))
 
-    function_samples_ds_hash = dict_to_hash(function_samples_dataset_args)
-
-    checkpoint_path = os.path.join(MODELS_DIR, "transfer_bo_baselines",
-                                   args.transfer_bo_method, function_samples_ds_hash)
+    checkpoint_path = get_checkpoint_path_for_transfer_bo_baseline(
+        args.transfer_bo_method, function_samples_ds_hash)
 
     if args.transfer_bo_method == 'FSBO':
         fsbo_model = FSBO(train_data=train_data, valid_data=valid_data,
@@ -83,4 +112,4 @@ def run_train(cmd_args: Optional[Sequence[str]]=None):
 
 
 if __name__ == "__main__":
-    run_train()
+    run_train_transfer_bo_baseline()

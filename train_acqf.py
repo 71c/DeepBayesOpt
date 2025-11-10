@@ -3,6 +3,7 @@ from typing import Any, Optional
 import os
 from webbrowser import get
 
+from run_train_transfer_bo_baseline import get_dataset_hash_for_transfer_bo_baselines, transfer_bo_baseline_is_trained
 from utils.utils import dict_to_cmd_args, dict_to_str, save_json
 from utils.experiments.experiment_config_utils import CONFIG_DIR, add_config_args, get_config_options_list
 from utils.experiments.submit_dependent_jobs import add_slurm_args, submit_jobs_sweep_from_args
@@ -185,8 +186,9 @@ def create_dependency_structure_train_acqf(
             # Train the NN iff it has not already been trained
             transfer_bo_method = options.get('transfer_bo_method', None)
             if transfer_bo_method is not None:
-                # TODO: Make this part work also for baseline transfer BO methods
-                train_nn = True
+                dataset_hash = get_dataset_hash_for_transfer_bo_baselines(options)
+                train_nn = not transfer_bo_baseline_is_trained(
+                    transfer_bo_method, dataset_hash)
             else:
                 (args_nn, af_dataset_configs, pre_model, model_and_info_name, models_path
                 ) = cmd_opts_nn_to_model_and_info_name(cmd_opts_nn)
