@@ -7,6 +7,7 @@ from typing import Any
 import argparse
 import yaml
 
+from run_train_transfer_bo_baseline import TRANSFER_BO_BASELINE_NAMES
 import torch
 from torch import Tensor
 from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprovement
@@ -16,6 +17,7 @@ from botorch.generation.gen import gen_candidates_scipy, gen_candidates_torch
 from botorch.utils.sampling import optimize_posterior_samples
 
 from dataset_factory import add_unified_function_dataset_args, validate_args_for_dataset_type
+from transfer_bo_baselines.fsbo.fsbo_optimizer import FSBOOptimizer
 from utils.utils import (add_outcome_transform, dict_to_cmd_args,
                          dict_to_fname_str, dict_to_str, remove_priors, get_arg_names)
 from utils.constants import RESULTS_DIR
@@ -224,6 +226,20 @@ def _get_bo_loop_args_parser():
         '--random_search',
         action='store_true',
         help='Whether to use random search instead of BO'
+    )
+    bo_policy_group.add_argument(
+        '--transfer_bo_method',
+        type=str,
+        choices=TRANSFER_BO_BASELINE_NAMES,
+        required=False,
+        help='(If running transfer BO baseline) Transfer BO baseline method to use.'
+    )
+    bo_policy_group.add_argument(
+        '--dataset_hash',
+        type=str,
+        required=False,
+        help='(If running transfer BO baseline) Hash of the function samples dataset '
+             'used for training the transfer BO baseline.'
     )
     bo_policy_arg_names = get_arg_names(bo_policy_group) + get_arg_names(af_opt_group) + extra_bo_policy_args
     
@@ -547,9 +563,10 @@ def pre_run_bo(objective_args: dict[str, Any],
         if random_search:
             optimizer_class = RandomSearch
         else: # transfer BO baseline
-            # TODO: implement for transfer BO methods based on transfer_bo_baseline_method
-            optimizer_class = None
-
+            if transfer_bo_baseline_method == 'FSBO':
+                optimizer_class = FSBOOptimizer
+            else:
+                pass # In the future, add other transfer BO baselines here
             af_options['dataset_hash'] = dataset_hash
         results_print_data = {**results_print_data, 'method': method_name}
     else:

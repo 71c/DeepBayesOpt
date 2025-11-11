@@ -5,6 +5,8 @@
 # MapFunctionSamplesDataset instead of dictionaries of JSON.
 # - Does not use MinMaxScaler on the function values anymore (if we wanted to do that,
 # then we would need to do the min-max scaling before passing the datasets to FSBO).
+# - Some other minor changes
+
 """
 This FSBO implementation is based on the original implementation from Hadi Samer Jomaa
 for his work on "Transfer Learning for Bayesian HPO with End-to-End Landmark Meta-Features"
@@ -38,7 +40,7 @@ RandomTaskGenerator = np.random.RandomState(413)
 
 
 class DeepKernelGP(nn.Module):
-    def __init__(self, input_size, log_dir,seed, hidden_size = [32,32,32,32],
+    def __init__(self, input_size, seed, log_dir=None, hidden_size = [32,32,32,32],
                          max_patience = 16, kernel="matern", ard = False, nu =2.5, loss_tol = 0.0001,
                          lr = 0.001, load_model = False, checkpoint = None, epochs = 10000,
                          verbose = False, eval_batch_size = 1000, xgb_path = None):
@@ -60,7 +62,10 @@ class DeepKernelGP(nn.Module):
         self.eval_batch_size = eval_batch_size
         self.get_model_likelihood_mll(1)
         
-        logging.basicConfig(filename=log_dir, level=logging.DEBUG)
+        if log_dir is None:
+            logging.basicConfig(level=logging.DEBUG)
+        else:
+            logging.basicConfig(filename=log_dir, level=logging.DEBUG)
 
     def get_model_likelihood_mll(self, train_size):
         

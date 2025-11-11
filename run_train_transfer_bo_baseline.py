@@ -3,7 +3,6 @@ BO baselines (specifically, those to do with acquisition dataset sampling), but 
 ease of integration with the existing codebase, they are included for compatibility with
 the way the existing code loads datasets."""
 import argparse
-from math import e
 import os
 from typing import Optional, Sequence
 
@@ -11,31 +10,35 @@ from dataset_factory import (add_unified_acquisition_dataset_args,
                              create_train_test_acquisition_datasets_from_args,
                              validate_args_for_dataset_type)
 from datasets.hpob_dataset import get_hpob_dataset_dimension
-from train_acqf import get_cmd_options_sample_dataset
+from datasets.utils import get_cmd_options_sample_dataset
 from transfer_bo_baselines.fsbo.fsbo_modules import FSBO
 from utils.constants import MODELS_DIR
-from utils.utils import dict_to_hash
+from utils.utils import dict_to_hash, save_json
 
 
 TRANSFER_BO_BASELINE_NAMES = ['FSBO']
 
 
 def get_dataset_hash_for_transfer_bo_baselines(
-        function_samples_and_acquisition_dataset_args: dict) -> str:
-    function_samples_dataset_args = get_cmd_options_sample_dataset(
+        function_samples_and_acquisition_dataset_args: dict,
+        return_dict: bool=False):
+    function_samples_dataset_info = get_cmd_options_sample_dataset(
         function_samples_and_acquisition_dataset_args)
-    if function_samples_dataset_args.get('train_samples_size', None) is not None:
+    if function_samples_dataset_info.get('train_samples_size', None) is not None:
         try:
             n_candidates = function_samples_and_acquisition_dataset_args['n_candidates']
         except KeyError:
             # In our current setup, we always have
             # train_n_candidates == test_n_candidates == n_candidates
             n_candidates = function_samples_and_acquisition_dataset_args['train_n_candidates']
-        function_samples_dataset_args['evals_per_function'] = \
+        function_samples_dataset_info['evals_per_function'] = \
             function_samples_and_acquisition_dataset_args['max_history'] + \
             function_samples_and_acquisition_dataset_args['samples_addition_amount'] + \
             n_candidates
-    return dict_to_hash(function_samples_dataset_args)
+    dataset_hash = dict_to_hash(function_samples_dataset_info)
+    if return_dict:
+        return dataset_hash, function_samples_dataset_info
+    return dataset_hash
 
 
 def get_checkpoint_path_for_transfer_bo_baseline(
@@ -69,25 +72,13 @@ def run_train_transfer_bo_baseline(cmd_args: Optional[Sequence[str]]=None):
 
     fsbo_group = parser.add_argument_group("FSBO specific options")
     fsbo_group.add_argument(
-        '--fsbo_epochs', help='Meta-Train epochs', type=int,
-        default=3#100000 # default number of epochs in the original FSBO script
+        '--fsbo_epochs', help='Meta-Train epochs for FSBO', type=int,
+        default=100000 # default number of epochs in the original FSBO script
     )
 
     args = parser.parse_args(args=cmd_args)
     validate_args_for_dataset_type(args, groups_arg_names)
 
-    dataset_type = getattr(args, 'dataset_type', 'gp')
-    # manager = get_dataset_manager(dataset_type, device="cpu")
-    # gp_af_dataset_configs = manager.get_dataset_configs(args, device=GP_GEN_DEVICE)
-    if dataset_type in {'gp', 'cancer_dosage'}:
-        dimension = None # already in args.dimension
-    elif dataset_type == 'logistic_regression':
-        dimension = 1
-    elif dataset_type == 'hpob':
-        # Make sure to set the dimension for non-GP datasets so that it is available
-        # for model creation
-        dimension = get_hpob_dataset_dimension(args.hpob_search_space_id)
-    
     args.batch_size = 16 # need to set something arbitrary to avoid an error somewhere
 
     # Although we don't need to get the "acquisition datasets" and only need the
@@ -100,10 +91,32 @@ def run_train_transfer_bo_baseline(cmd_args: Optional[Sequence[str]]=None):
     train_data = train_aq_dataset.base_dataset
     valid_data = test_aq_dataset.base_dataset
 
-    function_samples_ds_hash = get_dataset_hash_for_transfer_bo_baselines(vars(args))
+    dataset_hash, dataset_info = get_dataset_hash_for_transfer_bo_baselines(
+        vars(args), return_dict=True)
+    
+    # Verify that we calculated evals_per_function correctly.
+    evals_per_function = dataset_info.get('evals_per_function', None)
+    if evals_per_function is not None:
+        true_train_evals_per_function = train_data[0].x_values.shape[0]
+        if true_train_evals_per_function != evals_per_function:
+            raise RuntimeError(
+                f"Calculated evals_per_function {evals_per_function} does not match "
+                f"true value {true_train_evals_per_function} in train data."
+            )
+        true_valid_evals_per_function = valid_data[0].x_values.shape[0]
+        if true_valid_evals_per_function != evals_per_function:
+            raise RuntimeError(
+                f"Calculated evals_per_function {evals_per_function} does not match "
+                f"true value {true_valid_evals_per_function} in validation data."
+            )
 
     checkpoint_path = get_checkpoint_path_for_transfer_bo_baseline(
-        args.transfer_bo_method, function_samples_ds_hash)
+        args.transfer_bo_method, dataset_hash)
+    
+    # Save dataset info. Just as with our own method, it is not strictly necessary to
+    # save it, but it may be useful for debugging or analysis later.
+    os.makedirs(checkpoint_path, exist_ok=True)
+    save_json(dataset_info, os.path.join(checkpoint_path, 'dataset_info.json'))
 
     if args.transfer_bo_method == 'FSBO':
         fsbo_model = FSBO(train_data=train_data, valid_data=valid_data,
