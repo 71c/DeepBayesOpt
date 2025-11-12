@@ -1365,7 +1365,8 @@ experiments:
           post:
           - - gp_af
             - lamda
-            - nn.learning_rate ## NEED TO INCLUDE THIS OTHERWISE ERROR (not ideal)
+            - nn.learning_rate ## NEED TO INCLUDE THIS OTHERWISE ERROR (not ideal); TODO: fix
+            - transfer_bo_method
           - - objective.id
             - bo_seed
   pointnet_pbgi_cancer_dosage_pbgi_5d_dataset_size:

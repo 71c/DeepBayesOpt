@@ -1811,7 +1811,8 @@ def plot_dict_to_str(d):
     for key_name, prefix, plot_name in [
         ("nn.method", "nn.", "NN, method="),
         ("method", "", "method="),
-        ("gp_af", "gp_af.", "GP, ")
+        ("gp_af", "gp_af.", "GP, "),
+        ("transfer_bo_method", "", "")
     ]:
         if key_name in d:
             d_method = {}

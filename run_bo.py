@@ -7,7 +7,7 @@ from typing import Any
 import argparse
 import yaml
 
-from run_train_transfer_bo_baseline import TRANSFER_BO_BASELINE_NAMES
+from run_train_transfer_bo_baseline import TRANSFER_BO_BASELINE_NAMES, transfer_bo_baseline_is_trained
 import torch
 from torch import Tensor
 from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprovement
@@ -563,6 +563,9 @@ def pre_run_bo(objective_args: dict[str, Any],
         if random_search:
             optimizer_class = RandomSearch
         else: # transfer BO baseline
+            if not transfer_bo_baseline_is_trained(
+                transfer_bo_baseline_method, dataset_hash):
+                return None
             if transfer_bo_baseline_method == 'FSBO':
                 optimizer_class = FSBOOptimizer
             else:

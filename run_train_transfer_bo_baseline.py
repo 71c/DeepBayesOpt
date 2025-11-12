@@ -71,9 +71,13 @@ def run_train_transfer_bo_baseline(cmd_args: Optional[Sequence[str]]=None):
     )
 
     fsbo_group = parser.add_argument_group("FSBO specific options")
+    # 100K epochs is the default number of epochs in the original FSBO script, which
+    # by a rough estimate from an early experiment would take around 9.32 days.
+    # OTOH, Maraval et al only run FSBO for 10K epochs in their experiments, so we
+    # plan to use only 10K epochs as well.
     fsbo_group.add_argument(
         '--fsbo_epochs', help='Meta-Train epochs for FSBO', type=int,
-        default=100000 # default number of epochs in the original FSBO script
+        default=1000 # 10000 
     )
 
     args = parser.parse_args(args=cmd_args)

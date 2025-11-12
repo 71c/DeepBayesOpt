@@ -1302,6 +1302,15 @@ def _group_by_nested_attrs(items: List[dict[K, Any]],
     for idx in indices:
         item = items[idx]
         d = {k: item[k] for k in initial_attrs if k in item}
+
+        if len(d) == 0:
+            raise ValueError(
+                f"Got empty dictionary for plotting!\n{item=}\n{initial_attrs=}\n"
+                "Must have forgotten to include an attribute in initial_attrs."
+                "Add it in the required place in registry.yml (yes it is annoying "
+                "and manual).\nAlso by the way, if it hasn't been done already, "
+                "consider adding formatting for the attribute in the function "
+                "`plot_dict_to_str` in utils/plot_utils.py (if applicable).")
         
         # d = {k: v for k, v in d.items() if v is not None}
         d = {k: str(v) if v is None else v for k, v in d.items()}
@@ -1458,6 +1467,8 @@ def group_by_nested_attrs(items: List[dict[K, Any]],
         items, [set()] if len(attrs_groups_list) == 0 else attrs_groups_list,
         dict_to_str_func)
 
+    ## At this point, this auto code is broken, I don't know how to fix, I've given up
+
     nonconstant_keys = set()
     keys_in_all = {u for u in keys}
 
@@ -1482,7 +1493,7 @@ def group_by_nested_attrs(items: List[dict[K, Any]],
                 nonconstant_keys_item.add(k)
         nonconstant_keys |= nonconstant_keys_item
         keys_in_all &= in_all_keys_item
-    
+
     nonconstant_keys -= {"index"}
     keys_in_all -= {"index"}
     
