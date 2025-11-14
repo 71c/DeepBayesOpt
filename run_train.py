@@ -5,7 +5,7 @@ import os
 import cProfile, pstats
 from datetime import datetime
 
-from nn_af.acquisition_function_net_save_utils import get_lamda_for_bo_of_nn
+from nn_af.acquisition_function_net_save_utils import get_lamda_for_bo_of_nn, get_new_timestamp_model_save_dir, mark_new_model_as_trained
 from utils.exact_gp_computations import calculate_EI_GP
 from utils.utils import DEVICE, load_json, save_json
 from utils.plot_utils import (
@@ -69,9 +69,7 @@ def run_train(cmd_args: Optional[Sequence[str]]=None):
     ######################## Train the model #######################################
     if args.train:
         if args.save_model:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            model_name = f"model_{timestamp}"
-            model_path = os.path.join(models_path, model_name)
+            model_path, model_name = get_new_timestamp_model_save_dir(models_path)
         else:
             model_path = None
 
@@ -123,8 +121,7 @@ def run_train(cmd_args: Optional[Sequence[str]]=None):
         )
 
         if args.save_model:
-            latest_model_path = os.path.join(models_path, "latest_model.json")
-            save_json({"latest_model": model_name}, latest_model_path)
+            mark_new_model_as_trained(models_path, model_name)
             print(f"Saved best weights to {model_and_info_folder_name}")
 
         if TIME:

@@ -4,6 +4,7 @@ import os
 from typing import Any, Sequence, Optional
 import torch
 import argparse
+from datetime import datetime
 
 from datasets.hpob_dataset import get_hpob_dataset_dimension
 from utils.utils import convert_to_json_serializable, dict_to_hash, load_json, save_json
@@ -20,6 +21,17 @@ from dataset_factory import add_unified_acquisition_dataset_args, get_dataset_ma
 
 
 MODELS_SUBDIR = "models"
+
+
+def get_new_timestamp_model_save_dir(models_path: str):
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    model_name = f"model_{timestamp}"
+    return os.path.join(models_path, model_name), model_name
+
+
+def mark_new_model_as_trained(models_path: str, model_name: str):
+    latest_model_path = os.path.join(models_path, "latest_model.json")
+    save_json({"latest_model": model_name}, latest_model_path)
 
 
 def get_latest_model_path(model_and_info_folder_name: str):

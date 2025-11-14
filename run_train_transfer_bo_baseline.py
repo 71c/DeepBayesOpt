@@ -9,8 +9,8 @@ from typing import Optional, Sequence
 from dataset_factory import (add_unified_acquisition_dataset_args,
                              create_train_test_acquisition_datasets_from_args,
                              validate_args_for_dataset_type)
-from datasets.hpob_dataset import get_hpob_dataset_dimension
 from datasets.utils import get_cmd_options_sample_dataset
+from nn_af.acquisition_function_net_save_utils import get_new_timestamp_model_save_dir, mark_new_model_as_trained, nn_acqf_is_trained
 from transfer_bo_baselines.fsbo.fsbo_modules import FSBO
 from utils.constants import MODELS_DIR
 from utils.utils import dict_to_hash, save_json
@@ -41,19 +41,21 @@ def get_dataset_hash_for_transfer_bo_baselines(
     return dataset_hash
 
 
-def get_checkpoint_path_for_transfer_bo_baseline(
+def get_relative_checkpoints_path_for_transfer_bo_baseline(
         transfer_bo_method: str, dataset_hash: str) -> str:
-    return os.path.join(MODELS_DIR, "transfer_bo_baselines",
-                        transfer_bo_method, dataset_hash)
+    return os.path.join("transfer_bo_baselines", transfer_bo_method, dataset_hash)
+
+
+def get_checkpoints_path_for_transfer_bo_baseline(
+        transfer_bo_method: str, dataset_hash: str) -> str:
+    return os.path.join(MODELS_DIR, get_relative_checkpoints_path_for_transfer_bo_baseline(
+        transfer_bo_method, dataset_hash))
 
 
 def transfer_bo_baseline_is_trained(transfer_bo_method: str, dataset_hash: str) -> bool:
-    checkpoint_path = get_checkpoint_path_for_transfer_bo_baseline(
+    relative_checkpoints_path = get_relative_checkpoints_path_for_transfer_bo_baseline(
         transfer_bo_method, dataset_hash)
-    # Currently, all transfer BO baselines are expected to create a file
-    # "training_done.txt" in the checkpoint path when training is complete.
-    saved_path = os.path.join(checkpoint_path, "training_done.txt")
-    return os.path.exists(saved_path)
+    return nn_acqf_is_trained(relative_checkpoints_path)
 
 
 def run_train_transfer_bo_baseline(cmd_args: Optional[Sequence[str]]=None):
@@ -114,18 +116,23 @@ def run_train_transfer_bo_baseline(cmd_args: Optional[Sequence[str]]=None):
                 f"true value {true_valid_evals_per_function} in validation data."
             )
 
-    checkpoint_path = get_checkpoint_path_for_transfer_bo_baseline(
+    checkpoints_path = get_checkpoints_path_for_transfer_bo_baseline(
         args.transfer_bo_method, dataset_hash)
     
     # Save dataset info. Just as with our own method, it is not strictly necessary to
     # save it, but it may be useful for debugging or analysis later.
-    os.makedirs(checkpoint_path, exist_ok=True)
-    save_json(dataset_info, os.path.join(checkpoint_path, 'dataset_info.json'))
+    os.makedirs(checkpoints_path, exist_ok=True)
+    save_json(dataset_info, os.path.join(checkpoints_path, 'dataset_info.json'))
+
+    model_path, model_name = get_new_timestamp_model_save_dir(checkpoints_path)
 
     if args.transfer_bo_method == 'FSBO':
         fsbo_model = FSBO(train_data=train_data, valid_data=valid_data,
-                          checkpoint_path=checkpoint_path)
+                          checkpoint_path=model_path)
         fsbo_model.meta_train(epochs=args.fsbo_epochs)
+    
+    mark_new_model_as_trained(checkpoints_path, model_name)
+    print(f"Completed training, saved to {model_path}")
 
 
 if __name__ == "__main__":

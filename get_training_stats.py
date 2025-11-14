@@ -244,10 +244,3 @@ if __name__ == "__main__":
             if full_id not in seen:
                 seen.add(full_id)
                 print(f"Job {full_id}: {job_info['state']} (running for {job_info['time']})")
-
-
-# python get_training_stats.py data/sweeps/100iter_8dim_maxhistory20_big_20250417_194250/logs
-# python get_training_stats.py data/sweeps/100iter_8dim_maxhistory20_gittins_regularization_2_20250421_202615/logs
-# python get_training_stats.py data/sweeps/100iter_8dim_maxhistory20_gittins_regularization_2_20250422_221933/logs
-# python get_training_stats.py data/sweeps/100iter_8dim_maxhistory20_regularization_20250424_142837/logs
-# python get_training_stats.py data/sweeps/100iter_8dim_maxhistory20_regularization_20250424_191807/logs
