@@ -49,6 +49,11 @@ def get_latest_model_path(model_and_info_folder_name: str):
         raise FileNotFoundError(f"Latest model path {latest_model_path} does not exist."
                                 " i.e., no models have been fully trained yet.")
     model_path = os.path.join(models_path, latest_model_name)
+
+    # Handle a temporary bug with FSBO (has since been fixed)
+    if not os.path.isdir(model_path):
+        return os.path.join(model_and_info_path, latest_model_name)
+    
     return model_path
 
 

@@ -1061,9 +1061,12 @@ def convert_to_json_serializable(data,
             v, include_priors, hash_gpytorch_modules, hash_include_str, hash_str, float_precision)
             for k, v in data.items()}
     if isinstance(data, np.ndarray):
-        return data.tolist()
+        return convert_to_json_serializable(
+            data.tolist(), include_priors, hash_gpytorch_modules, hash_include_str, hash_str, float_precision)
     if torch.is_tensor(data):
-        return data.cpu().numpy().tolist()
+        return convert_to_json_serializable(
+            data.cpu().numpy().tolist(),
+            include_priors, hash_gpytorch_modules, hash_include_str, hash_str, float_precision)
     if isinstance(data, (list, tuple)):
         return [convert_to_json_serializable(
             x, include_priors, hash_gpytorch_modules, hash_include_str, hash_str, float_precision)

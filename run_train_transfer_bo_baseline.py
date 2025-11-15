@@ -134,7 +134,8 @@ def run_train_transfer_bo_baseline(cmd_args: Optional[Sequence[str]]=None):
     os.makedirs(checkpoints_path, exist_ok=True)
     save_json(dataset_info, os.path.join(checkpoints_path, 'dataset_info.json'))
 
-    model_path, model_name = get_new_timestamp_model_save_dir(checkpoints_path)
+    models_path = os.path.join(checkpoints_path, MODELS_SUBDIR)
+    model_path, model_name = get_new_timestamp_model_save_dir(models_path)
 
     if args.transfer_bo_method == 'FSBO':
         fsbo_model = FSBO(train_data=train_data, valid_data=valid_data,
@@ -145,7 +146,6 @@ def run_train_transfer_bo_baseline(cmd_args: Optional[Sequence[str]]=None):
               f"{args.fsbo_time_budget_hours} hours")
         fsbo_model.meta_train(epochs=fsbo_epochs)
     
-    models_path = os.path.join(checkpoints_path, MODELS_SUBDIR)
     mark_new_model_as_trained(models_path, model_name)
     print(f"Completed training, saved to {model_path}")
 

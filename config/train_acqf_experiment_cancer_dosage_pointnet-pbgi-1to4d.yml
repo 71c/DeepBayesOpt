@@ -20,7 +20,7 @@ parameters:
   min_history:
     value: 1
   max_history:
-    value: 20
+    value: 5
   method:
     values: ['gittins']
   gi_loss_normalization:
@@ -50,14 +50,14 @@ parameters:
   subtract_best_y:
     values: [false]
   max_history_input:
-    values: [2, 4, 8]
+    values: [2, 3, 4, 5]
   x_cand_input:
     values:
     - "local_only"
   pooling:
     values: ["max"]
   epochs:
-    value: 6000
+    value: 8000
   learning_rate:
     values: [1.73e-03]
   batch_size:
