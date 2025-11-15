@@ -110,11 +110,11 @@ class ExperimentRunner:
     
     def run_experiment(self, name: str, dry_run: bool = False, no_submit: bool = False,
                       always_train: bool = False, recompute_bo: bool = False,
-                      recompute_non_nn_only: bool = False) -> Tuple[int, str, str]:
+                      recompute_non_nn_only: bool = False, no_train: bool = False) -> Tuple[int, str, str]:
         """Run an experiment."""
         try:
             args = self.registry.get_experiment_command_args(name)
-            
+
             # Build the experiment command
             cmd = [
                 sys.executable, "bo_experiments_gp.py",
@@ -124,15 +124,15 @@ class ExperimentRunner:
                 "--bo_experiment_config", args['BO_EXPERIMENT_CFG'].strip('"'),
                 "--seed", args['SEED']
             ]
-            
+
             # Add seeds configuration
             seeds_cfg = args['SEEDS_CFG'].strip('"').split()
             cmd.extend(seeds_cfg)
-            
+
             # Add SLURM configuration
             slurm_cfg = args['SLURM_CFG'].strip('"').split()
             cmd.extend(slurm_cfg)
-            
+
             # Add optional flags
             if no_submit:
                 cmd.append("--no_submit")
@@ -145,6 +145,9 @@ class ExperimentRunner:
 
             if recompute_non_nn_only:
                 cmd.append("--recompute-non-nn-only")
+
+            if no_train:
+                cmd.append("--no_train")
 
             if dry_run:
                 print("Dry run - would execute command:")

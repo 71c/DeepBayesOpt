@@ -14,7 +14,7 @@ from utils.experiments.experiment_config_utils import add_config_args, get_confi
 from utils.experiments.submit_dependent_jobs import add_slurm_args, submit_jobs_sweep_from_args
 
 from run_bo import GP_AF_DICT, bo_loop_dicts_to_cmd_args_list, run_bo
-from train_acqf import add_train_acqf_args, cmd_opts_nn_to_model_and_info_name, create_dependency_structure_train_acqf, get_cmd_options_train_acqf
+from train_acqf import ALWAYS_TRAIN_NAME, NO_NN_ID, add_train_acqf_args, cmd_opts_nn_to_model_and_info_name, create_dependency_structure_train_acqf, get_cmd_options_train_acqf
 
 
 CPROFILE = False
@@ -370,6 +370,12 @@ def get_bo_experiments_parser(train=True):
     nn_train_group = parser.add_argument_group("NN experiments")
     nn_base_config_name, nn_experiment_config_name = add_train_acqf_args(nn_train_group,
                                                                          train=train)
+    nn_train_group.add_argument(
+        '--no_train',
+        action='store_true',
+        help='If specified, do not train any NNs; only run BO loops (GP, random search, '
+             'NNs, and transfer BO baselines).'
+    )
 
     # Add recompute options
     recompute_group = parser.add_argument_group("Recompute options")
@@ -527,6 +533,9 @@ def main():
     if getattr(args, 'recompute_bo', False) and getattr(args, 'recompute_non_nn_only', False):
         parser.error("Cannot specify both --recompute-bo and --recompute-non-nn-only. "
                      "--recompute-bo includes all BO results.")
+    
+    if args.no_train and getattr(args, ALWAYS_TRAIN_NAME):
+        parser.error(f"Cannot specify both --no_train and --{ALWAYS_TRAIN_NAME}.")
 
     jobs_spec, new_cfgs, existing_cfgs_and_results, refined_config \
         = generate_gp_bo_job_specs(
@@ -546,6 +555,12 @@ def main():
     
     print(f"Number of new BO configs: {len(new_cfgs)}")
     print(f"Number of existing BO configs: {len(existing_cfgs_and_results)}")
+
+    if args.no_train:
+        # Remove all training jobs from jobs_spec
+        jobs_spec = {
+            k: v for k, v in jobs_spec.items() if k in {'no_nn', NO_NN_ID}
+        }
 
     submit_jobs_sweep_from_args(jobs_spec, args)
 

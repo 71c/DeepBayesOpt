@@ -145,6 +145,10 @@ def cmd_run(args):
             print("Error: Cannot specify both --recompute-bo and --recompute-non-nn-only.")
             return 1
 
+        if getattr(args, 'no_train', False) and getattr(args, 'always_train', False):
+            print("Error: Cannot specify both --no-train and --always-train.")
+            return 1
+
         if args.training_only:
             returncode, stdout, stderr = runner.run_training_only(
                 args.name,
@@ -161,7 +165,8 @@ def cmd_run(args):
                 no_submit=args.no_submit,
                 always_train=getattr(args, 'always_train', False),
                 recompute_bo=getattr(args, 'recompute_bo', False),
-                recompute_non_nn_only=getattr(args, 'recompute_non_nn_only', False)
+                recompute_non_nn_only=getattr(args, 'recompute_non_nn_only', False),
+                no_train=getattr(args, 'no_train', False)
             )
 
         # Output is already streamed in real-time by the runner
@@ -299,6 +304,9 @@ def main():
                                    help='Recompute/overwrite existing BO results (all types)')
     run_recompute_group.add_argument('--recompute-non-nn-only', action='store_true',
                                    help='Recompute/overwrite only non-NN BO results (GP and random search)')
+    run_recompute_group.add_argument('--no-train', action='store_true',
+                                   help='If specified, do not train any NNs; only run BO loops (GP, random search, '
+                                        'NNs, and transfer BO baselines).')
     
     # Plot command
     parser_plot = subparsers.add_parser('plot', help='Generate plots for an experiment')

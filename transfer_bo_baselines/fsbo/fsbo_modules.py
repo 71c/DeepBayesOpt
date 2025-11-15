@@ -185,7 +185,10 @@ class DeepKernelGP(nn.Module):
             return new_x
 
     def continuous_maximization( self, dim, bounds, acqf):
+        print("Starting continuous maximization using Differential Evolution...")
+        t = time.time()
         result = differential_evolution(acqf, bounds=bounds, updating='immediate',workers=1, maxiter=20000, init="sobol")
+        print(f"Maximization finished in {time.time()-t} seconds.")
         return result.x.reshape(-1,dim)
 
     
