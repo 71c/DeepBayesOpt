@@ -10,7 +10,7 @@ from dataset_factory import (add_unified_acquisition_dataset_args,
                              create_train_test_acquisition_datasets_from_args,
                              validate_args_for_dataset_type)
 from datasets.utils import get_cmd_options_sample_dataset
-from nn_af.acquisition_function_net_save_utils import get_new_timestamp_model_save_dir, mark_new_model_as_trained, nn_acqf_is_trained
+from nn_af.acquisition_function_net_save_utils import MODELS_SUBDIR, get_new_timestamp_model_save_dir, mark_new_model_as_trained, nn_acqf_is_trained
 from transfer_bo_baselines.fsbo.fsbo_modules import FSBO
 from utils.constants import MODELS_DIR
 from utils.utils import dict_to_hash, save_json
@@ -58,6 +58,14 @@ def transfer_bo_baseline_is_trained(transfer_bo_method: str, dataset_hash: str) 
     return nn_acqf_is_trained(relative_checkpoints_path)
 
 
+_EPOCHS_REFERENCE = 6508
+_N_REFERENCE = 320 + 1000
+_TIME_REFERENCE = 14 + 34 / 60  # 14 hours 34 minutes, in hours
+_FSBO_CONSTANT = _EPOCHS_REFERENCE * _N_REFERENCE / _TIME_REFERENCE
+def _calculate_fsbo_epochs_for_time_budget(time_budget_hours: float, N: int) -> int:
+    return int(_FSBO_CONSTANT * time_budget_hours / N)
+
+
 def run_train_transfer_bo_baseline(cmd_args: Optional[Sequence[str]]=None):
     parser = argparse.ArgumentParser()
     dataset_group = parser.add_argument_group("Dataset options")
@@ -78,8 +86,10 @@ def run_train_transfer_bo_baseline(cmd_args: Optional[Sequence[str]]=None):
     # OTOH, Maraval et al only run FSBO for 10K epochs in their experiments, so we
     # plan to use only 10K epochs as well.
     fsbo_group.add_argument(
-        '--fsbo_epochs', help='Meta-Train epochs for FSBO', type=int,
-        default=1000 # 10000 
+        '--fsbo_time_budget_hours',
+        help='Approximate time budget for FSBO, in hours',
+        type=float,
+        default=14.0
     )
 
     args = parser.parse_args(args=cmd_args)
@@ -129,9 +139,14 @@ def run_train_transfer_bo_baseline(cmd_args: Optional[Sequence[str]]=None):
     if args.transfer_bo_method == 'FSBO':
         fsbo_model = FSBO(train_data=train_data, valid_data=valid_data,
                           checkpoint_path=model_path)
-        fsbo_model.meta_train(epochs=args.fsbo_epochs)
+        fsbo_epochs = _calculate_fsbo_epochs_for_time_budget(
+            args.fsbo_time_budget_hours, N=len(train_data) + len(valid_data))
+        print(f"Training FSBO for {fsbo_epochs} epochs to fit in time budget of "
+              f"{args.fsbo_time_budget_hours} hours")
+        fsbo_model.meta_train(epochs=fsbo_epochs)
     
-    mark_new_model_as_trained(checkpoints_path, model_name)
+    models_path = os.path.join(checkpoints_path, MODELS_SUBDIR)
+    mark_new_model_as_trained(models_path, model_name)
     print(f"Completed training, saved to {model_path}")
 
 

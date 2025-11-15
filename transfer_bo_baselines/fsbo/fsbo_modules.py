@@ -258,6 +258,7 @@ class FSBO(nn.Module):
     def train_loop(self, epoch, optimizer, scheduler=None):
         self.epoch_end()
         assert(self.training)
+        # t = time.time()
         for task in self.tasks:
             inputs, labels = self.get_batch(task)
             for _ in range(self.n_inner_steps):
@@ -270,15 +271,20 @@ class FSBO(nn.Module):
                 optimizer.step()
                 mse = self.mse(predictions.mean, labels)
                 self.train_metrics.update(loss,self.model.likelihood.noise,mse)
+        # taken = time.time()-t
+        # print(f"Epoch {epoch} took {taken} seconds to train; {taken/len(self.tasks)} seconds per {len(self.tasks)} task")
         if scheduler:
             scheduler.step()
         
         training_results = self.train_metrics.get()
         for k,v in training_results.items():
             self.train_summary_writer.add_scalar(k, v, epoch)
+        # t = time.time()
         for task in self.valid_tasks:
             mse,loss = self.test_loop(task,train=False)
             self.valid_metrics.update(loss,np.array(0),mse,)
+        # taken = time.time()-t
+        # print(f"Epoch {epoch} took {taken} seconds to validate; {taken/len(self.valid_tasks)} seconds per {len(self.valid_tasks)} task")
             
         logging.info(self.train_metrics.report() + " " + self.valid_metrics.report())
         validation_results = self.valid_metrics.get()

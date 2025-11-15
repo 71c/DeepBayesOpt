@@ -199,7 +199,8 @@ class ExperimentRunner:
     def generate_plots(self, name: str, plot_type: str = "bo_experiments", n_iterations: int = 30,
                       center_stat: str = "mean", variant: str = "default",
                       max_iterations_to_plot: Optional[int] = None, add_grid: bool = False,
-                      add_markers: bool = False, plot_mode: str = "scatter", dry_run: bool = False) -> Tuple[int, str, str]:
+                      add_markers: bool = False, min_regret_for_plot: float = 1e-6,
+                      plot_mode: str = "scatter", dry_run: bool = False) -> Tuple[int, str, str]:
         """Generate plots for an experiment."""
         try:
             args = self.registry.get_experiment_command_args(name)
@@ -241,6 +242,8 @@ class ExperimentRunner:
                     cmd.append("--add_grid")
                 if add_markers:
                     cmd.append("--add_markers")
+                if min_regret_for_plot != 1e-6:  # Only add if non-default
+                    cmd.extend(["--min_regret_for_plot", str(min_regret_for_plot)])
 
             elif plot_type == "train_acqf":
                 cmd = [

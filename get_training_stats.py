@@ -29,7 +29,7 @@ def get_training_stats(logs_dir):
             lines = content.split('\n')
 
             # Find total epochs from command line
-            for line in lines[:10]:  # Check first 10 lines for command
+            for line in lines[:100]:  # Check first 10 lines for command
                 match = pattern_total_epochs.search(line)
                 if match:
                     total_epochs = int(match.group(1))

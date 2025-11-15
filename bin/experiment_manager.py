@@ -199,6 +199,7 @@ def cmd_plot(args):
             max_iterations_to_plot=args.max_iterations_to_plot,
             add_grid=getattr(args, 'add_grid', False),
             add_markers=getattr(args, 'add_markers', False),
+            min_regret_for_plot=getattr(args, 'min_regret_for_plot', 1e-6),
             plot_mode=getattr(args, 'plot_mode', 'scatter'),
             dry_run=args.dry_run
         )
@@ -318,6 +319,10 @@ def main():
                            help='If set, add a grid to the plots')
     parser_plot.add_argument('--add-markers', action='store_true',
                            help='If set, add markers to the lines in the plots at each iteration')
+    parser_plot.add_argument('--min-regret-for-plot', type=float, default=1e-6,
+                           help='Minimum regret value to display in log-scale plots. Values below this '
+                                'will be clipped to this value to prevent extremely small regrets from '
+                                'compressing the y-axis range. Default: 1e-6')
     parser_plot.add_argument('--plot-mode', choices=['scatter', 'density'], default='scatter',
                            help='Visualization mode for combined_plot: scatter (default) or 2D density heatmap')
     parser_plot.add_argument('--dry-run', action='store_true',
