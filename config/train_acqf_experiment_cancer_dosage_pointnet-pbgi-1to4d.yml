@@ -26,7 +26,7 @@ parameters:
   gi_loss_normalization:
     value: normal
   lamda:
-    values: [1.00e-2]
+    values: [1.00e-4, 1.00e-2]
   train_samples_size:
     values: [320]
   samples_addition_amount:

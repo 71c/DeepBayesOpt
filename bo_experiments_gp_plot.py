@@ -689,7 +689,8 @@ def main():
         else:
             if len(attrs_groups_list) >= 3:
                 # Right before the one before "line" (-2) level
-                attrs_groups_list.insert(-3, {"attr_name"})
+                # attrs_groups_list.insert(-3, {"attr_name"})
+                attrs_groups_list = [{"attr_name"}] + attrs_groups_list
             else:
                 # Right before "line" (-2) level
                 attrs_groups_list.insert(-2, {"attr_name"})

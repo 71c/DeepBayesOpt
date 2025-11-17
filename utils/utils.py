@@ -1306,14 +1306,14 @@ def _group_by_nested_attrs(items: List[dict[K, Any]],
         item = items[idx]
         d = {k: item[k] for k in initial_attrs if k in item}
 
-        if len(d) == 0:
-            raise ValueError(
-                f"Got empty dictionary for plotting!\n{item=}\n{initial_attrs=}\n"
-                "Must have forgotten to include an attribute in initial_attrs."
-                "Add it in the required place in registry.yml (yes it is annoying "
-                "and manual).\nAlso by the way, if it hasn't been done already, "
-                "consider adding formatting for the attribute in the function "
-                "`plot_dict_to_str` in utils/plot_utils.py (if applicable).")
+        # if len(d) == 0:
+        #     raise ValueError(
+        #         f"Got empty dictionary for plotting!\n{item=}\n{initial_attrs=}\n"
+        #         "Must have forgotten to include an attribute in initial_attrs. "
+        #         "Add it in the required place in registry.yml (yes it is annoying "
+        #         "and manual).\nAlso by the way, if it hasn't been done already, "
+        #         "consider adding formatting for the attribute in the function "
+        #         "`plot_dict_to_str` in utils/plot_utils.py (if applicable).")
         
         # d = {k: v for k, v in d.items() if v is not None}
         d = {k: str(v) if v is None else v for k, v in d.items()}

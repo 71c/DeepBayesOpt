@@ -1177,7 +1177,7 @@ experiments:
     created_date: '2025-11-14'
     parameters:
       seed: 8
-      nn_experiment_config: config/train_acqf_experiment_hpob_pointnet-max_history_input_variation-pbgi-simple.yml
+      nn_experiment_config: config/train_acqf_experiment_hpob_pointnet-pbgi-simple.yml
       bo_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_hpob_pointnet_simple
       use_hpob_seeds: true
@@ -1480,15 +1480,17 @@ experiments:
           - max_history_input
       bo_experiments:
         default:
-          pre: []
+          pre:
+          - ['lamda']
           attr_a:
-          - nn.dimension
+          - dimension
           attr_b:
           - nn.max_history_input
           post:
           - - gp_af
             - lamda
             - nn.learning_rate
+            - transfer_bo_method
           - - objective.id
             - bo_seed
 templates:
