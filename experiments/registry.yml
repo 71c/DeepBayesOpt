@@ -1480,8 +1480,8 @@ experiments:
           - max_history_input
       bo_experiments:
         default:
-          pre:
-          - ['lamda']
+          pre: []
+          # - ['lamda']
           attr_a:
           - dimension
           attr_b:
