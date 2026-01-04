@@ -7,11 +7,12 @@ from datetime import datetime
 
 from nn_af.acquisition_function_net_save_utils import get_lamda_for_bo_of_nn, get_new_timestamp_model_save_dir, mark_new_model_as_trained
 from utils.exact_gp_computations import calculate_EI_GP
-from utils.utils import DEVICE, load_json, save_json
+from utils.utils import DEVICE
+from utils_general.io_utils import load_json
 from utils.plot_utils import (
     plot_nn_vs_gp_acquisition_function_1d_grid,
     plot_acquisition_function_net_training_history)
-from utils.nn_utils import count_trainable_parameters, count_parameters
+from utils_general.nn_utils import count_trainable_parameters, count_parameters
 from utils_general.tictoc import tic, tocl
 
 from dataset_factory import create_train_test_acquisition_datasets_from_args

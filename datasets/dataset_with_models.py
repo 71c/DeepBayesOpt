@@ -13,7 +13,8 @@ from botorch.exceptions import UnsupportedError
 import pyro
 
 from utils_general.tictoc import tic, tocl
-from utils.utils import resize_iterable, iterable_is_finite, save_json, load_json
+from utils.utils import resize_iterable, iterable_is_finite
+from utils_general.io_utils import load_json, save_json
 
 
 # https://docs.gpytorch.ai/en/stable/_modules/gpytorch/module.html#Module.pyro_sample_from_prior

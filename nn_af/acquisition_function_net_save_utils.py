@@ -7,7 +7,8 @@ import argparse
 from datetime import datetime
 
 from datasets.hpob_dataset import get_hpob_dataset_dimension
-from utils.utils import convert_to_json_serializable, dict_to_hash, load_json, save_json
+from utils.utils import convert_to_json_serializable, dict_to_hash
+from utils_general.io_utils import load_json, save_json
 from utils.constants import MODELS_DIR, MODELS_VERSION
 
 from nn_af.acquisition_function_net import AcquisitionFunctionBodyPointnetV1and2, AcquisitionFunctionBodyTransformerNP, AcquisitionFunctionNet, AcquisitionFunctionNetFinalMLP, ExpectedImprovementAcquisitionFunctionNet, GittinsAcquisitionFunctionNet, TwoPartAcquisitionFunctionNetFixedHistoryOutputDim

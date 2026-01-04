@@ -28,7 +28,8 @@ from datasets.hpob_dataset import get_hpob_dataset_dimension
 from nn_af.acquisition_function_net import AcquisitionFunctionNet, AcquisitionFunctionNetAcquisitionFunction, ExpectedImprovementAcquisitionFunctionNet
 from utils.constants import PLOTS_DIR
 from utils.exact_gp_computations import calculate_EI_GP, calculate_gi_gp
-from utils.utils import DEVICE, add_outcome_transform, dict_to_str, iterate_nested, save_json
+from utils.utils import DEVICE, add_outcome_transform, dict_to_str
+from utils_general.io_utils import save_json
 
 
 BLUE = '#1f77b4'
@@ -710,117 +711,6 @@ def add_headers(
                 rotation=rotate_row_headers * 90,
                 **text_kwargs,
             )
-
-
-# def plot_bo_histogram_spectrogram(
-#         ax, arr, bins=50, vmin=None, vmax=None, cmap='viridis', log_scale=True):
-#     """
-#     Plots a spectrogram-like heatmap where each column is a histogram 
-#     (over the values across seeds) at a given iteration.
-    
-#     Parameters:
-#     - ax: matplotlib axis to plot on.
-#     - arr: numpy array of shape (n_seeds, n_iter)
-#     - bins: number of bins or a sequence of bin edges for the histograms
-#     - vmin, vmax: optional color scale limits
-#     - cmap: colormap to use
-#     """
-#     n_seeds, n_iter = arr.shape
-    
-#     # Compute histogram for each column (iteration)
-#     if isinstance(bins, int):
-#         bin_edges = np.histogram_bin_edges(arr, bins=bins)
-#     else:
-#         bin_edges = np.asarray(bins)
-#     bin_centers = 0.5 * (bin_edges[1:] + bin_edges[:-1])
-#     n_bins = len(bin_centers)
-    
-#     hist_matrix = np.zeros((n_bins, n_iter))
-
-#     for i in range(n_iter):
-#         hist, _ = np.histogram(arr[:, i], bins=bin_edges)
-#         hist_matrix[:, i] = hist
-    
-#     if log_scale:
-#         hist_matrix = np.log1p(hist_matrix)
-    
-#     # Plot as image: rows = bins (y), cols = iterations (x)
-#     im = ax.imshow(
-#         hist_matrix,
-#         aspect='auto',
-#         origin='lower',
-#         extent=[0, n_iter, bin_edges[0], bin_edges[-1]],
-#         cmap=cmap,
-#         vmin=vmin,
-#         vmax=vmax,
-#     )
-#     return im  # You can use this to attach a colorbar later if desired
-
-
-
-
-# def plot_bo_histogram_spectrogram(
-#     ax, arr, bins=50, log_scale=True, max_alpha=0.8, cmap='viridis', zorder=0
-# ):
-#     """
-#     Plots a semi-transparent spectrogram-like heatmap where each column is a histogram 
-#     of the values at a given iteration. Designed to be overlayable.
-
-#     Parameters:
-#     - ax: matplotlib axis
-#     - arr: np.array of shape (n_seeds, n_iter)
-#     - bins: number of bins or sequence of bin edges
-#     - log_scale: whether to apply log1p to frequency counts
-#     - max_alpha: maximum alpha/opacity for highest frequency bin
-#     - cmap: colormap name
-#     - zorder: z-order for layering (optional)
-#     """
-#     n_seeds, n_iter = arr.shape
-
-#     # Get bins
-#     if isinstance(bins, int):
-#         bin_edges = np.histogram_bin_edges(arr, bins=bins)
-#     else:
-#         bin_edges = np.asarray(bins)
-#     bin_centers = 0.5 * (bin_edges[1:] + bin_edges[:-1])
-#     n_bins = len(bin_centers)
-
-#     # Fill histogram matrix
-#     hist_matrix = np.zeros((n_bins, n_iter))
-#     for i in range(n_iter):
-#         hist, _ = np.histogram(arr[:, i], bins=bin_edges)
-#         hist_matrix[:, i] = hist
-
-#     if log_scale:
-#         hist_matrix = np.log1p(hist_matrix)
-
-#     # Normalize for alpha blending
-#     norm = Normalize(vmin=0, vmax=np.max(hist_matrix) if np.max(hist_matrix) > 0 else 1)
-#     normalized = norm(hist_matrix)
-
-#     # Convert colormap to RGBA
-#     # cmap_func = plt.get_cmap(cmap)
-#     # rgba_img = cmap_func(normalized)  # shape: (n_bins, n_iter, 4)
-#     # rgba_img[..., -1] *= normalized * max_alpha  # Scale alpha channel
-#     # rgba_img[hist_matrix == 0] = [1, 1, 1, 0]     # Fully transparent where count == 0
-
-#     if not hasattr(ax, 'cycler'):
-#         prop_cycle = plt.rcParams['axes.prop_cycle']
-#         ax.cycler = prop_cycle()
-#     color = next(ax.cycler)['color']
-#     rgb_array = np.array(to_rgb(color)) # shape: (3,)
-#     rgba_img = np.zeros((n_bins, n_iter, 4), dtype=float)
-#     rgba_img[..., :3] = rgb_array  # RGB channels
-#     rgba_img[..., 3] = normalized * max_alpha  # Alpha channel
-    
-#     # Plot with imshow
-#     ax.imshow(
-#         rgba_img,
-#         aspect='auto',
-#         origin='lower',
-#         extent=[0, n_iter, bin_edges[0], bin_edges[-1]],
-#         zorder=zorder,
-#     )
 
 
 def plot_bo_violin(ax, arr, color='#1f77b4', alpha=0.5, width=0.8):
@@ -1659,6 +1549,38 @@ def _save_figures_from_nested_structure(
                 warnings.formatwarning(w.message, w.category, w.filename, w.lineno))
 
 
+def _count_num_plots(plot_config: dict, level_names: list[str], all_seeds=True):
+    # Count the number of plots in the plot_config
+    next_level_names = level_names[1:] if len(level_names) > 1 else []
+    n_plots = 0
+    for k, v in plot_config.items():
+        items = v["items"]
+
+        if all_seeds:
+            if len(next_level_names) >= 1 and next_level_names[0] == "line":
+                n_plots += 1
+            else:
+                if isinstance(items, dict):
+                    n_plots += _count_num_plots(
+                        items, next_level_names, all_seeds=all_seeds)
+                else:
+                    n_plots += 1
+        else:
+            # TODO: handle non-all_seeds case properly with level_names (if desired)
+            if isinstance(items, dict):
+                itemss = [v["items"] for v in items.values()]
+                if all(isinstance(i, dict) for i in itemss):
+                    n_plots += _count_num_plots(
+                        items, next_level_names, all_seeds=all_seeds)
+                elif any(isinstance(i, dict) for i in itemss):
+                    raise ValueError("Invalid plot config")
+                else:
+                    n_plots += 1
+            else:
+                raise RuntimeError("This should not happen")
+    return n_plots
+
+
 def save_figures_from_nested_structure(
         plot_config: dict,
         plot_ax_func,
@@ -1703,38 +1625,6 @@ def save_figures_from_nested_structure(
     )
     if print_pbar:
         pbar.close()
-
-
-def _count_num_plots(plot_config: dict, level_names: list[str], all_seeds=True):
-    # Count the number of plots in the plot_config
-    next_level_names = level_names[1:] if len(level_names) > 1 else []
-    n_plots = 0
-    for k, v in plot_config.items():
-        items = v["items"]
-
-        if all_seeds:
-            if len(next_level_names) >= 1 and next_level_names[0] == "line":
-                n_plots += 1
-            else:
-                if isinstance(items, dict):
-                    n_plots += _count_num_plots(
-                        items, next_level_names, all_seeds=all_seeds)
-                else:
-                    n_plots += 1
-        else:
-            # TODO: handle non-all_seeds case properly with level_names (if desired)
-            if isinstance(items, dict):
-                itemss = [v["items"] for v in items.values()]
-                if all(isinstance(i, dict) for i in itemss):
-                    n_plots += _count_num_plots(
-                        items, next_level_names, all_seeds=all_seeds)
-                elif any(isinstance(i, dict) for i in itemss):
-                    raise ValueError("Invalid plot config")
-                else:
-                    n_plots += 1
-            else:
-                raise RuntimeError("This should not happen")
-    return n_plots
 
 
 def _get_sort_key_for_param(k, v):

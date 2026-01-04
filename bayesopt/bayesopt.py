@@ -30,7 +30,8 @@ from nn_af.acquisition_function_net_save_utils import load_nn_acqf_configs
 from utils.utils import (
     add_outcome_transform, aggregate_stats_list, combine_nested_dicts,
     convert_to_json_serializable, dict_to_hash, json_serializable_to_numpy,
-    load_json, remove_priors, sanitize_file_name, save_json)
+    remove_priors, sanitize_file_name)
+from utils_general.io_utils import load_json, save_json
 from utils.plot_utils import plot_optimization_trajectories_error_bars
 
 from datasets.dataset_with_models import RandomModelSampler

@@ -12,7 +12,8 @@ from botorch.models.gp_regression import SingleTaskGP
 
 from utils.utils import (get_lengths_from_proportions, iterable_is_finite, uniform_randint,
                    get_uniform_randint_generator, max_pad_tensors_batch, pad_tensor)
-from utils.utils import SizedIterableMixin, len_or_inf, save_json, load_json
+from utils.utils import SizedIterableMixin, len_or_inf
+from utils_general.io_utils import load_json, save_json
 from utils_general.tictoc import tic, tocl
 
 from datasets.dataset_with_models import ModelsWithParamsList, TupleWithModel, create_classes
