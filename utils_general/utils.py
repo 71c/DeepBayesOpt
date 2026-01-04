@@ -212,3 +212,8 @@ def safe_issubclass(obj, parent):
     """Returns whether `obj` is a class that is a subclass of `parent`.
     In contrast to `issubclass`, doesn't raise TypeError when `obj` is not a class."""
     return isinstance(obj, type) and issubclass(obj, parent)
+
+
+def get_arg_names(p) -> list[str]:
+    """Get argument names from an argparse parser or group."""
+    return [action.dest for action in p._group_actions if action.dest != "help"]

@@ -1524,8 +1524,3 @@ if __name__ == "__main__":
     print(model)
     print("\nmodel priors:")
     print(list(model.named_priors()))
-
-
-def get_arg_names(p) -> list[str]:
-    """Get argument names from an argparse parser or group."""
-    return [action.dest for action in p._group_actions if action.dest != "help"]

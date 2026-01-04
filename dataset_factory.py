@@ -13,7 +13,7 @@ from datasets.hpob_acquisition_dataset_manager import HPOBAcquisitionDatasetMana
 from datasets.lr_acquisition_dataset_manager import LogisticRegressionAcquisitionDatasetManager, add_lr_args
 from datasets.cancer_dosage_acquisition_dataset_manager import CancerDosageAcquisitionDatasetManager, add_cancer_dosage_args
 from datasets.acquisition_dataset_manager import AcquisitionDatasetManager
-from utils.utils import get_arg_names 
+from utils_general.utils import get_arg_names 
 
 
 # Mapping of dataset types to their respective manager classes
