@@ -13,7 +13,7 @@ from abc import abstractmethod
 from nn_af.acquisition_function_net_constants import POINTNET_ACQF_PARAMS_INPUT_DEFAULT, POINTNET_ACQF_PARAMS_INPUT_OPTIONS
 from utils_general.saveable_object import SaveableObject
 from utils.utils import standardize_y_hist
-from utils_general.io_utils import safe_issubclass
+from utils_general.utils import safe_issubclass
 
 from utils_general.nn_utils import Dense, expand_dim
 from utils.nn_utils import (MultiLayerPointNet, PointNetLayer,

@@ -206,3 +206,9 @@ def convert_to_json_serializable(data, float_precision=None):
     if isinstance(data, type):
         return data.__name__
     return str(data)
+
+
+def safe_issubclass(obj, parent):
+    """Returns whether `obj` is a class that is a subclass of `parent`.
+    In contrast to `issubclass`, doesn't raise TypeError when `obj` is not a class."""
+    return isinstance(obj, type) and issubclass(obj, parent)

@@ -1085,7 +1085,7 @@ def get_values(d):
         yield d
 
 
-def are_all_disjoint(sets: Sequence[Set]) -> bool:
+def _are_all_disjoint(sets: Sequence[Set]) -> bool:
     """Checks if all sets in a list are pairwise disjoint (have no common elements).
 
     Args:
@@ -1246,7 +1246,7 @@ def group_by_nested_attrs(items: List[dict[K, Any]],
                         attrs_groups_list: List[Set[K]],
                         dict_to_str_func=dict_to_str,
                         add_extra_index=-1):
-    if not are_all_disjoint(attrs_groups_list):
+    if not _are_all_disjoint(attrs_groups_list):
         raise ValueError("Attributes in the groups are not disjoint")
     keys = set().union(*[set(item.keys()) for item in items])
     

@@ -5,12 +5,6 @@ import sys
 import traceback
 
 
-def safe_issubclass(obj, parent):
-    """Returns whether `obj` is a class that is a subclass of `parent`.
-    In contrast to `issubclass`, doesn't raise TypeError when `obj` is not a class."""
-    return isinstance(obj, type) and issubclass(obj, parent)
-
-
 def save_json(data, fname, **kwargs):
     already_exists = os.path.exists(fname)
     r = random.randint(0, 1_000_000_000)
