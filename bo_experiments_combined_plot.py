@@ -19,7 +19,7 @@ from nn_af.acquisition_function_net_save_utils import load_nn_acqf, get_latest_m
 from utils.plot_utils import (
     create_plot_directory, get_plot_ax_loss_vs_regret_func, add_plot_args,
     plot_dict_to_str, save_figures_from_nested_structure)
-from utils.utils import dict_to_str, group_by, group_by_nested_attrs
+from utils.utils import group_by, group_by_nested_attrs
 from utils_general.io_utils import load_json, save_json
 from utils_general.experiments.experiment_config_utils import CONFIG_DIR
 from utils.constants import MODELS_DIR
@@ -28,6 +28,7 @@ from bo_experiments_gp import get_bo_experiments_parser, generate_gp_bo_job_spec
 from bo_experiments_gp_plot import add_plot_interval_args, add_plot_formatting_args, ATTR_NAME_TO_TITLE
 from run_bo import GP_AF_DICT
 from train_acqf import MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN
+from utils_general.utils import dict_to_str
 
 # Import auto-plotting configuration
 try:

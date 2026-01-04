@@ -7,7 +7,7 @@ from datetime import datetime
 
 from nn_af.acquisition_function_net_save_utils import get_lamda_for_bo_of_nn, get_new_timestamp_model_save_dir, mark_new_model_as_trained
 from utils.exact_gp_computations import calculate_EI_GP
-from utils.utils import DEVICE
+from utils_general.utils import DEVICE
 from utils_general.io_utils import load_json
 from utils.plot_utils import (
     plot_nn_vs_gp_acquisition_function_1d_grid,

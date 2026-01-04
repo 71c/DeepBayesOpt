@@ -29,8 +29,7 @@ from bayesopt.random_gp_function import RandomGPFunction
 from nn_af.acquisition_function_net_save_utils import load_nn_acqf_configs
 from utils.utils import (
     add_outcome_transform, aggregate_stats_list, combine_nested_dicts,
-    convert_to_json_serializable, dict_to_hash, json_serializable_to_numpy,
-    remove_priors, sanitize_file_name)
+    convert_to_json_serializable_gpytorch, remove_priors)
 from utils_general.io_utils import load_json, save_json
 from utils.plot_utils import plot_optimization_trajectories_error_bars
 
@@ -38,6 +37,7 @@ from datasets.dataset_with_models import RandomModelSampler
 from nn_af.acquisition_function_net import (
     AcquisitionFunctionNet, AcquisitionFunctionNetModel,
     AcquisitionFunctionNetAcquisitionFunction, ExpectedImprovementAcquisitionFunctionNet)
+from utils_general.utils import dict_to_hash, json_serializable_to_numpy, sanitize_file_name
 
 
 class BayesianOptimizer(ABC):
@@ -551,9 +551,9 @@ class OptimizationResultsSingleMethod:
 
             info_kwargs = dict(include_priors=True, hash_gpytorch_modules=False)
             
-            opt_config_json = convert_to_json_serializable(opt_config, **info_kwargs)
+            opt_config_json = convert_to_json_serializable_gpytorch(opt_config, **info_kwargs)
             extra_fn_configs = [
-                convert_to_json_serializable(fn_kwargs, **info_kwargs)
+                convert_to_json_serializable_gpytorch(fn_kwargs, **info_kwargs)
                 for fn_kwargs in self.optimizer_kwargs_per_function]
             func_opt_configs_list = [
                 {**opt_config_json, **fn_config,
@@ -566,7 +566,7 @@ class OptimizationResultsSingleMethod:
             self.func_opt_configs = dict(zip(self.func_opt_configs_str, func_opt_configs_list))
 
             trial_configs_list = [
-                convert_to_json_serializable(
+                convert_to_json_serializable_gpytorch(
                     {'seed': seeds[i], 'initial_points': initial_points[i]}
                 ) for i in range(self.n_trials_per_function)
             ]
@@ -670,7 +670,7 @@ class OptimizationResultsSingleMethod:
             if self.save_dir is not None:
                 trial_config_str = self.trial_configs_str[trial_index]
                 self._func_results_to_save[func_index][trial_config_str] = \
-                    convert_to_json_serializable(trial_result)
+                    convert_to_json_serializable_gpytorch(trial_result)
 
         return trial_result
 
@@ -1048,7 +1048,7 @@ def get_rff_function(gp, deepcopy=True, dimension=None, get_hash=False):
 
     
     if get_hash:
-        j = convert_to_json_serializable(f.state_dict())
+        j = convert_to_json_serializable_gpytorch(f.state_dict())
         # save_json(j, "test-gpu.json", indent=2)
         function_hash = dict_to_hash(j)
 

@@ -8,13 +8,14 @@ from utils.plot_utils import (
     create_plot_directory, get_plot_ax_af_iterations_func, add_plot_args,
     get_plot_ax_bo_stats_vs_iteration_func, plot_dict_to_str,
     save_figures_from_nested_structure)
-from utils.utils import dict_to_str, group_by, group_by_nested_attrs
+from utils.utils import group_by, group_by_nested_attrs
 from utils_general.io_utils import save_json
 from utils_general.experiments.experiment_config_utils import CONFIG_DIR
 
 from bo_experiments_gp import get_bo_experiments_parser, generate_gp_bo_job_specs
 from run_bo import GP_AF_DICT, get_arg_names, pre_run_bo
 from train_acqf import MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN
+from utils_general.utils import dict_to_str
 
 # Import auto-plotting configuration
 try:

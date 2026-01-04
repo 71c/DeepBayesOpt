@@ -4,7 +4,7 @@ import os
 
 from datasets.utils import get_cmd_options_sample_dataset
 from run_train_transfer_bo_baseline import get_dataset_hash_for_transfer_bo_baselines, transfer_bo_baseline_is_trained
-from utils.utils import dict_to_cmd_args, dict_to_str
+from utils_general.utils import dict_to_cmd_args
 from utils_general.io_utils import save_json
 from utils_general.experiments.experiment_config_utils import CONFIG_DIR, add_config_args, get_config_options_list
 from utils_general.experiments.submit_dependent_jobs import add_slurm_args, submit_jobs_sweep_from_args
@@ -12,6 +12,7 @@ from utils_general.experiments.submit_dependent_jobs import add_slurm_args, subm
 from nn_af.acquisition_function_net_save_utils import (
     get_nn_af_args_configs_model_paths_from_cmd_args, nn_acqf_is_trained)
 from dataset_factory import create_train_test_acquisition_datasets_from_args
+from utils_general.utils import dict_to_str
 
 
 # TODO: In the future, could do this more automatically rather than hard-coding

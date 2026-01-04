@@ -1,18 +1,17 @@
-from abc import abstractmethod, ABC
-import hashlib
+from abc import abstractmethod
 import itertools
-import re
 import math
 from typing import Any, Set, TypeVar, Iterable, Sequence, List, Tuple, Dict, Optional, Union
 
 import warnings
-from functools import partial, lru_cache
+from functools import partial
 
 import numpy as np
-from scipy.optimize import root_scalar
-import torch
 
-torch.set_default_dtype(torch.float64)
+import torch
+from utils_general.nn_utils import expand_dim
+from utils_general.utils import dict_to_hash, dict_to_str
+
 from torch import Tensor
 
 import botorch
@@ -40,13 +39,6 @@ from torch.nn import ModuleList
 from botorch.models.model import Model
 from botorch.models.gp_regression import SingleTaskGP
 from botorch.models.gpytorch import GPyTorchModel, BatchedMultiOutputGPyTorchModel
-
-
-DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-if torch.cuda.is_available():
-    current_device = torch.cuda.current_device()
-    print("Current device:", current_device)
-    print("Current device name:", torch.cuda.get_device_name(current_device))
 
 
 class _InverseOutcomeTransform(OutcomeTransform):
@@ -809,14 +801,6 @@ def calculate_batch_improvement(y_hist_batch: torch.Tensor, y_cand_batch: Tensor
     return improvement_values_batch
 
 
-def expand_dim(tensor, dim, k):
-    if tensor.size(dim) == k:
-        return tensor
-    new_shape = list(tensor.shape)
-    new_shape[dim] = k
-    return tensor.expand(*new_shape)
-
-
 MIN_STDV = 1e-8
 
 def standardize_y_hist(y_hist, hist_mask):
@@ -900,133 +884,10 @@ def get_loguniform_randint_generator(min_val, max_val, pre_offset=0.0, offset=0)
                    pre_offset=pre_offset, offset=offset)
 
 
-def _int_linspace_naive(start, stop, num):
-    return np.unique(np.round(np.linspace(start, stop, num)).astype(int))
-
-
-@lru_cache(maxsize=128) # Not necessary but why not.
-def int_linspace(start, stop, num):
-    if not (isinstance(start, int) and isinstance(stop, int)):
-        raise ValueError("start and stop should be integers")
-
-    if num > stop - start + 1:
-        raise ValueError('num must be less than or equal to stop - start + 1')
-    ret = _int_linspace_naive(start, stop, num)
-    length = len(ret)
-    
-    if length < num:
-        sol = root_scalar(
-            lambda x: len(_int_linspace_naive(start, stop, int(x))) - num,
-            method='secant', x0=num, x1=2*num, xtol=1e-12, rtol=1e-12)
-        
-        k = int(sol.root)
-        ret = _int_linspace_naive(start, stop, k)
-
-        if len(ret) != num:
-            if len(ret) > num:
-                while len(ret) > num:
-                    k -= 1
-                    ret = _int_linspace_naive(start, stop, k)
-            else:
-                while len(ret) < num:
-                    k += 1
-                    ret = _int_linspace_naive(start, stop, k)
-
-    return ret
-
-
-def sanitize_file_name(file_name: str) -> str:
-    # Define a dictionary of characters to replace
-    replacements = {
-        '/': '_',
-        '\\': '_',
-        ':': '_',
-        '*': '_',
-        '?': '_',
-        '"': '_',
-        '<': '_',
-        '>': '_',
-        '|': '_',
-    }
-
-    # Replace the characters based on the replacements dictionary
-    sanitized_name = ''.join(replacements.get(c, c) for c in file_name)
-
-    # Remove characters that are non-printable or not allowed
-    sanitized_name = re.sub(r'[^\x20-\x7E]', '', sanitized_name)
-
-    # Remove all whitespace characters
-    sanitized_name = re.sub(r'\s+', '', sanitized_name)
-
-    return sanitized_name
-
-def _get_dict_item_sort_key(item):
-    """
-    Generate a sort key for dictionary items that sorts by:
-    1. Parameter name (alphabetically)
-    2. Numeric value if the value is a number
-
-    This ensures that parameters with numeric values are sorted numerically
-    rather than lexicographically (e.g., 0.01, 0.0003, 0.00173 instead of
-    0.0003, 0.00173, 0.01).
-    """
-    key, value = item
-
-    # Try to extract numeric value for proper sorting
-    numeric_value = None
-    if isinstance(value, (int, float)):
-        numeric_value = float(value)
-    elif isinstance(value, str):
-        try:
-            # Try to parse as float (handles scientific notation like 5.2e-05)
-            numeric_value = float(value)
-        except (ValueError, TypeError):
-            # Not a number, will sort by string representation
-            pass
-
-    # Return a sort key: (param_name, numeric_value_or_string_repr)
-    # If numeric_value is None, use string representation for sorting
-    if numeric_value is not None:
-        return (key, 0, numeric_value)  # 0 to prioritize numeric sorting
-    else:
-        return (key, 1, str(value))  # 1 to sort non-numeric values after numeric
-
-
-def _to_str(x, include_space=False) -> str:
-    sep = ', ' if include_space else ','
-    if type(x) is dict:
-        # Sort items using the custom sort key
-        sorted_items = sorted(x.items(), key=_get_dict_item_sort_key)
-        return '(' + sep.join(
-            key + '=' + _to_str(value)
-            for key, value in sorted_items
-        ) + ')'
-    if type(x) is list:
-        return '[' + sep.join(map(_to_str, x)) + ']'
-    if type(x) is str:
-        return x
-    return repr(x)
-
-def dict_to_str(d: Dict[str, Any], include_space=False) -> str:
-    if type(d) is not dict:
-        raise ValueError(f"Expected a dictionary, got a {type(d).__name__} "
-                            f"with value {d!r}")
-    return _to_str(d, include_space=include_space)[1:-1]
-
-def dict_to_fname_str(d: Dict[str, Any]) -> str:
-    return sanitize_file_name(dict_to_str(d))
-
-def str_to_hash(s: str) -> str:
-    return hashlib.sha256(s.encode('ascii')).hexdigest()
-
-def dict_to_hash(d: Dict[str, Any]) -> str:
-    return str_to_hash(dict_to_str(d))
-
-
 def hash_gpytorch_module(module,
                          include_str=True,
                          hash_str=False):
-    serialized_state_dict = convert_to_json_serializable(
+    serialized_state_dict = convert_to_json_serializable_gpytorch(
         module.state_dict(), hash_gpytorch_modules=True,
         include_priors=True, hash_include_str=False,
         hash_str=True, float_precision=12)
@@ -1047,25 +908,25 @@ def hash_gpytorch_module(module,
     return ret
 
 
-def convert_to_json_serializable(data,
+def convert_to_json_serializable_gpytorch(data,
                                  include_priors=True,
                                  hash_gpytorch_modules=True,
                                  hash_include_str=True,
                                  hash_str=False,
                                  float_precision=None):
     if isinstance(data, dict):
-        return {k: convert_to_json_serializable(
+        return {k: convert_to_json_serializable_gpytorch(
             v, include_priors, hash_gpytorch_modules, hash_include_str, hash_str, float_precision)
             for k, v in data.items()}
     if isinstance(data, np.ndarray):
-        return convert_to_json_serializable(
+        return convert_to_json_serializable_gpytorch(
             data.tolist(), include_priors, hash_gpytorch_modules, hash_include_str, hash_str, float_precision)
     if torch.is_tensor(data):
-        return convert_to_json_serializable(
+        return convert_to_json_serializable_gpytorch(
             data.cpu().numpy().tolist(),
             include_priors, hash_gpytorch_modules, hash_include_str, hash_str, float_precision)
     if isinstance(data, (list, tuple)):
-        return [convert_to_json_serializable(
+        return [convert_to_json_serializable_gpytorch(
             x, include_priors, hash_gpytorch_modules, hash_include_str, hash_str, float_precision)
             for x in data]
     if isinstance(data, (int, float, str, bool, type(None))):
@@ -1081,7 +942,7 @@ def convert_to_json_serializable(data,
         else:
             ret = {
                 'module': str(data),
-                'state_dict': convert_to_json_serializable(
+                'state_dict': convert_to_json_serializable_gpytorch(
                     data.state_dict(), include_priors=True,
                     hash_gpytorch_modules=False, float_precision=12)
             }
@@ -1092,50 +953,6 @@ def convert_to_json_serializable(data,
         # e.g. ExpectedImprovement instead of <class 'botorch.acquisition.analytic.ExpectedImprovement'>
         return data.__name__
     return str(data)
-
-
-def _json_serializable_to_numpy(data: Any, array_keys: Optional[set]=None):
-    if isinstance(data, dict):
-        return {
-            k: np.array(v) if isinstance(v, list) and
-            (array_keys is None or k in array_keys)
-            else _json_serializable_to_numpy(v, array_keys)
-            for k, v in data.items()
-        }
-    if isinstance(data, np.ndarray):
-        return data
-    if isinstance(data, (list, tuple)):
-        return [_json_serializable_to_numpy(x, array_keys) for x in data]
-    return data
-
-
-def json_serializable_to_numpy(data: Any,
-                               array_keys: Optional[Union[list,tuple,set]]=None):
-    if array_keys is not None:
-        array_keys = set(array_keys)
-    return _json_serializable_to_numpy(data, array_keys)
-
-
-def to_device(tensor, device):
-    if tensor is None or device is None:
-        return tensor
-    return tensor.to(device)
-
-
-def dict_to_cmd_args(params, equals=False) -> list[str]:
-    parts = []
-    for key, value in sorted(params.items()):
-        # If the value is a boolean, only include it if True.
-        if isinstance(value, bool):
-            if value:
-                parts.append(f"--{key}")
-        elif value is not None:
-            if equals:
-                parts.append(f"--{key}={value}")
-            else:
-                parts.append(f"--{key}")
-                parts.append(str(value))
-    return parts
 
 
 K = TypeVar('K')

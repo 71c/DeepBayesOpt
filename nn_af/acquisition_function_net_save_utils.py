@@ -7,7 +7,7 @@ import argparse
 from datetime import datetime
 
 from datasets.hpob_dataset import get_hpob_dataset_dimension
-from utils.utils import convert_to_json_serializable, dict_to_hash
+from utils.utils import convert_to_json_serializable_gpytorch
 from utils_general.io_utils import load_json, save_json
 from utils.constants import MODELS_DIR, MODELS_VERSION
 
@@ -19,6 +19,7 @@ from datasets.dataset_with_models import RandomModelSampler
 from datasets.acquisition_dataset_manager import FIX_TRAIN_ACQUISITION_DATASET, get_lamda_min_max
 from datasets.gp_acquisition_dataset_manager import GP_GEN_DEVICE
 from dataset_factory import add_unified_acquisition_dataset_args, get_dataset_manager, add_lamda_args, validate_args_for_dataset_type
+from utils_general.utils import dict_to_hash
 
 
 MODELS_SUBDIR = "models"
@@ -203,7 +204,7 @@ def json_serialize_nn_acqf_configs(
     all_info_json = {
         'acquisition_dataset_config': acquisition_dataset_config,
         'n_points_config': n_points_config,
-        'dataset_transform_config': convert_to_json_serializable(dataset_transform_config),
+        'dataset_transform_config': convert_to_json_serializable_gpytorch(dataset_transform_config),
         'training_config': training_config
     }
 
@@ -218,7 +219,7 @@ def json_serialize_nn_acqf_configs(
                 randomize_params=function_samples_config["randomize_params"]
             )
     
-        all_info_json['model_sampler'] = convert_to_json_serializable({
+        all_info_json['model_sampler'] = convert_to_json_serializable_gpytorch({
                 '_models': model_sampler._models,
                 '_initial_params_list': model_sampler._initial_params_list,
                 'model_probabilities': model_sampler.model_probabilities,
@@ -229,7 +230,7 @@ def json_serialize_nn_acqf_configs(
     else:
         model_sampler = None
 
-    all_info_json['function_samples_config'] = convert_to_json_serializable(
+    all_info_json['function_samples_config'] = convert_to_json_serializable_gpytorch(
         function_samples_config)
 
     return all_info_json, model_sampler

@@ -79,3 +79,11 @@ class Dense(nn.Sequential):
                 layers.append(nn.Dropout(dropout))
         
         super().__init__(*layers)
+
+
+def expand_dim(tensor, dim, k):
+    if tensor.size(dim) == k:
+        return tensor
+    new_shape = list(tensor.shape)
+    new_shape[dim] = k
+    return tensor.expand(*new_shape)

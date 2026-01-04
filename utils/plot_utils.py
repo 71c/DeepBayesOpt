@@ -28,8 +28,9 @@ from datasets.hpob_dataset import get_hpob_dataset_dimension
 from nn_af.acquisition_function_net import AcquisitionFunctionNet, AcquisitionFunctionNetAcquisitionFunction, ExpectedImprovementAcquisitionFunctionNet
 from utils.constants import PLOTS_DIR
 from utils.exact_gp_computations import calculate_EI_GP, calculate_gi_gp
-from utils.utils import DEVICE, add_outcome_transform, dict_to_str
+from utils.utils import add_outcome_transform
 from utils_general.io_utils import save_json
+from utils_general.utils import DEVICE, dict_to_str
 
 
 BLUE = '#1f77b4'

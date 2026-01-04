@@ -15,7 +15,6 @@ from abc import ABC, abstractmethod
 from botorch.models.transforms.outcome import OutcomeTransform
 
 from utils.utils import (
-    dict_to_hash, dict_to_str, 
     get_uniform_randint_generator, get_loguniform_randint_generator,
     get_lengths_from_proportions)
 from utils.constants import DATASETS_DIR
@@ -25,6 +24,7 @@ from datasets.acquisition_dataset import (
     AcquisitionDataset, CostAwareAcquisitionDataset, FunctionSamplesAcquisitionDataset)
 
 from nn_af.train_acquisition_function_net import train_or_test_loop
+from utils_general.utils import dict_to_hash, dict_to_str
 
 
 # Global configuration constants
