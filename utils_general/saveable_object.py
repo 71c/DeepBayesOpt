@@ -10,7 +10,7 @@ from typing import Any, Union
 from typing_extensions import Self
 import warnings
 
-from utils.io_utils import load_json, safe_issubclass, save_json
+from utils_general.io_utils import load_json, safe_issubclass, save_json
 
 
 # Dictionary to keep track of subclasses of SaveableObject

@@ -33,7 +33,7 @@ ACTIVATIONS = {
 }
 
 
-def get_initialized_linear(in_dim, out_dim, activation):
+def _get_initialized_linear(in_dim, out_dim, activation):
     linear = nn.Linear(in_dim, out_dim)
     if activation == "softplus":
         activation = "relu" # approximate
@@ -80,7 +80,7 @@ class Dense(nn.Sequential):
             apply_activation = i != n_layers - 1 or activation_at_end
             
             # layers.append(nn.Linear(in_dim, out_dim))
-            layers.append(get_initialized_linear(
+            layers.append(_get_initialized_linear(
                 in_dim, out_dim,
                 activation=activation if apply_activation else 'linear'
             ))

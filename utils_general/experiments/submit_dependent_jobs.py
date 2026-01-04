@@ -7,7 +7,7 @@ from datetime import datetime
 import math
 
 from utils.constants import JOB_ARRAY_SUB_PATH, SWEEPS_DIR
-from utils.experiments.experiment_config_utils import CONFIG_DIR
+from utils_general.experiments.experiment_config_utils import CONFIG_DIR
 from utils.utils import dict_to_cmd_args, save_json
 
 # scontrol show config | grep -E 'MaxArraySize'

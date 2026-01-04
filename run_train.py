@@ -12,7 +12,7 @@ from utils.plot_utils import (
     plot_nn_vs_gp_acquisition_function_1d_grid,
     plot_acquisition_function_net_training_history)
 from utils.nn_utils import count_trainable_parameters, count_parameters
-from utils.tictoc import tic, tocl
+from utils_general.tictoc import tic, tocl
 
 from dataset_factory import create_train_test_acquisition_datasets_from_args
 

@@ -12,7 +12,7 @@ from botorch.models.gp_regression import SingleTaskGP
 from botorch.exceptions import UnsupportedError
 import pyro
 
-from utils.tictoc import tic, tocl
+from utils_general.tictoc import tic, tocl
 from utils.utils import resize_iterable, iterable_is_finite, save_json, load_json
 
 

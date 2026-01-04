@@ -20,7 +20,7 @@ from utils.plot_utils import (
     create_plot_directory, get_plot_ax_loss_vs_regret_func, add_plot_args,
     plot_dict_to_str, save_figures_from_nested_structure)
 from utils.utils import dict_to_str, group_by, group_by_nested_attrs, load_json, save_json
-from utils.experiments.experiment_config_utils import CONFIG_DIR
+from utils_general.experiments.experiment_config_utils import CONFIG_DIR
 from utils.constants import MODELS_DIR
 
 from bo_experiments_gp import get_bo_experiments_parser, generate_gp_bo_job_specs
