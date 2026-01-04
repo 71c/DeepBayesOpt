@@ -27,16 +27,34 @@ This repository implements research on using deep reinforcement learning techniq
   - `hpob_acquisition_dataset_manager.py`: HPO-B benchmark datasets
   - Supporting classes in `datasets/` including `GaussianProcessRandomDataset`, `LogisticRegressionRandomDataset`, and HPO-B datasets
 
-- **Experiment Management** (`experiments/`): Centralized experiment registry and orchestration
-  - `registry.py`: Central registry for managing experiment configurations
-  - `runner.py`: Experiment execution and orchestration
-  - `plot_helper.py`: Utilities for generating experiment plots
-  - `validate_migration.py`: Tools for validating experiment migrations
+- **Experiment Management**: Centralized experiment registry and orchestration
+  - `experiments/`: Core experiment registry system
+    - `registry.py`: Central registry for managing experiment configurations
+    - `runner.py`: Experiment execution and orchestration
+    - `plot_helper.py`: Utilities for generating experiment plots
+    - `validate_migration.py`: Tools for validating experiment migrations
+  - `bin/`: Command-line tools (recommended entry points)
+    - `experiment_manager.py`: High-level CLI for running registered experiments
+    - `activate_env.sh`: Convenience script to activate conda environment
 
-- **Utilities** (`utils/`):
-  - `utils.py`: Outcome transformations, kernel setup, JSON serialization
-  - `nn_utils.py`: Custom PyTorch modules (PointNet layers, pooling strategies)
-  - `plot_utils.py`: Plotting utilities
+- **Utilities**: Split between two directories:
+  - `utils/`: Domain-specific utilities for BO and acquisition functions
+    - `utils.py`: Outcome transformations, kernel setup, JSON serialization
+    - `nn_utils.py`: Custom PyTorch modules (PointNet layers, pooling strategies)
+    - `plot_utils.py`: Plotting utilities for BO experiments
+    - `exact_gp_computations.py`: Exact GP posterior calculations
+    - `constants.py`: Global constants (e.g., HPOB_DATA_DIR)
+  - `utils_general/`: General-purpose utilities (recently refactored from `utils/`)
+    - `utils.py`: General utility functions
+    - `nn_utils.py`: General neural network utilities
+    - `plot_utils.py`: General plotting utilities
+    - `io_utils.py`: I/O helper functions
+    - `tictoc.py`: Timing utilities
+    - `saveable_object.py`: Object serialization/persistence
+    - `experiments/`: SLURM job submission utilities
+      - `experiment_config_utils.py`: Configuration management
+      - `submit_dependent_jobs.py`: Job dependency handling
+      - `job_array.sub`: SLURM job array template
 
 ### Training Methods
 
@@ -55,13 +73,51 @@ The codebase supports multiple dataset types for training acquisition functions:
 ## Common Development Commands
 
 ### Environment Setup
+
+Initial setup:
 ```bash
 conda create --name nn_bo python=3.12.4
 conda activate nn_bo
 pip install -r requirements.txt
 ```
 
-### Core Scripts
+Activating the environment (recommended):
+```bash
+source ./bin/activate_env.sh
+```
+Note: Use `source` (or `.`) to ensure activation persists in your shell. The script automatically detects conda installations and activates the `nn_bo` environment.
+
+### Experiment Manager CLI (Recommended)
+
+For most workflows, use the centralized experiment manager instead of calling scripts directly:
+
+```bash
+# List available experiments
+python bin/experiment_manager.py list
+
+# Show experiment details and commands
+python bin/experiment_manager.py show <experiment_name> --commands
+
+# Run an experiment
+python bin/experiment_manager.py run <experiment_name>
+
+# Run with recompute options
+python bin/experiment_manager.py run <experiment_name> --always-train  # Recompute NN training
+python bin/experiment_manager.py run <experiment_name> --recompute-bo  # Recompute all BO results
+
+# Check status
+python bin/experiment_manager.py status <experiment_name>
+
+# Generate plots
+python bin/experiment_manager.py plot <experiment_name>
+python bin/experiment_manager.py plot <experiment_name> --type combined_plot --max-iterations-to-plot 20
+```
+
+See README.md for complete documentation of the Experiment Manager CLI.
+
+### Core Scripts (Low-Level)
+
+These scripts can be called directly, but `bin/experiment_manager.py` is recommended for most use cases.
 
 #### Single Model Training
 
@@ -94,6 +150,13 @@ python bo_experiments_gp.py --nn_base_config config/train_acqf.yml --nn_experime
 ```bash
 python bo_experiments_gp_plot.py --nn_base_config config/train_acqf.yml --nn_experiment_config config/train_acqf_experiment_1dim_example.yml --bo_base_config config/bo_config.yml --n_gp_draws 2 --seed 8 --use_rows --use_cols --center_stat mean --plots_group_name test_1dim --plots_name results
 ```
+
+**Plot Formatting Options:**
+- `--add_grid`: Add grid to plots
+- `--add_markers`: Add markers at each iteration point
+- `--min_regret_for_plot <value>`: Minimum regret value for log-scale plots (default: 1e-6)
+- `--max_iterations_to_plot <N>`: Manually specify maximum iterations to display
+- Auto-detection: When plotting regret without `--max_iterations_to_plot`, the script automatically determines optimal iteration count based on convergence
 
 #### Check Status
 ```bash
@@ -138,6 +201,13 @@ Trained models are saved with content-based hashing:
 
 ## Development Notes
 
+### Recent Codebase Refactoring
+
+The codebase recently underwent a refactoring where general-purpose utilities were moved from `utils/` to `utils_general/`:
+- `utils/` now contains domain-specific utilities for BO and acquisition functions
+- `utils_general/` contains reusable utilities that could be used across different projects
+- When working with utility functions, check both directories to find the appropriate location
+
 ### Adding New Parameters
 
 To add new NN training parameters:
@@ -173,8 +243,3 @@ No specific test framework is mentioned in the codebase. Verify changes by runni
 - Supports multiple search spaces: '5970', '5860', '6766', '4796'
 - Fixed dataset sizes (train/validation/test splits are predetermined)
 - No outcome transforms applied
-
-### Logistic Regression Datasets
-- Synthetic hyperparameter optimization tasks
-- Configurable data dimensionality and regularization ranges
-- Supports both uniform and log-uniform parameter sampling
