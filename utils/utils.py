@@ -1,7 +1,7 @@
 from abc import abstractmethod
 import itertools
 import math
-from typing import Any, Set, TypeVar, Iterable, Sequence, List, Tuple, Dict, Optional, Union
+from typing import Any, TypeVar, Iterable, Sequence, List, Tuple, Dict, Optional, Union
 
 import warnings
 from functools import partial
@@ -10,7 +10,7 @@ import numpy as np
 
 import torch
 from utils_general.nn_utils import expand_dim
-from utils_general.utils import dict_to_hash, dict_to_str
+from utils_general.utils import dict_to_hash
 
 from torch import Tensor
 
@@ -1070,266 +1070,12 @@ def group_by(items, group_function=lambda x: x):
     return group_dict
 
 
-def iterate_nested(d):
-    for key, value in d.items():
-        yield key, value
-        if isinstance(value, dict):
-            yield from iterate_nested(value)  # Recursively process the nested dict
-
-
 def get_values(d):
     if type(d) is dict:
         for v in d.values():
             yield from get_values(v)
     else:
         yield d
-
-
-def _are_all_disjoint(sets: Sequence[Set]) -> bool:
-    """Checks if all sets in a list are pairwise disjoint (have no common elements).
-
-    Args:
-        sets: A list of sets.
-
-    Returns:
-        True if all sets are disjoint, False otherwise.
-    """
-    for i in range(len(sets)):
-        for j in range(i + 1, len(sets)):
-            if not sets[i].isdisjoint(sets[j]):
-                return False
-    return True
-
-
-def _group_by_nested_attrs(items: List[dict[K, Any]],
-                        attrs_groups_list: List[Set[K]],
-                        dict_to_str_func,
-                        return_single=False,
-                        indices=None):
-    if indices is None:
-        indices = list(range(len(items)))
-
-    if len(attrs_groups_list) == 0:
-        if return_single and len(indices) == 1:
-            return indices[0]
-        return indices
-    initial_attrs = attrs_groups_list[0]
-    initial_grouped_items = {}
-    to_add = []
-    for idx in indices:
-        item = items[idx]
-        d = {k: item[k] for k in initial_attrs if k in item}
-
-        # if len(d) == 0:
-        #     raise ValueError(
-        #         f"Got empty dictionary for plotting!\n{item=}\n{initial_attrs=}\n"
-        #         "Must have forgotten to include an attribute in initial_attrs. "
-        #         "Add it in the required place in registry.yml (yes it is annoying "
-        #         "and manual).\nAlso by the way, if it hasn't been done already, "
-        #         "consider adding formatting for the attribute in the function "
-        #         "`plot_dict_to_str` in utils/plot_utils.py (if applicable).")
-        
-        # d = {k: v for k, v in d.items() if v is not None}
-        d = {k: str(v) if v is None else v for k, v in d.items()}
-        
-        # if not d:
-        #     # counts = group_by(
-        #     #     item.keys(),
-        #     #     lambda k: sum(other_item[k] != item[k]
-        #     #                   for j, other_item in enumerate(items) if j != idx)
-        #     # )
-        #     # counts_sorted = sorted(counts.items(), reverse=True)
-        #     # highest_mismatch_count, candidates =  counts_sorted[0]
-        #     # key = str(candidates[0])
-        #     # print("Found an item that would have an empty description. Using the "
-        #     #       f"description {key} as it is different from the others "
-        #     #       f"{highest_mismatch_count}/{len(items)} times.")
-        #     key = ""
-        
-        key = dict_to_str_func(d)
-        if set(d.keys()) == initial_attrs:
-            if key in initial_grouped_items:
-                initial_grouped_items[key]['items'].append(idx)
-            else:
-                initial_grouped_items[key] = {
-                    'items': [idx],
-                    'vals': d
-                }
-        else:
-            to_add.append((key, idx, d))
-
-    new_grouped_items = {}
-    for key_to_add, idx_to_add, d_to_add in to_add:
-        item_to_add = items[idx_to_add]
-        count = 0
-        for key, value in initial_grouped_items.items():
-            if all(k not in item_to_add or item_to_add[k] == v for k, v in value['vals'].items()):
-                initial_grouped_items[key]['items'].append(idx_to_add)
-                count += 1
-        if count == 0:
-            if key_to_add in new_grouped_items:
-                new_grouped_items[key_to_add]['items'].append(idx_to_add)
-            else:
-                new_grouped_items[key_to_add] = {
-                    'items': [idx_to_add],
-                    'vals': d_to_add
-                }
-    
-    # initial_grouped_items = {key: value['items']
-    #                         for key, value in initial_grouped_items.items()}
-    initial_grouped_items.update(new_grouped_items)
-
-    # Sort the grouped items by their values to ensure consistent legend ordering
-    # Import plot_utils to use the same sort key logic for consistency
-    from utils.plot_utils import _get_sort_key_for_param
-
-    def _sort_key_for_grouped_items(item):
-        """
-        Create a sort key for grouped items based on their parameter values.
-        Uses the same priority logic as _get_sort_key_for_param to ensure
-        consistent legend ordering (NN methods before GP methods before random search).
-        """
-        key, value_dict = item
-        vals = value_dict['vals']
-
-        # Determine the primary category (NN, GP, or random search) based on the parameters
-        # This ensures the main grouping is correct before sorting by other parameters
-        primary_priority = 1.0  # Default priority for other parameters
-
-        # Check for method-identifying parameters
-        if 'method' in vals:
-            if vals['method'] == 'random search':
-                primary_priority = 2.0  # Random search last
-            else:
-                primary_priority = 0.5  # Other methods
-        elif 'gp_af' in vals:
-            primary_priority = 1.1  # GP methods in the middle
-        elif 'nn.method' in vals:
-            primary_priority = 0.1 if vals['nn.method'] == 'mse_ei' else 0.2  # NN methods first
-        elif any(k.startswith('nn.') for k in vals.keys()):
-            # If there are NN parameters but no explicit method, assume it's an NN method
-            primary_priority = 0.15  # Between mse_ei and other NN methods
-        elif any(k.startswith('gp_af.') for k in vals.keys()):
-            # If there are GP parameters but no explicit gp_af, assume it's a GP method
-            primary_priority = 1.15
-
-        # Create a sort key using the same logic as _get_sort_key_for_param
-        # Start with the primary priority to ensure main grouping
-        sort_components = [(primary_priority,)]
-
-        # Then add individual parameter sort keys
-        for param_name in sorted(vals.keys()):
-            param_value = vals[param_name]
-
-            # Use the same sorting logic as plot_dict_to_str
-            sort_key = _get_sort_key_for_param(param_name, param_value)
-            # sort_key is (priority, display_key, numeric_value, formatted_string)
-            # We use (priority, display_key, numeric_value) for sorting
-            sort_components.append(sort_key[:-1])
-
-        return tuple(sort_components)
-
-    sorted_items = sorted(initial_grouped_items.items(), key=_sort_key_for_grouped_items)
-
-    next_attrs = attrs_groups_list[1:]
-    return {
-        k: {
-            'items': _group_by_nested_attrs(items, next_attrs, dict_to_str_func,
-                                indices=v['items'], return_single=return_single),
-            'vals': v['vals']
-        }
-        for k, v in sorted_items
-    }
-
-
-def group_by_nested_attrs(items: List[dict[K, Any]],
-                        attrs_groups_list: List[Set[K]],
-                        dict_to_str_func=dict_to_str,
-                        add_extra_index=-1):
-    if not _are_all_disjoint(attrs_groups_list):
-        raise ValueError("Attributes in the groups are not disjoint")
-    keys = set().union(*[set(item.keys()) for item in items])
-    
-    for attrs in attrs_groups_list:
-        if not attrs.issubset(keys):
-            warnings.warn(
-                f"A group of attributes is not in the items: {attrs}")
-
-    # Remove those that we don't have
-    attrs_groups_list = [
-        attrs & keys for attrs in attrs_groups_list
-    ]
-    
-    vals_dict = {
-        k: {item[k] for item in items if k in item}
-        for k in keys
-    }
-    constant_keys = {k for k in keys if len(vals_dict[k]) == 1}
-    constant_keys -= {"nn.method", "gp_af"}
-
-    # print(f"{attrs_groups_list=}")
-    # print(f"{constant_keys=}")
-
-    ## TEMPORARY COMMENT THIS LINE OUT FOR INFORMS; TODO: DEBUG.
-    ## PROBLEM: When there is only one NN in the "line" level, then it
-    ## groups the NN with the PBGI GP method (this is what was observed)
-    # attrs_groups_list = [z - constant_keys for z in attrs_groups_list]
-
-    attrs_groups_list = [z for z in attrs_groups_list if len(z) != 0]
-
-    # if len(attrs_groups_list) == 0:
-    #     raise ValueError("No attributes to group by")
-
-    ret = _group_by_nested_attrs(
-        items, [set()] if len(attrs_groups_list) == 0 else attrs_groups_list,
-        dict_to_str_func)
-
-    ## At this point, this auto code is broken, I don't know how to fix, I've given up
-
-    nonconstant_keys = set()
-    keys_in_all = {u for u in keys}
-
-    for key, value in iterate_nested(ret):
-        if not (key == "items" and isinstance(value, list)):
-            continue
-        itmz = value
-        nonconstant_keys_item = set()
-        in_all_keys_item = set()
-        for k in keys:
-            is_in_all = True
-            vals_taken = set()
-            for idx in itmz:
-                item = items[idx]
-                if k in item:
-                    vals_taken.add(item[k])
-                else:
-                    is_in_all = False
-            if is_in_all:
-                in_all_keys_item.add(k)
-            if len(vals_taken) > 1: # if non-constant
-                nonconstant_keys_item.add(k)
-        nonconstant_keys |= nonconstant_keys_item
-        keys_in_all &= in_all_keys_item
-
-    nonconstant_keys -= {"index"}
-    keys_in_all -= {"index"}
-    
-    nonconstant_keys_in_all = nonconstant_keys & keys_in_all
-    nonconstant_keys_not_in_all = nonconstant_keys - nonconstant_keys_in_all
-
-    # print(f"{nonconstant_keys_in_all=}, {nonconstant_keys_not_in_all=}")
-
-    if len(nonconstant_keys_in_all) != 0:
-        attrs_groups_list = [nonconstant_keys_in_all] + attrs_groups_list
-        return group_by_nested_attrs(
-            items, attrs_groups_list, dict_to_str_func, add_extra_index=add_extra_index)
-
-    if len(nonconstant_keys_not_in_all) != 0:
-        attrs_groups_list[add_extra_index] |= nonconstant_keys_not_in_all
-
-    return _group_by_nested_attrs(
-        items, attrs_groups_list, dict_to_str_func,
-        return_single=True), attrs_groups_list
 
 
 def pad_tensor(vec, length, dim, add_mask=False):

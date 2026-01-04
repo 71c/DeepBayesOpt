@@ -8,13 +8,15 @@ import torch
 
 from nn_af.acquisition_function_net_save_utils import get_lamda_for_bo_of_nn, nn_acqf_is_trained
 from dataset_factory import create_train_test_acquisition_datasets_from_args
+from utils.plot_sorting import plot_dict_to_str
 from utils_general.experiments.experiment_config_utils import get_config_options_list
-from utils.plot_utils import N_CANDIDATES_PLOT, add_plot_args, create_plot_directory, plot_acquisition_function_net_training_history_ax, plot_dict_to_str, plot_nn_vs_gp_acquisition_function_1d, save_figures_from_nested_structure
-from utils.utils import group_by, group_by_nested_attrs
+from utils.plot_utils import N_CANDIDATES_PLOT, create_plot_directory, group_by_nested_attrs, plot_acquisition_function_net_training_history_ax, plot_nn_vs_gp_acquisition_function_1d, save_figures_from_nested_structure
+from utils.utils import group_by
 from utils_general.io_utils import load_json, save_json
 
 from nn_af.acquisition_function_net_save_utils import load_nn_acqf
 from train_acqf import add_train_acqf_args, cmd_opts_nn_to_model_and_info_name, get_cmd_options_train_acqf
+from utils_general.plot_utils import add_plot_args
 from utils_general.utils import DEVICE, dict_to_str
 
 # Import auto-plotting configuration
