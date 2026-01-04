@@ -18,7 +18,7 @@ from botorch.utils.sampling import optimize_posterior_samples
 
 from dataset_factory import add_unified_function_dataset_args, validate_args_for_dataset_type
 from transfer_bo_baselines.fsbo.fsbo_optimizer import FSBOOptimizer
-from utils.utils import (add_outcome_transform, remove_priors)
+from utils.utils import add_outcome_transform, remove_priors
 from utils.constants import RESULTS_DIR
 from nn_af.acquisition_function_net_save_utils import load_nn_acqf_configs
 

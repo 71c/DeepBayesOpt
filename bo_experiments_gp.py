@@ -9,7 +9,7 @@ from botorch.exceptions import UnsupportedError
 from dataset_factory import DATASET_TYPES
 from datasets.hpob_dataset import get_hpob_dataset_ids
 from nn_af.acquisition_function_net_save_utils import get_lamda_for_bo_of_nn
-from utils.utils import group_by
+from utils_general.utils import group_by
 from utils_general.experiments.experiment_config_utils import add_config_args, get_config_options_list
 from utils_general.experiments.submit_dependent_jobs import add_slurm_args, submit_jobs_sweep_from_args
 

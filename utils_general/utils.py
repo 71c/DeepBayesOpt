@@ -217,3 +217,56 @@ def safe_issubclass(obj, parent):
 def get_arg_names(p) -> list[str]:
     """Get argument names from an argparse parser or group."""
     return [action.dest for action in p._group_actions if action.dest != "help"]
+
+
+def group_by(items, group_function=lambda x: x):
+    """
+    Groups items by a grouping function
+    parameters:
+        items: iterable containing things
+        group_function: function that gives the same result when called on two
+            items in the same group
+    returns: a dict where the keys are results of the function and values are
+        lists of items that when passed to group_function give that key
+    """
+    group_dict = {}
+    for item in items:
+        value = group_function(item)
+        if value in group_dict:
+            group_dict[value].append(item)
+        else:
+            group_dict[value] = [item]
+    return group_dict
+
+
+def _assert_all_have_type(values: list, name: str, t: type):
+    for i, v in enumerate(values):
+        if not isinstance(v, t):
+            raise ValueError(
+                f"Expected all elements of {name} to have type {t.__name__}, "
+                f"but {name}[{i}] is of type {v.__class__.__name__}")
+
+
+def _assert_has_type(x: object, name: str, t: type):
+    if not isinstance(x, t):
+        raise ValueError(f"Expected {name} to have type {t.__name__}, "
+                         f"but it is of type {x.__class__.__name__}")
+
+
+def aggregate_stats_list(stats_list: Union[list[dict[str]], list[np.ndarray],
+                                           list[float], list[int], list[str],
+                                             list[bool], list[None]]):
+    _assert_has_type(stats_list, "stats_list", list)
+    stats0 = stats_list[0]
+    if isinstance(stats0, dict):
+        _assert_all_have_type(stats_list, "stats_list", dict)
+        return {
+            key: aggregate_stats_list([
+                stats[key] for stats in stats_list
+            ]) for key in stats0.keys()
+        }
+    if isinstance(stats0, (np.ndarray, float, int, str, bool, type(None))):
+        _assert_all_have_type(stats_list, "stats_list", type(stats0))
+        return np.array(stats_list)
+    raise ValueError(f"stats_list must be a list of dicts or list of ndarrays, "
+                     f"but got stats_list[0]={stats0}")

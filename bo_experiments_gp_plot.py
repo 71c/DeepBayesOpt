@@ -7,7 +7,7 @@ from nn_af.acquisition_function_net_save_utils import load_nn_acqf
 from utils.plot_sorting import plot_dict_to_str
 from utils.plot_utils import (
     create_plot_directory, get_plot_ax_af_iterations_func, get_plot_ax_bo_stats_vs_iteration_func, group_by_nested_attrs, save_figures_from_nested_structure)
-from utils.utils import group_by
+from utils_general.utils import group_by
 from utils_general.io_utils import save_json
 from utils_general.experiments.experiment_config_utils import CONFIG_DIR
 
