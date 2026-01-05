@@ -1,44 +1,73 @@
 from typing import Any
+import argparse
+from functools import lru_cache
 
 
-# TODO: In the future, could do this more automatically rather than hard-coding
-# everything (and also for get_cmd_options_train_acqf in train_acqf.py)
+@lru_cache(maxsize=1)
+def _get_dataset_arg_names():
+    """Get argument names from dataset factory parser structure.
+
+    The result is cached since parser structure doesn't change during runtime.
+    """
+    # Import here to avoid circular imports
+    from dataset_factory import add_unified_acquisition_dataset_args
+
+    parser = argparse.ArgumentParser()
+    groups_arg_names = add_unified_acquisition_dataset_args(parser, add_lamda_args_flag=False)
+
+    all_arg_names = set(action.dest for action in parser._actions if action.dest != 'help')
+    dataset_specific_args = set()
+    for arg_list in groups_arg_names.values():
+        dataset_specific_args.update(arg_list)
+
+    # Exclude acquisition-only arguments (specific to acquisition dataset creation)
+    acquisition_only_args = {
+        'train_acquisition_size', 'test_expansion_factor', 'replacement',
+        'train_n_candidates', 'test_n_candidates', 'min_history', 'max_history',
+        'samples_addition_amount'
+    }
+
+    # dimension is dataset-specific (only for gp and cancer_dosage)
+    dataset_specific_but_not_in_groups = {'dimension'}
+
+    common_args = all_arg_names - dataset_specific_args - acquisition_only_args - dataset_specific_but_not_in_groups
+
+    return {
+        'common': list(common_args),
+        'dataset_specific': groups_arg_names
+    }
+
+
 def get_cmd_options_sample_dataset(options: dict[str, Any]):
+    """Extract dataset command options from a config dict.
+
+    Args:
+        options: Dictionary of configuration options
+
+    Returns:
+        Dictionary of command options for dataset creation
+    """
     # Extract dataset_type to determine which parameters to include
     dataset_type = options.get('dataset_type', 'gp')
 
-    # Base dataset parameters common to all types
+    arg_structure = _get_dataset_arg_names()
+
+    # Start with common dataset parameters
     cmd_opts_sample_dataset = {
-        'dataset_type': dataset_type,
-        'train_samples_size': options.get('train_samples_size'),
-        'test_samples_size': options.get('test_samples_size'),
-        'standardize_outcomes': options['standardize_outcomes']
+        k: options.get(k)
+        for k in arg_structure['common']
     }
 
-    # Add dataset-specific parameters
-    if dataset_type == 'gp':
+    # Add dimension for dataset types that use it (gp and cancer_dosage)
+    if dataset_type in {'gp', 'cancer_dosage'}:
+        cmd_opts_sample_dataset['dimension'] = options.get('dimension')
+
+    # Add dataset-specific parameters based on dataset_type
+    if dataset_type in arg_structure['dataset_specific']:
+        dataset_args = arg_structure['dataset_specific'][dataset_type]
         cmd_opts_sample_dataset.update({
             k: options.get(k)
-            for k in ['dimension', 'kernel', 'lengthscale',
-                      'randomize_params', 'outcome_transform', 'sigma']
-        })
-    elif dataset_type == 'logistic_regression':
-        cmd_opts_sample_dataset.update({
-            k: options.get(k)
-            for k in ['lr_n_samples_range', 'lr_n_features_range', 'lr_bias_range',
-                      'lr_coefficient_std', 'lr_noise_range', 'lr_log_lambda_range',
-                      'lr_log_uniform_sampling']
-        })
-    elif dataset_type == 'hpob':
-        cmd_opts_sample_dataset.update({
-            'hpob_search_space_id': options.get('hpob_search_space_id')
-        })
-    elif dataset_type == 'cancer_dosage':
-        cmd_opts_sample_dataset.update({
-            k: options.get(k)
-            for k in ['dimension', 'dim_features', 'nnz_per_row',
-                      'scale_intercept', 'scale_coef', 'noise_std',
-                      'is_simplex', 'matrix_seed']
+            for k in dataset_args
         })
     else:
         raise ValueError(f"Unknown dataset_type: {dataset_type}")

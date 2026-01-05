@@ -329,10 +329,12 @@ def _load_empty_nn_acqf(model_and_info_path: str):
 
 
 def _parse_af_train_cmd_args(cmd_args:Optional[Sequence[str]]=None):
-    parser, groups_arg_names = _get_run_train_parser()
+    parser, all_groups_arg_names = _get_run_train_parser()
     args = parser.parse_args(args=cmd_args)
 
-    validate_args_for_dataset_type(args, groups_arg_names)
+    # Extract dataset groups for validation
+    dataset_groups_arg_names = all_groups_arg_names['dataset']
+    validate_args_for_dataset_type(args, dataset_groups_arg_names)
 
     # Only have include_alpha=True when method=policy_gradient
     if args.method != 'policy_gradient' and args.include_alpha:
@@ -965,4 +967,16 @@ def _get_run_train_parser():
             'Only used if method=mse_ei.')
     )
 
-    return parser, groups_arg_names
+    # Extract argument names from all groups
+    from utils_general.utils import get_arg_names
+
+    all_groups_arg_names = {
+        'dataset': groups_arg_names,  # Dataset-specific groups (gp, hpob, cancer_dosage, etc.)
+        'architecture': get_arg_names(nn_architecture_group),
+        'training': get_arg_names(training_group),
+        'policy_gradient': get_arg_names(policy_gradient_group),
+        'gittins': get_arg_names(gittins_group),
+        'mse_ei': get_arg_names(mse_ei_group),
+    }
+
+    return parser, all_groups_arg_names

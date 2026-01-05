@@ -15,28 +15,78 @@ from dataset_factory import create_train_test_acquisition_datasets_from_args
 from utils_general.utils import dict_to_str
 
 
-# TODO: In the future, could do this more automatically rather than hard-coding
-# everything (and also for get_cmd_options_sample_dataset)
-def get_cmd_options_train_acqf(options: dict[str, Any]):
-    options = {k.split('.')[-1]: v for k, v in options.items()}
+from functools import lru_cache
+
+
+@lru_cache(maxsize=1)
+def _get_nn_training_arg_names():
+    """Get argument names from NN training parser structure.
+
+    The result is cached since parser structure doesn't change during runtime.
+    """
+    # Import here to avoid circular imports
+    from nn_af.acquisition_function_net_save_utils import _get_run_train_parser
+
+    parser, all_groups_arg_names = _get_run_train_parser()
+    return all_groups_arg_names
+
+
+@lru_cache(maxsize=1)
+def _get_dataset_factory_arg_names():
+    """Get argument names from dataset_factory parser."""
+    from dataset_factory import add_unified_acquisition_dataset_args
+    import argparse
     
+    parser = argparse.ArgumentParser()
+    groups_arg_names = add_unified_acquisition_dataset_args(parser, add_lamda_args_flag=True)
+    
+    # Get all dataset-related arguments including common ones
+    all_dataset_args = set(action.dest for action in parser._actions if action.dest != 'help')
+    
+    return all_dataset_args, groups_arg_names
+
+
+@lru_cache(maxsize=1) 
+def _get_transfer_bo_arg_names():
+    """Get argument names from transfer BO baseline parser."""
+    # Old implementation only passed transfer_bo_method plus dataset args
+    transfer_args = ['transfer_bo_method']
+    return None, transfer_args
+
+
+def get_cmd_options_train_acqf(options: dict[str, Any]):
+    """Extract command options for training acquisition function.
+
+    Args:
+        options: Dictionary of configuration options
+
+    Returns:
+        Tuple of (cmd_dataset, cmd_opts_dataset, cmd_nn_train, cmd_opts_nn)
+    """
+    options = {k.split('.')[-1]: v for k, v in options.items()}
+
     cmd_opts_sample_dataset = get_cmd_options_sample_dataset(options)
 
+    # Acquisition dataset arguments (not included in sample dataset)
+    acquisition_arg_names = [
+        'train_acquisition_size', 'test_expansion_factor', 'replacement',
+        'train_n_candidates', 'test_n_candidates', 'min_history', 'max_history',
+        'samples_addition_amount', 'lamda_min', 'lamda_max', 'lamda'
+    ]
+
     cmd_opts_acquisition_dataset = {
-        'train_acquisition_size': options['train_acquisition_size'],
-        'test_expansion_factor': options['test_expansion_factor'],
-        'replacement': options['replacement'],
-        'train_n_candidates': options['n_candidates'],
-        'test_n_candidates': options['n_candidates'],
-        **{
-            k: options.get(k)
-            for k in [
-                'min_history', 'max_history', 'samples_addition_amount',
-                'lamda_min', 'lamda_max', 'lamda'
-            ]
-        }
+        k: options.get(k)
+        for k in acquisition_arg_names
     }
 
+    # Handle the special case where 'n_candidates' maps to both train and test
+    if 'n_candidates' in options:
+        if cmd_opts_acquisition_dataset.get('train_n_candidates') is None:
+            cmd_opts_acquisition_dataset['train_n_candidates'] = options['n_candidates']
+        if cmd_opts_acquisition_dataset.get('test_n_candidates') is None:
+            cmd_opts_acquisition_dataset['test_n_candidates'] = options['n_candidates']
+
+    # Combine sample and acquisition dataset options
     cmd_opts_dataset = {**cmd_opts_sample_dataset, **cmd_opts_acquisition_dataset}
     cmd_args_dataset = dict_to_cmd_args(cmd_opts_dataset)
     cmd_dataset = "python dataset_factory.py " + " ".join(cmd_args_dataset)
@@ -44,51 +94,39 @@ def get_cmd_options_train_acqf(options: dict[str, Any]):
     transfer_bo_method = options.get('transfer_bo_method', None)
     if transfer_bo_method is not None:
         # Baseline transfer BO method
-        cmd_opts_dataset_no_lamda = {k: v for k, v in cmd_opts_dataset.items()
-                                     if k not in ['lamda', 'lamda_min', 'lamda_max']}
-        cmd_opts_nn = {'transfer_bo_method': transfer_bo_method,
-                       **cmd_opts_dataset_no_lamda}
+        _, transfer_args = _get_transfer_bo_arg_names()
+        
+        cmd_opts_dataset_no_lamda = {
+            k: v for k, v in cmd_opts_dataset.items()
+            if k not in ['lamda', 'lamda_min', 'lamda_max']
+        }
+        
+        cmd_opts_nn = {
+            k: options.get(k)
+            for k in transfer_args
+        }
+        cmd_opts_nn.update(cmd_opts_dataset_no_lamda)
+        
         cmd_nn_train = " ".join(["python run_train_transfer_bo_baseline.py",
                                 *dict_to_cmd_args(cmd_opts_nn)])
     else:
-        cmd_opts_architecture = {
-            k: options.get(k)
-            for k in [
-                'layer_width', 'standardize_nn_history_outcomes',
-                'architecture', 'include_best_y', 'subtract_best_y',
-                'x_cand_input', 'encoded_history_dim', 'pooling',
-                'num_heads', 'num_layers',
-                'dropout', 'max_history_input', 'acqf_params_input'
-            ]
-        }
+        # Get NN training argument structure
+        nn_arg_groups = _get_nn_training_arg_names()
 
-        cmd_opts_training = {
-            k: options.get(k)
-            for k in [
-                'method', 'learning_rate', 'batch_size', 'epochs', 'use_maxei',
-                # early stopping
-                'early_stopping', 'patience', 'min_delta', 'cumulative_delta',
-                # learning rate scheduler
-                ## ReduceLROnPlateau
-                'lr_scheduler', 'lr_scheduler_patience', 'lr_scheduler_factor',
-                'lr_scheduler_min_lr', 'lr_scheduler_cooldown',
-                ## power
-                'lr_scheduler_power', 'lr_scheduler_burnin',
-                # weight decay
-                'weight_decay',
-                # method=policy_gradient
-                'include_alpha', 'learn_alpha', 'initial_alpha', 'alpha_increment',
-                # method=gittins
-                'gi_loss_normalization',
-                # 'lamda_min', 'lamda_max', 'lamda', # already in cmd_opts_acquisition_dataset
-                # method=mse_ei
-                'learn_tau', 'initial_tau', 'softplus_batchnorm',
-                'softplus_batchnorm_momentum', 'positive_linear_at_end',
-                'gp_ei_computation'
-            ]
-        }
+        # Get ALL non-dataset argument names (architecture + training + method-specific)
+        nn_arg_names = set()
+        for key in nn_arg_groups:
+            if key == 'dataset':
+                continue  # Skip dataset groups (handled separately)
+            # Add all argument names from this group
+            nn_arg_names.update(nn_arg_groups[key])
 
-        cmd_opts_nn_no_dataset = {**cmd_opts_architecture, **cmd_opts_training}
+        # Extract all NN options (excluding lamda args which are in dataset)
+        cmd_opts_nn_no_dataset = {
+            k: options.get(k)
+            for k in nn_arg_names
+            if k not in ['lamda', 'lamda_min', 'lamda_max']  # already in dataset
+        }
         cmd_nn_train = " ".join(["python run_train.py",
                                 *cmd_args_dataset,
                                 *dict_to_cmd_args(cmd_opts_nn_no_dataset)])
