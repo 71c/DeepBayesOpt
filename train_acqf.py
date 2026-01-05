@@ -15,43 +15,6 @@ from dataset_factory import create_train_test_acquisition_datasets_from_args
 from utils_general.utils import dict_to_str
 
 
-from functools import lru_cache
-
-
-@lru_cache(maxsize=1)
-def _get_nn_training_arg_names():
-    """Get argument names from NN training parser structure.
-
-    The result is cached since parser structure doesn't change during runtime.
-    """
-    # Import here to avoid circular imports
-    from nn_af.acquisition_function_net_save_utils import _get_run_train_parser
-
-    parser, all_groups_arg_names = _get_run_train_parser()
-    return all_groups_arg_names
-
-
-@lru_cache(maxsize=1)
-def _get_dataset_factory_arg_names():
-    """Get argument names from dataset_factory parser."""
-    from dataset_factory import add_unified_acquisition_dataset_args
-    import argparse
-    
-    parser = argparse.ArgumentParser()
-    groups_arg_names = add_unified_acquisition_dataset_args(parser, add_lamda_args_flag=True)
-    
-    # Get all dataset-related arguments including common ones
-    all_dataset_args = set(action.dest for action in parser._actions if action.dest != 'help')
-    
-    return all_dataset_args, groups_arg_names
-
-
-@lru_cache(maxsize=1) 
-def _get_transfer_bo_arg_names():
-    """Get argument names from transfer BO baseline parser."""
-    # Old implementation only passed transfer_bo_method plus dataset args
-    transfer_args = ['transfer_bo_method']
-    return None, transfer_args
 
 
 def get_cmd_options_train_acqf(options: dict[str, Any]):
@@ -94,24 +57,22 @@ def get_cmd_options_train_acqf(options: dict[str, Any]):
     transfer_bo_method = options.get('transfer_bo_method', None)
     if transfer_bo_method is not None:
         # Baseline transfer BO method
-        _, transfer_args = _get_transfer_bo_arg_names()
-        
         cmd_opts_dataset_no_lamda = {
             k: v for k, v in cmd_opts_dataset.items()
             if k not in ['lamda', 'lamda_min', 'lamda_max']
         }
-        
+
         cmd_opts_nn = {
-            k: options.get(k)
-            for k in transfer_args
+            'transfer_bo_method': options.get('transfer_bo_method'),
+            **cmd_opts_dataset_no_lamda
         }
-        cmd_opts_nn.update(cmd_opts_dataset_no_lamda)
         
         cmd_nn_train = " ".join(["python run_train_transfer_bo_baseline.py",
                                 *dict_to_cmd_args(cmd_opts_nn)])
     else:
         # Get NN training argument structure
-        nn_arg_groups = _get_nn_training_arg_names()
+        from nn_af.acquisition_function_net_save_utils import _get_run_train_parser
+        _, nn_arg_groups = _get_run_train_parser()
 
         # Get ALL non-dataset argument names (architecture + training + method-specific)
         nn_arg_names = set()
