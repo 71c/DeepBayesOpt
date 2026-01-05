@@ -8,15 +8,20 @@ using the centralized experiment registry.
 
 import argparse
 import sys
-import os
 from pathlib import Path
 
 # Add the project root to the path so we can import from experiments
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+from utils_general.plot_utils import add_plot_args
+
 from experiments.registry import ExperimentRegistry
 from experiments.runner import ExperimentRunner
+
+# Import argument adders from scripts to avoid duplication
+from bo_experiments_gp_plot import add_plot_interval_args, add_plot_formatting_args, add_plot_iterations_args
+from bo_experiments_gp import add_recompute_args
 
 
 def cmd_list(args):
@@ -195,18 +200,22 @@ def cmd_plot(args):
         if args.dry_run:
             print("DRY RUN MODE - no commands will be executed")
 
+        # Extract all plot-specific arguments from args namespace
+        # Exclude the command-specific args (name, type, dry_run)
+        # Note: argparse automatically converts hyphens to underscores in attribute names,
+        # so we keep them as underscores (the plotting scripts expect underscores)
+        excluded_args = {'name', 'type', 'dry_run', 'command'}
+        plot_kwargs = {
+            key: value
+            for key, value in vars(args).items()
+            if key not in excluded_args and value is not None
+        }
+
         returncode, stdout, stderr = runner.generate_plots(
             args.name,
             plot_type=args.type,
-            n_iterations=args.n_iterations,
-            center_stat=args.center_stat,
-            variant=args.variant,
-            max_iterations_to_plot=args.max_iterations_to_plot,
-            add_grid=getattr(args, 'add_grid', False),
-            add_markers=getattr(args, 'add_markers', False),
-            min_regret_for_plot=getattr(args, 'min_regret_for_plot', 1e-6),
-            plot_mode=getattr(args, 'plot_mode', 'scatter'),
-            dry_run=args.dry_run
+            dry_run=args.dry_run,
+            **plot_kwargs
         )
 
         # Output is already streamed in real-time by the runner
@@ -296,15 +305,14 @@ def main():
     parser_run.add_argument('--training-only', action='store_true',
                           help='Run only the training part of the experiment')
 
-    # Recompute options for run command
-    run_recompute_group = parser_run.add_argument_group('recompute options')
-    run_recompute_group.add_argument('--always-train', action='store_true',
+    # Use shared recompute argument definitions
+    add_recompute_args(parser_run)
+
+    # Add training-specific options
+    run_training_group = parser_run.add_argument_group('Training options')
+    run_training_group.add_argument('--always-train', action='store_true',
                                    help='Recompute/overwrite existing NN training results')
-    run_recompute_group.add_argument('--recompute-bo', action='store_true',
-                                   help='Recompute/overwrite existing BO results (all types)')
-    run_recompute_group.add_argument('--recompute-non-nn-only', action='store_true',
-                                   help='Recompute/overwrite only non-NN BO results (GP and random search)')
-    run_recompute_group.add_argument('--no-train', action='store_true',
+    run_training_group.add_argument('--no-train', action='store_true',
                                    help='If specified, do not train any NNs; only run BO loops (GP, random search, '
                                         'NNs, and transfer BO baselines).')
     
@@ -313,28 +321,16 @@ def main():
     parser_plot.add_argument('name', help='Name of the experiment')
     parser_plot.add_argument('--type', choices=['bo_experiments', 'train_acqf', 'combined_plot'],
                            default='bo_experiments', help='Type of plots to generate')
-    parser_plot.add_argument('--variant', default='default',
-                           help='Plot configuration variant to use (default: default)')
-    parser_plot.add_argument('--n-iterations', type=int, default=30,
-                           help='Number of iterations for BO plots (for animations)')
-    parser_plot.add_argument('--max-iterations-to-plot', type=int, default=None,
-                           help='Maximum number of iterations to display in BO regret plots '
-                                '(must be <= n_iter ran). If not specified, all iterations will be plotted. '
-                                'For combined_plot, also sets the iteration at which to evaluate regret.')
-    parser_plot.add_argument('--center-stat', choices=['mean', 'median'], default='mean',
-                           help='Center statistic for plots. Default is mean.')
-    parser_plot.add_argument('--add-grid', action='store_true',
-                           help='If set, add a grid to the plots')
-    parser_plot.add_argument('--add-markers', action='store_true',
-                           help='If set, add markers to the lines in the plots at each iteration')
-    parser_plot.add_argument('--min-regret-for-plot', type=float, default=1e-6,
-                           help='Minimum regret value to display in log-scale plots. Values below this '
-                                'will be clipped to this value to prevent extremely small regrets from '
-                                'compressing the y-axis range. Default: 1e-6')
-    parser_plot.add_argument('--plot-mode', choices=['scatter', 'density'], default='scatter',
+    parser_plot.add_argument('--plot-mode', choices=['scatter', 'density'], default=None,
                            help='Visualization mode for combined_plot: scatter (default) or 2D density heatmap')
     parser_plot.add_argument('--dry-run', action='store_true',
                            help='Show what would be executed without running')
+
+    # Note: plots_name and plots_group_name are set automatically from experiment config
+    add_plot_args(parser_plot, add_plot_name_args=False)
+    add_plot_interval_args(parser_plot)
+    add_plot_formatting_args(parser_plot)
+    add_plot_iterations_args(parser_plot)
     
     # Commands command (show commands like commands.txt)
     parser_commands = subparsers.add_parser('commands', help='Show commands for an experiment')

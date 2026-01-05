@@ -332,12 +332,32 @@ def _gp_bo_jobs_spec_and_cfgs(
     return jobs_spec, new_bo_configs, existing_bo_configs_and_results
 
 
+def add_recompute_args(parser):
+    """Add recompute options to argument parser.
+
+    This function can be reused by other scripts (e.g., experiment_manager.py)
+    to avoid duplicating argument definitions.
+    """
+    recompute_group = parser.add_argument_group("Recompute options")
+    recompute_group.add_argument(
+        '--recompute-bo',
+        action='store_true',
+        help='Recompute/overwrite existing BO results (all types)'
+    )
+    recompute_group.add_argument(
+        '--recompute-non-nn-only',
+        action='store_true',
+        help='Recompute/overwrite only non-NN BO results (GP and random search)'
+    )
+    return recompute_group
+
+
 def get_bo_experiments_parser(train=True):
     parser = argparse.ArgumentParser()
-    
+
     objectives_group = parser.add_argument_group("Objective functions and seed")
     objectives_group.add_argument(
-        '--n_seeds', 
+        '--n_seeds',
         type=int,
         required=False,
         help='The number of replicates to run per BO method and objective function.'
@@ -378,18 +398,8 @@ def get_bo_experiments_parser(train=True):
              'NNs, and transfer BO baselines).'
     )
 
-    # Add recompute options
-    recompute_group = parser.add_argument_group("Recompute options")
-    recompute_group.add_argument(
-        '--recompute-bo',
-        action='store_true',
-        help='Recompute/overwrite existing BO results (all types)'
-    )
-    recompute_group.add_argument(
-        '--recompute-non-nn-only',
-        action='store_true',
-        help='Recompute/overwrite only non-NN BO results (GP and random search)'
-    )
+    # Add recompute options using the new shared function
+    add_recompute_args(parser)
 
     return (parser,
             nn_base_config_name, nn_experiment_config_name,

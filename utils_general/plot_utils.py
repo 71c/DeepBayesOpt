@@ -12,7 +12,7 @@ from utils_general.io_utils import save_json
 from utils_general.utils import dict_to_str
 
 
-def add_plot_args(parser):
+def add_plot_args(parser, add_plot_name_args=True):
     plot_group = parser.add_argument_group("Plotting organization")
     plot_group.add_argument(
         '--use_cols',
@@ -25,15 +25,22 @@ def add_plot_args(parser):
         help='Whether to use rows for subplots in the plots'
     )
     plot_group.add_argument(
-        '--plots_group_name',
+        '--variant',
         type=str,
-        help='Name of group of plots',
+        default='default',
+        help='Plot configuration variant to use (default: default)'
     )
-    plot_group.add_argument(
-        '--plots_name',
-        type=str,
-        help='Name of these plots'
-    )
+    if add_plot_name_args:
+        plot_group.add_argument(
+            '--plots_group_name',
+            type=str,
+            help='Name of group of plots',
+        )
+        plot_group.add_argument(
+            '--plots_name',
+            type=str,
+            help='Name of these plots'
+        )
 
 
 def _count_num_plots(plot_config: dict, level_names: list[str], all_seeds=True):

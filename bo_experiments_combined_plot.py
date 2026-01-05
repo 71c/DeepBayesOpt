@@ -77,12 +77,7 @@ def main():
         default=-1,
         help='Which BO iteration to use for regret measurement. Default is -1 (final iteration).'
     )
-    parser.add_argument(
-        '--variant',
-        type=str,
-        default='default',
-        help='Plot configuration variant to use (default: default)'
-    )
+    
     parser.add_argument(
         '--plot-mode',
         type=str,

@@ -31,160 +31,13 @@ except ImportError:
 CPROFILE = False
 
 
-# PRE = [
-#     ["layer_width", "train_samples_size"]
-# ]
-# ATTR_A = ["batch_size"]
-# ATTR_B = ["learning_rate"]
-
-# For 8dim_maxhistory20_gittins_dataset_size
-# PRE = []
-# ATTR_A = ["train_samples_size"]
-# ATTR_B = ["samples_addition_amount"]
-
-
-# For 8dim_maxhistory20_big
-# PRE = [
-#     ["objective.lengthscale"],
-#     ["method"],
-#     ["learning_rate", "lr_scheduler"]
-# ]
-# ATTR_A = ["train_samples_size"]
-# ATTR_B = ["samples_addition_amount"]
-
-
-# For 8dim_maxhistory20_gittins_regularization
-# PRE = [
-#     ["samples_addition_amount"],
-#     ["learning_rate", "lr_scheduler"]
-# ]
-# ATTR_A = ["layer_width"]
-# ATTR_B = ["weight_decay"]
-
-# For 8dim_maxhistory20_gittins_regularization_2
-# and 8dim_maxhistory20_regularization
-# PRE = [
-#     ["nn.method"],
-#     ["layer_width"],
-#     ["learning_rate", "lr_scheduler"]
-# ]
-# ATTR_A = ["dropout"]
-# ATTR_B = ["weight_decay"]
-
-# For 1dim_compare_3methods_initial
-# PRE = ["learning_rate"]
-# ATTR_A = ["method"]
-# ATTR_B = []
-
-# For 1dim_pointnet_architecture_variations
-# and 1dim_pointnet_architecture_variations_policy_gradient
-# and 8dim_pointnet_architecture_variations
-# PRE = [
-#     ["method"],
-#     ["learning_rate"],
-#     ["include_best_y"]
-# ]
-# ATTR_A = []
-# ATTR_B = ["x_cand_input"]
-
-# For 1dim_pointnet_architecture_variations-dataset_size
-# PRE = [
-#     ["x_cand_input"],
-#     ["learning_rate"],
-#     ["include_best_y"],
-#     ["train_samples_size"]
-# ]
-# ATTR_A = []
-# ATTR_B = ["samples_addition_amount"]
-
-# # For 8dim_pointnet_architecture_variations_policy_gradient
-# PRE = [
-#     ["learning_rate"],
-#     ["include_best_y"]
-# ]
-# ATTR_A = []
-# ATTR_B = ["x_cand_input"]
-
-# For 1dim_pointnet_architecture_variations_policy_gradient_2
-# PRE = [
-#     ["layer_width"],
-#     ["learning_rate"],
-#     ["include_best_y"]
-# ]
-# ATTR_A = []
-# ATTR_B = ["x_cand_input"]
-
-# For 1dim_feature_dim_variation -- bugged version where dropout and weight_decay are
-# not used
-# PRE = [
-#     ["learning_rate"],
-#     ["layer_width"]
-# ]
-# ATTR_A = []
-# ATTR_B = ["encoded_history_dim"]
-
-# For 1dim_pointnet_architecture_variations-dataset_size-more_architectures
-# PRE = [
-#     ["train_samples_size", "samples_addition_amount"],
-#     ["x_cand_input"],
-#     ["learning_rate"],
-#     ["pooling"],
-# ]
-# ATTR_A = []
-# ATTR_B = ["include_best_y", "subtract_best_y"]
-
-# For 1dim_pointnet_model_size_variations-dataset_size
-# PRE = [
-#     ["train_samples_size", "samples_addition_amount"],
-#     ["pooling"],
-#     ["encoded_history_dim"],
-#     ["learning_rate"],
-# ]
-# ATTR_A = []
-# ATTR_B = ["num_layers", "layer_width"]
-
-# # For 1dim_pointnet_model_size_variations-dataset_size
-# PRE = [
-#     ["pooling"],
-#     ["train_samples_size", "samples_addition_amount"],
-#     ["encoded_history_dim"]
-# ]
-# ATTR_A = ["layer_width"]
-# ATTR_B = ["num_layers"]
-# POST = [
-#     ["learning_rate"]
-# ]
-
-
-# For 1dim_pointnet_model_size_variations-dataset_size-2
+# # For 1dim_pointnet-max_history_input_variation-pbgi
 # PRE = []
 # ATTR_A = ["train_samples_size", "samples_addition_amount"]
-# ATTR_B = ["layer_width"]
-# POST = [
-#     ["learning_rate"]
-# ]
-
-
-# For 1dim_pointnet-max_history_input_variation-pbgi
-PRE = []
-ATTR_A = ["train_samples_size", "samples_addition_amount"]
-ATTR_B = ["max_history_input"]
-POST = [
-    ["learning_rate"]
-]
-
-# For 1dim_pointnet-max_history_input_variation-mse_ei
-# PRE = [
-#     ["train_samples_size", "samples_addition_amount"]
-# ]
-# ATTR_A = ["include_best_y"]
 # ATTR_B = ["max_history_input"]
 # POST = [
 #     ["learning_rate"]
 # ]
-
-
-# POST = [] # No "line" level yet
 
 
 ATTR_GROUPS = [
@@ -299,12 +152,6 @@ def main():
     nn_base_config_name, nn_experiment_config_name = add_train_acqf_args(parser,
                                                                          train=False)
     add_plot_args(parser)
-    parser.add_argument(
-        '--variant',
-        type=str,
-        default='default',
-        help='Plot configuration variant to use (default: default)'
-    )
 
     ## Parse arguments
     args = parser.parse_args()

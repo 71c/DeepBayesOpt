@@ -149,7 +149,8 @@ def to_device(tensor, device):
     return tensor.to(device)
 
 
-def dict_to_cmd_args(params, equals=False) -> list[str]:
+def dict_to_cmd_args(params: Dict, equals=False) -> list[str]:
+    """Convert keyword arguments to command-line argument list."""
     parts = []
     for key, value in sorted(params.items()):
         # If the value is a boolean, only include it if True.

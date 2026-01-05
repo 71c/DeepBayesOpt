@@ -203,21 +203,40 @@ def add_plot_formatting_args(parser):
              'will be clipped to this value to prevent extremely small regrets from '
              'compressing the y-axis range. Default: 1e-6'
     )
-    plot_formatting_group.add_argument(
+    
+    return plot_formatting_group
+
+
+def add_plot_iterations_args(parser):
+    plot_iterations_group = parser.add_argument_group("Plot iterations args")
+    plot_iterations_group.add_argument(
+        '--n_iterations',
+        type=int,
+        default=40,
+        help='Number of iterations to plot for the acquisition function animation'
+    )
+    plot_iterations_group.add_argument(
+        '--max_iterations_to_plot',
+        type=int,
+        default=None,
+        help='Maximum number of iterations to display in the BO regret plots (must be <= n_iter ran). '
+             'If not specified, all iterations will be plotted.'
+    )
+    plot_iterations_group.add_argument(
         '--auto_max_iterations_buffer',
         type=float,
         default=0.25,
         help='When auto-detecting max_iterations_to_plot, add this fraction as a buffer '
              'beyond the convergence point (default: 0.25 = 25%% extra iterations)'
     )
-    plot_formatting_group.add_argument(
+    plot_iterations_group.add_argument(
         '--auto_max_iterations_min_buffer',
         type=int,
         default=5,
         help='Minimum number of iterations to add as buffer when auto-detecting '
              'max_iterations_to_plot (default: 5)'
     )
-    return plot_formatting_group
+    return plot_iterations_group
 
 
 def main():
@@ -227,26 +246,8 @@ def main():
     add_plot_args(parser)
     interval_group = add_plot_interval_args(parser)
     plot_formatting_group = add_plot_formatting_args(parser)
-    parser.add_argument(
-        '--n_iterations',
-        type=int,
-        default=40,
-        help='Number of iterations to plot for the acquisition function animation'
-    )
-    parser.add_argument(
-        '--max_iterations_to_plot',
-        type=int,
-        default=None,
-        help='Maximum number of iterations to display in the BO regret plots (must be <= n_iter ran). '
-             'If not specified, all iterations will be plotted.'
-    )
-    parser.add_argument(
-        '--variant',
-        type=str,
-        default='default',
-        help='Plot configuration variant to use (default: default)'
-    )
-
+    plot_iterations_group = add_plot_iterations_args(parser)
+    
     ## Parse arguments
     args = parser.parse_args()
 

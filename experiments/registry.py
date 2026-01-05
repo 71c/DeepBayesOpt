@@ -125,7 +125,7 @@ class ExperimentRegistry:
         args['NN_CFG'] = f'"--nn_base_config config/train_acqf.yml --nn_experiment_config {params["nn_experiment_config"]}"'
         args['BO_CFG'] = f'"--bo_base_config config/bo_config.yml --bo_experiment_config {params["bo_experiment_config"]} --seed {params["seed"]} {" ".join(seeds_parts)}"'
         args['SLURM_CFG'] = f'"--sweep_name {params["sweep_name"]} --mail adj53@cornell.edu --gres gpu:1"'
-        args['PLOTS_CFG'] = f'"--plots_group_name {params["plots_group_name"]} --use_rows --use_cols"'
+        args['PLOTS_CFG'] = f'"--plots_group_name {params["plots_group_name"]}"'
         
         return args
     

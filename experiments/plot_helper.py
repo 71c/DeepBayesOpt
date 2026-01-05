@@ -4,16 +4,7 @@ Plot Helper Module
 Provides automatic plot configuration detection and application for experiment scripts.
 This eliminates the need for hardcoded PRE, ATTR_A, ATTR_B configurations in plot scripts.
 """
-
-import sys
-import os
-from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
-
-# Add project root to path for imports
-project_root = Path(__file__).parent.parent
-sys.path.insert(0, str(project_root))
-
 from experiments.registry import ExperimentRegistry
 
 

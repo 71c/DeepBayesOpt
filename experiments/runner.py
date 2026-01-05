@@ -10,16 +10,54 @@ import sys
 import threading
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+
+from utils_general.utils import dict_to_cmd_args
 from .registry import ExperimentRegistry
 
 
 class ExperimentRunner:
     """Handles execution of experiments from the registry."""
-    
+
     def __init__(self, registry: Optional[ExperimentRegistry] = None):
         """Initialize the runner."""
         self.registry = registry or ExperimentRegistry()
-    
+
+    def _build_command(self, script: str, args: Dict[str, str],
+                      include_nn_config: bool = True,
+                      include_bo_config: bool = False,
+                      include_seed: bool = False) -> List[str]:
+        """
+        Build a command list for executing a script with experiment configs.
+
+        Args:
+            script: Script name (e.g., "bo_experiments_gp.py")
+            args: Experiment command arguments from registry
+            include_nn_config: Whether to include NN config arguments
+            include_bo_config: Whether to include BO config arguments
+            include_seed: Whether to include seed argument
+
+        Returns:
+            Command list ready for subprocess execution
+        """
+        cmd = [sys.executable, script]
+
+        if include_nn_config:
+            cmd.extend([
+                "--nn_base_config", "config/train_acqf.yml",
+                "--nn_experiment_config", args['NN_EXPERIMENT_CFG'].strip('"')
+            ])
+
+        if include_bo_config:
+            cmd.extend([
+                "--bo_base_config", "config/bo_config.yml",
+                "--bo_experiment_config", args['BO_EXPERIMENT_CFG'].strip('"')
+            ])
+
+        if include_seed:
+            cmd.extend(["--seed", args['SEED']])
+
+        return cmd
+
     def _run_command_with_streaming(self, cmd: List[str]) -> Tuple[int, str, str]:
         """Run command with real-time output streaming using threads to avoid blocking."""
         stdout_lines = []
@@ -85,14 +123,12 @@ class ExperimentRunner:
             args = self.registry.get_experiment_command_args(name)
 
             # Build the status command
-            cmd = [
-                sys.executable, "bo_experiments_gp_status.py",
-                "--nn_base_config", "config/train_acqf.yml",
-                "--nn_experiment_config", args['NN_EXPERIMENT_CFG'].strip('"'),
-                "--bo_base_config", "config/bo_config.yml",
-                "--bo_experiment_config", args['BO_EXPERIMENT_CFG'].strip('"'),
-                "--seed", args['SEED']
-            ]
+            cmd = self._build_command(
+                "bo_experiments_gp_status.py", args,
+                include_nn_config=True,
+                include_bo_config=True,
+                include_seed=True
+            )
 
             # Add seeds configuration
             seeds_cfg = args['SEEDS_CFG'].strip('"').split()
@@ -116,14 +152,12 @@ class ExperimentRunner:
             args = self.registry.get_experiment_command_args(name)
 
             # Build the experiment command
-            cmd = [
-                sys.executable, "bo_experiments_gp.py",
-                "--nn_base_config", "config/train_acqf.yml",
-                "--nn_experiment_config", args['NN_EXPERIMENT_CFG'].strip('"'),
-                "--bo_base_config", "config/bo_config.yml",
-                "--bo_experiment_config", args['BO_EXPERIMENT_CFG'].strip('"'),
-                "--seed", args['SEED']
-            ]
+            cmd = self._build_command(
+                "bo_experiments_gp.py", args,
+                include_nn_config=True,
+                include_bo_config=True,
+                include_seed=True
+            )
 
             # Add seeds configuration
             seeds_cfg = args['SEEDS_CFG'].strip('"').split()
@@ -168,14 +202,15 @@ class ExperimentRunner:
         """Run only the training part of an experiment."""
         try:
             args = self.registry.get_experiment_command_args(name)
-            
+
             # Build the training command
-            cmd = [
-                sys.executable, "train_acqf.py",
-                "--nn_base_config", "config/train_acqf.yml",
-                "--nn_experiment_config", args['NN_EXPERIMENT_CFG'].strip('"')
-            ]
-            
+            cmd = self._build_command(
+                "train_acqf.py", args,
+                include_nn_config=True,
+                include_bo_config=False,
+                include_seed=False
+            )
+
             # Add SLURM configuration
             slurm_cfg = args['SLURM_CFG'].strip('"').split()
             cmd.extend(slurm_cfg)
@@ -199,110 +234,82 @@ class ExperimentRunner:
         except Exception as e:
             return 1, "", f"Error running training: {str(e)}"
     
-    def generate_plots(self, name: str, plot_type: str = "bo_experiments", n_iterations: int = 30,
-                      center_stat: str = "mean", variant: str = "default",
-                      max_iterations_to_plot: Optional[int] = None, add_grid: bool = False,
-                      add_markers: bool = False, min_regret_for_plot: float = 1e-6,
-                      plot_mode: str = "scatter", dry_run: bool = False) -> Tuple[int, str, str]:
-        """Generate plots for an experiment."""
+    def generate_plots(self, name: str, plot_type: str = "bo_experiments",
+                      dry_run: bool = False, **plot_kwargs) -> Tuple[int, str, str]:
+        """
+        Generate plots for an experiment.
+
+        Args:
+            name: Experiment name
+            plot_type: Type of plot to generate
+            dry_run: If True, show command without executing
+            **plot_kwargs: Additional plot arguments (passed directly to plotting script)
+                Common arguments: n_iterations, center_stat, variant, max_iterations_to_plot,
+                add_grid, add_markers, min_regret_for_plot, plot_mode, alpha,
+                interval_of_center, assume_normal, etc.
+        """
         try:
             args = self.registry.get_experiment_command_args(name)
 
+            # Build base command based on plot type
             if plot_type == "bo_experiments":
-                cmd = [
-                    sys.executable, "bo_experiments_gp_plot.py",
-                    "--nn_base_config", "config/train_acqf.yml",
-                    "--nn_experiment_config", args['NN_EXPERIMENT_CFG'].strip('"'),
-                    "--bo_base_config", "config/bo_config.yml",
-                    "--bo_experiment_config", args['BO_EXPERIMENT_CFG'].strip('"'),
-                    "--seed", args['SEED']
-                ]
+                cmd = self._build_command(
+                    "bo_experiments_gp_plot.py", args,
+                    include_nn_config=True,
+                    include_bo_config=True,
+                    include_seed=True
+                )
+                # Add seeds and plots configuration
+                cmd.extend(args['SEEDS_CFG'].strip('"').split())
+                cmd.extend(args['PLOTS_CFG'].strip('"').split())
 
-                # Add seeds configuration
-                seeds_cfg = args['SEEDS_CFG'].strip('"').split()
-                cmd.extend(seeds_cfg)
+                # Set plots_name from experiment config
+                if 'plots_name' not in plot_kwargs:
+                    plot_kwargs['plots_name'] = args['BO_PLOTS_NAME'].strip('"')
 
-                # Add plots configuration
-                plots_cfg = args['PLOTS_CFG'].strip('"').split()
-                cmd.extend(plots_cfg)
-
-                # Add BO plots configuration
-                bo_plots_name = args['BO_PLOTS_NAME'].strip('"')
-                cmd.extend([
-                    "--center_stat", center_stat,
-                    "--interval_of_center",
-                    "--plots_name", bo_plots_name,
-                    "--n_iterations", str(n_iterations),
-                    "--variant", variant
-                ])
-
-                # Add max_iterations_to_plot if specified
-                if max_iterations_to_plot is not None:
-                    cmd.extend(["--max_iterations_to_plot", str(max_iterations_to_plot)])
-
-                # Add formatting options if specified
-                if add_grid:
-                    cmd.append("--add_grid")
-                if add_markers:
-                    cmd.append("--add_markers")
-                if min_regret_for_plot != 1e-6:  # Only add if non-default
-                    cmd.extend(["--min_regret_for_plot", str(min_regret_for_plot)])
+                # Always add interval_of_center for BO plots unless explicitly False
+                if 'interval_of_center' not in plot_kwargs:
+                    plot_kwargs['interval_of_center'] = True
 
             elif plot_type == "train_acqf":
-                cmd = [
-                    sys.executable, "train_acqf_plot.py",
-                    "--nn_base_config", "config/train_acqf.yml",
-                    "--nn_experiment_config", args['NN_EXPERIMENT_CFG'].strip('"')
-                ]
-
+                cmd = self._build_command(
+                    "train_acqf_plot.py", args,
+                    include_nn_config=True,
+                    include_bo_config=False,
+                    include_seed=False
+                )
                 # Add plots configuration
-                plots_cfg = args['PLOTS_CFG'].strip('"').split()
-                cmd.extend(plots_cfg)
-
-                # Add variant configuration
-                cmd.extend(["--variant", variant])
+                cmd.extend(args['PLOTS_CFG'].strip('"').split())
 
             elif plot_type == "combined_plot":
-                cmd = [
-                    sys.executable, "bo_experiments_combined_plot.py",
-                    "--nn_base_config", "config/train_acqf.yml",
-                    "--nn_experiment_config", args['NN_EXPERIMENT_CFG'].strip('"'),
-                    "--bo_base_config", "config/bo_config.yml",
-                    "--bo_experiment_config", args['BO_EXPERIMENT_CFG'].strip('"'),
-                    "--seed", args['SEED']
-                ]
+                cmd = self._build_command(
+                    "bo_experiments_combined_plot.py", args,
+                    include_nn_config=True,
+                    include_bo_config=True,
+                    include_seed=True
+                )
+                # Add seeds and plots configuration
+                cmd.extend(args['SEEDS_CFG'].strip('"').split())
+                cmd.extend(args['PLOTS_CFG'].strip('"').split())
 
-                # Add seeds configuration
-                seeds_cfg = args['SEEDS_CFG'].strip('"').split()
-                cmd.extend(seeds_cfg)
+                # Set plots_name from experiment config (with _combined suffix)
+                if 'plots_name' not in plot_kwargs:
+                    bo_plots_name = args['BO_PLOTS_NAME'].strip('"')
+                    plot_kwargs['plots_name'] = f"{bo_plots_name}_combined"
 
-                # Add plots configuration
-                plots_cfg = args['PLOTS_CFG'].strip('"').split()
-                cmd.extend(plots_cfg)
+                # Always add interval_of_center for combined plots unless explicitly False
+                if 'interval_of_center' not in plot_kwargs:
+                    plot_kwargs['interval_of_center'] = True
 
-                # Add combined plots configuration
-                bo_plots_name = args['BO_PLOTS_NAME'].strip('"')
-                cmd.extend([
-                    "--center_stat", center_stat,
-                    "--interval_of_center",
-                    "--plots_name", f"{bo_plots_name}_combined",
-                    "--variant", variant
-                ])
-
-                # Add iteration_to_plot if max_iterations_to_plot is specified
-                # (use it as the iteration to evaluate regret at)
-                if max_iterations_to_plot is not None:
-                    cmd.extend(["--iteration_to_plot", str(max_iterations_to_plot)])
-
-                # Add formatting options if specified
-                if add_grid:
-                    cmd.append("--add_grid")
-
-                # Add plot mode
-                cmd.extend(["--plot-mode", plot_mode])
+                # Map max_iterations_to_plot to iteration_to_plot for combined_plot
+                if 'max_iterations_to_plot' in plot_kwargs and 'iteration_to_plot' not in plot_kwargs:
+                    plot_kwargs['iteration_to_plot'] = plot_kwargs.pop('max_iterations_to_plot')
 
             else:
                 raise ValueError(f"Unknown plot type: {plot_type}")
+
+            # Add all plot-specific arguments dynamically
+            cmd.extend(dict_to_cmd_args(plot_kwargs))
 
             if dry_run:
                 print("Dry run - would execute command:")
