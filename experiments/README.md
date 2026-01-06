@@ -108,7 +108,7 @@ experiments:
       sweep_name: "unique_sweep_name"
       n_seeds: 64
       plots_group_name: "plot_group_name"
-      bo_plots_name: "plot_name"
+      run_plots_name: "plot_name"
     plotting:
       train_acqf:
         pre: [["param1", "param2"]]

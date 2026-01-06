@@ -265,7 +265,7 @@ class ExperimentRunner:
 
                 # Set plots_name from experiment config
                 if 'plots_name' not in plot_kwargs:
-                    plot_kwargs['plots_name'] = args['BO_PLOTS_NAME'].strip('"')
+                    plot_kwargs['plots_name'] = args['RUN_PLOTS_NAME'].strip('"')
 
                 # Always add interval_of_center for BO plots unless explicitly False
                 if 'interval_of_center' not in plot_kwargs:
@@ -294,8 +294,8 @@ class ExperimentRunner:
 
                 # Set plots_name from experiment config (with _combined suffix)
                 if 'plots_name' not in plot_kwargs:
-                    bo_plots_name = args['BO_PLOTS_NAME'].strip('"')
-                    plot_kwargs['plots_name'] = f"{bo_plots_name}_combined"
+                    run_plots_name = args['RUN_PLOTS_NAME'].strip('"')
+                    plot_kwargs['plots_name'] = f"{run_plots_name}_combined"
 
                 # Always add interval_of_center for combined plots unless explicitly False
                 if 'interval_of_center' not in plot_kwargs:
@@ -334,14 +334,14 @@ class ExperimentRunner:
             print(f"SWEEP_NAME={args['SWEEP_NAME']};")
             print(f"SEEDS_CFG={args['SEEDS_CFG']};")
             print(f"PLOTS_GROUP_NAME={args['PLOTS_GROUP_NAME']};")
-            print(f"BO_PLOTS_NAME={args['BO_PLOTS_NAME']};")
+            print(f"RUN_PLOTS_NAME={args['RUN_PLOTS_NAME']};")
             print()
             print("# Commands:")
             print(f"python bo_experiments_gp_status.py {args['TRAIN_CFG']} {args['RUN_CFG']}")
             print(f"python bo_experiments_gp.py {args['TRAIN_CFG']} {args['RUN_CFG']} {args['SLURM_CFG']} --no_submit")
             print(f"python bo_experiments_gp.py {args['TRAIN_CFG']} {args['RUN_CFG']} {args['SLURM_CFG']}")
             print(f"python train_acqf.py {args['TRAIN_CFG']} {args['SLURM_CFG']}")
-            print(f"python bo_experiments_gp_plot.py {args['TRAIN_CFG']} {args['RUN_CFG']} {args['PLOTS_CFG']} --center_stat mean --interval_of_center --plots_name {args['BO_PLOTS_NAME']} --n_iterations 30")
+            print(f"python bo_experiments_gp_plot.py {args['TRAIN_CFG']} {args['RUN_CFG']} {args['PLOTS_CFG']} --center_stat mean --interval_of_center --plots_name {args['RUN_PLOTS_NAME']} --n_iterations 30")
             print(f"python train_acqf_plot.py {args['TRAIN_CFG']} {args['PLOTS_CFG']}")
             
         except Exception as e:

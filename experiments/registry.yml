@@ -10,7 +10,7 @@ experiments:
       n_seeds: 1
       n_objectives: 16
       plots_group_name: 1dim_maxhistory20_big
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -37,7 +37,7 @@ experiments:
       n_seeds: 128
       n_objectives: 1
       plots_group_name: 1dim_maxhistory20_gittins_good_reduced_variability
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -64,7 +64,7 @@ experiments:
       n_seeds: 32
       n_objectives: 1
       plots_group_name: 8dim_maxhistory20_gittins_big
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -92,7 +92,7 @@ experiments:
       n_seeds: 32
       n_objectives: 1
       plots_group_name: 1dim_maxhistory20_ei_refine_lr
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -120,7 +120,7 @@ experiments:
       n_seeds: 16
       n_objectives: 1
       plots_group_name: 8dim_maxhistory100_gittins_big_2
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -147,7 +147,7 @@ experiments:
       n_seeds: 32
       n_objectives: 1
       plots_group_name: 1dim_maxhistory20_ei_many_epochs
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -175,7 +175,7 @@ experiments:
       n_seeds: 128
       n_objectives: 1
       plots_group_name: 1dim_maxhistory20_ei_many_epochs_2
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -203,7 +203,7 @@ experiments:
       n_seeds: 32
       n_objectives: 1
       plots_group_name: 8dim_maxhistory20_gittins_good
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -231,7 +231,7 @@ experiments:
       n_seeds: 32
       n_objectives: 1
       plots_group_name: 8dim_maxhistory20_gittins_good_2
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -258,7 +258,7 @@ experiments:
       n_seeds: 32
       n_objectives: 1
       plots_group_name: 8dim_maxhistory20_gittins_dataset_size
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -285,7 +285,7 @@ experiments:
       n_seeds: 16
       n_objectives: 1
       plots_group_name: 8dim_maxhistory20_big
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -325,7 +325,7 @@ experiments:
       n_seeds: 16
       n_objectives: 1
       plots_group_name: 8dim_maxhistory20_gittins_regularization
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -364,7 +364,7 @@ experiments:
       n_seeds: 16
       n_objectives: 1
       plots_group_name: 8dim_maxhistory20_gittins_regularization_2
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -404,7 +404,7 @@ experiments:
       n_seeds: 16
       n_objectives: 1
       plots_group_name: 8dim_maxhistory20_regularization
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -444,7 +444,7 @@ experiments:
       n_seeds: 128
       n_objectives: 1
       plots_group_name: 1dim_maxhistory20_compare_3methods_initial
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -475,7 +475,7 @@ experiments:
       n_seeds: 128
       n_objectives: 1
       plots_group_name: 1dim_pointnet_architecture_variations
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -511,7 +511,7 @@ experiments:
       n_seeds: 128
       n_objectives: 1
       plots_group_name: 1dim_pointnet_architecture_variations_policy_gradient
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -546,7 +546,7 @@ experiments:
       n_seeds: 128
       n_objectives: 1
       plots_group_name: 8dim_pointnet_architecture_variations
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -583,7 +583,7 @@ experiments:
       n_seeds: 128
       n_objectives: 1
       plots_group_name: 1dim_pointnet_architecture_variations_policy_gradient_2
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -620,7 +620,7 @@ experiments:
       n_seeds: 128
       n_objectives: 1
       plots_group_name: 8dim_pointnet_architecture_variations_policy_gradient
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -654,7 +654,7 @@ experiments:
       n_seeds: 64
       n_objectives: 1
       plots_group_name: 1dim_pointnet_architecture_variations-dataset_size
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -730,7 +730,7 @@ experiments:
       n_seeds: 128
       n_objectives: 1
       plots_group_name: 1dim_feature_dim_variation
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -781,7 +781,7 @@ experiments:
       n_seeds: 64
       n_objectives: 1
       plots_group_name: 1dim_pointnet_architecture_variations-dataset_size-more_architectures
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -824,7 +824,7 @@ experiments:
       n_seeds: 64
       n_objectives: 1
       plots_group_name: 1dim_pointnet_model_size_variations-dataset_size
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -866,7 +866,7 @@ experiments:
       n_seeds: 128
       n_objectives: 1
       plots_group_name: 1dim_pointnet_model_size_variations-dataset_size-2
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -902,7 +902,7 @@ experiments:
       n_seeds: 128
       n_objectives: 1
       plots_group_name: 1dim_pointnet_big_dataset
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -932,7 +932,7 @@ experiments:
       n_seeds: 64
       n_objectives: 1
       plots_group_name: 1dim_pointnet-max_history_input_variation-pbgi
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -969,7 +969,7 @@ experiments:
       n_seeds: 64
       n_objectives: 1
       plots_group_name: 1dim_pointnet-max_history_input_variation-mse_ei
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -1019,7 +1019,7 @@ experiments:
       n_seeds: 64
       n_objectives: 1
       plots_group_name: 3dim_pointnet-max_history_input_variation-pbgi
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -1056,7 +1056,7 @@ experiments:
       sweep_name: 100iter_hpob_pointnet-max_history_input_variation-pbgi
       use_hpob_seeds: true
       plots_group_name: hpob_pointnet-max_history_input_variation-pbgi
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -1120,7 +1120,7 @@ experiments:
       sweep_name: 100iter_hpob_pointnet-max_history_input_variation-pbgi-2
       use_hpob_seeds: true
       plots_group_name: hpob_pointnet-max_history_input_variation-pbgi-2
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -1182,7 +1182,7 @@ experiments:
       sweep_name: 100iter_hpob_pointnet_simple
       use_hpob_seeds: true
       plots_group_name: hpob_pointnet_simple
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -1231,7 +1231,7 @@ experiments:
       n_seeds: 16
       n_objectives: 8
       plots_group_name: cancer_dosage_pointnet-max_history_input_variation-pbgi
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -1272,7 +1272,7 @@ experiments:
       n_seeds: 16
       n_objectives: 8
       plots_group_name: cancer_dosage_pointnet-max_history_input_variation-pbgi-2
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -1313,7 +1313,7 @@ experiments:
       n_seeds: 16
       n_objectives: 8
       plots_group_name: cancer_dosage_pointnet-1D-pbgi
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -1408,7 +1408,7 @@ experiments:
       n_seeds: 16
       n_objectives: 8
       plots_group_name: cancer_dosage_pointnet-1D-pbgi-best_for_informs
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       bo_experiments:
         default:
@@ -1430,7 +1430,7 @@ experiments:
       n_seeds: 16
       n_objectives: 8
       plots_group_name: cancer_dosage_pointnet-pbgi-5d-dataset_size
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -1469,7 +1469,7 @@ experiments:
       n_seeds: 16
       n_objectives: 8
       plots_group_name: cancer_dosage_pointnet-pbgi-1to4d
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -1502,7 +1502,7 @@ templates:
       run_experiment_config: config/bo_config_experiment_2_torch.yml
       n_seeds: 32
       n_objectives: 1
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:
@@ -1526,7 +1526,7 @@ templates:
       run_experiment_config: config/bo_config_experiment_2_torch.yml
       n_seeds: 16
       n_objectives: 1
-      bo_plots_name: results_100iter
+      run_plots_name: results_100iter
     plotting:
       train_acqf:
         default:

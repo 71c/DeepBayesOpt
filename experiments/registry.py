@@ -74,7 +74,7 @@ class ExperimentRegistry:
             'sweep_name',
             'n_seeds',
             'plots_group_name',
-            'bo_plots_name'
+            'run_plots_name'
         ]
         
         params = exp_config.get('parameters', {})
@@ -104,7 +104,7 @@ class ExperimentRegistry:
         args['RUN_EXPERIMENT_CFG'] = f'"{params["run_experiment_config"]}"'
         args['SWEEP_NAME'] = f'"{params["sweep_name"]}"'
         args['PLOTS_GROUP_NAME'] = f'"{params["plots_group_name"]}"'
-        args['BO_PLOTS_NAME'] = f'"{params["bo_plots_name"]}"'
+        args['RUN_PLOTS_NAME'] = f'"{params["run_plots_name"]}"'
         
         # Seeds configuration
         seeds_parts = []
