@@ -65,7 +65,7 @@ def main():
     plot_formatting_group = add_plot_formatting_args(parser)
 
     parser.add_argument(
-        '--iteration_to_plot',
+        '--max_iterations_to_plot',
         type=int,
         default=-1,
         help='Which BO iteration to use for regret measurement. Default is -1 (final iteration).'
@@ -237,7 +237,7 @@ def main():
         sharey=True,
         aspect=1.618,
         scale=1.0,
-        iteration_to_plot=args.iteration_to_plot,
+        max_iterations_to_plot=args.max_iterations_to_plot,
         plot_mode=args.plot_mode,
         **plot_formatting_kwargs,
         **interval_kwargs

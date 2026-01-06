@@ -830,7 +830,7 @@ def get_plot_ax_loss_vs_regret_func(get_result_func):
             **plot_kwargs):
 
         # Extract parameters from plot_kwargs
-        iteration_to_plot = plot_kwargs.get('iteration_to_plot', -1)  # -1 means final iteration
+        max_iterations_to_plot = plot_kwargs.get('max_iterations_to_plot', -1)  # -1 means final iteration
         center_stat = plot_kwargs.get('center_stat', 'mean')
         scale = plot_kwargs.get('scale', 1.0)
         s_default = scale * 80.0  # marker size
@@ -863,7 +863,7 @@ def get_plot_ax_loss_vs_regret_func(get_result_func):
 
                         # regret_data has shape (n_seeds, n_iterations+1)
                         # Use the last available iteration if requested iteration is out of bounds
-                        iter_to_use = iteration_to_plot if iteration_to_plot >= 0 else -1
+                        iter_to_use = max_iterations_to_plot if max_iterations_to_plot >= 0 else -1
                         if iter_to_use >= regret_data.shape[1]:
                             iter_to_use = -1
 
@@ -925,7 +925,7 @@ def get_plot_ax_loss_vs_regret_func(get_result_func):
                 n_iterations_available = regret_data.shape[1] - 1  # -1 because includes initial point
 
                 # Use the last available iteration if requested iteration is out of bounds
-                iter_to_use = iteration_to_plot if iteration_to_plot >= 0 else -1
+                iter_to_use = max_iterations_to_plot if max_iterations_to_plot >= 0 else -1
                 if iter_to_use >= regret_data.shape[1]:
                     # Out of bounds - use last iteration
                     iter_to_use = -1
@@ -1037,7 +1037,7 @@ def get_plot_ax_loss_vs_regret_func(get_result_func):
             ax.set_yscale('log')
 
         # Set labels
-        iter_label = f"iteration {iteration_to_plot}" if iteration_to_plot >= 0 else "final iteration"
+        iter_label = f"iteration {max_iterations_to_plot}" if max_iterations_to_plot >= 0 else "final iteration"
         ax.set_xlabel(f'Mean Normalized Regret ({iter_label})')
         ax.set_ylabel('Best Validation Loss')
 
