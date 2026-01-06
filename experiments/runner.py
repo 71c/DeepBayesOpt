@@ -4,15 +4,13 @@ Experiment Runner Module
 Handles execution of experiments defined in the registry.
 """
 
-import os
 import subprocess
 import sys
 import threading
-from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
 from utils_general.utils import dict_to_cmd_args
-from .registry import ExperimentRegistry
+from .registry import ExperimentRegistry, get_registry
 
 
 class ExperimentRunner:
@@ -20,7 +18,7 @@ class ExperimentRunner:
 
     def __init__(self, registry: Optional[ExperimentRegistry] = None):
         """Initialize the runner."""
-        self.registry = registry or ExperimentRegistry()
+        self.registry = registry or get_registry()
 
     def _build_command(self, script: str, args: Dict[str, str],
                       include_nn_config: bool = True,
@@ -131,8 +129,7 @@ class ExperimentRunner:
             )
 
             # Add seeds configuration
-            seeds_cfg = args['SEEDS_CFG'].strip('"').split()
-            cmd.extend(seeds_cfg)
+            cmd.extend(args['SEEDS_CFG'].strip('"').split())
 
             if dry_run:
                 # In dry run mode, just print the command that would be executed
@@ -160,8 +157,7 @@ class ExperimentRunner:
             )
 
             # Add seeds configuration
-            seeds_cfg = args['SEEDS_CFG'].strip('"').split()
-            cmd.extend(seeds_cfg)
+            cmd.extend(args['SEEDS_CFG'].strip('"').split())
 
             # Add SLURM configuration
             slurm_cfg = args['SLURM_CFG'].strip('"').split()

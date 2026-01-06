@@ -4,9 +4,12 @@ _script_dir = os.path.dirname(os.path.abspath(__file__)) # script directory
 _ROOT_DIR = os.path.abspath(os.path.join(_script_dir, "..")) # root directory
 
 _DATA_DIR = os.path.join(_ROOT_DIR, "data")
-_UTILS_DIR = os.path.join(_ROOT_DIR, "utils")
+_UTILS_GENERAL_DIR = os.path.join(_ROOT_DIR, "utils_general")
 
-JOB_ARRAY_SUB_PATH = os.path.join(_UTILS_DIR, "experiments", "job_array.sub")
+_EXPERIMENTS_DIR = os.path.join(_ROOT_DIR, "experiments")
+REGISTRY_PATH = os.path.join(_EXPERIMENTS_DIR, "registry.yml")
+
+JOB_ARRAY_SUB_PATH = os.path.join(_UTILS_GENERAL_DIR, "experiments", "job_array.sub")
 
 DATASETS_DIR = os.path.join(_DATA_DIR, "datasets")
 RESULTS_DIR = os.path.join(_DATA_DIR, "bayesopt_results")

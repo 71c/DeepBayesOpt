@@ -5,7 +5,7 @@ Provides automatic plot configuration detection and application for experiment s
 This eliminates the need for hardcoded PRE, ATTR_A, ATTR_B configurations in plot scripts.
 """
 from typing import Dict, List, Optional, Tuple, Any
-from experiments.registry import ExperimentRegistry
+from experiments.registry import get_registry
 
 
 def _detect_experiment_from_config(train_experiment_config: str) -> Optional[str]:
@@ -13,7 +13,7 @@ def _detect_experiment_from_config(train_experiment_config: str) -> Optional[str
     Detect which experiment is being used based on the train_experiment_config path.
     Returns the experiment name if found, None otherwise.
     """
-    registry = ExperimentRegistry()
+    registry = get_registry()
     experiments = registry.list_experiments()
     
     # Normalize the config path for comparison
@@ -45,7 +45,7 @@ def _get_plotting_config_for_experiment(experiment_name: str, plot_type: str, va
         Dictionary with plotting configuration or None if not found
     """
     try:
-        registry = ExperimentRegistry()
+        registry = get_registry()
         plot_config = registry.get_plotting_config(experiment_name, plot_type, variant)
         return plot_config
     except:

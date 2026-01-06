@@ -16,7 +16,7 @@ sys.path.insert(0, str(project_root))
 
 from utils_general.plot_utils import add_plot_args
 
-from experiments.registry import ExperimentRegistry
+from experiments.registry import get_registry
 from experiments.runner import ExperimentRunner
 
 # Import argument adders from scripts to avoid duplication
@@ -26,7 +26,7 @@ from submit import add_recompute_args
 
 def cmd_list(args):
     """List all available experiments."""
-    registry = ExperimentRegistry()
+    registry = get_registry()
     experiments = registry.list_experiments()
     
     print("Available experiments:")
@@ -40,7 +40,7 @@ def cmd_list(args):
 
 def cmd_list_templates(args):
     """List all available templates."""
-    registry = ExperimentRegistry()
+    registry = get_registry()
     templates = registry.list_templates()
     
     print("Available templates:")
@@ -54,7 +54,7 @@ def cmd_list_templates(args):
 
 def cmd_show(args):
     """Show details of a specific experiment."""
-    registry = ExperimentRegistry()
+    registry = get_registry()
     runner = ExperimentRunner(registry)
     
     try:
@@ -90,7 +90,7 @@ def cmd_show(args):
 
 def cmd_status(args):
     """Check status of an experiment."""
-    registry = ExperimentRegistry()
+    registry = get_registry()
     runner = ExperimentRunner(registry)
 
     try:
@@ -136,7 +136,7 @@ def cmd_status(args):
 
 def cmd_run(args):
     """Run an experiment."""
-    registry = ExperimentRegistry()
+    registry = get_registry()
     runner = ExperimentRunner(registry)
 
     try:
@@ -191,7 +191,7 @@ def cmd_run(args):
 
 def cmd_plot(args):
     """Generate plots for an experiment."""
-    registry = ExperimentRegistry()
+    registry = get_registry()
     runner = ExperimentRunner(registry)
 
     try:
@@ -232,7 +232,7 @@ def cmd_plot(args):
 
 def cmd_commands(args):
     """Show the commands that would be executed for an experiment (like commands.txt)."""
-    registry = ExperimentRegistry()
+    registry = get_registry()
     runner = ExperimentRunner(registry)
     
     try:
@@ -244,7 +244,7 @@ def cmd_commands(args):
 
 def cmd_plot_variants(args):
     """List available plot variants for an experiment."""
-    registry = ExperimentRegistry()
+    registry = get_registry()
     
     try:
         if args.type:
