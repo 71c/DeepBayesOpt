@@ -1,6 +1,4 @@
 import copy
-from datetime import datetime
-import os
 from typing import Literal, Optional, List
 
 from matplotlib.ticker import MaxNLocator
@@ -9,7 +7,6 @@ import scipy.stats as stats
 from scipy.special import softplus
 from matplotlib import pyplot as plt
 from matplotlib.colors import Normalize, to_rgba_array
-from matplotlib.colors import to_rgb
 
 import torch
 from torch import Tensor
@@ -17,14 +14,14 @@ import torch.distributions as dist
 from botorch.models.gpytorch import GPyTorchModel
 
 from nn_af.acquisition_function_net_save_utils import get_lamda_for_bo_of_nn
-from utils.constants import BO_PLOTS_FOLDER
+from utils.constants import RUN_PLOTS_FOLDER
 from datasets.acquisition_dataset import AcquisitionDataset
 from nn_af.acquisition_function_net import AcquisitionFunctionNet, AcquisitionFunctionNetAcquisitionFunction, ExpectedImprovementAcquisitionFunctionNet
 from utils.constants import PLOTS_DIR
 from utils.exact_gp_computations import calculate_EI_GP, calculate_gi_gp
 from utils.plot_sorting import plot_key_value_to_str, sort_key_for_grouped_items
 from utils.utils import add_outcome_transform
-from utils_general.plot_utils import get_group_by_nested_attrs_func, get_save_figures_from_nested_structure
+from utils_general.plot_utils import get_create_plot_directory_func, get_group_by_nested_attrs_func, get_save_figures_from_nested_structure
 from utils_general.utils import DEVICE, dict_to_str
 
 
@@ -1251,15 +1248,5 @@ group_by_nested_attrs = get_group_by_nested_attrs_func(
     constant_keys_to_remove={"nn.method", "gp_af"})
 
 
-def create_plot_directory(plots_name=None, plots_group_name=None, is_bo=False):
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    parts = [timestamp]
-    if plots_name is not None:
-        parts = [plots_name] + parts
-    folder_name = "_".join(parts)
-    pp = [PLOTS_DIR] + (
-        [plots_group_name] if plots_group_name else []
-    ) + ([BO_PLOTS_FOLDER] if is_bo else []) + [folder_name]
-    save_dir = os.path.join(*pp)
-    print(f"Saving plots to {save_dir}")
-    return save_dir
+create_plot_directory = get_create_plot_directory_func(
+    plots_dir_path=PLOTS_DIR, run_plots_folder_name=RUN_PLOTS_FOLDER)

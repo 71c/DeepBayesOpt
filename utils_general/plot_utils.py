@@ -6,6 +6,7 @@ import warnings
 from matplotlib import pyplot as plt
 import numpy as np
 from tqdm import tqdm
+from datetime import datetime
 from linear_operator.utils.warnings import NumericalWarning
 
 from utils_general.io_utils import save_json
@@ -649,4 +650,20 @@ def get_group_by_nested_attrs_func(
             items, attrs_groups_list, dict_to_str_func,
             return_single=True,
             sort_key_for_grouped_items_func=sort_key_for_grouped_items_func), attrs_groups_list
+    return ret
+
+
+def get_create_plot_directory_func(plots_dir_path: str, run_plots_folder_name: str):
+    def ret(plots_name=None, plots_group_name=None, is_run_plot=False):
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        parts = [timestamp]
+        if plots_name is not None:
+            parts = [plots_name] + parts
+        folder_name = "_".join(parts)
+        pp = [plots_dir_path] + (
+            [plots_group_name] if plots_group_name else []
+        ) + ([run_plots_folder_name] if is_run_plot else []) + [folder_name]
+        save_dir = os.path.join(*pp)
+        print(f"Saving plots to {save_dir}")
+        return save_dir
     return ret

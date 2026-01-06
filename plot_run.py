@@ -327,7 +327,8 @@ def main():
         })
 
     # Folder name
-    save_dir = create_plot_directory(args.plots_name, args.plots_group_name, is_bo=True)
+    save_dir = create_plot_directory(
+        args.plots_name, args.plots_group_name, is_run_plot=True)
     
     script_plot_kwargs = dict(
         sharey=True,

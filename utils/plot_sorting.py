@@ -1,7 +1,7 @@
 from utils_general.utils import dict_to_str
 
 
-def get_sort_key_for_param(k, v):
+def _get_sort_key_for_param(k, v):
     """
     Generate a sort key for legend parameters that handles both parameter names
     and their values intelligently.
@@ -100,7 +100,7 @@ def sort_key_for_grouped_items(item):
         param_value = vals[param_name]
 
         # Use the same sorting logic as plot_dict_to_str
-        sort_key = get_sort_key_for_param(param_name, param_value)
+        sort_key = _get_sort_key_for_param(param_name, param_value)
         # sort_key is (priority, display_key, numeric_value, formatted_string)
         # We use (priority, display_key, numeric_value) for sorting
         sort_components.append(sort_key[:-1])
@@ -113,7 +113,7 @@ def plot_key_value_to_str(k, v):
     Convert a key-value pair to a string for plotting legend.
     Returns a tuple of (sort_key, formatted_string).
     """
-    sort_key = get_sort_key_for_param(k, v)
+    sort_key = _get_sort_key_for_param(k, v)
     # Return (sort_key[:-1], formatted_string) - exclude the formatted string from sort key
     return (sort_key[:-1], sort_key[-1])
 

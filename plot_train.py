@@ -239,7 +239,8 @@ def main():
     assert all(len(v) == 1 for v in gr.values())
 
     # Folder name
-    save_dir = create_plot_directory(args.plots_name, args.plots_group_name, is_bo=False)
+    save_dir = create_plot_directory(
+        args.plots_name, args.plots_group_name, is_run_plot=False)
 
     if CPROFILE:
         pr = cProfile.Profile()
