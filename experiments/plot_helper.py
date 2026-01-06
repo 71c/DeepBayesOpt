@@ -8,21 +8,21 @@ from typing import Dict, List, Optional, Tuple, Any
 from experiments.registry import ExperimentRegistry
 
 
-def detect_experiment_from_config(nn_experiment_config: str) -> Optional[str]:
+def _detect_experiment_from_config(train_experiment_config: str) -> Optional[str]:
     """
-    Detect which experiment is being used based on the nn_experiment_config path.
+    Detect which experiment is being used based on the train_experiment_config path.
     Returns the experiment name if found, None otherwise.
     """
     registry = ExperimentRegistry()
     experiments = registry.list_experiments()
     
     # Normalize the config path for comparison
-    config_path = nn_experiment_config.strip('"').strip("'")
+    config_path = train_experiment_config.strip('"').strip("'")
     
     for exp_name in experiments:
         try:
             exp_config = registry.get_experiment(exp_name)
-            exp_nn_config = exp_config['parameters']['nn_experiment_config']
+            exp_nn_config = exp_config['parameters']['train_experiment_config']
             
             if exp_nn_config == config_path:
                 return exp_name
@@ -32,7 +32,7 @@ def detect_experiment_from_config(nn_experiment_config: str) -> Optional[str]:
     return None
 
 
-def get_plotting_config_for_experiment(experiment_name: str, plot_type: str, variant: str = 'default') -> Optional[Dict[str, Any]]:
+def _get_plotting_config_for_experiment(experiment_name: str, plot_type: str, variant: str = 'default') -> Optional[Dict[str, Any]]:
     """
     Get the plotting configuration for a specific experiment and plot type.
     
@@ -52,12 +52,12 @@ def get_plotting_config_for_experiment(experiment_name: str, plot_type: str, var
         return None
 
 
-def auto_configure_plotting(nn_experiment_config: str, plot_type: str, variant: str = 'default') -> Tuple[List, List, List]:
+def _auto_configure_plotting(train_experiment_config: str, plot_type: str, variant: str = 'default') -> Tuple[List, List, List]:
     """
     Automatically configure plotting parameters based on experiment configuration.
     
     Args:
-        nn_experiment_config: Path to the NN experiment config file
+        train_experiment_config: Path to the NN experiment config file
         plot_type: 'train_acqf' or 'bo_experiments'
         variant: Plot configuration variant (default: 'default')
     
@@ -65,10 +65,10 @@ def auto_configure_plotting(nn_experiment_config: str, plot_type: str, variant: 
         Tuple of (PRE, ATTR_A, ATTR_B) lists
     """
     # Try to detect the experiment
-    experiment_name = detect_experiment_from_config(nn_experiment_config)
+    experiment_name = _detect_experiment_from_config(train_experiment_config)
     
     if experiment_name:
-        plot_config = get_plotting_config_for_experiment(experiment_name, plot_type, variant)
+        plot_config = _get_plotting_config_for_experiment(experiment_name, plot_type, variant)
         
         if plot_config:
             pre = plot_config.get('pre', [])
@@ -83,18 +83,12 @@ def auto_configure_plotting(nn_experiment_config: str, plot_type: str, variant: 
             
             return pre, attr_a, attr_b
     
-    # Fallback to default configuration if no experiment found
-    print(f"Could not auto-detect experiment for config: {nn_experiment_config}")
-    print("Using default plotting configuration")
-    
-    # Return sensible defaults
-    if plot_type == "train_acqf":
-        return [], ["train_samples_size"], ["learning_rate"]
-    else:  # bo_experiments
-        return [], ["nn.train_samples_size"], ["nn.learning_rate"]
+    raise ValueError(
+        "Could not auto-detect plotting configuration for experiment "
+        f"with config: {train_experiment_config}")
 
 
-def apply_auto_plotting(nn_experiment_config: str, plot_type: str, 
+def _apply_auto_plotting(train_experiment_config: str, plot_type: str, 
                        globals_dict: Dict[str, Any],
                        variant: str = 'default') -> None:
     """
@@ -103,11 +97,11 @@ def apply_auto_plotting(nn_experiment_config: str, plot_type: str,
     This function modifies the global PRE, ATTR_A, ATTR_B variables in place.
     
     Args:
-        nn_experiment_config: Path to the NN experiment config file
+        train_experiment_config: Path to the NN experiment config file
         plot_type: 'train_acqf' or 'bo_experiments'  
         globals_dict: The global namespace dictionary of the calling script
     """
-    pre, attr_a, attr_b = auto_configure_plotting(nn_experiment_config, plot_type, variant)
+    pre, attr_a, attr_b = _auto_configure_plotting(train_experiment_config, plot_type, variant)
     
     # Update the global variables
     globals_dict['PRE'] = pre
@@ -115,7 +109,7 @@ def apply_auto_plotting(nn_experiment_config: str, plot_type: str,
     globals_dict['ATTR_B'] = attr_b
 
 
-def get_experiment_post_config(experiment_name: str, plot_type: str, variant: str = 'default') -> Optional[List]:
+def _get_experiment_post_config(experiment_name: str, plot_type: str, variant: str = 'default') -> Optional[List]:
     """
     Get the POST configuration for an experiment if it exists.
     
@@ -127,7 +121,7 @@ def get_experiment_post_config(experiment_name: str, plot_type: str, variant: st
     Returns:
         POST configuration list or None if not found
     """
-    plot_config = get_plotting_config_for_experiment(experiment_name, plot_type, variant)
+    plot_config = _get_plotting_config_for_experiment(experiment_name, plot_type, variant)
     if plot_config:
         return plot_config.get('post', None)
     return None
@@ -145,15 +139,15 @@ def setup_plotting_from_args(args, plot_type: str, globals_dict: Dict[str, Any])
         plot_type: 'train_acqf' or 'bo_experiments'
         globals_dict: The global namespace dictionary of the calling script
     """
-    nn_config = getattr(args, 'nn_experiment_config', None)
+    nn_config = getattr(args, 'train_experiment_config', None)
     variant = getattr(args, 'variant', 'default')
     if nn_config:
-        apply_auto_plotting(nn_config, plot_type, globals_dict, variant=variant)
+        _apply_auto_plotting(nn_config, plot_type, globals_dict, variant=variant)
 
         # Also try to set POST if available
-        experiment_name = detect_experiment_from_config(nn_config)
+        experiment_name = _detect_experiment_from_config(nn_config)
         if experiment_name:
-            post_config = get_experiment_post_config(experiment_name, plot_type, variant)
+            post_config = _get_experiment_post_config(experiment_name, plot_type, variant)
             if post_config:
                 globals_dict['POST'] = post_config
             else:

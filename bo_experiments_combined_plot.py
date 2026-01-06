@@ -65,7 +65,7 @@ ATTR_GROUPS = [
 
 def main():
     ## Create parser
-    (parser, nn_base_config_name, nn_experiment_config_name, bo_base_config_name,
+    (parser, train_base_config_name, train_experiment_config_name, bo_base_config_name,
      bo_experiment_config_name) = get_bo_experiments_parser(train=False)
     add_plot_args(parser)
     interval_group = add_plot_interval_args(parser)
@@ -116,8 +116,8 @@ def main():
     jobs_spec, new_cfgs, existing_cfgs_and_results, refined_config \
         = generate_gp_bo_job_specs(
             args,
-            nn_base_config=getattr(args, nn_base_config_name),
-            nn_experiment_config=getattr(args, nn_experiment_config_name),
+            train_base_config=getattr(args, train_base_config_name),
+            train_experiment_config=getattr(args, train_experiment_config_name),
             bo_base_config=getattr(args, bo_base_config_name),
             bo_experiment_config=getattr(args, bo_experiment_config_name)
         )

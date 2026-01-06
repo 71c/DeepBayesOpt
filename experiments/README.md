@@ -81,7 +81,7 @@ Show the equivalent commands.txt format for an experiment.
 The plotting scripts (`train_acqf_plot.py` and `bo_experiments_gp_plot.py`) now automatically detect experiment configurations and apply the correct plotting parameters.
 
 ### How it works
-1. When a plotting script runs, it checks the `nn_experiment_config` parameter
+1. When a plotting script runs, it checks the `train_experiment_config` parameter
 2. It matches this against experiments in the registry
 3. If found, it automatically sets `PRE`, `ATTR_A`, `ATTR_B`, and `POST` variables
 4. If not found, it falls back to default or manual configuration
@@ -103,11 +103,10 @@ experiments:
     created_date: "YYYY-MM-DD"
     parameters:
       seed: 8
-      nn_experiment_config: "path/to/config.yml"
+      train_experiment_config: "path/to/config.yml"
       bo_experiment_config: "path/to/config.yml"
       sweep_name: "unique_sweep_name"
       n_seeds: 64
-      single_objective: true
       plots_group_name: "plot_group_name"
       bo_plots_name: "plot_name"
     plotting:

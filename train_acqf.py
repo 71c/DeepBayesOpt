@@ -244,8 +244,8 @@ def create_dependency_structure_train_acqf(
 ALWAYS_TRAIN_NAME = 'always_train'
 
 
-def add_train_acqf_args(parser, train=True, prefix='nn'):
-    nn_base_config_name, nn_experiment_config_name = add_config_args(
+def add_train_acqf_args(parser, train=True, prefix='train'):
+    train_base_config_name, train_experiment_config_name = add_config_args(
         parser, prefix=prefix, experiment_name='NN acqf')
 
     if train:
@@ -257,13 +257,13 @@ def add_train_acqf_args(parser, train=True, prefix='nn'):
                 'acquisition function NNs that have not already been trained.')
         )
     
-    return nn_base_config_name, nn_experiment_config_name
+    return train_base_config_name, train_experiment_config_name
 
 
 def main():
     ## Create parser
     parser = argparse.ArgumentParser()
-    nn_base_config_name, nn_experiment_config_name = add_train_acqf_args(parser,
+    train_base_config_name, train_experiment_config_name = add_train_acqf_args(parser,
                                                                          train=True)
     add_slurm_args(parser)
 
@@ -271,7 +271,7 @@ def main():
     args = parser.parse_args()
 
     options_list, refined_config = get_config_options_list(
-        getattr(args, nn_base_config_name), getattr(args, nn_experiment_config_name))
+        getattr(args, train_base_config_name), getattr(args, train_experiment_config_name))
     
     jobs_spec = create_dependency_structure_train_acqf(
         options_list, always_train=getattr(args, ALWAYS_TRAIN_NAME))

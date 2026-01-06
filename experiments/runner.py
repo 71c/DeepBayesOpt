@@ -43,8 +43,8 @@ class ExperimentRunner:
 
         if include_nn_config:
             cmd.extend([
-                "--nn_base_config", "config/train_acqf.yml",
-                "--nn_experiment_config", args['NN_EXPERIMENT_CFG'].strip('"')
+                "--train_base_config", "config/train_acqf.yml",
+                "--train_experiment_config", args['TRAIN_EXPERIMENT_CFG'].strip('"')
             ])
 
         if include_bo_config:
@@ -329,7 +329,7 @@ class ExperimentRunner:
             
             print(f"# {exp_config.get('description', name)}")
             print(f"SEED={args['SEED']};")
-            print(f"NN_EXPERIMENT_CFG={args['NN_EXPERIMENT_CFG']};")
+            print(f"TRAIN_EXPERIMENT_CFG={args['TRAIN_EXPERIMENT_CFG']};")
             print(f"BO_EXPERIMENT_CFG={args['BO_EXPERIMENT_CFG']};")
             print(f"SWEEP_NAME={args['SWEEP_NAME']};")
             print(f"SEEDS_CFG={args['SEEDS_CFG']};")

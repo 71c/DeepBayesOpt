@@ -3,7 +3,7 @@
 
 # Big experiment 1D:
 SEED=8;
-NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_big.yml";
+TRAIN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_big.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_big.yml";
 SWEEP_NAME="test_100iter_1dim_maxhistory20_big";
 SEEDS_CFG="--n_seeds 16";
@@ -12,7 +12,7 @@ BO_PLOTS_NAME="results_100iter";
 
 # Gittins experiment 1D: reduce variability
 SEED=8;
-NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_gittins_good.yml";
+TRAIN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_gittins_good.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_maxhistory20_gittins_good_reduced_variability";
 SEEDS_CFG="--n_seeds 128 --n_objectives 1";
@@ -21,7 +21,7 @@ BO_PLOTS_NAME="results_100iter";
 
 # Gittins experiment in 8D: try different learning rates
 SEED=8;
-NN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_gittins_big.yml";
+TRAIN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_gittins_big.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_8dim_maxhistory20_gittins_big";
 SEEDS_CFG="--n_seeds 32 --n_objectives 1";
@@ -30,7 +30,7 @@ BO_PLOTS_NAME="results_100iter";
 
 # EI experiment in 1D: refine learning rate from best of 3e-4 found earlier
 SEED=8;
-NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_ei_refine_lr.yml";
+TRAIN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_ei_refine_lr.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_maxhistory20_ei_refine_lr";
 SEEDS_CFG="--n_seeds 32 --n_objectives 1";
@@ -40,7 +40,7 @@ BO_PLOTS_NAME="results_100iter";
 # Gittins experiment in 8D: try different learning rates, dataset sizes, layer widths
 # (in response to the bad results for 8D)
 SEED=8;
-NN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_gittins_big_2.yml";
+TRAIN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_gittins_big_2.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_8dim_maxhistory100_gittins_big_2";
 SEEDS_CFG="--n_seeds 16 --n_objectives 1";
@@ -49,7 +49,7 @@ BO_PLOTS_NAME="results_100iter";
 
 # EI experiment in 1D: train many epochs with 3e-4 learning rate
 SEED=8;
-NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_ei_many_epochs.yml";
+TRAIN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_ei_many_epochs.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_maxhistory20_ei_many_epochs";
 SEEDS_CFG="--n_seeds 32 --n_objectives 1";
@@ -58,7 +58,7 @@ BO_PLOTS_NAME="results_100iter";
 
 # EI experiment in 1D: train many epochs with 3e-4 learning rate -- revised after seeing results
 SEED=8;
-NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_ei_many_epochs_2.yml";
+TRAIN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_ei_many_epochs_2.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_maxhistory20_ei_many_epochs_2";
 SEEDS_CFG="--n_seeds 128 --n_objectives 1";
@@ -67,7 +67,7 @@ BO_PLOTS_NAME="results_100iter";
 
 # Gittins experiment in 8D: throw more compute at best (96 missing, 96 existing)
 SEED=8;
-NN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_gittins_good.yml";
+TRAIN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_gittins_good.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_8dim_maxhistory20_gittins_good";
 SEEDS_CFG="--n_seeds 32 --n_objectives 1";
@@ -77,7 +77,7 @@ BO_PLOTS_NAME="results_100iter";
 # Gittins experiment in 8D: throw more compute at best; more extensive hyperparameter search
 # (1 missing, 383 existing)
 SEED=8;
-NN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_gittins_good_2.yml";
+TRAIN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_gittins_good_2.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_8dim_maxhistory20_gittins_good_2";
 SEEDS_CFG="--n_seeds 32 --n_objectives 1";
@@ -86,7 +86,7 @@ BO_PLOTS_NAME="results_100iter";
 
 # Gittins experiment in 8D: experiment with dataset size
 SEED=8;
-NN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_gittins_dataset_size.yml";
+TRAIN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_gittins_dataset_size.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_8dim_maxhistory20_gittins_dataset_size";
 SEEDS_CFG="--n_seeds 32 --n_objectives 1";
@@ -95,7 +95,7 @@ BO_PLOTS_NAME="results_100iter";
 
 # Experiment in 8D: experiment with everything
 SEED=8;
-NN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_big.yml";
+TRAIN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_big.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_8dim_maxhistory20_big";
 SEEDS_CFG="--n_seeds 16 --n_objectives 1";
@@ -105,7 +105,7 @@ BO_PLOTS_NAME="results_100iter";
 # Experiment in 8D: experiment with reducing layer width and adding weight decay,
 # and with dataset size
 SEED=8;
-NN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_gittins_regularization.yml";
+TRAIN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_gittins_regularization.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_8dim_maxhistory20_gittins_regularization";
 SEEDS_CFG="--n_seeds 16 --n_objectives 1";
@@ -114,7 +114,7 @@ BO_PLOTS_NAME="results_100iter";
 
 # Experiment in 8D: more experimenting with regularization (now dropout too) -- just gittins
 SEED=8;
-NN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_gittins_regularization_2.yml";
+TRAIN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_gittins_regularization_2.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_8dim_maxhistory20_gittins_regularization_2";
 SEEDS_CFG="--n_seeds 16 --n_objectives 1";
@@ -124,7 +124,7 @@ BO_PLOTS_NAME="results_100iter";
 # Experiment in 8D: more experimenting with regularization (now dropout too) -- gittins & EI
 # Submitted 2025-04-24 19:18:07
 SEED=8;
-NN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_regularization.yml";
+TRAIN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_regularization.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_8dim_maxhistory20_regularization";
 SEEDS_CFG="--n_seeds 16 --n_objectives 1";
@@ -135,7 +135,7 @@ BO_PLOTS_NAME="results_100iter";
 # after ignoring it for so long, and compare it to the other 2 methods
 # -- in 2025-06-04 slides
 SEED=8;
-NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_compare_3methods_initial.yml";
+TRAIN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_compare_3methods_initial.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_compare_3methods_initial";
 SEEDS_CFG="--n_seeds 128 --n_objectives 1";
@@ -145,7 +145,7 @@ BO_PLOTS_NAME="results_100iter";
 # Initial experiment of PointNet architecture variations, 1D
 # -- in 2025-06-04 slides
 SEED=8;
-NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_architecture_variations.yml";
+TRAIN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_architecture_variations.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_pointnet_architecture_variations";
 SEEDS_CFG="--n_seeds 128 --n_objectives 1";
@@ -155,7 +155,7 @@ BO_PLOTS_NAME="results_100iter";
 # Initial experiment of PointNet architecture variations, 1D -- policy gradient
 # -- in 2025-06-04 slides
 SEED=8;
-NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_architecture_variations_policy_gradient.yml";
+TRAIN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_architecture_variations_policy_gradient.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_pointnet_architecture_variations_policy_gradient";
 SEEDS_CFG="--n_seeds 128 --n_objectives 1";
@@ -165,7 +165,7 @@ BO_PLOTS_NAME="results_100iter";
 # Initial experiment of PointNet architecture variations, 8D
 # -- in 2025-06-04 slides
 SEED=8;
-NN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_pointnet_architecture_variations.yml";
+TRAIN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_pointnet_architecture_variations.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_8dim_pointnet_architecture_variations";
 SEEDS_CFG="--n_seeds 128 --n_objectives 1";
@@ -177,7 +177,7 @@ BO_PLOTS_NAME="results_100iter";
 # -- in 2025-06-11 slides
 # One NN currently in training left to complete and is still running after 3 days (I think); and some extra BO loops left
 SEED=8;
-NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_architecture_variations_policy_gradient_2.yml";
+TRAIN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_architecture_variations_policy_gradient_2.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_pointnet_architecture_variations_policy_gradient_2";
 SEEDS_CFG="--n_seeds 128 --n_objectives 1";
@@ -188,7 +188,7 @@ BO_PLOTS_NAME="results_100iter";
 # -- in 2025-06-11 slides
 # ALL DONE
 SEED=8;
-NN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_pointnet_architecture_variations_policy_gradient.yml";
+TRAIN_EXPERIMENT_CFG="config/train_acqf_experiment_8dim_pointnet_architecture_variations_policy_gradient.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_8dim_pointnet_architecture_variations_policy_gradient";
 SEEDS_CFG="--n_seeds 128 --n_objectives 1";
@@ -198,7 +198,7 @@ BO_PLOTS_NAME="results_100iter";
 # Experiment of PointNet architecture variations + dataset size, 1D
 # -- in 2025-06-11 slides
 SEED=8;
-NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_architecture_variations-dataset_size.yml";
+TRAIN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_architecture_variations-dataset_size.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_pointnet_architecture_variations-dataset_size";
 SEEDS_CFG="--n_seeds 64 --n_objectives 1";
@@ -208,7 +208,7 @@ BO_PLOTS_NAME="results_100iter";
 # Experiment of changing feature dimension of PointNet (keeping layer width the same), 1D
 # -- in 2025-06-11 slides (? maybe if I have time)
 SEED=8;
-NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_feature_dim_variation.yml";
+TRAIN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_feature_dim_variation.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_feature_dim_variation";
 SEEDS_CFG="--n_seeds 128 --n_objectives 1";
@@ -220,7 +220,7 @@ BO_PLOTS_NAME="results_100iter";
 # vary dataset size; fix architecture size;
 # vary x_cand_input, pooling, include_best_y, subtract_best_y
 SEED=8;
-NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_architecture_variations-dataset_size-more_architectures.yml";
+TRAIN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_architecture_variations-dataset_size-more_architectures.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_pointnet_architecture_variations-dataset_size-more_architectures";
 SEEDS_CFG="--n_seeds 64 --n_objectives 1";
@@ -230,7 +230,7 @@ BO_PLOTS_NAME="results_100iter";
 # Experiment of PointNet architecture size (layer width, # hidden layers, feature dimension), + dataset size
 # This is "Architecture variation experiment 2" in 2025-07-19 presentation
 SEED=8;
-NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_model_size_variations-dataset_size.yml";
+TRAIN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_model_size_variations-dataset_size.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_pointnet_model_size_variations-dataset_size";
 SEEDS_CFG="--n_seeds 64 --n_objectives 1";
@@ -240,7 +240,7 @@ BO_PLOTS_NAME="results_100iter";
 
 # Refined Experiment of PointNet architecture size (layer width, # hidden layers, feature dimension), + dataset size
 SEED=8;
-NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_model_size_variations-dataset_size-2.yml";
+TRAIN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_model_size_variations-dataset_size-2.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_pointnet_model_size_variations-dataset_size-2";
 SEEDS_CFG="--n_seeds 128 --n_objectives 1";
@@ -250,7 +250,7 @@ BO_PLOTS_NAME="results_100iter";
 
 # PointNet, big dataset
 SEED=8;
-NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_big_dataset.yml";
+TRAIN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet_big_dataset.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_pointnet_big_dataset";
 SEEDS_CFG="--n_seeds 128 --n_objectives 1";
@@ -261,7 +261,7 @@ BO_PLOTS_NAME="results_100iter";
 # Experiment of 1D PointNet PBGI: max_history_input (2, 4, 9, null), + dataset size
 # Created 2025-09-09
 SEED=8;
-NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet-max_history_input_variation-pbgi.yml";
+TRAIN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet-max_history_input_variation-pbgi.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_pointnet-max_history_input_variation-pbgi";
 SEEDS_CFG="--n_seeds 64 --n_objectives 1";
@@ -271,7 +271,7 @@ BO_PLOTS_NAME="results_100iter";
 # Experiment of 1D PointNet MSE EI: max_history_input (2, 4, 9, null), + dataset size
 # Created 2025-09-09
 SEED=8;
-NN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet-max_history_input_variation-mse_ei.yml";
+TRAIN_EXPERIMENT_CFG="config/train_acqf_experiment_1dim_pointnet-max_history_input_variation-mse_ei.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_1dim_pointnet-max_history_input_variation-mse_ei";
 SEEDS_CFG="--n_seeds 64 --n_objectives 1";
@@ -281,7 +281,7 @@ BO_PLOTS_NAME="results_100iter";
 # Experiment of 3D PointNet PBGI: max_history_input (2, 4, 9, null), + dataset size
 # Created 2025-09-18
 SEED=8;
-NN_EXPERIMENT_CFG="config/train_acqf_experiment_3dim_pointnet-max_history_input_variation-pbgi.yml";
+TRAIN_EXPERIMENT_CFG="config/train_acqf_experiment_3dim_pointnet-max_history_input_variation-pbgi.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_3dim_pointnet-max_history_input_variation-pbgi";
 SEEDS_CFG="--n_seeds 64 --n_objectives 1";
@@ -291,7 +291,7 @@ BO_PLOTS_NAME="results_100iter";
 # Experiment of HPO-B
 # Created 2025-09-18
 SEED=8;
-NN_EXPERIMENT_CFG="config/train_acqf_experiment_hpob_pointnet-max_history_input_variation-pbgi.yml";
+TRAIN_EXPERIMENT_CFG="config/train_acqf_experiment_hpob_pointnet-max_history_input_variation-pbgi.yml";
 BO_EXPERIMENT_CFG="config/bo_config_experiment_2_torch.yml";
 SWEEP_NAME="100iter_hpob_pointnet-max_history_input_variation-pbgi";
 SEEDS_CFG="--n_seeds 64 --n_objectives 1";
@@ -304,7 +304,7 @@ SEEDS_CFG="--n_seeds 6 --n_objectives 1";
 
 
 ######### STEP 2: Copy-paste this code into the terminal ########
-NN_CFG="--nn_base_config config/train_acqf.yml --nn_experiment_config $NN_EXPERIMENT_CFG";
+NN_CFG="--train_base_config config/train_acqf.yml --train_experiment_config $TRAIN_EXPERIMENT_CFG";
 BO_CFG="--bo_base_config config/bo_config.yml --bo_experiment_config $BO_EXPERIMENT_CFG --seed $SEED $SEEDS_CFG";
 SLURM_CFG="--sweep_name $SWEEP_NAME --mail adj53@cornell.edu --gres gpu:1";
 PLOTS_CFG="--plots_group_name $PLOTS_GROUP_NAME --use_rows --use_cols";

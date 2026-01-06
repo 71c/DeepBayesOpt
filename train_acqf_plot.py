@@ -149,7 +149,7 @@ def get_plot_ax_train_acqf_func(get_result_func):
 def main():
     ## Create parser
     parser = argparse.ArgumentParser()
-    nn_base_config_name, nn_experiment_config_name = add_train_acqf_args(parser,
+    train_base_config_name, train_experiment_config_name = add_train_acqf_args(parser,
                                                                          train=False)
     add_plot_args(parser)
 
@@ -179,7 +179,7 @@ def main():
     
     # Get all the configs of all the NNs
     all_cfgs_list, refined_config = get_config_options_list(
-        getattr(args, nn_base_config_name), getattr(args, nn_experiment_config_name))
+        getattr(args, train_base_config_name), getattr(args, train_experiment_config_name))
     
     # Get all the configs for which we have results, and the corresponding results
     existing_cfgs = []

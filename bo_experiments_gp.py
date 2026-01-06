@@ -389,7 +389,7 @@ def get_bo_experiments_parser(train=True):
         bo_loop_group, prefix='bo', experiment_name='BO loops')
 
     nn_train_group = parser.add_argument_group("NN experiments")
-    nn_base_config_name, nn_experiment_config_name = add_train_acqf_args(nn_train_group,
+    train_base_config_name, train_experiment_config_name = add_train_acqf_args(nn_train_group,
                                                                          train=train)
     nn_train_group.add_argument(
         '--no_train',
@@ -402,7 +402,7 @@ def get_bo_experiments_parser(train=True):
     add_recompute_args(parser)
 
     return (parser,
-            nn_base_config_name, nn_experiment_config_name,
+            train_base_config_name, train_experiment_config_name,
             bo_base_config_name, bo_experiment_config_name)
 
 
@@ -450,9 +450,9 @@ def _validate_bo_experiments_args(args: argparse.Namespace, dataset_types):
 
 
 def generate_gp_bo_job_specs(args: argparse.Namespace,
-                             nn_base_config: str,
+                             train_base_config: str,
                              bo_base_config: str,
-                             nn_experiment_config: Optional[str]=None,
+                             train_experiment_config: Optional[str]=None,
                              bo_experiment_config: Optional[str]=None,
                              dependents_slurm_options:dict[str, Any]={},
                              recompute_bo: bool = False,
@@ -461,7 +461,7 @@ def generate_gp_bo_job_specs(args: argparse.Namespace,
     bo_options_list, bo_refined_config = get_config_options_list(
         bo_base_config, bo_experiment_config)
     nn_options_list, nn_refined_config = get_config_options_list(
-        nn_base_config, nn_experiment_config)
+        train_base_config, train_experiment_config)
     
     # Determine the dataset type for purpose of args validation
     dataset_types = {
@@ -532,7 +532,7 @@ def generate_gp_bo_job_specs(args: argparse.Namespace,
 
 
 def main():
-    (parser, nn_base_config_name, nn_experiment_config_name, bo_base_config_name,
+    (parser, train_base_config_name, train_experiment_config_name, bo_base_config_name,
      bo_experiment_config_name) = get_bo_experiments_parser(train=True)
 
     slurm_group = parser.add_argument_group("Slurm and logging")
@@ -551,8 +551,8 @@ def main():
     jobs_spec, new_cfgs, existing_cfgs_and_results, refined_config \
         = generate_gp_bo_job_specs(
             args,
-            nn_base_config=getattr(args, nn_base_config_name),
-            nn_experiment_config=getattr(args, nn_experiment_config_name),
+            train_base_config=getattr(args, train_base_config_name),
+            train_experiment_config=getattr(args, train_experiment_config_name),
             bo_base_config=getattr(args, bo_base_config_name),
             bo_experiment_config=getattr(args, bo_experiment_config_name),
             dependents_slurm_options={
