@@ -288,13 +288,13 @@ python bin/experiment_manager.py run <experiment_name> --no-submit
 python bin/experiment_manager.py run <experiment_name> --always-train
 
 # Recompute/overwrite all existing BO results
-python bin/experiment_manager.py run <experiment_name> --recompute-bo
+python bin/experiment_manager.py run <experiment_name> --recompute-run
 
 # Recompute/overwrite only non-NN BO results (GP and random search)
-python bin/experiment_manager.py run <experiment_name> --recompute-non-nn-only
+python bin/experiment_manager.py run <experiment_name> --recompute-non-train-only
 ```
 
-Note: `--recompute-bo` and `--recompute-non-nn-only` are mutually exclusive.
+Note: `--recompute-run` and `--recompute-non-train-only` are mutually exclusive.
 
 ### Generate Plots
 ```bash

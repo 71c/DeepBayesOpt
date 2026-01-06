@@ -27,8 +27,8 @@ HPOB_SEEDS = [f"test{i}" for i in range(N_HPOB_SEEDS)]
 def _generate_bo_commands(
         seeds: list[int], objective_args, bo_policy_args, gp_af_args,
         n_objectives:Optional[int]=None, n_bo_seeds: Optional[int]=None,
-        use_hpob_seeds=False, recompute_bo: bool = False,
-        recompute_non_nn_only: bool = False):
+        use_hpob_seeds=False, recompute_run: bool = False,
+        recompute_non_train_only: bool = False):
     new_bo_comma = []
     new_bo_conf = []
     existing_bo_conf_and_results = []
@@ -75,9 +75,9 @@ def _generate_bo_commands(
 
             # Check if we should recompute based on the flags
             should_recompute = False
-            if recompute_bo:
+            if recompute_run:
                 should_recompute = True
-            elif recompute_non_nn_only:
+            elif recompute_non_train_only:
                 # Check if this is a non-NN result (GP or random search)
                 # is_nn = bo_policy_args.get('nn_model_name') is not None
                 is_random_search = bo_policy_args.get('random_search', False)
@@ -108,8 +108,8 @@ def _gp_bo_jobs_spec_and_cfgs(
         n_objectives: Optional[int]=None, n_bo_seeds: Optional[int]=None,
         use_hpob_seeds=False, always_train=False,
         dependents_slurm_options:dict[str, Any]={},
-        recompute_bo: bool = False,
-        recompute_non_nn_only: bool = False):
+        recompute_run: bool = False,
+        recompute_non_train_only: bool = False):
     objective_args_dict = {}
 
     new_bo_configs = []
@@ -201,8 +201,8 @@ def _gp_bo_jobs_spec_and_cfgs(
                 n_objectives=n_objectives,
                 n_bo_seeds=n_bo_seeds,
                 use_hpob_seeds=use_hpob_seeds,
-                recompute_bo=recompute_bo,
-                recompute_non_nn_only=False  # This is NN-based, so exclude from non_nn_only
+                recompute_run=recompute_run,
+                recompute_non_train_only=False  # This is NN-based, so exclude from non_nn_only
             )
             all_new_cmds_this_nn.extend(new_cmds)
             new_bo_configs.extend(new_cfgs)
@@ -236,8 +236,8 @@ def _gp_bo_jobs_spec_and_cfgs(
                         n_objectives=n_objectives,
                         n_bo_seeds=n_bo_seeds,
                         use_hpob_seeds=use_hpob_seeds,
-                        recompute_bo=recompute_bo,
-                        recompute_non_nn_only=False
+                        recompute_run=recompute_run,
+                        recompute_non_train_only=False
                     )
                     all_new_cmds_this_nn.extend(new_cmds)
                     new_bo_configs.extend(new_cfgs)
@@ -300,8 +300,8 @@ def _gp_bo_jobs_spec_and_cfgs(
                         n_objectives=n_objectives,
                         n_bo_seeds=n_bo_seeds,
                         use_hpob_seeds=use_hpob_seeds,
-                        recompute_bo=recompute_bo,
-                        recompute_non_nn_only=recompute_non_nn_only
+                        recompute_run=recompute_run,
+                        recompute_non_train_only=recompute_non_train_only
                     )
                     non_nn_bo_commands.extend(new_cmds)
                     new_bo_configs.extend(new_cfgs)
@@ -317,8 +317,8 @@ def _gp_bo_jobs_spec_and_cfgs(
                 n_objectives=n_objectives,
                 n_bo_seeds=n_bo_seeds,
                 use_hpob_seeds=use_hpob_seeds,
-                recompute_bo=recompute_bo,
-                recompute_non_nn_only=recompute_non_nn_only
+                recompute_run=recompute_run,
+                recompute_non_train_only=recompute_non_train_only
             )
             non_nn_bo_commands.extend(new_cmds)
             new_bo_configs.extend(new_cfgs)
@@ -340,12 +340,12 @@ def add_recompute_args(parser):
     """
     recompute_group = parser.add_argument_group("Recompute options")
     recompute_group.add_argument(
-        '--recompute-bo',
+        '--recompute-run',
         action='store_true',
         help='Recompute/overwrite existing BO results (all types)'
     )
     recompute_group.add_argument(
-        '--recompute-non-nn-only',
+        '--recompute-non-train-only',
         action='store_true',
         help='Recompute/overwrite only non-NN BO results (GP and random search)'
     )
@@ -455,8 +455,8 @@ def generate_gp_bo_job_specs(args: argparse.Namespace,
                              train_experiment_config: Optional[str]=None,
                              run_experiment_config: Optional[str]=None,
                              dependents_slurm_options:dict[str, Any]={},
-                             recompute_bo: bool = False,
-                             recompute_non_nn_only: bool = False):
+                             recompute_run: bool = False,
+                             recompute_non_train_only: bool = False):
     # Get the BO and NN config options lists
     bo_options_list, bo_refined_config = get_config_options_list(
         run_base_config, run_experiment_config)
@@ -511,8 +511,8 @@ def generate_gp_bo_job_specs(args: argparse.Namespace,
         use_hpob_seeds=args.use_hpob_seeds,
         always_train=getattr(args, 'always_train', False),
         dependents_slurm_options=dependents_slurm_options,
-        recompute_bo=recompute_bo,
-        recompute_non_nn_only=recompute_non_nn_only
+        recompute_run=recompute_run,
+        recompute_non_train_only=recompute_non_train_only
     )
 
     if CPROFILE:
@@ -541,9 +541,9 @@ def main():
     args = parser.parse_args()
 
     # Validate recompute arguments
-    if getattr(args, 'recompute_bo', False) and getattr(args, 'recompute_non_nn_only', False):
-        parser.error("Cannot specify both --recompute-bo and --recompute-non-nn-only. "
-                     "--recompute-bo includes all BO results.")
+    if getattr(args, 'recompute_run', False) and getattr(args, 'recompute_non_train_only', False):
+        parser.error("Cannot specify both --recompute-run and --recompute-non-train-only. "
+                     "--recompute-run includes all BO results.")
     
     if args.no_train and getattr(args, ALWAYS_TRAIN_NAME):
         parser.error(f"Cannot specify both --no_train and --{ALWAYS_TRAIN_NAME}.")
@@ -560,8 +560,8 @@ def main():
                 "gres": "gpu:1",
                 "time": "2:00:00",
             },
-            recompute_bo=getattr(args, 'recompute_bo', False),
-            recompute_non_nn_only=getattr(args, 'recompute_non_nn_only', False)
+            recompute_run=getattr(args, 'recompute_run', False),
+            recompute_non_train_only=getattr(args, 'recompute_non_train_only', False)
         )
     
     print(f"Number of new BO configs: {len(new_cfgs)}")

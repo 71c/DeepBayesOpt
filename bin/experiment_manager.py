@@ -146,8 +146,8 @@ def cmd_run(args):
             print("DRY RUN MODE - no commands will be executed")
 
         # Validate recompute arguments
-        if getattr(args, 'recompute_bo', False) and getattr(args, 'recompute_non_nn_only', False):
-            print("Error: Cannot specify both --recompute-bo and --recompute-non-nn-only.")
+        if getattr(args, 'recompute_run', False) and getattr(args, 'recompute_non_train_only', False):
+            print("Error: Cannot specify both --recompute-run and --recompute-non-train-only.")
             return 1
 
         if getattr(args, 'no_train', False) and getattr(args, 'always_train', False):
@@ -160,8 +160,8 @@ def cmd_run(args):
                 dry_run=args.dry_run,
                 no_submit=args.no_submit,
                 always_train=getattr(args, 'always_train', False),
-                recompute_bo=getattr(args, 'recompute_bo', False),
-                recompute_non_nn_only=getattr(args, 'recompute_non_nn_only', False)
+                recompute_run=getattr(args, 'recompute_run', False),
+                recompute_non_train_only=getattr(args, 'recompute_non_train_only', False)
             )
         else:
             returncode, stdout, stderr = runner.run_experiment(
@@ -169,8 +169,8 @@ def cmd_run(args):
                 dry_run=args.dry_run,
                 no_submit=args.no_submit,
                 always_train=getattr(args, 'always_train', False),
-                recompute_bo=getattr(args, 'recompute_bo', False),
-                recompute_non_nn_only=getattr(args, 'recompute_non_nn_only', False),
+                recompute_run=getattr(args, 'recompute_run', False),
+                recompute_non_train_only=getattr(args, 'recompute_non_train_only', False),
                 no_train=getattr(args, 'no_train', False)
             )
 

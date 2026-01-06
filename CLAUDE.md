@@ -103,7 +103,7 @@ python bin/experiment_manager.py run <experiment_name>
 
 # Run with recompute options
 python bin/experiment_manager.py run <experiment_name> --always-train  # Recompute NN training
-python bin/experiment_manager.py run <experiment_name> --recompute-bo  # Recompute all BO results
+python bin/experiment_manager.py run <experiment_name> --recompute-run  # Recompute all BO results
 
 # Check status
 python bin/experiment_manager.py status <experiment_name>
