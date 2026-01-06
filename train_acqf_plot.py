@@ -159,7 +159,7 @@ def main():
     # Auto-configure plotting parameters based on experiment
     if AUTO_PLOTTING_AVAILABLE:
         try:
-            setup_plotting_from_args(args, 'train_acqf', globals())
+            setup_plotting_from_args(args, 'train_plot', globals())
             print("Successfully applied auto-plotting configuration")
         except Exception as e:
             print(f"Auto-plotting failed, using manual configuration: {e}")

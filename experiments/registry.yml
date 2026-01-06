@@ -12,14 +12,14 @@ experiments:
       plots_group_name: 1dim_maxhistory20_big
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre: []
           attr_a:
           - train_samples_size
           attr_b:
           - learning_rate
-      bo_experiments:
+      run_plot:
         default:
           pre: []
           attr_a:
@@ -39,14 +39,14 @@ experiments:
       plots_group_name: 1dim_maxhistory20_gittins_good_reduced_variability
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre: []
           attr_a:
           - train_samples_size
           attr_b:
           - learning_rate
-      bo_experiments:
+      run_plot:
         default:
           pre: []
           attr_a:
@@ -66,14 +66,14 @@ experiments:
       plots_group_name: 8dim_maxhistory20_gittins_big
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre: []
           attr_a:
           - train_samples_size
           attr_b:
           - learning_rate
-      bo_experiments:
+      run_plot:
         default:
           pre: []
           attr_a:
@@ -94,14 +94,14 @@ experiments:
       plots_group_name: 1dim_maxhistory20_ei_refine_lr
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre: []
           attr_a:
           - train_samples_size
           attr_b:
           - learning_rate
-      bo_experiments:
+      run_plot:
         default:
           pre: []
           attr_a:
@@ -122,14 +122,14 @@ experiments:
       plots_group_name: 8dim_maxhistory100_gittins_big_2
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre: []
           attr_a:
           - train_samples_size
           attr_b:
           - learning_rate
-      bo_experiments:
+      run_plot:
         default:
           pre: []
           attr_a:
@@ -149,14 +149,14 @@ experiments:
       plots_group_name: 1dim_maxhistory20_ei_many_epochs
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre: []
           attr_a:
           - train_samples_size
           attr_b:
           - learning_rate
-      bo_experiments:
+      run_plot:
         default:
           pre: []
           attr_a:
@@ -177,14 +177,14 @@ experiments:
       plots_group_name: 1dim_maxhistory20_ei_many_epochs_2
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre: []
           attr_a:
           - train_samples_size
           attr_b:
           - learning_rate
-      bo_experiments:
+      run_plot:
         default:
           pre: []
           attr_a:
@@ -205,14 +205,14 @@ experiments:
       plots_group_name: 8dim_maxhistory20_gittins_good
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre: []
           attr_a:
           - train_samples_size
           attr_b:
           - learning_rate
-      bo_experiments:
+      run_plot:
         default:
           pre: []
           attr_a:
@@ -233,14 +233,14 @@ experiments:
       plots_group_name: 8dim_maxhistory20_gittins_good_2
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre: []
           attr_a:
           - train_samples_size
           attr_b:
           - learning_rate
-      bo_experiments:
+      run_plot:
         default:
           pre: []
           attr_a:
@@ -260,14 +260,14 @@ experiments:
       plots_group_name: 8dim_maxhistory20_gittins_dataset_size
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre: []
           attr_a:
           - train_samples_size
           attr_b:
           - samples_addition_amount
-      bo_experiments:
+      run_plot:
         default:
           pre: []
           attr_a:
@@ -287,7 +287,7 @@ experiments:
       plots_group_name: 8dim_maxhistory20_big
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre:
           - - objective.lengthscale
@@ -298,7 +298,7 @@ experiments:
           - train_samples_size
           attr_b:
           - samples_addition_amount
-      bo_experiments:
+      run_plot:
         default:
           pre:
           - - objective.lengthscale
@@ -327,7 +327,7 @@ experiments:
       plots_group_name: 8dim_maxhistory20_gittins_regularization
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre:
           - - samples_addition_amount
@@ -337,7 +337,7 @@ experiments:
           - layer_width
           attr_b:
           - weight_decay
-      bo_experiments:
+      run_plot:
         default:
           pre:
           - - nn.samples_addition_amount
@@ -366,7 +366,7 @@ experiments:
       plots_group_name: 8dim_maxhistory20_gittins_regularization_2
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre:
           - - nn.method
@@ -377,7 +377,7 @@ experiments:
           - dropout
           attr_b:
           - weight_decay
-      bo_experiments:
+      run_plot:
         default:
           pre:
           - - nn.layer_width
@@ -406,7 +406,7 @@ experiments:
       plots_group_name: 8dim_maxhistory20_regularization
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre:
           - - nn.method
@@ -417,7 +417,7 @@ experiments:
           - dropout
           attr_b:
           - weight_decay
-      bo_experiments:
+      run_plot:
         default:
           pre:
           - - nn.layer_width
@@ -446,14 +446,14 @@ experiments:
       plots_group_name: 1dim_maxhistory20_compare_3methods_initial
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre:
           - learning_rate
           attr_a:
           - method
           attr_b: []
-      bo_experiments:
+      run_plot:
         default:
           pre: []
           attr_a:
@@ -477,7 +477,7 @@ experiments:
       plots_group_name: 1dim_pointnet_architecture_variations
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre:
           - - method
@@ -486,7 +486,7 @@ experiments:
           attr_a: []
           attr_b:
           - x_cand_input
-      bo_experiments:
+      run_plot:
         default:
           pre:
           - - nn.method
@@ -513,7 +513,7 @@ experiments:
       plots_group_name: 1dim_pointnet_architecture_variations_policy_gradient
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre:
           - - method
@@ -522,7 +522,7 @@ experiments:
           attr_a: []
           attr_b:
           - x_cand_input
-      bo_experiments:
+      run_plot:
         default:
           pre:
           - - nn.method
@@ -548,7 +548,7 @@ experiments:
       plots_group_name: 8dim_pointnet_architecture_variations
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre:
           - - method
@@ -557,7 +557,7 @@ experiments:
           attr_a: []
           attr_b:
           - x_cand_input
-      bo_experiments:
+      run_plot:
         default:
           pre:
           - - nn.method
@@ -585,7 +585,7 @@ experiments:
       plots_group_name: 1dim_pointnet_architecture_variations_policy_gradient_2
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre:
           - - layer_width
@@ -594,7 +594,7 @@ experiments:
           attr_a: []
           attr_b:
           - x_cand_input
-      bo_experiments:
+      run_plot:
         default:
           pre:
           - - nn.layer_width
@@ -622,7 +622,7 @@ experiments:
       plots_group_name: 8dim_pointnet_architecture_variations_policy_gradient
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre:
           - - learning_rate
@@ -630,7 +630,7 @@ experiments:
           attr_a: []
           attr_b:
           - x_cand_input
-      bo_experiments:
+      run_plot:
         default:
           pre: []
           attr_a:
@@ -656,7 +656,7 @@ experiments:
       plots_group_name: 1dim_pointnet_architecture_variations-dataset_size
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre:
           - - x_cand_input
@@ -685,7 +685,7 @@ experiments:
             - train_samples_size
             attr_b:
             - samples_addition_amount
-      bo_experiments:
+      run_plot:
         default:
           pre:
           - - nn.x_cand_input
@@ -732,7 +732,7 @@ experiments:
       plots_group_name: 1dim_feature_dim_variation
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre:
           - - learning_rate
@@ -740,7 +740,7 @@ experiments:
           attr_a: []
           attr_b:
           - encoded_history_dim
-      bo_experiments:
+      run_plot:
         default:
           pre: []
           attr_a:
@@ -783,7 +783,7 @@ experiments:
       plots_group_name: 1dim_pointnet_architecture_variations-dataset_size-more_architectures
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre:
           - - train_samples_size
@@ -795,7 +795,7 @@ experiments:
           attr_b:
           - include_best_y
           - subtract_best_y
-      bo_experiments:
+      run_plot:
         default:
           pre:
           - - nn.train_samples_size
@@ -826,7 +826,7 @@ experiments:
       plots_group_name: 1dim_pointnet_model_size_variations-dataset_size
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre:
           - - train_samples_size
@@ -838,7 +838,7 @@ experiments:
           attr_b:
           - num_layers
           - layer_width
-      bo_experiments:
+      run_plot:
         default:
           pre:
           - - nn.train_samples_size
@@ -868,7 +868,7 @@ experiments:
       plots_group_name: 1dim_pointnet_model_size_variations-dataset_size-2
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre: []
           attr_a:
@@ -878,7 +878,7 @@ experiments:
           - layer_width
           post:
           - - learning_rate
-      bo_experiments:
+      run_plot:
         default:
           pre:
           - - nn.samples_addition_amount
@@ -904,13 +904,13 @@ experiments:
       plots_group_name: 1dim_pointnet_big_dataset
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre: []
           attr_a: []
           attr_b: []
           post: []
-      bo_experiments:
+      run_plot:
         default:
           pre: []
           attr_a: []
@@ -934,7 +934,7 @@ experiments:
       plots_group_name: 1dim_pointnet-max_history_input_variation-pbgi
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre: []
           attr_a:
@@ -944,7 +944,7 @@ experiments:
           - max_history_input
           post:
           - - learning_rate
-      bo_experiments:
+      run_plot:
         default:
           pre: []
           attr_a:
@@ -971,7 +971,7 @@ experiments:
       plots_group_name: 1dim_pointnet-max_history_input_variation-mse_ei
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre:
           - - train_samples_size
@@ -982,7 +982,7 @@ experiments:
           - max_history_input
           post:
           - - learning_rate
-      bo_experiments:
+      run_plot:
         default:
           pre:
           - - nn.train_samples_size
@@ -1021,7 +1021,7 @@ experiments:
       plots_group_name: 3dim_pointnet-max_history_input_variation-pbgi
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre:
           - ['layer_width', 'encoded_history_dim']
@@ -1032,7 +1032,7 @@ experiments:
           - max_history_input
           post:
           - - learning_rate
-      bo_experiments:
+      run_plot:
         default:
           pre:
           - ['layer_width', 'encoded_history_dim']
@@ -1058,7 +1058,7 @@ experiments:
       plots_group_name: hpob_pointnet-max_history_input_variation-pbgi
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre:
           - ['layer_width', 'encoded_history_dim']
@@ -1080,7 +1080,7 @@ experiments:
             - max_history_input
             post:
             - ['learning_rate']
-      bo_experiments:
+      run_plot:
         default:
           pre:
           - ['nn.layer_width', 'nn.encoded_history_dim']
@@ -1122,7 +1122,7 @@ experiments:
       plots_group_name: hpob_pointnet-max_history_input_variation-pbgi-2
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre:
           - ['layer_width', 'encoded_history_dim']
@@ -1142,7 +1142,7 @@ experiments:
             attr_b: ['max_history_input']
             post:
             - ['learning_rate']
-      bo_experiments:
+      run_plot:
         default:
           pre:
           - ['nn.layer_width', 'nn.encoded_history_dim']
@@ -1184,7 +1184,7 @@ experiments:
       plots_group_name: hpob_pointnet_simple
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre: []
           attr_a:
@@ -1197,7 +1197,7 @@ experiments:
             attr_a: ['hpob_search_space_id']
             post:
             - ['learning_rate']
-      bo_experiments:
+      run_plot:
         default:
           pre: []
           attr_a:
@@ -1233,7 +1233,7 @@ experiments:
       plots_group_name: cancer_dosage_pointnet-max_history_input_variation-pbgi
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre:
           - ['train_samples_size']
@@ -1245,7 +1245,7 @@ experiments:
           - max_history_input
           post:
           - ['learning_rate']
-      bo_experiments:
+      run_plot:
         default:
           pre:
           - ['nn.train_samples_size']
@@ -1274,7 +1274,7 @@ experiments:
       plots_group_name: cancer_dosage_pointnet-max_history_input_variation-pbgi-2
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre:
           - ['lamda']
@@ -1286,7 +1286,7 @@ experiments:
           - max_history_input
           post:
           - ['learning_rate']
-      bo_experiments:
+      run_plot:
         default:
           pre:
           - ['nn.lamda']
@@ -1315,7 +1315,7 @@ experiments:
       plots_group_name: cancer_dosage_pointnet-1D-pbgi
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre:
           - ['lamda']
@@ -1339,7 +1339,7 @@ experiments:
             - x_cand_input
             post:
             - ['learning_rate']
-      bo_experiments:
+      run_plot:
         default:
           pre:
           - ['nn.lamda']
@@ -1410,7 +1410,7 @@ experiments:
       plots_group_name: cancer_dosage_pointnet-1D-pbgi-best_for_informs
       run_plots_name: results_100iter
     plotting:
-      bo_experiments:
+      run_plot:
         default:
           post:
           - - gp_af
@@ -1432,7 +1432,7 @@ experiments:
       plots_group_name: cancer_dosage_pointnet-pbgi-5d-dataset_size
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre:
           - ['lamda']
@@ -1443,7 +1443,7 @@ experiments:
           - max_history_input
           post:
           - ['learning_rate']
-      bo_experiments:
+      run_plot:
         default:
           pre:
           - ['nn.lamda']
@@ -1471,14 +1471,14 @@ experiments:
       plots_group_name: cancer_dosage_pointnet-pbgi-1to4d
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre: []
           attr_a:
           - dimension
           attr_b:
           - max_history_input
-      bo_experiments:
+      run_plot:
         default:
           pre: []
           # - ['lamda']
@@ -1504,14 +1504,14 @@ templates:
       n_objectives: 1
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre: []
           attr_a:
           - train_samples_size
           attr_b:
           - learning_rate
-      bo_experiments:
+      run_plot:
         default:
           pre: []
           attr_a:
@@ -1528,14 +1528,14 @@ templates:
       n_objectives: 1
       run_plots_name: results_100iter
     plotting:
-      train_acqf:
+      train_plot:
         default:
           pre: []
           attr_a:
           - train_samples_size
           attr_b:
           - learning_rate
-      bo_experiments:
+      run_plot:
         default:
           pre: []
           attr_a:

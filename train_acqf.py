@@ -15,8 +15,6 @@ from dataset_factory import create_train_test_acquisition_datasets_from_args
 from utils_general.utils import dict_to_str
 
 
-
-
 def get_cmd_options_train_acqf(options: dict[str, Any]):
     """Extract command options for training acquisition function.
 

@@ -255,7 +255,7 @@ def cmd_plot_variants(args):
                 print(f"  {variant}")
         else:
             # Show variants for all plot types
-            for plot_type in ['train_acqf', 'bo_experiments']:
+            for plot_type in ['train_plot', 'run_plot']:
                 variants = registry.list_plot_variants(args.name, plot_type)
                 if variants:
                     print(f"Available plot variants for {plot_type}:")
@@ -319,8 +319,8 @@ def main():
     # Plot command
     parser_plot = subparsers.add_parser('plot', help='Generate plots for an experiment')
     parser_plot.add_argument('name', help='Name of the experiment')
-    parser_plot.add_argument('--type', choices=['bo_experiments', 'train_acqf', 'combined_plot'],
-                           default='bo_experiments', help='Type of plots to generate')
+    parser_plot.add_argument('--type', choices=['run_plot', 'train_plot', 'combined_plot'],
+                           default='run_plot', help='Type of plots to generate')
     parser_plot.add_argument('--plot-mode', choices=['scatter', 'density'], default=None,
                            help='Visualization mode for combined_plot: scatter (default) or 2D density heatmap')
     parser_plot.add_argument('--dry-run', action='store_true',
@@ -339,7 +339,7 @@ def main():
     # Plot variants command
     parser_variants = subparsers.add_parser('plot-variants', help='List available plot variants for an experiment')
     parser_variants.add_argument('name', help='Name of the experiment')
-    parser_variants.add_argument('--type', choices=['bo_experiments', 'train_acqf'], 
+    parser_variants.add_argument('--type', choices=['run_plot', 'train_plot'], 
                                 help='Type of plots (show variants for specific type or all if not specified)')
     
     args = parser.parse_args()

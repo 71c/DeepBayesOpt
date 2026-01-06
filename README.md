@@ -302,7 +302,7 @@ Note: `--recompute-bo` and `--recompute-non-nn-only` are mutually exclusive.
 python bin/experiment_manager.py plot <experiment_name>
 
 # Generate training plots
-python bin/experiment_manager.py plot <experiment_name> --type train_acqf
+python bin/experiment_manager.py plot <experiment_name> --type train_plot
 
 # Use a specific plot variant
 python bin/experiment_manager.py plot <experiment_name> --variant compact
@@ -320,7 +320,7 @@ python bin/experiment_manager.py plot <experiment_name> --max-iterations-to-plot
 python bin/experiment_manager.py plot-variants <experiment_name>
 
 # List variants for a specific plot type
-python bin/experiment_manager.py plot-variants <experiment_name> --type bo_experiments
+python bin/experiment_manager.py plot-variants <experiment_name> --type run_plot
 ```
 
 ### Show Commands

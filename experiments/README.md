@@ -35,7 +35,7 @@ python bin/experiment_manager.py run pointnet_max_history_pbgi_1d --no-submit
 python bin/experiment_manager.py plot pointnet_max_history_pbgi_1d
 
 # Generate training plots
-python bin/experiment_manager.py plot pointnet_max_history_pbgi_1d --type train_acqf
+python bin/experiment_manager.py plot pointnet_max_history_pbgi_1d --type train_plot
 ```
 
 ### Show experiment details
@@ -68,7 +68,7 @@ Execute an experiment.
 
 ### `plot <experiment_name>`
 Generate plots for an experiment.
-- `--type {bo_experiments,train_acqf}`: Type of plots (default: bo_experiments)
+- `--type {run_plot,train_plot}`: Type of plots (default: run_plot)
 - `--n-iterations N`: Number of iterations for BO plots (default: 30)
 - `--center-stat {mean,median}`: Center statistic (default: mean)
 - `--dry-run`: Show commands without executing
@@ -110,12 +110,12 @@ experiments:
       plots_group_name: "plot_group_name"
       run_plots_name: "plot_name"
     plotting:
-      train_acqf:
+      train_plot:
         pre: [["param1", "param2"]]
         attr_a: ["param3"]
         attr_b: ["param4"]
         post: [["param5"]]
-      bo_experiments:
+      run_plot:
         pre: [["nn.param1", "nn.param2"]]
         attr_a: ["nn.param3"]
         attr_b: ["nn.param4"]
@@ -147,7 +147,7 @@ To migrate additional experiments:
 ## Adding New Experiments
 
 1. Add to `registry.yml` with complete configuration
-2. Include plotting parameters for both `train_acqf` and `bo_experiments`
+2. Include plotting parameters for both `train_plot` and `run_plot`
 3. Test with dry-run before actual execution
 
 Example:

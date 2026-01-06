@@ -234,7 +234,7 @@ class ExperimentRunner:
         except Exception as e:
             return 1, "", f"Error running training: {str(e)}"
     
-    def generate_plots(self, name: str, plot_type: str = "bo_experiments",
+    def generate_plots(self, name: str, plot_type: str = "run_plot",
                       dry_run: bool = False, **plot_kwargs) -> Tuple[int, str, str]:
         """
         Generate plots for an experiment.
@@ -252,7 +252,7 @@ class ExperimentRunner:
             args = self.registry.get_experiment_command_args(name)
 
             # Build base command based on plot type
-            if plot_type == "bo_experiments":
+            if plot_type == "run_plot":
                 cmd = self._build_command(
                     "bo_experiments_gp_plot.py", args,
                     include_nn_config=True,
@@ -271,7 +271,7 @@ class ExperimentRunner:
                 if 'interval_of_center' not in plot_kwargs:
                     plot_kwargs['interval_of_center'] = True
 
-            elif plot_type == "train_acqf":
+            elif plot_type == "train_plot":
                 cmd = self._build_command(
                     "train_acqf_plot.py", args,
                     include_nn_config=True,

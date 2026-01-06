@@ -38,7 +38,7 @@ def _get_plotting_config_for_experiment(experiment_name: str, plot_type: str, va
     
     Args:
         experiment_name: Name of the experiment
-        plot_type: 'train_acqf' or 'bo_experiments'
+        plot_type: 'train_plot' or 'run_plot'
         variant: Plot configuration variant (default: 'default')
     
     Returns:
@@ -58,7 +58,7 @@ def _auto_configure_plotting(train_experiment_config: str, plot_type: str, varia
     
     Args:
         train_experiment_config: Path to the NN experiment config file
-        plot_type: 'train_acqf' or 'bo_experiments'
+        plot_type: 'train_plot' or 'run_plot'
         variant: Plot configuration variant (default: 'default')
     
     Returns:
@@ -98,7 +98,7 @@ def _apply_auto_plotting(train_experiment_config: str, plot_type: str,
     
     Args:
         train_experiment_config: Path to the NN experiment config file
-        plot_type: 'train_acqf' or 'bo_experiments'  
+        plot_type: 'train_plot' or 'run_plot'  
         globals_dict: The global namespace dictionary of the calling script
     """
     pre, attr_a, attr_b = _auto_configure_plotting(train_experiment_config, plot_type, variant)
@@ -115,7 +115,7 @@ def _get_experiment_post_config(experiment_name: str, plot_type: str, variant: s
     
     Args:
         experiment_name: Name of the experiment
-        plot_type: 'train_acqf' or 'bo_experiments'
+        plot_type: 'train_plot' or 'run_plot'
         variant: Plot configuration variant (default: 'default')
     
     Returns:
@@ -136,7 +136,7 @@ def setup_plotting_from_args(args, plot_type: str, globals_dict: Dict[str, Any])
     
     Args:
         args: Parsed arguments from argparse
-        plot_type: 'train_acqf' or 'bo_experiments'
+        plot_type: 'train_plot' or 'run_plot'
         globals_dict: The global namespace dictionary of the calling script
     """
     nn_config = getattr(args, 'train_experiment_config', None)
