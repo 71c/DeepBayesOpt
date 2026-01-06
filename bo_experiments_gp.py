@@ -385,8 +385,8 @@ def get_bo_experiments_parser(train=True):
     bo_loop_group = parser.add_argument_group("BO loops")
     # add_bo_loop_args(bo_loop_group) # n_iter, n_initial_samples
 
-    bo_base_config_name, bo_experiment_config_name = add_config_args(
-        bo_loop_group, prefix='bo', experiment_name='BO loops')
+    run_base_config_name, run_experiment_config_name = add_config_args(
+        bo_loop_group, prefix='run', experiment_name='BO loops')
 
     nn_train_group = parser.add_argument_group("NN experiments")
     train_base_config_name, train_experiment_config_name = add_train_acqf_args(nn_train_group,
@@ -403,7 +403,7 @@ def get_bo_experiments_parser(train=True):
 
     return (parser,
             train_base_config_name, train_experiment_config_name,
-            bo_base_config_name, bo_experiment_config_name)
+            run_base_config_name, run_experiment_config_name)
 
 
 def _validate_bo_experiments_args(args: argparse.Namespace, dataset_types):
@@ -451,15 +451,15 @@ def _validate_bo_experiments_args(args: argparse.Namespace, dataset_types):
 
 def generate_gp_bo_job_specs(args: argparse.Namespace,
                              train_base_config: str,
-                             bo_base_config: str,
+                             run_base_config: str,
                              train_experiment_config: Optional[str]=None,
-                             bo_experiment_config: Optional[str]=None,
+                            run_experiment_config: Optional[str]=None,
                              dependents_slurm_options:dict[str, Any]={},
                              recompute_bo: bool = False,
                              recompute_non_nn_only: bool = False):
     # Get the BO and NN config options lists
     bo_options_list, bo_refined_config = get_config_options_list(
-        bo_base_config, bo_experiment_config)
+        run_base_config,run_experiment_config)
     nn_options_list, nn_refined_config = get_config_options_list(
         train_base_config, train_experiment_config)
     
@@ -532,8 +532,8 @@ def generate_gp_bo_job_specs(args: argparse.Namespace,
 
 
 def main():
-    (parser, train_base_config_name, train_experiment_config_name, bo_base_config_name,
-     bo_experiment_config_name) = get_bo_experiments_parser(train=True)
+    (parser, train_base_config_name, train_experiment_config_name, run_base_config_name,
+     run_experiment_config_name) = get_bo_experiments_parser(train=True)
 
     slurm_group = parser.add_argument_group("Slurm and logging")
     add_slurm_args(slurm_group)
@@ -553,8 +553,8 @@ def main():
             args,
             train_base_config=getattr(args, train_base_config_name),
             train_experiment_config=getattr(args, train_experiment_config_name),
-            bo_base_config=getattr(args, bo_base_config_name),
-            bo_experiment_config=getattr(args, bo_experiment_config_name),
+            run_base_config=getattr(args, run_base_config_name),
+           run_experiment_config=getattr(args, run_experiment_config_name),
             dependents_slurm_options={
                 "gpu": True,
                 "gres": "gpu:1",

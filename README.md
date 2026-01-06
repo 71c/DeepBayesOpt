@@ -85,7 +85,7 @@ The following command automatically runs all of the BO loops of both the NNs and
 
 An example command is as follows:
 ```bash
-python bo_experiments_gp.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_test_simple.yml --bo_base_config config/bo_config.yml --n_gp_draws 8 --seed 8 --sweep_name preliminary-test-small --mail adj53@cornell.edu --gres gpu:1
+python bo_experiments_gp.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_test_simple.yml --run_base_config config/bo_config.yml --n_gp_draws 8 --seed 8 --sweep_name preliminary-test-small --mail adj53@cornell.edu --gres gpu:1
 ```
 
 ### Arguments
@@ -173,7 +173,7 @@ This will train multiple neural networks with different hyperparameters and save
 
 An example command is as follows:
 ```bash
-python bo_experiments_gp_plot.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_1dim_example.yml --bo_base_config config/bo_config.yml --bo_experiment_config config/bo_config_experiment_2_20iter_160.yml --n_gp_draws 2 --seed 8 --use_rows --use_cols --center_stat mean --interval_of_center --plots_group_name test_1dim_maxhistory20_example --plots_name results_20iter
+python bo_experiments_gp_plot.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_1dim_example.yml --run_base_config config/bo_config.yml --run_experiment_config config/bo_config_experiment_2_20iter_160.yml --n_gp_draws 2 --seed 8 --use_rows --use_cols --center_stat mean --interval_of_center --plots_group_name test_1dim_maxhistory20_example --plots_name results_20iter
 ```
 
 ## Plot Formatting Options
@@ -200,12 +200,12 @@ You can control the auto-detection behavior with these parameters:
 
 Example with formatting options and auto-detection:
 ```bash
-python bo_experiments_gp_plot.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_1dim_example.yml --bo_base_config config/bo_config.yml --n_gp_draws 2 --seed 8 --use_rows --use_cols --add_grid --add_markers --min_regret_for_plot 1e-8 --auto_max_iterations_buffer 0.3 --plots_group_name test_plots --plots_name results
+python bo_experiments_gp_plot.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_1dim_example.yml --run_base_config config/bo_config.yml --n_gp_draws 2 --seed 8 --use_rows --use_cols --add_grid --add_markers --min_regret_for_plot 1e-8 --auto_max_iterations_buffer 0.3 --plots_group_name test_plots --plots_name results
 ```
 
 Example with manual max iterations (disables auto-detection):
 ```bash
-python bo_experiments_gp_plot.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_1dim_example.yml --bo_base_config config/bo_config.yml --n_gp_draws 2 --seed 8 --max_iterations_to_plot 50 --plots_group_name test_plots --plots_name results
+python bo_experiments_gp_plot.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_1dim_example.yml --run_base_config config/bo_config.yml --n_gp_draws 2 --seed 8 --max_iterations_to_plot 50 --plots_group_name test_plots --plots_name results
 ```
 This means that at the highest level it will vary the layer width and the training samples size, then the lambda, the GP acquisition function or NN method, and finally the seed for the GP. The GP seed corresponds to individual BO runs that together comprise an error bar that is in the legend of a specific subplot. The higher levels make up subplots within a figure, figures (which correspond to `.pdf` files), and folders containing the figures. 
 The script will output something like the following to indicate to the user the structure of the plots:

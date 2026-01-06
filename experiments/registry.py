@@ -70,7 +70,7 @@ class ExperimentRegistry:
         """Validate experiment configuration."""
         required_params = [
             'train_experiment_config',
-            'bo_experiment_config',
+            'run_experiment_config',
             'sweep_name',
             'n_seeds',
             'plots_group_name',
@@ -83,7 +83,7 @@ class ExperimentRegistry:
                 raise ValueError(f"Missing required parameter: {param}")
         
         # Check if config files exist
-        for config_key in ['train_experiment_config', 'bo_experiment_config']:
+        for config_key in ['train_experiment_config', 'run_experiment_config']:
             config_path = params[config_key]
             if not Path(config_path).exists():
                 raise ValueError(f"Config file not found: {config_path}")
@@ -101,7 +101,7 @@ class ExperimentRegistry:
         # Basic parameters
         args['SEED'] = str(params['seed'])
         args['TRAIN_EXPERIMENT_CFG'] = f'"{params["train_experiment_config"]}"'
-        args['BO_EXPERIMENT_CFG'] = f'"{params["bo_experiment_config"]}"'
+        args['RUN_EXPERIMENT_CFG'] = f'"{params["run_experiment_config"]}"'
         args['SWEEP_NAME'] = f'"{params["sweep_name"]}"'
         args['PLOTS_GROUP_NAME'] = f'"{params["plots_group_name"]}"'
         args['BO_PLOTS_NAME'] = f'"{params["bo_plots_name"]}"'
@@ -122,8 +122,8 @@ class ExperimentRegistry:
         args['SEEDS_CFG'] = f'"{" ".join(seeds_parts)}"'
         
         # Derived configurations (matching original commands.txt)
-        args['NN_CFG'] = f'"--train_base_config config/train_acqf.yml --train_experiment_config {params["train_experiment_config"]}"'
-        args['BO_CFG'] = f'"--bo_base_config config/bo_config.yml --bo_experiment_config {params["bo_experiment_config"]} --seed {params["seed"]} {" ".join(seeds_parts)}"'
+        args['TRAIN_CFG'] = f'"--train_base_config config/train_acqf.yml --train_experiment_config {params["train_experiment_config"]}"'
+        args['RUN_CFG'] = f'"--run_base_config config/bo_config.yml --run_experiment_config {params["run_experiment_config"]} --seed {params["seed"]} {" ".join(seeds_parts)}"'
         args['SLURM_CFG'] = f'"--sweep_name {params["sweep_name"]} --mail adj53@cornell.edu --gres gpu:1"'
         args['PLOTS_CFG'] = f'"--plots_group_name {params["plots_group_name"]}"'
         

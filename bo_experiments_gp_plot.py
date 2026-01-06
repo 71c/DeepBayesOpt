@@ -241,8 +241,8 @@ def add_plot_iterations_args(parser):
 
 def main():
     ## Create parser
-    (parser, train_base_config_name, train_experiment_config_name, bo_base_config_name,
-     bo_experiment_config_name) = get_bo_experiments_parser(train=False)
+    (parser, train_base_config_name, train_experiment_config_name, run_base_config_name,
+     run_experiment_config_name) = get_bo_experiments_parser(train=False)
     add_plot_args(parser)
     interval_group = add_plot_interval_args(parser)
     plot_formatting_group = add_plot_formatting_args(parser)
@@ -269,8 +269,8 @@ def main():
             args,
             train_base_config=getattr(args, train_base_config_name),
             train_experiment_config=getattr(args, train_experiment_config_name),
-            bo_base_config=getattr(args, bo_base_config_name),
-            bo_experiment_config=getattr(args, bo_experiment_config_name)
+            run_base_config=getattr(args, run_base_config_name),
+           run_experiment_config=getattr(args, run_experiment_config_name)
         )
     save_json(jobs_spec, os.path.join(CONFIG_DIR, "dependencies.json"), indent=4)
     

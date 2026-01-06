@@ -49,8 +49,8 @@ class ExperimentRunner:
 
         if include_bo_config:
             cmd.extend([
-                "--bo_base_config", "config/bo_config.yml",
-                "--bo_experiment_config", args['BO_EXPERIMENT_CFG'].strip('"')
+                "--run_base_config", "config/bo_config.yml",
+                "--run_experiment_config", args['RUN_EXPERIMENT_CFG'].strip('"')
             ])
 
         if include_seed:
@@ -330,19 +330,19 @@ class ExperimentRunner:
             print(f"# {exp_config.get('description', name)}")
             print(f"SEED={args['SEED']};")
             print(f"TRAIN_EXPERIMENT_CFG={args['TRAIN_EXPERIMENT_CFG']};")
-            print(f"BO_EXPERIMENT_CFG={args['BO_EXPERIMENT_CFG']};")
+            print(f"RUN_EXPERIMENT_CFG={args['RUN_EXPERIMENT_CFG']};")
             print(f"SWEEP_NAME={args['SWEEP_NAME']};")
             print(f"SEEDS_CFG={args['SEEDS_CFG']};")
             print(f"PLOTS_GROUP_NAME={args['PLOTS_GROUP_NAME']};")
             print(f"BO_PLOTS_NAME={args['BO_PLOTS_NAME']};")
             print()
             print("# Commands:")
-            print(f"python bo_experiments_gp_status.py {args['NN_CFG']} {args['BO_CFG']}")
-            print(f"python bo_experiments_gp.py {args['NN_CFG']} {args['BO_CFG']} {args['SLURM_CFG']} --no_submit")
-            print(f"python bo_experiments_gp.py {args['NN_CFG']} {args['BO_CFG']} {args['SLURM_CFG']}")
-            print(f"python train_acqf.py {args['NN_CFG']} {args['SLURM_CFG']}")
-            print(f"python bo_experiments_gp_plot.py {args['NN_CFG']} {args['BO_CFG']} {args['PLOTS_CFG']} --center_stat mean --interval_of_center --plots_name {args['BO_PLOTS_NAME']} --n_iterations 30")
-            print(f"python train_acqf_plot.py {args['NN_CFG']} {args['PLOTS_CFG']}")
+            print(f"python bo_experiments_gp_status.py {args['TRAIN_CFG']} {args['RUN_CFG']}")
+            print(f"python bo_experiments_gp.py {args['TRAIN_CFG']} {args['RUN_CFG']} {args['SLURM_CFG']} --no_submit")
+            print(f"python bo_experiments_gp.py {args['TRAIN_CFG']} {args['RUN_CFG']} {args['SLURM_CFG']}")
+            print(f"python train_acqf.py {args['TRAIN_CFG']} {args['SLURM_CFG']}")
+            print(f"python bo_experiments_gp_plot.py {args['TRAIN_CFG']} {args['RUN_CFG']} {args['PLOTS_CFG']} --center_stat mean --interval_of_center --plots_name {args['BO_PLOTS_NAME']} --n_iterations 30")
+            print(f"python train_acqf_plot.py {args['TRAIN_CFG']} {args['PLOTS_CFG']}")
             
         except Exception as e:
             print(f"Error generating commands: {str(e)}")
