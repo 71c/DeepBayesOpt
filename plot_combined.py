@@ -24,10 +24,10 @@ from utils_general.io_utils import load_json, save_json
 from utils_general.experiments.experiment_config_utils import CONFIG_DIR
 from utils.constants import MODELS_DIR
 
-from bo_experiments_gp import get_bo_experiments_parser, generate_gp_bo_job_specs
-from bo_experiments_gp_plot import add_plot_interval_args, add_plot_formatting_args, ATTR_NAME_TO_TITLE
-from run_bo import GP_AF_DICT
-from train_acqf import MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN
+from submit import get_bo_experiments_parser, generate_gp_bo_job_specs
+from plot_run import add_plot_interval_args, add_plot_formatting_args, ATTR_NAME_TO_TITLE
+from single_run import GP_AF_DICT
+from submit_train import MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN
 from utils_general.plot_utils import add_plot_args
 from utils_general.utils import dict_to_str
 

@@ -383,19 +383,19 @@ architecture:
 
 ```bash
 # GP posterior only to final MLP, other params use default routing
-python run_train.py \
+python single_train.py \
     --gp_posterior_routing "final_only" \
     --param_routing_default "final_only" \
     # ... other args
 
 # GP posterior to both local and final, lambda params to local only  
-python run_train.py \
+python single_train.py \
     --gp_posterior_routing "local_and_final" \
     --param_routing_default "local_only" \
     # ... other args (lambda/cost will route to local_only)
 
 # No GP posterior (disabled), only lambda/cost params with default routing
-python run_train.py \
+python single_train.py \
     --param_routing_default "final_only" \
     # ... other args (no --gp_posterior_routing means it's disabled)
 ```

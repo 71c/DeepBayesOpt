@@ -2,7 +2,7 @@ import argparse
 from typing import Any, Optional
 import cProfile, pstats
 import warnings
-from run_train_transfer_bo_baseline import TRANSFER_BO_BASELINE_NAMES, get_dataset_hash_for_transfer_bo_baselines
+from single_train_baseline import TRANSFER_BO_BASELINE_NAMES, get_dataset_hash_for_transfer_bo_baselines
 import torch
 from botorch.exceptions import UnsupportedError
 
@@ -13,8 +13,8 @@ from utils_general.utils import group_by
 from utils_general.experiments.experiment_config_utils import add_config_args, get_config_options_list
 from utils_general.experiments.submit_dependent_jobs import add_slurm_args, submit_jobs_sweep_from_args
 
-from run_bo import GP_AF_DICT, bo_loop_dicts_to_cmd_args_list, run_bo
-from train_acqf import ALWAYS_TRAIN_NAME, NO_NN_ID, add_train_acqf_args, cmd_opts_nn_to_model_and_info_name, create_dependency_structure_train_acqf, get_cmd_options_train_acqf
+from single_run import GP_AF_DICT, bo_loop_dicts_to_cmd_args_list, run_bo
+from submit_train import ALWAYS_TRAIN_NAME, NO_NN_ID, add_train_acqf_args, cmd_opts_nn_to_model_and_info_name, create_dependency_structure_train_acqf, get_cmd_options_train_acqf
 from utils_general.utils import dict_to_hash, dict_to_str, str_to_hash
 
 
@@ -87,7 +87,7 @@ def _generate_bo_commands(
 
             if does_not_have_result or should_recompute:
                 # Need to get the result
-                cmd_str = "python run_bo.py " + " ".join(cmd_args_list)
+                cmd_str = "python single_run.py " + " ".join(cmd_args_list)
 
                 # Add recompute flag if we're forcing recomputation
                 if should_recompute:

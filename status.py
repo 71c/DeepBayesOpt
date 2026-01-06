@@ -1,4 +1,4 @@
-from bo_experiments_gp import generate_gp_bo_job_specs, get_bo_experiments_parser
+from submit import generate_gp_bo_job_specs, get_bo_experiments_parser
 
 
 def main():

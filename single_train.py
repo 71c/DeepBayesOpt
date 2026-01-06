@@ -41,7 +41,7 @@ from datasets.gp_acquisition_dataset_manager import (
 )
 
 
-def run_train(cmd_args: Optional[Sequence[str]]=None):
+def single_train(cmd_args: Optional[Sequence[str]]=None):
     (args, af_dataset_configs,
      model, model_and_info_folder_name, models_path
     ) = get_nn_af_args_configs_model_paths_from_cmd_args(cmd_args)
@@ -247,4 +247,4 @@ def run_train(cmd_args: Optional[Sequence[str]]=None):
 
 
 if __name__ == "__main__":
-    run_train()
+    single_train()

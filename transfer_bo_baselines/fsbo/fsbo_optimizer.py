@@ -3,7 +3,7 @@ from nn_af.acquisition_function_net_save_utils import get_latest_model_path
 import numpy as np
 import torch
 from torch import Tensor
-from run_train_transfer_bo_baseline import get_relative_checkpoints_path_for_transfer_bo_baseline
+from single_train_baseline import get_relative_checkpoints_path_for_transfer_bo_baseline
 from bayesopt.bayesopt import BayesianOptimizer
 from transfer_bo_baselines.fsbo.fsbo_modules import DeepKernelGP
 

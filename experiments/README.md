@@ -78,7 +78,7 @@ Show the equivalent commands.txt format for an experiment.
 
 ## Auto-Plotting
 
-The plotting scripts (`train_acqf_plot.py` and `bo_experiments_gp_plot.py`) now automatically detect experiment configurations and apply the correct plotting parameters.
+The plotting scripts (`plot_train.py` and `plot_run.py`) now automatically detect experiment configurations and apply the correct plotting parameters.
 
 ### How it works
 1. When a plotting script runs, it checks the `train_experiment_config` parameter

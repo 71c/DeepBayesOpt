@@ -123,32 +123,32 @@ These scripts can be called directly, but `bin/experiment_manager.py` is recomme
 
 **GP Dataset Example:**
 ```bash
-python run_train.py --dimension 1 --lengthscale 0.05 --kernel Matern52 --min_history 1 --max_history 20 --replacement --train_n_candidates 1 --test_n_candidates 1 --train_acquisition_size 8192 --train_samples_size 10000 --test_expansion_factor 1 --test_samples_size 5000 --batch_size 512 --early_stopping --min_delta 0.0 --patience 30 --layer_width 200 --learning_rate 3e-4 --method gittins --lamda 1e-2 --architecture pointnet --epochs 3
+python single_train.py --dimension 1 --lengthscale 0.05 --kernel Matern52 --min_history 1 --max_history 20 --replacement --train_n_candidates 1 --test_n_candidates 1 --train_acquisition_size 8192 --train_samples_size 10000 --test_expansion_factor 1 --test_samples_size 5000 --batch_size 512 --early_stopping --min_delta 0.0 --patience 30 --layer_width 200 --learning_rate 3e-4 --method gittins --lamda 1e-2 --architecture pointnet --epochs 3
 ```
 
 **Logistic Regression Dataset Example:**
 ```bash
-python run_train.py --dataset_type logistic_regression --train_samples_size 5000 --test_samples_size 2000 --train_acquisition_size 8000 --batch_size 128 --epochs 200 --layer_width 300 --learning_rate 3e-4 --method gittins --lamda 1e-2 --architecture pointnet --train_n_candidates 5 --test_n_candidates 10 --min_history 1 --max_history 50 --lr_n_samples_range 100 1000 --lr_n_features_range 10 100 --lr_log_lambda_range -6 2 --early_stopping --patience 30
+python single_train.py --dataset_type logistic_regression --train_samples_size 5000 --test_samples_size 2000 --train_acquisition_size 8000 --batch_size 128 --epochs 200 --layer_width 300 --learning_rate 3e-4 --method gittins --lamda 1e-2 --architecture pointnet --train_n_candidates 5 --test_n_candidates 10 --min_history 1 --max_history 50 --lr_n_samples_range 100 1000 --lr_n_features_range 10 100 --lr_log_lambda_range -6 2 --early_stopping --patience 30
 ```
 
 **HPO-B Dataset Example:**
 ```bash
-python run_train.py --dataset_type hpob --hpob_search_space_id 5970 --min_history 1 --max_history 20 --train_acquisition_size 8000 --batch_size 128 --epochs 4000 --layer_width 16 --learning_rate 3e-4 --method gittins --lamda 1e-2 --architecture pointnet
+python single_train.py --dataset_type hpob --hpob_search_space_id 5970 --min_history 1 --max_history 20 --train_acquisition_size 8000 --batch_size 128 --epochs 4000 --layer_width 16 --learning_rate 3e-4 --method gittins --lamda 1e-2 --architecture pointnet
 ```
 
 #### Single BO Loop
 ```bash
-python run_bo.py --n_initial_samples 1 --n_iter 20 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --nn_model_name v2/model_[hash] --num_restarts 160 --raw_samples 3200 --gen_candidates L-BFGS-B --bo_seed [seed] --objective_gp_seed [seed]
+python single_run.py --n_initial_samples 1 --n_iter 20 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --nn_model_name v2/model_[hash] --num_restarts 160 --raw_samples 3200 --gen_candidates L-BFGS-B --bo_seed [seed] --objective_gp_seed [seed]
 ```
 
 #### Batch Experiments
 ```bash
-python bo_experiments_gp.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_test_simple.yml --run_base_config config/bo_config.yml --n_gp_draws 8 --seed 8 --sweep_name preliminary-test-small --mail user@domain.edu --gres gpu:1
+python submit.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_test_simple.yml --run_base_config config/bo_config.yml --n_gp_draws 8 --seed 8 --sweep_name preliminary-test-small --mail user@domain.edu --gres gpu:1
 ```
 
 #### Generate Plots
 ```bash
-python bo_experiments_gp_plot.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_1dim_example.yml --run_base_config config/bo_config.yml --n_gp_draws 2 --seed 8 --use_rows --use_cols --center_stat mean --plots_group_name test_1dim --plots_name results
+python plot_run.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_1dim_example.yml --run_base_config config/bo_config.yml --n_gp_draws 2 --seed 8 --use_rows --use_cols --center_stat mean --plots_group_name test_1dim --plots_name results
 ```
 
 **Plot Formatting Options:**
@@ -160,7 +160,7 @@ python bo_experiments_gp_plot.py --train_base_config config/train_acqf.yml --tra
 
 #### Check Status
 ```bash
-python bo_experiments_gp_status.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_test_simple.yml --run_base_config config/bo_config.yml --n_gp_draws 8 --seed 8
+python status.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_test_simple.yml --run_base_config config/bo_config.yml --n_gp_draws 8 --seed 8
 ```
 
 ### Configuration System
@@ -211,14 +211,14 @@ The codebase recently underwent a refactoring where general-purpose utilities we
 ### Adding New Parameters
 
 To add new NN training parameters:
-1. Add to `get_cmd_options_train_acqf()` in `train_acqf.py`
+1. Add to `get_cmd_options_train_acqf()` in `submit_train.py`
 2. Update `_parse_af_train_cmd_args()` and `_get_run_train_parser()` in `nn_af/acquisition_function_net_save_utils.py`
 3. For architecture params: modify `_get_model()`
-4. For training params: modify `_get_training_config()` and `run_train()` in `run_train.py`
+4. For training params: modify `_get_training_config()` and `run_train()` in `single_train.py`
 
 ### SLURM Integration
 
-The codebase includes automated SLURM job submission through `bo_experiments_gp.py`. Job dependencies are handled automatically - NN training jobs are submitted first, followed by BO loop jobs that depend on them.
+The codebase includes automated SLURM job submission through `submit.py`. Job dependencies are handled automatically - NN training jobs are submitted first, followed by BO loop jobs that depend on them.
 
 ### Experiment Registry
 

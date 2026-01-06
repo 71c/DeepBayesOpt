@@ -3,7 +3,7 @@ from typing import Any, Optional
 import os
 
 from datasets.utils import get_cmd_options_sample_dataset
-from run_train_transfer_bo_baseline import get_dataset_hash_for_transfer_bo_baselines, transfer_bo_baseline_is_trained
+from single_train_baseline import get_dataset_hash_for_transfer_bo_baselines, transfer_bo_baseline_is_trained
 from utils_general.utils import dict_to_cmd_args
 from utils_general.io_utils import save_json
 from utils_general.experiments.experiment_config_utils import CONFIG_DIR, add_config_args, get_config_options_list
@@ -65,12 +65,12 @@ def get_cmd_options_train_acqf(options: dict[str, Any]):
             **cmd_opts_dataset_no_lamda
         }
         
-        cmd_nn_train = " ".join(["python run_train_transfer_bo_baseline.py",
+        cmd_nn_train = " ".join(["python single_train_baseline.py",
                                 *dict_to_cmd_args(cmd_opts_nn)])
     else:
         # Get NN training argument structure
-        from nn_af.acquisition_function_net_save_utils import _get_run_train_parser
-        _, nn_arg_groups = _get_run_train_parser()
+        from nn_af.acquisition_function_net_save_utils import get_single_train_parser
+        _, nn_arg_groups = get_single_train_parser()
 
         # Get ALL non-dataset argument names (architecture + training + method-specific)
         nn_arg_names = set()
@@ -86,7 +86,7 @@ def get_cmd_options_train_acqf(options: dict[str, Any]):
             for k in nn_arg_names
             if k not in ['lamda', 'lamda_min', 'lamda_max']  # already in dataset
         }
-        cmd_nn_train = " ".join(["python run_train.py",
+        cmd_nn_train = " ".join(["python single_train.py",
                                 *cmd_args_dataset,
                                 *dict_to_cmd_args(cmd_opts_nn_no_dataset)])
         cmd_opts_nn = {**cmd_opts_nn_no_dataset, **cmd_opts_dataset}

@@ -30,7 +30,7 @@ class ExperimentRunner:
         Build a command list for executing a script with experiment configs.
 
         Args:
-            script: Script name (e.g., "bo_experiments_gp.py")
+            script: Script name (e.g., "submit.py")
             args: Experiment command arguments from registry
             include_nn_config: Whether to include NN config arguments
             include_bo_config: Whether to include BO config arguments
@@ -124,7 +124,7 @@ class ExperimentRunner:
 
             # Build the status command
             cmd = self._build_command(
-                "bo_experiments_gp_status.py", args,
+                "status.py", args,
                 include_nn_config=True,
                 include_bo_config=True,
                 include_seed=True
@@ -153,7 +153,7 @@ class ExperimentRunner:
 
             # Build the experiment command
             cmd = self._build_command(
-                "bo_experiments_gp.py", args,
+                "submit.py", args,
                 include_nn_config=True,
                 include_bo_config=True,
                 include_seed=True
@@ -205,7 +205,7 @@ class ExperimentRunner:
 
             # Build the training command
             cmd = self._build_command(
-                "train_acqf.py", args,
+                "submit_train.py", args,
                 include_nn_config=True,
                 include_bo_config=False,
                 include_seed=False
@@ -254,7 +254,7 @@ class ExperimentRunner:
             # Build base command based on plot type
             if plot_type == "run_plot":
                 cmd = self._build_command(
-                    "bo_experiments_gp_plot.py", args,
+                    "plot_run.py", args,
                     include_nn_config=True,
                     include_bo_config=True,
                     include_seed=True
@@ -273,7 +273,7 @@ class ExperimentRunner:
 
             elif plot_type == "train_plot":
                 cmd = self._build_command(
-                    "train_acqf_plot.py", args,
+                    "plot_train.py", args,
                     include_nn_config=True,
                     include_bo_config=False,
                     include_seed=False
@@ -283,7 +283,7 @@ class ExperimentRunner:
 
             elif plot_type == "combined_plot":
                 cmd = self._build_command(
-                    "bo_experiments_combined_plot.py", args,
+                    "plot_combined.py", args,
                     include_nn_config=True,
                     include_bo_config=True,
                     include_seed=True
@@ -337,12 +337,12 @@ class ExperimentRunner:
             print(f"RUN_PLOTS_NAME={args['RUN_PLOTS_NAME']};")
             print()
             print("# Commands:")
-            print(f"python bo_experiments_gp_status.py {args['TRAIN_CFG']} {args['RUN_CFG']}")
-            print(f"python bo_experiments_gp.py {args['TRAIN_CFG']} {args['RUN_CFG']} {args['SLURM_CFG']} --no_submit")
-            print(f"python bo_experiments_gp.py {args['TRAIN_CFG']} {args['RUN_CFG']} {args['SLURM_CFG']}")
-            print(f"python train_acqf.py {args['TRAIN_CFG']} {args['SLURM_CFG']}")
-            print(f"python bo_experiments_gp_plot.py {args['TRAIN_CFG']} {args['RUN_CFG']} {args['PLOTS_CFG']} --center_stat mean --interval_of_center --plots_name {args['RUN_PLOTS_NAME']} --n_iterations 30")
-            print(f"python train_acqf_plot.py {args['TRAIN_CFG']} {args['PLOTS_CFG']}")
+            print(f"python status.py {args['TRAIN_CFG']} {args['RUN_CFG']}")
+            print(f"python submit.py {args['TRAIN_CFG']} {args['RUN_CFG']} {args['SLURM_CFG']} --no_submit")
+            print(f"python submit.py {args['TRAIN_CFG']} {args['RUN_CFG']} {args['SLURM_CFG']}")
+            print(f"python submit_train.py {args['TRAIN_CFG']} {args['SLURM_CFG']}")
+            print(f"python plot_run.py {args['TRAIN_CFG']} {args['RUN_CFG']} {args['PLOTS_CFG']} --center_stat mean --interval_of_center --plots_name {args['RUN_PLOTS_NAME']} --n_iterations 30")
+            print(f"python plot_train.py {args['TRAIN_CFG']} {args['PLOTS_CFG']}")
             
         except Exception as e:
             print(f"Error generating commands: {str(e)}")

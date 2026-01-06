@@ -40,40 +40,40 @@ The `nn_bo` environment is also automatically activated in SLURM jobs via `utils
 
 # Command-line scripts overview
 The command-line scripts are organized as follows. See the following sections for more details on each script.
-- **BO loops (+ NN training):** `run_bo.py` for running a single BO loop, `bo_experiments_gp.py` for running multiple. `bo_experiments_gp.py` is the most high-level script and the one that is most likely to be used.
-- **NN training (+ dataset generation):** `run_train.py` for training a single NN, `train_acqf.py` for training multiple.
+- **BO loops (+ NN training):** `single_run.py` for running a single BO loop, `submit.py` for running multiple. `submit.py` is the most high-level script and the one that is most likely to be used.
+- **NN training (+ dataset generation):** `single_train.py` for training a single NN, `submit_train.py` for training multiple.
 - **Dataset generation:** `gp_acquisition_dataset.py` for generating a dataset of black-box objective functions.
-- **Making plots:** `bo_experiments_gp_plot.py` for making plots of the BO loops once the results are available.
+- **Making plots:** `plot_run.py` for making plots of the BO loops once the results are available.
 
 
 # BO loops (+ NN training if necessary)
-Use `run_bo.py` for running a single BO loop, and use `bo_experiments_gp.py` for running multiple. `bo_experiments_gp.py` is the most high-level script and the one that is most likely to be used.
+Use `single_run.py` for running a single BO loop, and use `submit.py` for running multiple. `submit.py` is the most high-level script and the one that is most likely to be used.
 
 ## Running a single Bayesian optimization loop
-To run a BO loop, you can use `run_bo.py`. `run_bo.py --help` will show the description of the arguments. If the NN model has not been trained yet, it will raise an error. In this case, you need to enter the command to train the NN model and then the command to run the BO loop.
+To run a BO loop, you can use `single_run.py`. `single_run.py --help` will show the description of the arguments. If the NN model has not been trained yet, it will raise an error. In this case, you need to enter the command to train the NN model and then the command to run the BO loop.
 
 Example commands:
 - Random Search:
 ```bash
-python run_bo.py --n_initial_samples 1 --n_iter 20 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --random_search --bo_seed 6888556634303915349 --objective_dataset_type gp --objective_id 6888556634303915349
+python single_run.py --n_initial_samples 1 --n_iter 20 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --random_search --bo_seed 6888556634303915349 --objective_dataset_type gp --objective_id 6888556634303915349
 
-python run_bo.py --n_initial_samples 1 --n_iter 20 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --random_search --bo_seed 8643049736318478698 --objective_dataset_type gp --objective_id 8643049736318478698
+python single_run.py --n_initial_samples 1 --n_iter 20 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --random_search --bo_seed 8643049736318478698 --objective_dataset_type gp --objective_id 8643049736318478698
 ```
 - GP-based acquisition function:
 ```bash
-python run_bo.py --n_initial_samples 1 --n_iter 20 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --gp_af LogEI --gp_af_fit exact --num_restarts 160 --raw_samples 3200 --gen_candidates L-BFGS-B --bo_seed 6888556634303915349 --objective_dataset_type gp --objective_id 6888556634303915349
+python single_run.py --n_initial_samples 1 --n_iter 20 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --gp_af LogEI --gp_af_fit exact --num_restarts 160 --raw_samples 3200 --gen_candidates L-BFGS-B --bo_seed 6888556634303915349 --objective_dataset_type gp --objective_id 6888556634303915349
 
-python run_bo.py --n_initial_samples 1 --n_iter 20 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --gp_af LogEI --gp_af_fit exact --num_restarts 160 --raw_samples 3200 --gen_candidates L-BFGS-B --bo_seed 8643049736318478698 --objective_dataset_type gp --objective_id 8643049736318478698
+python single_run.py --n_initial_samples 1 --n_iter 20 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --gp_af LogEI --gp_af_fit exact --num_restarts 160 --raw_samples 3200 --gen_candidates L-BFGS-B --bo_seed 8643049736318478698 --objective_dataset_type gp --objective_id 8643049736318478698
 
-python run_bo.py --eps 1e-08 --ftol 2.220446049250313e-09 --gen_candidates L-BFGS-B --gp_af gittins --gp_af_fit exact --gtol 1e-05 --lamda 0.01 --maxcor 10 --maxfun 15000 --maxiter 15000 --maxls 20 --n_initial_samples 1 --n_iter 20 --num_restarts 160 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --raw_samples 3200 --bo_seed 6888556634303915349 --objective_dataset_type gp --objective_id 6888556634303915349
+python single_run.py --eps 1e-08 --ftol 2.220446049250313e-09 --gen_candidates L-BFGS-B --gp_af gittins --gp_af_fit exact --gtol 1e-05 --lamda 0.01 --maxcor 10 --maxfun 15000 --maxiter 15000 --maxls 20 --n_initial_samples 1 --n_iter 20 --num_restarts 160 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --raw_samples 3200 --bo_seed 6888556634303915349 --objective_dataset_type gp --objective_id 6888556634303915349
 
-python run_bo.py --eps 1e-08 --ftol 2.220446049250313e-09 --gen_candidates L-BFGS-B --gp_af gittins --gp_af_fit exact --gtol 1e-05 --lamda 0.01 --maxcor 10 --maxfun 15000 --maxiter 15000 --maxls 20 --n_initial_samples 1 --n_iter 20 --num_restarts 160 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --raw_samples 3200 --bo_seed 8643049736318478698 --objective_dataset_type gp --objective_id 8643049736318478698
+python single_run.py --eps 1e-08 --ftol 2.220446049250313e-09 --gen_candidates L-BFGS-B --gp_af gittins --gp_af_fit exact --gtol 1e-05 --lamda 0.01 --maxcor 10 --maxfun 15000 --maxiter 15000 --maxls 20 --n_initial_samples 1 --n_iter 20 --num_restarts 160 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --raw_samples 3200 --bo_seed 8643049736318478698 --objective_dataset_type gp --objective_id 8643049736318478698
 ```
 - NN-based acquisition function:
 ```bash
-python run_bo.py --lamda 1e-2 --n_initial_samples 1 --n_iter 20 --nn_model_name v2/model_35f043d1473e2adc8a97027e56c8dc8cefd60ef48a14382cfd07e60e52a55234 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --num_restarts 160 --raw_samples 3200 --gen_candidates L-BFGS-B --bo_seed 6888556634303915349 --objective_dataset_type gp --objective_id 6888556634303915349
+python single_run.py --lamda 1e-2 --n_initial_samples 1 --n_iter 20 --nn_model_name v2/model_35f043d1473e2adc8a97027e56c8dc8cefd60ef48a14382cfd07e60e52a55234 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --num_restarts 160 --raw_samples 3200 --gen_candidates L-BFGS-B --bo_seed 6888556634303915349 --objective_dataset_type gp --objective_id 6888556634303915349
 
-python run_bo.py --lamda 1e-2 --n_initial_samples 1 --n_iter 20 --nn_model_name v2/model_35f043d1473e2adc8a97027e56c8dc8cefd60ef48a14382cfd07e60e52a55234 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --num_restarts 160 --raw_samples 3200 --gen_candidates L-BFGS-B --bo_seed 8643049736318478698 --objective_dataset_type gp --objective_id 8643049736318478698
+python single_run.py --lamda 1e-2 --n_initial_samples 1 --n_iter 20 --nn_model_name v2/model_35f043d1473e2adc8a97027e56c8dc8cefd60ef48a14382cfd07e60e52a55234 --objective_dimension 1 --objective_kernel Matern52 --objective_lengthscale 0.05 --num_restarts 160 --raw_samples 3200 --gen_candidates L-BFGS-B --bo_seed 8643049736318478698 --objective_dataset_type gp --objective_id 8643049736318478698
 ```
 See the [section on NN training](#nn-training--dataset-generation-if-necessary) for how to train the NN model and obtain `--nn_model_name`.
 
@@ -81,11 +81,11 @@ For `--gen_candidates` when optimizing AFs, you can currently choose between "L-
 
 
 ## Running multiple Bayesian optimization loops
-The following command automatically runs all of the BO loops of both the NNs and the GP-based AFs. Run `python bo_experiments_gp.py --help` to see the description of the arguments. Unlike the command for running a single BO loop, this command will automatically train any NNs that have not been trained yet prior to optimizing with them.
+The following command automatically runs all of the BO loops of both the NNs and the GP-based AFs. Run `python submit.py --help` to see the description of the arguments. Unlike the command for running a single BO loop, this command will automatically train any NNs that have not been trained yet prior to optimizing with them.
 
 An example command is as follows:
 ```bash
-python bo_experiments_gp.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_test_simple.yml --run_base_config config/bo_config.yml --n_gp_draws 8 --seed 8 --sweep_name preliminary-test-small --mail adj53@cornell.edu --gres gpu:1
+python submit.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_test_simple.yml --run_base_config config/bo_config.yml --n_gp_draws 8 --seed 8 --sweep_name preliminary-test-small --mail adj53@cornell.edu --gres gpu:1
 ```
 
 ### Arguments
@@ -113,23 +113,23 @@ Other arguments like partition and time may be added to the script if necessary.
 
 # NN training (+ dataset generation if necessary)
 Although the NN training is automatically done when running the BO loops, you can also just train the all the NNs without doing anything with them just yet, with the following scripts.
-Use `run_train.py` for training a single NN, and `train_acqf.py` for training multiple.
+Use `single_train.py` for training a single NN, and `submit_train.py` for training multiple.
 
 ## Training a single neural network
-`run_train.py` is the script that trains a single neural network. `run_train.py --help` will show the description of the arguments. An example command is as follows:
+`single_train.py` is the script that trains a single neural network. `single_train.py --help` will show the description of the arguments. An example command is as follows:
 **GP Dataset Example:**
 ```bash
-python run_train.py --dimension 1 --lengthscale 0.05 --kernel Matern52 --min_history 1 --max_history 20 --replacement --train_n_candidates 1 --test_n_candidates 1 --train_acquisition_size 8192 --train_samples_size 10000 --test_expansion_factor 1 --test_samples_size 5000 --batch_size 512 --early_stopping --min_delta 0.0 --patience 30 --layer_width 200 --learning_rate 3e-4 --lr_scheduler ReduceLROnPlateau --lr_scheduler_patience 15 --lr_scheduler_factor 0.1 --method gittins --lamda 1e-2 --gi_loss_normalization normal --architecture pointnet --epochs 3
+python single_train.py --dimension 1 --lengthscale 0.05 --kernel Matern52 --min_history 1 --max_history 20 --replacement --train_n_candidates 1 --test_n_candidates 1 --train_acquisition_size 8192 --train_samples_size 10000 --test_expansion_factor 1 --test_samples_size 5000 --batch_size 512 --early_stopping --min_delta 0.0 --patience 30 --layer_width 200 --learning_rate 3e-4 --lr_scheduler ReduceLROnPlateau --lr_scheduler_patience 15 --lr_scheduler_factor 0.1 --method gittins --lamda 1e-2 --gi_loss_normalization normal --architecture pointnet --epochs 3
 ```
 
 **Logistic Regression Dataset Example:**
 ```bash
-python run_train.py --dataset_type logistic_regression --train_samples_size 5000 --test_samples_size 2000 --train_acquisition_size 8000 --batch_size 128 --epochs 200 --layer_width 300 --learning_rate 3e-4 --method gittins --lamda 1e-2 --architecture pointnet --train_n_candidates 5 --test_n_candidates 10 --min_history 1 --max_history 50 --lr_n_samples_range 100 1000 --lr_n_features_range 10 100 --lr_log_lambda_range -6 2 --early_stopping --patience 30
+python single_train.py --dataset_type logistic_regression --train_samples_size 5000 --test_samples_size 2000 --train_acquisition_size 8000 --batch_size 128 --epochs 200 --layer_width 300 --learning_rate 3e-4 --method gittins --lamda 1e-2 --architecture pointnet --train_n_candidates 5 --test_n_candidates 10 --min_history 1 --max_history 50 --lr_n_samples_range 100 1000 --lr_n_features_range 10 100 --lr_log_lambda_range -6 2 --early_stopping --patience 30
 ```
 
 **HPO-B Dataset Example:**
 ```bash
-python run_train.py --dataset_type hpob --hpob_search_space_id 5970 --min_history 1 --max_history 20 --train_acquisition_size 8000 --batch_size 128 --epochs 4000 --layer_width 16 --learning_rate 3e-4 --method gittins --lamda 1e-2 --architecture pointnet
+python single_train.py --dataset_type hpob --hpob_search_space_id 5970 --min_history 1 --max_history 20 --train_acquisition_size 8000 --batch_size 128 --epochs 4000 --layer_width 16 --learning_rate 3e-4 --method gittins --lamda 1e-2 --architecture pointnet
 ```
 It will output
 ```
@@ -139,7 +139,7 @@ This identifies the neural network model, which is uniquely identified by the sp
 
 Example of a long-running command:
 ```bash
-python run_train.py --dimension 1 --kernel Matern52 --lamda 0.01 --lengthscale 0.05 --max_history 20 --min_history 1 --replacement --test_expansion_factor 1 --test_n_candidates 1 --test_samples_size 10000 --train_acquisition_size 30000 --train_n_candidates 1 --train_samples_size 10000 --batch_size 512 --early_stopping --epochs 500 --gi_loss_normalization normal --lamda 0.01 --layer_width 300 --learning_rate 0.001 --lr_scheduler ReduceLROnPlateau --lr_scheduler_cooldown 0 --lr_scheduler_factor 0.1 --lr_scheduler_min_lr 0.0 --lr_scheduler_patience 15 --method gittins --min_delta 0.0 --patience 30 --architecture pointnet
+python single_train.py --dimension 1 --kernel Matern52 --lamda 0.01 --lengthscale 0.05 --max_history 20 --min_history 1 --replacement --test_expansion_factor 1 --test_n_candidates 1 --test_samples_size 10000 --train_acquisition_size 30000 --train_n_candidates 1 --train_samples_size 10000 --batch_size 512 --early_stopping --epochs 500 --gi_loss_normalization normal --lamda 0.01 --layer_width 300 --learning_rate 0.001 --lr_scheduler ReduceLROnPlateau --lr_scheduler_cooldown 0 --lr_scheduler_factor 0.1 --lr_scheduler_min_lr 0.0 --lr_scheduler_patience 15 --method gittins --min_delta 0.0 --patience 30 --architecture pointnet
 ```
 
 ### Dataset generation
@@ -149,7 +149,7 @@ In order to train the neural network, you need to have a dataset of black-box ob
 2. **Logistic Regression**: Hyperparameter optimization tasks for regularized logistic regression
 3. **HPO-B**: Real-world hyperparameter optimization benchmarks from the HPO-B dataset
 
-Since it takes some time to generate the datasets, they are cached in the `datasets` directory. When running `run_train.py`, if the dataset is not found, it will automatically generate the dataset and save it in the `datasets` directory. But there is also a stand-alone script to generate the dataset manually, because this way the dataset generation can be separated from the neural network training which makes it possible to have finer-grained control of the automated job scheduling.
+Since it takes some time to generate the datasets, they are cached in the `datasets` directory. When running `single_train.py`, if the dataset is not found, it will automatically generate the dataset and save it in the `datasets` directory. But there is also a stand-alone script to generate the dataset manually, because this way the dataset generation can be separated from the neural network training which makes it possible to have finer-grained control of the automated job scheduling.
 
 To generate a synthetic dataset of black-box objective functions, use `gp_acquisition_dataset.py`. Run `python gp_acquisition_dataset.py --help` to see the description of the arguments. An example command to generate a dataset is as follows:
 ```bash
@@ -159,21 +159,21 @@ Note that in the above command, the parameters `lamda_max` and `lamda_min` are u
 
 
 ## Training multiple neural networks
-`python train_acqf.py` is the script that trains multiple neural networks.
-Run `python train_acqf.py --help` for the description of the arguments.
+`python submit_train.py` is the script that trains multiple neural networks.
+Run `python submit_train.py --help` for the description of the arguments.
 An example command is as follows:
 ```bash
-python train_acqf.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_test_simple.yml --sweep_name preliminary-test-small-train --mail adj53@cornell.edu --gres gpu:1
+python submit_train.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_test_simple.yml --sweep_name preliminary-test-small-train --mail adj53@cornell.edu --gres gpu:1
 ```
 This will train multiple neural networks with different hyperparameters and save the models.
 
 
 # Making plots
-`bo_experiments_gp_plot.py` will make the plots. You can run `python bo_experiments_gp_plot.py --help` for a description of the arguments. As opposed to either throwing an error or automatically running the prerequisite commands as in the other scripts, this script will only generate plots for the BO loops that have already been run.
+`plot_run.py` will make the plots. You can run `python plot_run.py --help` for a description of the arguments. As opposed to either throwing an error or automatically running the prerequisite commands as in the other scripts, this script will only generate plots for the BO loops that have already been run.
 
 An example command is as follows:
 ```bash
-python bo_experiments_gp_plot.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_1dim_example.yml --run_base_config config/bo_config.yml --run_experiment_config config/bo_config_experiment_2_20iter_160.yml --n_gp_draws 2 --seed 8 --use_rows --use_cols --center_stat mean --interval_of_center --plots_group_name test_1dim_maxhistory20_example --plots_name results_20iter
+python plot_run.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_1dim_example.yml --run_base_config config/bo_config.yml --run_experiment_config config/bo_config_experiment_2_20iter_160.yml --n_gp_draws 2 --seed 8 --use_rows --use_cols --center_stat mean --interval_of_center --plots_group_name test_1dim_maxhistory20_example --plots_name results_20iter
 ```
 
 ## Plot Formatting Options
@@ -200,12 +200,12 @@ You can control the auto-detection behavior with these parameters:
 
 Example with formatting options and auto-detection:
 ```bash
-python bo_experiments_gp_plot.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_1dim_example.yml --run_base_config config/bo_config.yml --n_gp_draws 2 --seed 8 --use_rows --use_cols --add_grid --add_markers --min_regret_for_plot 1e-8 --auto_max_iterations_buffer 0.3 --plots_group_name test_plots --plots_name results
+python plot_run.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_1dim_example.yml --run_base_config config/bo_config.yml --n_gp_draws 2 --seed 8 --use_rows --use_cols --add_grid --add_markers --min_regret_for_plot 1e-8 --auto_max_iterations_buffer 0.3 --plots_group_name test_plots --plots_name results
 ```
 
 Example with manual max iterations (disables auto-detection):
 ```bash
-python bo_experiments_gp_plot.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_1dim_example.yml --run_base_config config/bo_config.yml --n_gp_draws 2 --seed 8 --max_iterations_to_plot 50 --plots_group_name test_plots --plots_name results
+python plot_run.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_1dim_example.yml --run_base_config config/bo_config.yml --n_gp_draws 2 --seed 8 --max_iterations_to_plot 50 --plots_group_name test_plots --plots_name results
 ```
 This means that at the highest level it will vary the layer width and the training samples size, then the lambda, the GP acquisition function or NN method, and finally the seed for the GP. The GP seed corresponds to individual BO runs that together comprise an error bar that is in the legend of a specific subplot. The higher levels make up subplots within a figure, figures (which correspond to `.pdf` files), and folders containing the figures. 
 The script will output something like the following to indicate to the user the structure of the plots:
@@ -230,7 +230,7 @@ Enabling `--use_rows` and/or `use_cols` is more compact since it fits multiple s
 
 # Experiment Manager CLI
 
-The `bin/experiment_manager.py` script provides a centralized command-line interface for managing experiments through the experiment registry system. It offers a higher-level alternative to directly calling `bo_experiments_gp.py`, `bo_experiments_gp_status.py`, and `bo_experiments_gp_plot.py`.
+The `bin/experiment_manager.py` script provides a centralized command-line interface for managing experiments through the experiment registry system. It offers a higher-level alternative to directly calling `submit.py`, `status.py`, and `plot_run.py`.
 
 ## Basic Usage
 
@@ -395,7 +395,7 @@ python bin/experiment_manager.py plot my_experiment --variant compact
 - `AcquisitionFunctionNetModel` and `AcquisitionFunctionNetAcquisitionFunction`: Enable integration with BoTorch to be used in Bayesian optimization loops.
 
 ## Code for NN Training: `train_acquisition_function_net.py`
-`train_acquisition_function_net.py` contains the code for training neural networks for acquisition functions. In particular, the function `train_acquisition_function_net` is only used in `run_train.py`. Additionally, this script defines functions to be used for loading and saving the NN models.
+`train_acquisition_function_net.py` contains the code for training neural networks for acquisition functions. In particular, the function `train_acquisition_function_net` is only used in `single_train.py`. Additionally, this script defines functions to be used for loading and saving the NN models.
 
 ## Code for running BO loops: `bayesopt.py`
 This module implements the core Bayesian optimization loop. It includes:
@@ -412,10 +412,10 @@ This module implements the core Bayesian optimization loop. It includes:
   - `OptimizationResultsSingleMethod`: can run several BO loops with the same method with different objective functions and seeds.
   - `OptimizationResultsMultipleMethods`: can run several `OptimizationResultsSingleMethod` instances with different methods.
   
-  These classes can only run the BO loops in sequence, not in parallel. For this reason, their full intended usage is now deprecated in favor of `bo_experiments_gp.py`, which submits jobs to repeatedly run `run_bo.py`. `run_bo.py` simply uses `OptimizationResultsSingleMethod` with a single objective function and a single BO seed.
+  These classes can only run the BO loops in sequence, not in parallel. For this reason, their full intended usage is now deprecated in favor of `submit.py`, which submits jobs to repeatedly run `single_run.py`. `single_run.py` simply uses `OptimizationResultsSingleMethod` with a single objective function and a single BO seed.
 
 - **Plotting & Utility Functions:**  
-  Helper routines for plotting optimization trajectories, generating random GP realizations, and applying outcome transforms. (Much of these are now deprecated in favor of `bo_experiments_gp_plot.py`.)
+  Helper routines for plotting optimization trajectories, generating random GP realizations, and applying outcome transforms. (Much of these are now deprecated in favor of `plot_run.py`.)
 
 ## Utility Functions
 - `utils.py`: provides a comprehensive suite of helper functions and classes to support operations such as outcome transformations, kernel and model setup, JSON serialization, tensor padding, and various utility routines for managing data and configurations in Bayesian optimization experiments.
@@ -429,7 +429,7 @@ To add a new parameter to the experiments, you should at least add to `config/tr
 ## Adding a new NN training parameter
 To add a new NN training parameter to the experiments,
 you will need to do the following:
-- Add the parameter to the function `get_cmd_options_train_acqf` in `train_acqf.py`
+- Add the parameter to the function `get_cmd_options_train_acqf` in `submit_train.py`
 - Modify the function `_parse_af_train_cmd_args` in `nn_af/acquisition_function_net_save_utils.py` as appropriate (only if needed) to parse the new parameter.
 - Add the parameter to `_get_run_train_parser` in `nn_af/acquisition_function_net_save_utils.py`.
 ### Adding a NN architecture parameter
@@ -437,10 +437,10 @@ If the NN training parameter is specifically a NN architecture parameter, then y
 ### Adding a NN training parameter that is not a NN architecture parameter
 If the NN training parameter is not a NN architecture parameter, then you will also need to:
 - modify `_get_training_config` in `nn_af/acquisition_function_net_save_utils.py`.
-- modify the function `run_train` in `run_train.py` to pass the new parameter to the `train_acquisition_function_net` function.
+- modify the function `run_train` in `single_train.py` to pass the new parameter to the `train_acquisition_function_net` function.
 ## Adding a new dataset type
 To add a new dataset type, you will need to do the following:
 - Add a new dataset manager in `datasets/` (see `datasets/hpob_acquisition_dataset_manager.py` for an example)
 - Add the new dataset type in the required places in `dataset_factory.py`.
-- Add to `get_cmd_options_train_acqf` in `train_acqf.py` the command-line arguments that are specific to the new dataset type.
+- Add to `get_cmd_options_train_acqf` in `submit_train.py` the command-line arguments that are specific to the new dataset type.
 - Add the dataset type to `config/train_acqf.yml`

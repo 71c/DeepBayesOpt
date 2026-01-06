@@ -15,7 +15,7 @@ from utils_general.utils import group_by
 from utils_general.io_utils import load_json, save_json
 
 from nn_af.acquisition_function_net_save_utils import load_nn_acqf
-from train_acqf import add_train_acqf_args, cmd_opts_nn_to_model_and_info_name, get_cmd_options_train_acqf
+from submit_train import add_train_acqf_args, cmd_opts_nn_to_model_and_info_name, get_cmd_options_train_acqf
 from utils_general.plot_utils import add_plot_args
 from utils_general.utils import DEVICE, dict_to_str
 
@@ -61,8 +61,8 @@ ATTR_NAME_TO_TITLE = {
 N_HISTORY = 10
 
 
-def get_plot_ax_train_acqf_func(get_result_func):
-    def train_acqf_plot_ax(
+def get_plot_train_ax_func(get_result_func):
+    def plot_train_ax(
             plot_config,
             ax,
             plot_name: Optional[str]=None,
@@ -75,7 +75,7 @@ def get_plot_ax_train_acqf_func(get_result_func):
             prop_cycle = plt.rcParams['axes.prop_cycle']
             c = prop_cycle()
             for label, value in plot_config.items():
-                train_acqf_plot_ax(
+                plot_train_ax(
                     value['items'], ax, plot_name=plot_name,
                     label=label, color=next(c)['color'], alpha=0.7*alpha, **plot_kwargs)
             return
@@ -143,7 +143,7 @@ def get_plot_ax_train_acqf_func(get_result_func):
         else:
             raise ValueError(f"Unknown attribute name: {attr_name}")
     
-    return train_acqf_plot_ax
+    return plot_train_ax
 
 
 def main():
@@ -340,10 +340,10 @@ def main():
                 'config': cfg
             }
 
-        train_acqf_plot_ax = get_plot_ax_train_acqf_func(get_result)
+        plot_train_ax = get_plot_train_ax_func(get_result)
         save_figures_from_nested_structure(
             plot_config,
-            train_acqf_plot_ax,
+            plot_train_ax,
             new_attrs_groups_list,
             level_names,
             attr_name_to_title=ATTR_NAME_TO_TITLE,

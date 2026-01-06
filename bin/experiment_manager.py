@@ -20,8 +20,8 @@ from experiments.registry import ExperimentRegistry
 from experiments.runner import ExperimentRunner
 
 # Import argument adders from scripts to avoid duplication
-from bo_experiments_gp_plot import add_plot_interval_args, add_plot_formatting_args, add_plot_iterations_args
-from bo_experiments_gp import add_recompute_args
+from plot_run import add_plot_interval_args, add_plot_formatting_args, add_plot_iterations_args
+from submit import add_recompute_args
 
 
 def cmd_list(args):

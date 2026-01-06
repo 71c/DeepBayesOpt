@@ -7,7 +7,7 @@ from typing import Any
 import argparse
 import yaml
 
-from run_train_transfer_bo_baseline import TRANSFER_BO_BASELINE_NAMES, transfer_bo_baseline_is_trained
+from single_train_baseline import TRANSFER_BO_BASELINE_NAMES, transfer_bo_baseline_is_trained
 import torch
 from torch import Tensor
 from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprovement
@@ -349,7 +349,7 @@ def _get_gp_function_min_max(
 
 
 # Cache the objective function things.
-# This greatly speeds up the script bo_experiments_gp.py
+# This greatly speeds up the script submit.py
 # that generates the commands for the BO loops.
 # Otherwise, it takes too long to run get_rff_function_and_name many times.
 @cache
@@ -586,7 +586,7 @@ def pre_run_bo(objective_args: dict[str, Any],
             af_options[k] = v
         if missing_args:
             raise ValueError(
-                "run_bo.py: Must specify the following missing arguments: "
+                "single_run.py: Must specify the following missing arguments: "
                 f"{', '.join(missing_args)} if not using random search")
         options = {
             k: bo_policy_args[k]

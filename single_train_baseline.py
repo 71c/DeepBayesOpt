@@ -67,7 +67,7 @@ def _calculate_fsbo_epochs_for_time_budget(time_budget_hours: float, N: int) -> 
     return int(_FSBO_CONSTANT * time_budget_hours / N)
 
 
-def run_train_transfer_bo_baseline(cmd_args: Optional[Sequence[str]]=None):
+def single_train_baseline(cmd_args: Optional[Sequence[str]]=None):
     parser = argparse.ArgumentParser()
     dataset_group = parser.add_argument_group("Dataset options")
     groups_arg_names = add_unified_acquisition_dataset_args(
@@ -152,4 +152,4 @@ def run_train_transfer_bo_baseline(cmd_args: Optional[Sequence[str]]=None):
 
 
 if __name__ == "__main__":
-    run_train_transfer_bo_baseline()
+    single_train_baseline()

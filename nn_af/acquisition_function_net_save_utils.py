@@ -329,7 +329,7 @@ def _load_empty_nn_acqf(model_and_info_path: str):
 
 
 def _parse_af_train_cmd_args(cmd_args:Optional[Sequence[str]]=None):
-    parser, all_groups_arg_names = _get_run_train_parser()
+    parser, all_groups_arg_names = get_single_train_parser()
     args = parser.parse_args(args=cmd_args)
 
     # Extract dataset groups for validation
@@ -672,7 +672,7 @@ def _get_training_config(args: argparse.Namespace):
 
 
 @cache
-def _get_run_train_parser():
+def get_single_train_parser():
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
