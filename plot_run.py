@@ -3,6 +3,7 @@ import os
 import cProfile, pstats
 import numpy as np
 
+from experiments.registry import get_registry
 from nn_af.acquisition_function_net_save_utils import load_nn_acqf
 from utils.plot_sorting import plot_dict_to_str
 from utils.plot_utils import (
@@ -17,17 +18,8 @@ from submit_train import MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN
 from utils_general.plot_utils import add_plot_args
 from utils_general.utils import dict_to_str, get_arg_names
 
-# Import auto-plotting configuration
-try:
-    from experiments.plot_helper import setup_plotting_from_args
-    AUTO_PLOTTING_AVAILABLE = True
-except ImportError:
-    AUTO_PLOTTING_AVAILABLE = False
-    print("Auto-plotting not available. Using manual configuration.")
-
 
 CPROFILE = True
-
 
 PER_ITERATION_DECISIONS_SPLIT_INTO_FOLDERS = True
 ONE_FIGURE = False
@@ -251,13 +243,11 @@ def main():
     ## Parse arguments
     args = parser.parse_args()
 
-    # Auto-configure plotting parameters based on experiment
-    if AUTO_PLOTTING_AVAILABLE:
-        try:
-            setup_plotting_from_args(args, 'run_plot', globals())
-            print("Successfully applied auto-plotting configuration")
-        except Exception as e:
-            print(f"Auto-plotting failed, using manual configuration: {e}")
+    try:
+        get_registry().setup_plotting_from_args(args, 'run_plot', globals())
+        print("Successfully applied auto-plotting configuration")
+    except Exception as e:
+        print(f"Auto-plotting failed, using manual configuration: {e}")
 
     interval_kwargs = {k: getattr(args, k) for k in get_arg_names(interval_group)}
     plot_formatting_kwargs = {

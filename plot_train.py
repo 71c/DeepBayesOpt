@@ -6,6 +6,7 @@ from typing import Optional
 
 import torch
 
+from experiments.registry import get_registry
 from nn_af.acquisition_function_net_save_utils import get_lamda_for_bo_of_nn, nn_acqf_is_trained
 from dataset_factory import create_train_test_acquisition_datasets_from_args
 from utils.plot_sorting import plot_dict_to_str
@@ -18,15 +19,6 @@ from nn_af.acquisition_function_net_save_utils import load_nn_acqf
 from submit_train import add_train_acqf_args, cmd_opts_nn_to_model_and_info_name, get_cmd_options_train_acqf
 from utils_general.plot_utils import add_plot_args
 from utils_general.utils import DEVICE, dict_to_str
-
-# Import auto-plotting configuration
-try:
-    from experiments.plot_helper import setup_plotting_from_args
-    AUTO_PLOTTING_AVAILABLE = True
-except ImportError:
-    AUTO_PLOTTING_AVAILABLE = False
-    print("Auto-plotting not available. Using manual configuration.")
-
 
 CPROFILE = False
 
@@ -157,12 +149,11 @@ def main():
     args = parser.parse_args()
 
     # Auto-configure plotting parameters based on experiment
-    if AUTO_PLOTTING_AVAILABLE:
-        try:
-            setup_plotting_from_args(args, 'train_plot', globals())
-            print("Successfully applied auto-plotting configuration")
-        except Exception as e:
-            print(f"Auto-plotting failed, using manual configuration: {e}")
+    try:
+        get_registry().setup_plotting_from_args(args, 'train_plot', globals())
+        print("Successfully applied auto-plotting configuration")
+    except Exception as e:
+        print(f"Auto-plotting failed, using manual configuration: {e}")
     
     PLOTS_CONFIG_SINGLE = [
         *PRE,
