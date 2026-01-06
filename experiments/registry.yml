@@ -5,7 +5,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_1dim_big.yml
-     run_experiment_config: config/bo_config_experiment_big.yml
+      run_experiment_config: config/bo_config_experiment_big.yml
       sweep_name: test_100iter_1dim_maxhistory20_big
       n_seeds: 1
       n_objectives: 16
@@ -32,7 +32,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_1dim_gittins_good.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_maxhistory20_gittins_good_reduced_variability
       n_seeds: 128
       n_objectives: 1
@@ -59,7 +59,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_8dim_gittins_big.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_8dim_maxhistory20_gittins_big
       n_seeds: 32
       n_objectives: 1
@@ -87,7 +87,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_1dim_ei_refine_lr.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_maxhistory20_ei_refine_lr
       n_seeds: 32
       n_objectives: 1
@@ -115,7 +115,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_8dim_gittins_big_2.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_8dim_maxhistory100_gittins_big_2
       n_seeds: 16
       n_objectives: 1
@@ -142,7 +142,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_1dim_ei_many_epochs.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_maxhistory20_ei_many_epochs
       n_seeds: 32
       n_objectives: 1
@@ -170,7 +170,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_1dim_ei_many_epochs_2.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_maxhistory20_ei_many_epochs_2
       n_seeds: 128
       n_objectives: 1
@@ -198,7 +198,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_8dim_gittins_good.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_8dim_maxhistory20_gittins_good
       n_seeds: 32
       n_objectives: 1
@@ -226,7 +226,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_8dim_gittins_good_2.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_8dim_maxhistory20_gittins_good_2
       n_seeds: 32
       n_objectives: 1
@@ -253,7 +253,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_8dim_gittins_dataset_size.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_8dim_maxhistory20_gittins_dataset_size
       n_seeds: 32
       n_objectives: 1
@@ -280,7 +280,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_8dim_big.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_8dim_maxhistory20_big
       n_seeds: 16
       n_objectives: 1
@@ -320,7 +320,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_8dim_gittins_regularization.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_8dim_maxhistory20_gittins_regularization
       n_seeds: 16
       n_objectives: 1
@@ -359,7 +359,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_8dim_gittins_regularization_2.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_8dim_maxhistory20_gittins_regularization_2
       n_seeds: 16
       n_objectives: 1
@@ -399,7 +399,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_8dim_regularization.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_8dim_maxhistory20_regularization
       n_seeds: 16
       n_objectives: 1
@@ -439,7 +439,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_1dim_compare_3methods_initial.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_compare_3methods_initial
       n_seeds: 128
       n_objectives: 1
@@ -470,7 +470,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_1dim_pointnet_architecture_variations.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_pointnet_architecture_variations
       n_seeds: 128
       n_objectives: 1
@@ -506,7 +506,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_1dim_pointnet_architecture_variations_policy_gradient.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_pointnet_architecture_variations_policy_gradient
       n_seeds: 128
       n_objectives: 1
@@ -541,7 +541,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_8dim_pointnet_architecture_variations.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_8dim_pointnet_architecture_variations
       n_seeds: 128
       n_objectives: 1
@@ -578,7 +578,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_1dim_pointnet_architecture_variations_policy_gradient_2.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_pointnet_architecture_variations_policy_gradient_2
       n_seeds: 128
       n_objectives: 1
@@ -615,7 +615,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_8dim_pointnet_architecture_variations_policy_gradient.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_8dim_pointnet_architecture_variations_policy_gradient
       n_seeds: 128
       n_objectives: 1
@@ -649,7 +649,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_1dim_pointnet_architecture_variations-dataset_size.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_pointnet_architecture_variations-dataset_size
       n_seeds: 64
       n_objectives: 1
@@ -725,7 +725,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_1dim_feature_dim_variation.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_feature_dim_variation
       n_seeds: 128
       n_objectives: 1
@@ -776,7 +776,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_1dim_pointnet_architecture_variations-dataset_size-more_architectures.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_pointnet_architecture_variations-dataset_size-more_architectures
       n_seeds: 64
       n_objectives: 1
@@ -819,7 +819,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_1dim_pointnet_model_size_variations-dataset_size.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_pointnet_model_size_variations-dataset_size
       n_seeds: 64
       n_objectives: 1
@@ -861,7 +861,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_1dim_pointnet_model_size_variations-dataset_size-2.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_pointnet_model_size_variations-dataset_size-2
       n_seeds: 128
       n_objectives: 1
@@ -897,7 +897,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_1dim_pointnet_big_dataset.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_pointnet_big_dataset
       n_seeds: 128
       n_objectives: 1
@@ -927,7 +927,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_1dim_pointnet-max_history_input_variation-pbgi.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_pointnet-max_history_input_variation-pbgi
       n_seeds: 64
       n_objectives: 1
@@ -964,7 +964,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_1dim_pointnet-max_history_input_variation-mse_ei.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_1dim_pointnet-max_history_input_variation-mse_ei
       n_seeds: 64
       n_objectives: 1
@@ -1014,7 +1014,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_3dim_pointnet-max_history_input_variation-pbgi.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_3dim_pointnet-max_history_input_variation-pbgi
       n_seeds: 64
       n_objectives: 1
@@ -1052,7 +1052,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_hpob_pointnet-max_history_input_variation-pbgi.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_hpob_pointnet-max_history_input_variation-pbgi
       use_hpob_seeds: true
       plots_group_name: hpob_pointnet-max_history_input_variation-pbgi
@@ -1116,7 +1116,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_hpob_pointnet-max_history_input_variation-pbgi-2.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_hpob_pointnet-max_history_input_variation-pbgi-2
       use_hpob_seeds: true
       plots_group_name: hpob_pointnet-max_history_input_variation-pbgi-2
@@ -1178,7 +1178,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_hpob_pointnet-pbgi-simple.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_hpob_pointnet_simple
       use_hpob_seeds: true
       plots_group_name: hpob_pointnet_simple
@@ -1226,7 +1226,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_cancer_dosage_pointnet-max_history_input_variation-pbgi.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_cancer_dosage_pointnet-max_history_input_variation-pbgi
       n_seeds: 16
       n_objectives: 8
@@ -1267,7 +1267,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_cancer_dosage_pointnet-max_history_input_variation-pbgi-2.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_cancer_dosage_pointnet-max_history_input_variation-pbgi-2
       n_seeds: 16
       n_objectives: 8
@@ -1308,7 +1308,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_cancer_dosage_pointnet-1D-pbgi.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_cancer_dosage_pointnet-1D-pbgi
       n_seeds: 16
       n_objectives: 8
@@ -1403,7 +1403,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_cancer_dosage_pointnet-1D-pbgi-best_for_informs.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_cancer_dosage_pointnet-1D-pbgi-best_for_informs
       n_seeds: 16
       n_objectives: 8
@@ -1425,7 +1425,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_cancer_dosage_pointnet-pbgi-5d-dataset_size.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_cancer_dosage_pointnet-pbgi-5d-dataset_size
       n_seeds: 16
       n_objectives: 8
@@ -1464,7 +1464,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_cancer_dosage_pointnet-pbgi-1to4d.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       sweep_name: 100iter_cancer_dosage_pointnet-pbgi-1to4d
       n_seeds: 16
       n_objectives: 8
@@ -1499,7 +1499,7 @@ templates:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_1dim_example.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       n_seeds: 32
       n_objectives: 1
       bo_plots_name: results_100iter
@@ -1523,7 +1523,7 @@ templates:
     parameters:
       seed: 8
       train_experiment_config: config/train_acqf_experiment_8dim_big.yml
-     run_experiment_config: config/bo_config_experiment_2_torch.yml
+      run_experiment_config: config/bo_config_experiment_2_torch.yml
       n_seeds: 16
       n_objectives: 1
       bo_plots_name: results_100iter

@@ -453,13 +453,13 @@ def generate_gp_bo_job_specs(args: argparse.Namespace,
                              train_base_config: str,
                              run_base_config: str,
                              train_experiment_config: Optional[str]=None,
-                            run_experiment_config: Optional[str]=None,
+                             run_experiment_config: Optional[str]=None,
                              dependents_slurm_options:dict[str, Any]={},
                              recompute_bo: bool = False,
                              recompute_non_nn_only: bool = False):
     # Get the BO and NN config options lists
     bo_options_list, bo_refined_config = get_config_options_list(
-        run_base_config,run_experiment_config)
+        run_base_config, run_experiment_config)
     nn_options_list, nn_refined_config = get_config_options_list(
         train_base_config, train_experiment_config)
     
@@ -554,7 +554,7 @@ def main():
             train_base_config=getattr(args, train_base_config_name),
             train_experiment_config=getattr(args, train_experiment_config_name),
             run_base_config=getattr(args, run_base_config_name),
-           run_experiment_config=getattr(args, run_experiment_config_name),
+            run_experiment_config=getattr(args, run_experiment_config_name),
             dependents_slurm_options={
                 "gpu": True,
                 "gres": "gpu:1",

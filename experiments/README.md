@@ -104,7 +104,7 @@ experiments:
     parameters:
       seed: 8
       train_experiment_config: "path/to/config.yml"
-     run_experiment_config: "path/to/config.yml"
+      run_experiment_config: "path/to/config.yml"
       sweep_name: "unique_sweep_name"
       n_seeds: 64
       plots_group_name: "plot_group_name"

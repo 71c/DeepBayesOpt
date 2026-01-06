@@ -13,7 +13,7 @@ def main():
             train_base_config=getattr(args, train_base_config_name),
             train_experiment_config=getattr(args, train_experiment_config_name),
             run_base_config=getattr(args, run_base_config_name),
-           run_experiment_config=getattr(args, run_experiment_config_name)
+            run_experiment_config=getattr(args, run_experiment_config_name)
         )
     
     print(f"Number of new BO configs: {len(new_cfgs)}")
