@@ -34,18 +34,11 @@ def get_cmd_options_train_acqf(options: dict[str, Any]):
         'train_n_candidates', 'test_n_candidates', 'min_history', 'max_history',
         'samples_addition_amount', 'lamda_min', 'lamda_max', 'lamda'
     ]
-
+    tmp = {'train_n_candidates', 'test_n_candidates'}
     cmd_opts_acquisition_dataset = {
-        k: options.get(k)
+        k: options.get(k if k not in tmp else 'n_candidates')
         for k in acquisition_arg_names
     }
-
-    # Handle the special case where 'n_candidates' maps to both train and test
-    if 'n_candidates' in options:
-        if cmd_opts_acquisition_dataset.get('train_n_candidates') is None:
-            cmd_opts_acquisition_dataset['train_n_candidates'] = options['n_candidates']
-        if cmd_opts_acquisition_dataset.get('test_n_candidates') is None:
-            cmd_opts_acquisition_dataset['test_n_candidates'] = options['n_candidates']
 
     # Combine sample and acquisition dataset options
     cmd_opts_dataset = {**cmd_opts_sample_dataset, **cmd_opts_acquisition_dataset}

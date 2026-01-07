@@ -2,9 +2,11 @@ from typing import Any
 import argparse
 from functools import lru_cache
 
+from utils_general.utils import get_arg_names
+
 
 @lru_cache(maxsize=1)
-def _get_dataset_arg_names():
+def _get_dataset_arg_names_old():
     """Get argument names from dataset factory parser structure.
 
     The result is cached since parser structure doesn't change during runtime.
@@ -30,10 +32,32 @@ def _get_dataset_arg_names():
     # dimension is dataset-specific (only for gp and cancer_dosage)
     dataset_specific_but_not_in_groups = {'dimension'}
 
-    common_args = all_arg_names - dataset_specific_args - acquisition_only_args - dataset_specific_but_not_in_groups
+    common_arg_names = all_arg_names - dataset_specific_args - acquisition_only_args - dataset_specific_but_not_in_groups
 
     return {
-        'common': list(common_args),
+        'common': list(common_arg_names),
+        'dataset_specific': groups_arg_names
+    }
+
+
+@lru_cache(maxsize=1)
+def _get_dataset_arg_names():
+    """Get argument names from dataset factory parser structure.
+
+    The result is cached since parser structure doesn't change during runtime.
+    """
+    # Import here to avoid circular imports
+    from dataset_factory import add_common_sample_dataset_args, add_unified_function_dataset_args
+    parser = argparse.ArgumentParser()
+    add_common_sample_dataset_args(parser)
+    common_arg_names = set(get_arg_names(parser))
+    common_arg_names.add('dataset_type')
+
+    groups_arg_names = add_unified_function_dataset_args(
+        parser=parser, thing_used_for="function samples", name_prefix="")
+
+    return {
+        'common': list(common_arg_names),
         'dataset_specific': groups_arg_names
     }
 

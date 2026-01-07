@@ -154,9 +154,8 @@ def validate_args_for_dataset_type(
     if dimension is not None and dimension <= 0:
         raise ValueError("dimension must be > 0")
 
-def _add_common_acquisition_dataset_args(parser):
-    """Add common acquisition dataset arguments shared across dataset types."""
-    ## Dataset Train and Test Size
+
+def add_common_sample_dataset_args(parser):
     parser.add_argument(
         '--train_samples_size', 
         type=int, 
@@ -169,8 +168,16 @@ def _add_common_acquisition_dataset_args(parser):
         help='Size of the test samples dataset',
         required=False
     )
+    parser.add_argument(
+        '--standardize_outcomes', 
+        action='store_true', 
+        help='Whether to standardize the outcomes of the dataset '
+             '(independently for each item). Default is False'
+    )
 
-    ############################ Acquisition dataset settings ##########################
+
+def _add_common_acquisition_dataset_args(parser):
+    """Add common acquisition dataset arguments shared across dataset types."""
     parser.add_argument(
         '--train_acquisition_size', 
         type=int, 
@@ -218,12 +225,6 @@ def _add_common_acquisition_dataset_args(parser):
         '--samples_addition_amount',
         type=int,
         help='Number of samples to add to the history points.'
-    )
-    parser.add_argument(
-        '--standardize_outcomes', 
-        action='store_true', 
-        help='Whether to standardize the outcomes of the dataset '
-             '(independently for each item). Default is False'
     )
 
 
@@ -310,6 +311,7 @@ def add_unified_acquisition_dataset_args(
         add_lamda_args(dataset_group)
     
     # Add common acquisition dataset arguments that all datasets need
+    add_common_sample_dataset_args(dataset_group)
     _add_common_acquisition_dataset_args(dataset_group)
 
     return add_unified_function_dataset_args(
