@@ -13,7 +13,7 @@ from torch import Tensor
 import torch.distributions as dist
 from botorch.models.gpytorch import GPyTorchModel
 
-from nn_af.acquisition_function_net_save_utils import get_lamda_for_bo_of_nn
+from utils.utils import get_lamda_for_bo_of_nn
 from utils.constants import RUN_PLOTS_FOLDER
 from datasets.acquisition_dataset import AcquisitionDataset
 from nn_af.acquisition_function_net import AcquisitionFunctionNet, AcquisitionFunctionNetAcquisitionFunction, ExpectedImprovementAcquisitionFunctionNet

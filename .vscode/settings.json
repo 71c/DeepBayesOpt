@@ -1,5 +1,9 @@
 {
+    "python.analysis.exclude": [
+        "data/",
+        "**/.git/**",
+    ],
     "files.watcherExclude": {
-        "data/": true
+        "data/": true,
     }
 }

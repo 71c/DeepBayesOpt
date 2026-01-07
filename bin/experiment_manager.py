@@ -24,7 +24,11 @@ def add_extra_plot_args(parser_plot):
     add_plot_iterations_args(parser_plot)
 
 
-if __name__ == '__main__':
+def main():
     registry = get_registry()
     runner = ExperimentRunner(registry)
     run_experiment_manager(runner, add_extra_plot_args)
+
+
+if __name__ == '__main__':
+    main()

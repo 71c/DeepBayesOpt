@@ -1,15 +1,13 @@
 from functools import cache
-import math
 import os
 from typing import Any, Sequence, Optional
 import torch
 import argparse
-from datetime import datetime
 
 from datasets.hpob_dataset import get_hpob_dataset_dimension
 from utils.utils import convert_to_json_serializable_gpytorch
 from utils_general.io_utils import load_json, save_json
-from utils.constants import MODELS_DIR, MODELS_VERSION
+from utils.constants import MODELS_DIR, MODELS_SUBDIR, MODELS_VERSION
 
 from nn_af.acquisition_function_net import AcquisitionFunctionBodyPointnetV1and2, AcquisitionFunctionBodyTransformerNP, AcquisitionFunctionNet, AcquisitionFunctionNetFinalMLP, ExpectedImprovementAcquisitionFunctionNet, GittinsAcquisitionFunctionNet, TwoPartAcquisitionFunctionNetFixedHistoryOutputDim
 from nn_af.train_acquisition_function_net import GI_NORMALIZATIONS, METHODS
@@ -22,20 +20,7 @@ from dataset_factory import add_unified_acquisition_dataset_args, get_dataset_ma
 from utils_general.utils import dict_to_cmd_args, dict_to_hash, dict_to_str
 
 
-MODELS_SUBDIR = "models"
-
-
-def get_new_timestamp_model_save_dir(models_path: str):
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    model_name = f"model_{timestamp}"
-    return os.path.join(models_path, model_name), model_name
-
-
-def mark_new_model_as_trained(models_path: str, model_name: str):
-    latest_model_path = os.path.join(models_path, "latest_model.json")
-    save_json({"latest_model": model_name}, latest_model_path)
-
-
+## GENERIC
 def get_latest_model_path(model_and_info_folder_name: str):
     model_and_info_path = os.path.join(MODELS_DIR, model_and_info_folder_name)
     already_saved = os.path.isdir(model_and_info_path)
@@ -59,17 +44,37 @@ def get_latest_model_path(model_and_info_folder_name: str):
     return model_path
 
 
-def safe_get_latest_model_path(model_and_info_folder_name: str):
-    try:
-        return get_latest_model_path(model_and_info_folder_name)
-    except FileNotFoundError:
-        return None
-
-
+## GENERIC
 def nn_acqf_is_trained(model_and_info_folder_name: str):
-    return safe_get_latest_model_path(model_and_info_folder_name) is not None
+    try:
+        get_latest_model_path(model_and_info_folder_name)
+        return True
+    except FileNotFoundError:
+        return False
 
 
+## PROJECT-SPECIFIC: The user must specify a class that is their neural network class,
+## which must be a subclass of SaveableObject.
+@cache
+def _load_empty_nn_acqf(model_and_info_path: str):
+    # Loads empty model (without weights)
+    models_path = os.path.join(model_and_info_path, MODELS_SUBDIR)
+    return AcquisitionFunctionNet.load_init(models_path)
+
+
+## GENERIC
+_CACHED_WEIGHTS = {}
+def _get_state_dict(weights_path: str, verbose: bool=True):
+    if weights_path in _CACHED_WEIGHTS:
+        return _CACHED_WEIGHTS[weights_path]
+    if verbose:
+        print(f"Loading best weights from {weights_path}")
+    ret = torch.load(weights_path)
+    _CACHED_WEIGHTS[weights_path] = ret
+    return ret
+
+
+## GENERIC (given _load_empty_nn_acqf)
 def load_nn_acqf(
         model_and_info_folder_name: str,
         return_model_path=False,
@@ -98,6 +103,10 @@ def load_nn_acqf(
     return model
 
 
+## PROJECT-SPECIFIC (but we will provide a very simple default
+## which simply loads a single JSON file that has everything)
+## The user will specify a function that does it, given model_and_info_path
+## (there's a default)
 @cache
 def load_nn_acqf_configs(model_and_info_folder_name: str):
     model_and_info_path = os.path.join(MODELS_DIR, model_and_info_folder_name)
@@ -137,7 +146,7 @@ def load_nn_acqf_configs(model_and_info_folder_name: str):
         "n_points_config": n_points_config,
         "dataset_transform_config": dataset_transform_config
     }
-    all_info_json, model_sampler = json_serialize_nn_acqf_configs(
+    all_info_json, model_sampler = _json_serialize_nn_acqf_configs(
         training_config=training_config,
         af_dataset_config=af_dataset_config,
         hash_gpytorch_modules=False
@@ -149,37 +158,24 @@ def load_nn_acqf_configs(model_and_info_folder_name: str):
     return all_info_json
 
 
+## PROJECT-SPECIFIC -- VERY IMPORTANT FUNCTION
 def get_nn_af_args_configs_model_paths_from_cmd_args(
         cmd_args:Optional[Sequence[str]]=None):
-    args = _parse_af_train_cmd_args(cmd_args=cmd_args)
-    dataset_type = getattr(args, 'dataset_type', 'gp')
-    manager = get_dataset_manager(dataset_type, device="cpu")
-    gp_af_dataset_configs = manager.get_dataset_configs(args, device=GP_GEN_DEVICE)
-    if dataset_type in {'gp', 'cancer_dosage'}:
-        dimension = None # already in args.dimension
-    elif dataset_type == 'logistic_regression':
-        dimension = 1
-    elif dataset_type == 'hpob':
-        # Make sure to set the dimension for non-GP datasets so that it is available
-        # for model creation
-        dimension = get_hpob_dataset_dimension(args.hpob_search_space_id)
-
-    # Exp technically works, but Power does not
-    # Make sure to set these appropriately depending on whether the transform
-    # supports mean transform
-    # if dataset_transform_config['outcome_transform'] is not None:
-    #     GET_TRAIN_TRUE_GP_STATS = False
-    #     GET_TEST_TRUE_GP_STATS = False
+    parser, additional_info = get_single_train_parser()
+    args = parser.parse_args(args=cmd_args)
+    validate_single_train_args(args, additional_info)
 
     ################################### Get NN model ###############################
     #### Get the untrained model
     # This wastes some resources, but need to do it to get the model's init dict to
     # obtain the correct path for saving the model because that is currently how the
     # model is uniquely identified.
-    model = _get_model(args, dimension=dimension)
+    model = _get_model(args)
 
-    #### Save the configs for the model and training and datasets
+    ############ Save the configs for the model and training and datasets
     training_config = _get_training_config(args)
+    manager = get_dataset_manager(getattr(args, 'dataset_type', 'gp'), device="cpu")
+    gp_af_dataset_configs = manager.get_dataset_configs(args, device=GP_GEN_DEVICE)
     model_and_info_folder_name, models_path = _save_nn_acqf_configs(
         model,
         training_config=training_config,
@@ -191,80 +187,9 @@ def get_nn_af_args_configs_model_paths_from_cmd_args(
             model, model_and_info_folder_name, models_path)
 
 
-MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN = {}
-_cache = {}
-def cmd_opts_nn_to_model_and_info_name(cmd_opts_nn):
-    s = dict_to_str(cmd_opts_nn)
-    if s in _cache:
-        return _cache[s]
-    cmd_args_list_nn = dict_to_cmd_args({**cmd_opts_nn, 'no-save-model': True})
-    ret = get_nn_af_args_configs_model_paths_from_cmd_args(cmd_args_list_nn)
-    (args_nn, af_dataset_configs,
-     model, model_and_info_name, models_path) = ret
-    _cache[s] = ret
-    MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN[model_and_info_name] = cmd_opts_nn
-    return ret
-
-
-def json_serialize_nn_acqf_configs(
-        training_config: dict[str, Any],
-        af_dataset_config: dict[str, dict[str, Any]],
-        hash_gpytorch_modules:bool=True
-    ):
-    function_samples_config = af_dataset_config["function_samples_config"]
-    acquisition_dataset_config = af_dataset_config["acquisition_dataset_config"]
-    n_points_config = af_dataset_config["n_points_config"]
-    dataset_transform_config = af_dataset_config["dataset_transform_config"]
-
-    all_info_json = {
-        'acquisition_dataset_config': acquisition_dataset_config,
-        'n_points_config': n_points_config,
-        'dataset_transform_config': convert_to_json_serializable_gpytorch(dataset_transform_config),
-        'training_config': training_config
-    }
-
-    dataset_type = function_samples_config.get("dataset_type", "gp")
-    if dataset_type == 'gp':
-        if 'model_sampler' in function_samples_config:
-            model_sampler = function_samples_config.pop('model_sampler')
-        else:
-            model_sampler = RandomModelSampler(
-                models=function_samples_config["models"],
-                model_probabilities=function_samples_config["model_probabilities"],
-                randomize_params=function_samples_config["randomize_params"]
-            )
-    
-        all_info_json['model_sampler'] = convert_to_json_serializable_gpytorch({
-                '_models': model_sampler._models,
-                '_initial_params_list': model_sampler._initial_params_list,
-                'model_probabilities': model_sampler.model_probabilities,
-                'randomize_params': model_sampler.randomize_params
-            },
-            include_priors=True, hash_gpytorch_modules=hash_gpytorch_modules,
-            hash_include_str=False, hash_str=True)
-    else:
-        model_sampler = None
-
-    all_info_json['function_samples_config'] = convert_to_json_serializable_gpytorch(
-        function_samples_config)
-
-    return all_info_json, model_sampler
-
-
-def get_lamda_for_bo_of_nn(lamda, lamda_min, lamda_max):
-    if lamda is not None:
-        # Then it is trained with a fixed value of lamda
-        return lamda
-    if lamda_min is None or lamda_max is None:
-        assert lamda_min is None and lamda_max is None
-        return None
-    # Trained with a range of lamda values
-    log_min, log_max = math.log10(lamda_min), math.log10(lamda_max)
-    # We will test with the average
-    log_lamda = 0.5 * (log_min + log_max)
-    return 10**log_lamda
-
-
+## This function is *only* used in the function
+## get_nn_af_args_configs_model_paths_from_cmd_args defined above.
+## TODO: figure out what to do with this / how to treat it in the API
 def _save_nn_acqf_configs(
         model: AcquisitionFunctionNet,
         training_config: dict[str, Any],
@@ -272,7 +197,7 @@ def _save_nn_acqf_configs(
         save:bool=True
     ):
 
-    all_info_json, model_sampler = json_serialize_nn_acqf_configs(
+    all_info_json, model_sampler = _json_serialize_nn_acqf_configs(
         training_config=training_config,
         af_dataset_config=af_dataset_config
     )
@@ -325,27 +250,136 @@ def _save_nn_acqf_configs(
     return model_and_info_folder_name, models_path
 
 
-_CACHED_WEIGHTS = {}
-def _get_state_dict(weights_path: str, verbose: bool=True):
-    if weights_path in _CACHED_WEIGHTS:
-        return _CACHED_WEIGHTS[weights_path]
-    if verbose:
-        print(f"Loading best weights from {weights_path}")
-    ret = torch.load(weights_path)
-    _CACHED_WEIGHTS[weights_path] = ret
+## PROJECT-SPECIFIC (NOT PART OF THE API -- A HELPER FUNCTION)
+def _get_training_config(args: argparse.Namespace):
+    training_config = dict(
+        method=args.method,
+        learning_rate=args.learning_rate,
+        batch_size=args.batch_size,
+        epochs=args.epochs,
+        fix_train_acquisition_dataset=FIX_TRAIN_ACQUISITION_DATASET,
+        early_stopping=args.early_stopping,
+        use_maxei=args.use_maxei
+    )
+    if args.method == 'policy_gradient':
+        training_config = dict(
+            **training_config,
+            include_alpha=args.include_alpha,
+            learn_alpha=args.learn_alpha,
+            initial_alpha=args.initial_alpha,
+            alpha_increment=args.alpha_increment)
+    elif args.method == 'gittins':
+        lamda_min, lamda_max = get_lamda_min_max(args)
+        training_config = dict(
+            **training_config,
+            lamda_min=lamda_min,
+            lamda_max=lamda_max,
+            gi_loss_normalization=args.gi_loss_normalization)
+    elif args.method == 'mse_ei':
+        initial_tau = getattr(args, "initial_tau", None)
+        initial_tau = 1.0 if initial_tau is None else initial_tau
+        training_config = dict(
+            **training_config,
+            learn_tau=args.learn_tau,
+            initial_tau=initial_tau,
+            softplus_batchnorm=args.softplus_batchnorm,
+            softplus_batchnorm_momentum=args.softplus_batchnorm_momentum,
+            positive_linear_at_end=args.positive_linear_at_end,
+            gp_ei_computation=args.gp_ei_computation)
+    if args.early_stopping:
+        training_config = dict(
+            **training_config,
+            patience=args.patience,
+            min_delta=args.min_delta,
+            cumulative_delta=args.cumulative_delta)
+    if args.lr_scheduler == 'ReduceLROnPlateau':
+        training_config = dict(
+            **training_config,
+            lr_scheduler=args.lr_scheduler,
+            lr_scheduler_patience=args.lr_scheduler_patience,
+            lr_scheduler_factor=args.lr_scheduler_factor,
+            lr_scheduler_min_lr=args.lr_scheduler_min_lr,
+            lr_scheduler_cooldown=args.lr_scheduler_cooldown)
+    elif args.lr_scheduler == 'power':
+        training_config = dict(
+            **training_config,
+            lr_scheduler=args.lr_scheduler,
+            lr_scheduler_power=args.lr_scheduler_power,
+            lr_scheduler_burnin=args.lr_scheduler_burnin)
+    if args.weight_decay is not None:
+        training_config = dict(
+            **training_config,
+            weight_decay=args.weight_decay)
+    return training_config
+
+
+## GENERIC but DO NOT INCLUDE
+# (this is for the job submission system, not for the individual training
+## & saving API, so we won't include it for now in the API we will be making now)
+MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN = {}
+_cache = {}
+def cmd_opts_nn_to_model_and_info_name(cmd_opts_nn):
+    s = dict_to_str(cmd_opts_nn)
+    if s in _cache:
+        return _cache[s]
+    cmd_args_list_nn = dict_to_cmd_args({**cmd_opts_nn, 'no-save-model': True})
+    ret = get_nn_af_args_configs_model_paths_from_cmd_args(cmd_args_list_nn)
+    (args_nn, af_dataset_configs,
+     model, model_and_info_name, models_path) = ret
+    _cache[s] = ret
+    MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN[model_and_info_name] = cmd_opts_nn
     return ret
 
 
-@cache
-def _load_empty_nn_acqf(model_and_info_path: str):
-    # Loads empty model (without weights)
-    models_path = os.path.join(model_and_info_path, MODELS_SUBDIR)
-    return AcquisitionFunctionNet.load_init(models_path)
+## PROJECT-SPECIFIC (NOT PART OF THE API -- A HELPER FUNCTION)
+def _json_serialize_nn_acqf_configs(
+        training_config: dict[str, Any],
+        af_dataset_config: dict[str, dict[str, Any]],
+        hash_gpytorch_modules:bool=True
+    ):
+    function_samples_config = af_dataset_config["function_samples_config"]
+    acquisition_dataset_config = af_dataset_config["acquisition_dataset_config"]
+    n_points_config = af_dataset_config["n_points_config"]
+    dataset_transform_config = af_dataset_config["dataset_transform_config"]
+
+    all_info_json = {
+        'acquisition_dataset_config': acquisition_dataset_config,
+        'n_points_config': n_points_config,
+        'dataset_transform_config': convert_to_json_serializable_gpytorch(dataset_transform_config),
+        'training_config': training_config
+    }
+
+    dataset_type = function_samples_config.get("dataset_type", "gp")
+    if dataset_type == 'gp':
+        if 'model_sampler' in function_samples_config:
+            model_sampler = function_samples_config.pop('model_sampler')
+        else:
+            model_sampler = RandomModelSampler(
+                models=function_samples_config["models"],
+                model_probabilities=function_samples_config["model_probabilities"],
+                randomize_params=function_samples_config["randomize_params"]
+            )
+    
+        all_info_json['model_sampler'] = convert_to_json_serializable_gpytorch({
+                '_models': model_sampler._models,
+                '_initial_params_list': model_sampler._initial_params_list,
+                'model_probabilities': model_sampler.model_probabilities,
+                'randomize_params': model_sampler.randomize_params
+            },
+            include_priors=True, hash_gpytorch_modules=hash_gpytorch_modules,
+            hash_include_str=False, hash_str=True)
+    else:
+        model_sampler = None
+
+    all_info_json['function_samples_config'] = convert_to_json_serializable_gpytorch(
+        function_samples_config)
+
+    return all_info_json, model_sampler
 
 
-def _parse_af_train_cmd_args(cmd_args:Optional[Sequence[str]]=None):
-    parser, all_groups_arg_names = get_single_train_parser()
-    args = parser.parse_args(args=cmd_args)
+## USER-SPECIFIED FUNCTION (defaults to doing nothing)
+def validate_single_train_args(args: argparse.Namespace, additional_info: Any):
+    all_groups_arg_names = additional_info
 
     # Extract dataset groups for validation
     dataset_groups_arg_names = all_groups_arg_names['dataset']
@@ -455,8 +489,6 @@ def _parse_af_train_cmd_args(cmd_args:Optional[Sequence[str]]=None):
         if args.gi_loss_normalization:
             raise ValueError("gi_loss_normalization should be None if method != gittins")
 
-    return args
-
 
 _POINTNET_X_CAND_INPUT_OPTIONS = {
     "local_and_final": dict(
@@ -489,7 +521,25 @@ _POINTNET_X_CAND_INPUT_OPTIONS = {
 }
 
 
-def _get_model(args: argparse.Namespace, dimension:Optional[int]=None):
+def _get_model(args: argparse.Namespace):
+    ### Get dimension based on dataset type
+    dataset_type = getattr(args, 'dataset_type', 'gp')
+    if dataset_type in {'gp', 'cancer_dosage'}:
+        dimension = None # already in args.dimension
+    elif dataset_type == 'logistic_regression':
+        dimension = 1
+    elif dataset_type == 'hpob':
+        # Make sure to set the dimension for non-GP datasets so that it is available
+        # for model creation
+        dimension = get_hpob_dataset_dimension(args.hpob_search_space_id)
+
+    # Exp technically works, but Power does not
+    # Make sure to set these appropriately depending on whether the transform
+    # supports mean transform
+    # if dataset_transform_config['outcome_transform'] is not None:
+    #     GET_TRAIN_TRUE_GP_STATS = False
+    #     GET_TEST_TRUE_GP_STATS = False
+
     architecture = args.architecture
     hidden_dims = [args.layer_width] * args.num_layers
     if architecture == "pointnet":
@@ -624,68 +674,7 @@ def _get_model(args: argparse.Namespace, dimension:Optional[int]=None):
     #                                     initial_alpha=args.initial_alpha)
 
 
-def _get_training_config(args: argparse.Namespace):
-    training_config = dict(
-        method=args.method,
-        learning_rate=args.learning_rate,
-        batch_size=args.batch_size,
-        epochs=args.epochs,
-        fix_train_acquisition_dataset=FIX_TRAIN_ACQUISITION_DATASET,
-        early_stopping=args.early_stopping,
-        use_maxei=args.use_maxei
-    )
-    if args.method == 'policy_gradient':
-        training_config = dict(
-            **training_config,
-            include_alpha=args.include_alpha,
-            learn_alpha=args.learn_alpha,
-            initial_alpha=args.initial_alpha,
-            alpha_increment=args.alpha_increment)
-    elif args.method == 'gittins':
-        lamda_min, lamda_max = get_lamda_min_max(args)
-        training_config = dict(
-            **training_config,
-            lamda_min=lamda_min,
-            lamda_max=lamda_max,
-            gi_loss_normalization=args.gi_loss_normalization)
-    elif args.method == 'mse_ei':
-        initial_tau = getattr(args, "initial_tau", None)
-        initial_tau = 1.0 if initial_tau is None else initial_tau
-        training_config = dict(
-            **training_config,
-            learn_tau=args.learn_tau,
-            initial_tau=initial_tau,
-            softplus_batchnorm=args.softplus_batchnorm,
-            softplus_batchnorm_momentum=args.softplus_batchnorm_momentum,
-            positive_linear_at_end=args.positive_linear_at_end,
-            gp_ei_computation=args.gp_ei_computation)
-    if args.early_stopping:
-        training_config = dict(
-            **training_config,
-            patience=args.patience,
-            min_delta=args.min_delta,
-            cumulative_delta=args.cumulative_delta)
-    if args.lr_scheduler == 'ReduceLROnPlateau':
-        training_config = dict(
-            **training_config,
-            lr_scheduler=args.lr_scheduler,
-            lr_scheduler_patience=args.lr_scheduler_patience,
-            lr_scheduler_factor=args.lr_scheduler_factor,
-            lr_scheduler_min_lr=args.lr_scheduler_min_lr,
-            lr_scheduler_cooldown=args.lr_scheduler_cooldown)
-    elif args.lr_scheduler == 'power':
-        training_config = dict(
-            **training_config,
-            lr_scheduler=args.lr_scheduler,
-            lr_scheduler_power=args.lr_scheduler_power,
-            lr_scheduler_burnin=args.lr_scheduler_burnin)
-    if args.weight_decay is not None:
-        training_config = dict(
-            **training_config,
-            weight_decay=args.weight_decay)
-    return training_config
-
-
+## USER-SPECIFIED FUNCTION
 @cache
 def get_single_train_parser():
     parser = argparse.ArgumentParser()

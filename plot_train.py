@@ -7,9 +7,10 @@ from typing import Optional
 import torch
 
 from experiments.registry import get_registry
-from nn_af.acquisition_function_net_save_utils import get_lamda_for_bo_of_nn, nn_acqf_is_trained
+from nn_af.acquisition_function_net_save_utils import nn_acqf_is_trained
 from dataset_factory import create_train_test_acquisition_datasets_from_args
 from utils.plot_sorting import plot_dict_to_str
+from utils.utils import get_lamda_for_bo_of_nn
 from utils_general.experiments.experiment_config_utils import get_config_options_list
 from utils.plot_utils import N_CANDIDATES_PLOT, create_plot_directory, group_by_nested_attrs, plot_acquisition_function_net_training_history_ax, plot_nn_vs_gp_acquisition_function_1d, save_figures_from_nested_structure
 from utils_general.utils import group_by

@@ -20,3 +20,4 @@ HPOB_DATA_DIR = os.path.join(_DATA_DIR, "hpob-data")
 HPOB_SAVED_SURROGATES_DIR = os.path.join(_DATA_DIR, "saved-surrogates")
 MODELS_VERSION = "v3"
 RUN_PLOTS_FOLDER = "bo_plots"
+MODELS_SUBDIR = "models"

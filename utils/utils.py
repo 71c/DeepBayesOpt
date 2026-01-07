@@ -1400,3 +1400,17 @@ if __name__ == "__main__":
     print(model)
     print("\nmodel priors:")
     print(list(model.named_priors()))
+
+
+def get_lamda_for_bo_of_nn(lamda, lamda_min, lamda_max):
+    if lamda is not None:
+        # Then it is trained with a fixed value of lamda
+        return lamda
+    if lamda_min is None or lamda_max is None:
+        assert lamda_min is None and lamda_max is None
+        return None
+    # Trained with a range of lamda values
+    log_min, log_max = math.log10(lamda_min), math.log10(lamda_max)
+    # We will test with the average
+    log_lamda = 0.5 * (log_min + log_max)
+    return 10**log_lamda

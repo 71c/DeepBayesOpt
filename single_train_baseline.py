@@ -10,9 +10,10 @@ from dataset_factory import (add_unified_acquisition_dataset_args,
                              create_train_test_acquisition_datasets_from_args,
                              validate_args_for_dataset_type)
 from datasets.utils import get_cmd_options_sample_dataset
-from nn_af.acquisition_function_net_save_utils import MODELS_SUBDIR, get_new_timestamp_model_save_dir, mark_new_model_as_trained, nn_acqf_is_trained
+from nn_af.acquisition_function_net_save_utils import nn_acqf_is_trained
 from transfer_bo_baselines.fsbo.fsbo_modules import FSBO
-from utils.constants import MODELS_DIR
+from utils.constants import MODELS_DIR, MODELS_SUBDIR
+from utils_general.save_utils import get_new_timestamp_model_save_dir, mark_new_model_as_trained
 from utils_general.utils import dict_to_hash
 from utils_general.io_utils import save_json
 
