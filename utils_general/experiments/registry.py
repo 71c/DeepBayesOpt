@@ -15,7 +15,7 @@ class ExperimentRegistryBase(ABC):
     """Base class for central registry for managing experiment configurations."""
 
     @abstractmethod
-    def get_seeds_cfg(params: Dict[str, Any]) -> str:
+    def get_seeds_cfg(self, params: Dict[str, Any]) -> str:
         pass
     
     def __init__(self, registry_path: str):

@@ -80,8 +80,7 @@ def add_plot_interval_args(parser):
         help=('Specifies the statistic to use as the center. '
               'When --assume_normal is set, this must be "mean" '
               '(defaulting to "mean" if not provided). '
-              'When --assume_normal is not set, you may choose "mean" or "median", '
-              'with "median" as the default.')
+              'When --assume_normal is not set, you may choose "mean" or "median".')
     )
     interval_group.add_argument(
         '--assume_normal',
@@ -319,6 +318,14 @@ def main():
     plot_formatting_kwargs = {
         k: getattr(args, k) for k in get_arg_names(plot_formatting_group)}
     interval_kwargs = {k: getattr(args, k) for k in get_arg_names(interval_group)}
+    if interval_kwargs['interval_of_center']:
+        if interval_kwargs['center_stat'] is None:
+            raise ValueError(
+                "When --interval_of_center is set, --center_stat must be specified")
+    elif interval_kwargs['center_stat'] is not None:
+        raise ValueError(
+            "When --interval_of_center is not set, --center_stat cannot be specified")
+
     script_plot_kwargs = dict(
         sharey=True,
         aspect=1.618,

@@ -3,21 +3,21 @@ import torch
 import matplotlib.pyplot as plt
 import os
 import cProfile, pstats
-from datetime import datetime
 
-from nn_af.acquisition_function_net_save_utils import get_lamda_for_bo_of_nn, get_new_timestamp_model_save_dir, mark_new_model_as_trained
-from utils.exact_gp_computations import calculate_EI_GP
 from utils_general.utils import DEVICE
 from utils_general.io_utils import load_json
+from utils_general.nn_utils import count_trainable_parameters, count_parameters
+from utils_general.tictoc import tic, tocl
+
+from utils.exact_gp_computations import calculate_EI_GP
 from utils.plot_utils import (
     plot_nn_vs_gp_acquisition_function_1d_grid,
     plot_acquisition_function_net_training_history)
-from utils_general.nn_utils import count_trainable_parameters, count_parameters
-from utils_general.tictoc import tic, tocl
 
 from dataset_factory import create_train_test_acquisition_datasets_from_args
 
 from nn_af.acquisition_function_net_save_utils import (
+    get_lamda_for_bo_of_nn, get_new_timestamp_model_save_dir, mark_new_model_as_trained,
     get_nn_af_args_configs_model_paths_from_cmd_args, load_nn_acqf)
 from nn_af.acquisition_function_net import AcquisitionFunctionNetAcquisitionFunction
 from nn_af.train_acquisition_function_net import (

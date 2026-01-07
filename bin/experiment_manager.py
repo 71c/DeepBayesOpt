@@ -27,4 +27,4 @@ def add_extra_plot_args(parser_plot):
 if __name__ == '__main__':
     registry = get_registry()
     runner = ExperimentRunner(registry)
-    sys.exit(run_experiment_manager(runner, add_extra_plot_args))
+    run_experiment_manager(runner, add_extra_plot_args)

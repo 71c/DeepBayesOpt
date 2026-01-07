@@ -6,6 +6,10 @@ Command-line interface for managing Bayesian optimization experiments
 using the centralized experiment registry.
 """
 import argparse
+import subprocess
+import sys
+import threading
+from typing import List, Tuple
 from utils_general.plot_utils import add_plot_args
 from utils_general.experiments.runner import ExperimentRunnerBase
 
@@ -31,6 +35,68 @@ class _ExperimentManagerCLI:
         self.runner = runner
         self.registry = runner.registry
         self.add_plot_args_func = add_plot_args_func
+    
+    def _run_command_with_streaming(self, cmd: List[str]) -> Tuple[int, str, str]:
+        """Run command with real-time output streaming using threads to avoid blocking."""
+        stdout_lines = []
+        stderr_lines = []
+
+        def stream_output(pipe, output_list, output_file):
+            """Read from pipe and write to output file in real-time."""
+            try:
+                for line in iter(pipe.readline, ''):
+                    if line:
+                        # Print immediately for real-time streaming
+                        print(line.rstrip(), file=output_file, flush=True)
+                        output_list.append(line)
+            except Exception:
+                pass
+            finally:
+                pipe.close()
+
+        # Add -u flag to Python commands to force unbuffered output
+        modified_cmd = cmd.copy()
+        if modified_cmd[0] == sys.executable:
+            modified_cmd.insert(1, '-u')
+
+        process = subprocess.Popen(
+            modified_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+            universal_newlines=True
+        )
+
+        # Create threads to read stdout and stderr concurrently
+        stdout_thread = threading.Thread(
+            target=stream_output,
+            args=(process.stdout, stdout_lines, sys.stdout)
+        )
+        stderr_thread = threading.Thread(
+            target=stream_output,
+            args=(process.stderr, stderr_lines, sys.stderr)
+        )
+
+        # Start threads
+        stdout_thread.start()
+        stderr_thread.start()
+
+        # Wait for process to complete
+        returncode = process.wait()
+
+        # Wait for threads to finish reading all output
+        stdout_thread.join()
+        stderr_thread.join()
+
+        return returncode, ''.join(stdout_lines), ''.join(stderr_lines)
+    
+    def _run_command(self, cmd, dry_run=False):
+        if dry_run:
+            print("DRY RUN MODE - no commands will be executed")
+            print(f"Would execute: {' '.join(cmd)}")
+        else:
+            self._run_command_with_streaming(cmd)
 
     def cmd_list(self, args):
         """List all available experiments."""
@@ -44,7 +110,6 @@ class _ExperimentManagerCLI:
         
         print(f"\nTotal: {len(experiments)} experiments")
 
-
     def cmd_list_templates(self, args):
         """List all available templates."""
         templates = self.registry.list_templates()
@@ -57,203 +122,110 @@ class _ExperimentManagerCLI:
         
         print(f"\nTotal: {len(templates)} templates")
 
-
     def cmd_show(self, args):
         """Show details of a specific experiment."""        
-        try:
-            exp_config = self.registry.get_experiment(args.name)
-            
-            print(f"Experiment: {args.name}")
-            print(f"Description: {exp_config.get('description', 'No description')}")
-            print(f"Created: {exp_config.get('created_date', 'Unknown')}")
-            print()
-            
-            if args.commands:
-                print("Commands that would be executed:")
-                print("=" * 50)
-                self.runner.print_experiment_commands(args.name)
-            else:
-                print("Parameters:")
-                params = exp_config.get('parameters', {})
-                for key, value in params.items():
-                    print(f"  {key}: {value}")
-                
-                if exp_config.get('plotting'):
-                    print("\nPlotting configuration:")
-                    plotting = exp_config['plotting']
-                    for plot_type, config in plotting.items():
-                        print(f"  {plot_type}:")
-                        for key, value in config.items():
-                            print(f"    {key}: {value}")
+        exp_config = self.registry.get_experiment(args.name)
         
-        except ValueError as e:
-            print(f"Error: {e}")
-            return 1
-
+        print(f"Experiment: {args.name}")
+        print(f"Description: {exp_config.get('description', 'No description')}")
+        print(f"Created: {exp_config.get('created_date', 'Unknown')}")
+        print()
+        
+        if args.commands:
+            print("Commands that would be executed:")
+            print("=" * 50)
+            self.runner.print_experiment_commands(args.name)
+        else:
+            print("Parameters:")
+            params = exp_config.get('parameters', {})
+            for key, value in params.items():
+                print(f"  {key}: {value}")
+            
+            if exp_config.get('plotting'):
+                print("\nPlotting configuration:")
+                plotting = exp_config['plotting']
+                for plot_type, config in plotting.items():
+                    print(f"  {plot_type}:")
+                    for key, value in config.items():
+                        print(f"    {key}: {value}")
 
     def cmd_status(self, args):
         """Check status of an experiment."""
-        try:
-            if args.dry_run:
-                print("DRY RUN MODE - no commands will be executed")
-
-            if args.name:
-                # Check specific experiment
-                print(f"Checking status of experiment: {args.name}")
-                returncode, stdout, stderr = self.runner.run_status_check(args.name, dry_run=args.dry_run)
-
-                # Output is already streamed in real-time by the runner
-                # For dry run, we need to print the command
-                if args.dry_run and stdout:
-                    print(stdout)
-
-                if returncode != 0 and stderr and not stderr.strip():
-                    print(f"Command failed with return code {returncode}", file=sys.stderr)
-
-                return returncode
-            else:
-                # Check all experiments
-                experiments = self.registry.list_experiments()
-                print(f"Checking status of {len(experiments)} experiments...")
-                print("=" * 60)
-
-                for exp_name in sorted(experiments):
-                    print(f"\n{exp_name}:")
-                    returncode, stdout, stderr = self.runner.run_status_check(exp_name, dry_run=args.dry_run)
-
-                    if returncode == 0:
-                        # Parse and summarize stdout (already printed in real-time)
-                        lines = stdout.strip().split('\n')
-                        if lines and args.dry_run:
-                            print(f"  Status: {lines[-1] if lines else 'Unknown'}")
-                    else:
-                        print(f"  Error checking status")
-
-        except ValueError as e:
-            print(f"Error: {e}")
-            return 1
-
+        if args.name:
+            print(f"Checking status of experiment: {args.name}")
+            cmd = self.runner.run_status_check(args.name)
+            self._run_command(cmd, dry_run=args.dry_run)
+        else:
+            # Previously this was implemented, but we don't need it
+            raise NotImplementedError(
+                "Status check for all experiments is not implemented.")
 
     def cmd_run(self, args):
         """Run an experiment."""
-        try:
-            print(f"Running experiment: {args.name}")
+        print(f"Running experiment: {args.name}")
 
-            if args.dry_run:
-                print("DRY RUN MODE - no commands will be executed")
+        # Validate recompute arguments
+        if getattr(args, 'recompute_run', False) and getattr(args, 'recompute_non_train_only', False):
+            raise ValueError("Error: Cannot specify both --recompute-run and --recompute-non-train-only.")
 
-            # Validate recompute arguments
-            if getattr(args, 'recompute_run', False) and getattr(args, 'recompute_non_train_only', False):
-                print("Error: Cannot specify both --recompute-run and --recompute-non-train-only.")
-                return 1
+        if getattr(args, 'no_train', False) and getattr(args, 'always_train', False):
+            raise ValueError("Error: Cannot specify both --no-train and --always-train.")
 
-            if getattr(args, 'no_train', False) and getattr(args, 'always_train', False):
-                print("Error: Cannot specify both --no-train and --always-train.")
-                return 1
+        tmp = dict(
+            no_submit=args.no_submit,
+            always_train=getattr(args, 'always_train', False),
+            recompute_run=getattr(args, 'recompute_run', False),
+            recompute_non_train_only=getattr(args, 'recompute_non_train_only', False)
+        )
 
-            if args.training_only:
-                returncode, stdout, stderr = self.runner.run_training_only(
-                    args.name,
-                    dry_run=args.dry_run,
-                    no_submit=args.no_submit,
-                    always_train=getattr(args, 'always_train', False),
-                    recompute_run=getattr(args, 'recompute_run', False),
-                    recompute_non_train_only=getattr(args, 'recompute_non_train_only', False)
-                )
-            else:
-                returncode, stdout, stderr = self.runner.run_experiment(
-                    args.name,
-                    dry_run=args.dry_run,
-                    no_submit=args.no_submit,
-                    always_train=getattr(args, 'always_train', False),
-                    recompute_run=getattr(args, 'recompute_run', False),
-                    recompute_non_train_only=getattr(args, 'recompute_non_train_only', False),
-                    no_train=getattr(args, 'no_train', False)
-                )
+        if args.training_only:
+            cmd = self.runner.run_training_only(args.name, **tmp)
+        else:
+            cmd = self.runner.run_experiment(args.name, **tmp,
+                                             no_train=getattr(args, 'no_train', False))
 
-            # Output is already streamed in real-time by the runner
-            # For dry run, we need to print the command
-            if args.dry_run and stdout:
-                print(stdout)
-
-            if returncode != 0 and stderr and not stderr.strip():
-                print(f"Command failed with return code {returncode}", file=sys.stderr)
-
-            return returncode
-
-        except ValueError as e:
-            print(f"Error: {e}")
-            return 1
+        self._run_command(cmd, dry_run=args.dry_run)
 
     def cmd_plot(self, args):
         """Generate plots for an experiment."""
-        try:
-            print(f"Generating {args.type} plots for experiment: {args.name}")
+        print(f"Generating {args.type} plots for experiment: {args.name}")
 
-            if args.dry_run:
-                print("DRY RUN MODE - no commands will be executed")
+        # Extract all plot-specific arguments from args namespace
+        # Exclude the command-specific args (name, type, dry_run)
+        # Note: argparse automatically converts hyphens to underscores in attribute names,
+        # so we keep them as underscores (the plotting scripts expect underscores)
+        excluded_args = {'name', 'type', 'dry_run', 'command'}
+        plot_kwargs = {
+            key: value
+            for key, value in vars(args).items()
+            if key not in excluded_args and value is not None
+        }
 
-            # Extract all plot-specific arguments from args namespace
-            # Exclude the command-specific args (name, type, dry_run)
-            # Note: argparse automatically converts hyphens to underscores in attribute names,
-            # so we keep them as underscores (the plotting scripts expect underscores)
-            excluded_args = {'name', 'type', 'dry_run', 'command'}
-            plot_kwargs = {
-                key: value
-                for key, value in vars(args).items()
-                if key not in excluded_args and value is not None
-            }
+        cmd = self.runner.generate_plots(args.name, plot_type=args.type, **plot_kwargs)
 
-            returncode, stdout, stderr = self.runner.generate_plots(
-                args.name,
-                plot_type=args.type,
-                dry_run=args.dry_run,
-                **plot_kwargs
-            )
-
-            # Output is already streamed in real-time by the runner
-            # Only print if there was an error and stderr wasn't empty
-            if returncode != 0 and stderr and not stderr.strip():
-                print(f"Command failed with return code {returncode}", file=sys.stderr)
-
-            return returncode
-
-        except ValueError as e:
-            print(f"Error: {e}")
-            return 1
-
+        self._run_command(cmd, dry_run=args.dry_run)
 
     def cmd_commands(self, args):
         """Show the commands that would be executed for an experiment (like commands.txt)."""
-        try:
-            self.runner.print_experiment_commands(args.name)
-        except ValueError as e:
-            print(f"Error: {e}")
-            return 1
-
+        self.runner.print_experiment_commands(args.name)
 
     def cmd_plot_variants(self, args):
         """List available plot variants for an experiment."""
-        try:
-            if args.type:
-                # Show variants for specific plot type
-                variants = self.registry.list_plot_variants(args.name, args.type)
-                print(f"Available plot variants for experiment '{args.name}' ({args.type}):")
-                for variant in variants:
-                    print(f"  {variant}")
-            else:
-                # Show variants for all plot types
-                for plot_type in ['train_plot', 'run_plot']:
-                    variants = self.registry.list_plot_variants(args.name, plot_type)
-                    if variants:
-                        print(f"Available plot variants for {plot_type}:")
-                        for variant in variants:
-                            print(f"  {variant}")
-                        print()
-        
-        except ValueError as e:
-            print(f"Error: {e}")
-            return 1
+        if args.type:
+            # Show variants for specific plot type
+            variants = self.registry.list_plot_variants(args.name, args.type)
+            print(f"Available plot variants for experiment '{args.name}' ({args.type}):")
+            for variant in variants:
+                print(f"  {variant}")
+        else:
+            # Show variants for all plot types
+            for plot_type in ['train_plot', 'run_plot']:
+                variants = self.registry.list_plot_variants(args.name, plot_type)
+                if variants:
+                    print(f"Available plot variants for {plot_type}:")
+                    for variant in variants:
+                        print(f"  {variant}")
+                    print()
 
     def main(self):
         """Main CLI entry point."""
@@ -262,7 +234,8 @@ class _ExperimentManagerCLI:
             epilog="Use 'experiment_manager.py <command> --help' for command-specific help."
         )
         
-        subparsers = parser.add_subparsers(dest='command', help='Available commands')
+        subparsers = parser.add_subparsers(
+            dest='command', help='Available commands', required=True)
         
         # List command
         parser_list = subparsers.add_parser('list', help='List all available experiments')
@@ -327,10 +300,6 @@ class _ExperimentManagerCLI:
         
         args = parser.parse_args()
         
-        if not args.command:
-            parser.print_help()
-            return 1
-        
         # Map commands to functions
         command_map = {
             'list': self.cmd_list,
@@ -342,18 +311,11 @@ class _ExperimentManagerCLI:
             'commands': self.cmd_commands,
             'plot-variants': self.cmd_plot_variants,
         }
-        
-        try:
-            return command_map[args.command](args) or 0
-        except KeyboardInterrupt:
-            print("\nOperation cancelled by user")
-            return 1
-        except Exception as e:
-            print(f"Unexpected error: {e}")
-            return 1
+
+        command_map[args.command](args)
 
 
 def run_experiment_manager(runner: ExperimentRunnerBase, add_plot_args_func):
     """Run the Experiment Manager CLI with the given runner."""
     cli = _ExperimentManagerCLI(runner, add_plot_args_func)
-    return cli.main()
+    cli.main()

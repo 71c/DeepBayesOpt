@@ -13,7 +13,7 @@ from utils_general.experiments.registry import ExperimentRegistryBase
 class ExperimentRegistry(ExperimentRegistryBase):
     """Central registry for managing experiment configurations."""
     
-    def get_seeds_cfg(params: Dict[str, Any]) -> str:
+    def get_seeds_cfg(self, params: Dict[str, Any]) -> str:
         # Seeds configuration
         seeds_parts = []
         # n_seeds is optional when use_hpob_seeds is True (HPO-B defines its own seeds)
