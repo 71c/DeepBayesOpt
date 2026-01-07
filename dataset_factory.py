@@ -176,7 +176,7 @@ def add_common_sample_dataset_args(parser):
     )
 
 
-def _add_common_acquisition_dataset_args(parser):
+def add_common_acquisition_dataset_args(parser):
     """Add common acquisition dataset arguments shared across dataset types."""
     parser.add_argument(
         '--train_acquisition_size', 
@@ -312,7 +312,7 @@ def add_unified_acquisition_dataset_args(
     
     # Add common acquisition dataset arguments that all datasets need
     add_common_sample_dataset_args(dataset_group)
-    _add_common_acquisition_dataset_args(dataset_group)
+    add_common_acquisition_dataset_args(dataset_group)
 
     return add_unified_function_dataset_args(
         parser=parser, thing_used_for="function samples",

@@ -217,7 +217,11 @@ def safe_issubclass(obj, parent):
 
 def get_arg_names(p) -> list[str]:
     """Get argument names from an argparse parser or group."""
-    return [action.dest for action in p._group_actions if action.dest != "help"]
+    try:
+        actions = p._group_actions
+    except AttributeError:
+        actions = p._actions
+    return [action.dest for action in actions if action.dest != "help"]
 
 
 def group_by(items, group_function=lambda x: x):

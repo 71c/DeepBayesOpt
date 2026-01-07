@@ -19,7 +19,7 @@ from datasets.dataset_with_models import RandomModelSampler
 from datasets.acquisition_dataset_manager import FIX_TRAIN_ACQUISITION_DATASET, get_lamda_min_max
 from datasets.gp_acquisition_dataset_manager import GP_GEN_DEVICE
 from dataset_factory import add_unified_acquisition_dataset_args, get_dataset_manager, add_lamda_args, validate_args_for_dataset_type
-from utils_general.utils import dict_to_hash
+from utils_general.utils import dict_to_cmd_args, dict_to_hash, dict_to_str
 
 
 MODELS_SUBDIR = "models"
@@ -189,6 +189,21 @@ def get_nn_af_args_configs_model_paths_from_cmd_args(
 
     return (args, gp_af_dataset_configs,
             model, model_and_info_folder_name, models_path)
+
+
+MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN = {}
+_cache = {}
+def cmd_opts_nn_to_model_and_info_name(cmd_opts_nn):
+    s = dict_to_str(cmd_opts_nn)
+    if s in _cache:
+        return _cache[s]
+    cmd_args_list_nn = dict_to_cmd_args({**cmd_opts_nn, 'no-save-model': True})
+    ret = get_nn_af_args_configs_model_paths_from_cmd_args(cmd_args_list_nn)
+    (args_nn, af_dataset_configs,
+     model, model_and_info_name, models_path) = ret
+    _cache[s] = ret
+    MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN[model_and_info_name] = cmd_opts_nn
+    return ret
 
 
 def json_serialize_nn_acqf_configs(

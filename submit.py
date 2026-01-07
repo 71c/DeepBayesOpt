@@ -8,14 +8,14 @@ from botorch.exceptions import UnsupportedError
 
 from dataset_factory import DATASET_TYPES
 from datasets.hpob_dataset import get_hpob_dataset_ids
-from nn_af.acquisition_function_net_save_utils import get_lamda_for_bo_of_nn
+from nn_af.acquisition_function_net_save_utils import get_lamda_for_bo_of_nn, cmd_opts_nn_to_model_and_info_name
 from utils_general.experiments.experiment_manager import add_recompute_args
 from utils_general.utils import group_by
 from utils_general.experiments.experiment_config_utils import add_config_args, get_config_options_list
 from utils_general.experiments.submit_dependent_jobs import add_slurm_args, submit_jobs_sweep_from_args
 
 from single_run import GP_AF_DICT, bo_loop_dicts_to_cmd_args_list, run_bo
-from submit_train import ALWAYS_TRAIN_NAME, NO_NN_ID, add_train_acqf_args, cmd_opts_nn_to_model_and_info_name, create_dependency_structure_train_acqf, get_cmd_options_train_acqf
+from submit_train import ALWAYS_TRAIN_NAME, NO_NN_ID, add_train_acqf_args, create_dependency_structure_train_acqf, get_cmd_options_train_acqf
 from utils_general.utils import dict_to_hash, dict_to_str, str_to_hash
 
 

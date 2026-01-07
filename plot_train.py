@@ -15,8 +15,8 @@ from utils.plot_utils import N_CANDIDATES_PLOT, create_plot_directory, group_by_
 from utils_general.utils import group_by
 from utils_general.io_utils import load_json, save_json
 
-from nn_af.acquisition_function_net_save_utils import load_nn_acqf
-from submit_train import add_train_acqf_args, cmd_opts_nn_to_model_and_info_name, get_cmd_options_train_acqf
+from nn_af.acquisition_function_net_save_utils import load_nn_acqf, cmd_opts_nn_to_model_and_info_name
+from submit_train import add_train_acqf_args, get_cmd_options_train_acqf
 from utils_general.plot_utils import add_plot_args
 from utils_general.utils import DEVICE, dict_to_str
 

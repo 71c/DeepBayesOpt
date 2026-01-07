@@ -12,12 +12,10 @@ validation loss and final BO performance across different model configurations.
 import copy
 import os
 import time
-import numpy as np
 from tqdm import tqdm
 
 from experiments.registry import get_registry
-from nn_af.acquisition_function_net_save_utils import load_nn_acqf, get_latest_model_path
-from utils.plot_sorting import plot_dict_to_str
+from nn_af.acquisition_function_net_save_utils import get_latest_model_path, MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN
 from utils.plot_utils import (
     create_plot_directory, get_plot_ax_loss_vs_regret_func, group_by_nested_attrs, save_figures_from_nested_structure)
 from utils_general.utils import group_by
@@ -27,8 +25,6 @@ from utils.constants import MODELS_DIR
 
 from submit import get_bo_experiments_parser, generate_gp_bo_job_specs
 from plot_run import add_plot_interval_args, add_plot_formatting_args, ATTR_NAME_TO_TITLE
-from single_run import GP_AF_DICT
-from submit_train import MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN
 from utils_general.plot_utils import add_plot_args
 from utils_general.utils import dict_to_str
 

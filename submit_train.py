@@ -1,18 +1,32 @@
-import argparse
 from typing import Any, Optional
 import os
+import argparse
+from functools import cache
 
 from datasets.utils import get_cmd_options_sample_dataset
 from single_train_baseline import get_dataset_hash_for_transfer_bo_baselines, transfer_bo_baseline_is_trained
-from utils_general.utils import dict_to_cmd_args
+from utils_general.utils import dict_to_cmd_args, get_arg_names
 from utils_general.io_utils import save_json
 from utils_general.experiments.experiment_config_utils import CONFIG_DIR, add_config_args, get_config_options_list
 from utils_general.experiments.submit_dependent_jobs import add_slurm_args, submit_jobs_sweep_from_args
 
 from nn_af.acquisition_function_net_save_utils import (
-    get_nn_af_args_configs_model_paths_from_cmd_args, nn_acqf_is_trained)
-from dataset_factory import create_train_test_acquisition_datasets_from_args
-from utils_general.utils import dict_to_str
+    nn_acqf_is_trained, cmd_opts_nn_to_model_and_info_name)
+from dataset_factory import add_common_acquisition_dataset_args, add_lamda_args, create_train_test_acquisition_datasets_from_args
+
+
+@cache
+def _get_common_acquisition_dataset_arg_names():
+    parser = argparse.ArgumentParser()
+    add_common_acquisition_dataset_args(parser)
+    return set(get_arg_names(parser))
+
+
+@cache
+def _get_lamda_arg_names():
+    parser = argparse.ArgumentParser()
+    add_lamda_args(parser)
+    return set(get_arg_names(parser))
 
 
 def get_cmd_options_train_acqf(options: dict[str, Any]):
@@ -29,11 +43,9 @@ def get_cmd_options_train_acqf(options: dict[str, Any]):
     cmd_opts_sample_dataset = get_cmd_options_sample_dataset(options)
 
     # Acquisition dataset arguments (not included in sample dataset)
-    acquisition_arg_names = [
-        'train_acquisition_size', 'test_expansion_factor', 'replacement',
-        'train_n_candidates', 'test_n_candidates', 'min_history', 'max_history',
-        'samples_addition_amount', 'lamda_min', 'lamda_max', 'lamda'
-    ]
+    acquisition_arg_names = _get_common_acquisition_dataset_arg_names()
+    lamda_arg_names = _get_lamda_arg_names()
+    acquisition_arg_names.update(lamda_arg_names)
     tmp = {'train_n_candidates', 'test_n_candidates'}
     cmd_opts_acquisition_dataset = {
         k: options.get(k if k not in tmp else 'n_candidates')
@@ -50,7 +62,7 @@ def get_cmd_options_train_acqf(options: dict[str, Any]):
         # Baseline transfer BO method
         cmd_opts_dataset_no_lamda = {
             k: v for k, v in cmd_opts_dataset.items()
-            if k not in ['lamda', 'lamda_min', 'lamda_max']
+            if k not in lamda_arg_names
         }
 
         cmd_opts_nn = {
@@ -77,7 +89,7 @@ def get_cmd_options_train_acqf(options: dict[str, Any]):
         cmd_opts_nn_no_dataset = {
             k: options.get(k)
             for k in nn_arg_names
-            if k not in ['lamda', 'lamda_min', 'lamda_max']  # already in dataset
+            if k not in lamda_arg_names  # already in dataset
         }
         cmd_nn_train = " ".join(["python single_train.py",
                                 *cmd_args_dataset,
@@ -86,19 +98,7 @@ def get_cmd_options_train_acqf(options: dict[str, Any]):
     return cmd_dataset, cmd_opts_dataset, cmd_nn_train, cmd_opts_nn
 
 
-MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN = {}
-_cache = {}
-def cmd_opts_nn_to_model_and_info_name(cmd_opts_nn):
-    s = dict_to_str(cmd_opts_nn)
-    if s in _cache:
-        return _cache[s]
-    cmd_args_list_nn = dict_to_cmd_args({**cmd_opts_nn, 'no-save-model': True})
-    ret = get_nn_af_args_configs_model_paths_from_cmd_args(cmd_args_list_nn)
-    (args_nn, af_dataset_configs,
-     model, model_and_info_name, models_path) = ret
-    _cache[s] = ret
-    MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN[model_and_info_name] = cmd_opts_nn
-    return ret
+
 
 
 DATASETS_JOB_ID = "datasets"
