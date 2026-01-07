@@ -275,3 +275,10 @@ def aggregate_stats_list(stats_list: Union[list[dict[str]], list[np.ndarray],
         return np.array(stats_list)
     raise ValueError(f"stats_list must be a list of dicts or list of ndarrays, "
                      f"but got stats_list[0]={stats0}")
+
+
+def check_subclass(cls, cls_var_name:str, super_cls):
+    if not safe_issubclass(cls, super_cls):
+        cls_str = cls.__name__ if isinstance(cls, type) else str(cls)
+        raise ValueError(
+            f"{cls_var_name}={cls_str} should be a subclass of {super_cls.__name__}")

@@ -7,8 +7,8 @@ from typing import Optional
 import torch
 
 from experiments.registry import get_registry
-from nn_af.acquisition_function_net_save_utils import nn_acqf_is_trained
 from dataset_factory import create_train_test_acquisition_datasets_from_args
+from utils.basic_model_save_utils import BASIC_SAVING
 from utils.plot_sorting import plot_dict_to_str
 from utils.utils import get_lamda_for_bo_of_nn
 from utils_general.experiments.experiment_config_utils import get_config_options_list
@@ -16,7 +16,7 @@ from utils.plot_utils import N_CANDIDATES_PLOT, create_plot_directory, group_by_
 from utils_general.utils import group_by
 from utils_general.io_utils import load_json, save_json
 
-from nn_af.acquisition_function_net_save_utils import load_nn_acqf, cmd_opts_nn_to_model_and_info_name
+from nn_af.acquisition_function_net_save_utils import load_module, cmd_opts_nn_to_model_and_info_name
 from submit_train import add_train_acqf_args, get_cmd_options_train_acqf
 from utils_general.plot_utils import add_plot_args
 from utils_general.utils import DEVICE, dict_to_str
@@ -185,8 +185,8 @@ def main():
         ) = cmd_opts_nn_to_model_and_info_name(cmd_opts_nn)
 
         # Get the model (with the weights)
-        if nn_acqf_is_trained(model_and_info_name):
-            model, model_path = load_nn_acqf(
+        if BASIC_SAVING.model_is_trained(model_and_info_name):
+            model, model_path = load_module(
                 model_and_info_name,
                 return_model_path=True, load_weights=True, verbose=False)
         else:

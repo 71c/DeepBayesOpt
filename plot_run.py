@@ -4,7 +4,7 @@ import cProfile, pstats
 import numpy as np
 
 from experiments.registry import get_registry
-from nn_af.acquisition_function_net_save_utils import load_nn_acqf, MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN
+from nn_af.acquisition_function_net_save_utils import load_module, MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN
 from utils.plot_sorting import plot_dict_to_str
 from utils.plot_utils import (
     create_plot_directory, get_plot_ax_af_iterations_func, get_plot_ax_bo_stats_vs_iteration_func, group_by_nested_attrs, save_figures_from_nested_structure)
@@ -551,7 +551,7 @@ def main():
                     # print()
                     # print(f"{stuff=}")
                     # exit()
-                    nn = load_nn_acqf(bo_policy_args['nn_model_name'],
+                    nn = load_module(bo_policy_args['nn_model_name'],
                                         return_model_path=False,
                                         load_weights=True,
                                         verbose=False)

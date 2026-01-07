@@ -1199,10 +1199,11 @@ def train_acquisition_function_net(
             print(f"Learning rate: {_lr[0]}")
     
     best_model_fname = f"model_{best_epoch}.pth"
+    best_state_dict_path = os.path.join(save_dir, best_model_fname)
     
     # Load the best model weights to return
     if save_incremental_best_models:
-        best_state_dict = torch.load(os.path.join(save_dir, best_model_fname))
+        best_state_dict = torch.load(best_state_dict_path)
     nn_model.load_state_dict(best_state_dict)
 
     if test_after_training:
@@ -1241,8 +1242,7 @@ def train_acquisition_function_net(
                   os.path.join(save_dir, "best_model_fname.json"))
         if not save_incremental_best_models:
             # Save the best model weights if not already saved
-            path = os.path.join(save_dir, best_model_fname)
-            torch.save(best_state_dict, path)
+            torch.save(best_state_dict, best_state_dict_path)
     
     return training_history_data
 

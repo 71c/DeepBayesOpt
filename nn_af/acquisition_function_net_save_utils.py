@@ -5,6 +5,7 @@ import torch
 import argparse
 
 from datasets.hpob_dataset import get_hpob_dataset_dimension
+from utils.basic_model_save_utils import BASIC_SAVING
 from utils.utils import convert_to_json_serializable_gpytorch
 from utils_general.io_utils import load_json, save_json
 from utils.constants import MODELS_DIR, MODELS_SUBDIR, MODELS_VERSION
@@ -20,71 +21,38 @@ from dataset_factory import add_unified_acquisition_dataset_args, get_dataset_ma
 from utils_general.utils import dict_to_cmd_args, dict_to_hash, dict_to_str
 
 
-## GENERIC
-def get_latest_model_path(model_and_info_folder_name: str):
-    model_and_info_path = os.path.join(MODELS_DIR, model_and_info_folder_name)
-    already_saved = os.path.isdir(model_and_info_path)
-    if not already_saved:
-        raise FileNotFoundError(f"Models path {model_and_info_path} does not exist")
-
-    models_path = os.path.join(model_and_info_path, MODELS_SUBDIR)
-
-    latest_model_path = os.path.join(models_path, "latest_model.json")
-    try:
-        latest_model_name = load_json(latest_model_path)["latest_model"]
-    except FileNotFoundError:
-        raise FileNotFoundError(f"Latest model path {latest_model_path} does not exist."
-                                " i.e., no models have been fully trained yet.")
-    model_path = os.path.join(models_path, latest_model_name)
-
-    # Handle a temporary bug with FSBO (has since been fixed)
-    if not os.path.isdir(model_path):
-        return os.path.join(model_and_info_path, latest_model_name)
-    
-    return model_path
-
-
-## GENERIC
-def nn_acqf_is_trained(model_and_info_folder_name: str):
-    try:
-        get_latest_model_path(model_and_info_folder_name)
-        return True
-    except FileNotFoundError:
-        return False
-
-
-## PROJECT-SPECIFIC: The user must specify a class that is their neural network class,
+## DONE -- PROJECT-SPECIFIC: The user must specify a class that is their neural network class,
 ## which must be a subclass of SaveableObject.
 @cache
-def _load_empty_nn_acqf(model_and_info_path: str):
+def _load_empty_model(model_and_info_path: str):
     # Loads empty model (without weights)
     models_path = os.path.join(model_and_info_path, MODELS_SUBDIR)
     return AcquisitionFunctionNet.load_init(models_path)
 
 
-## GENERIC
-_CACHED_WEIGHTS = {}
+## DONE -- GENERIC
+_weights_cache = {}
 def _get_state_dict(weights_path: str, verbose: bool=True):
-    if weights_path in _CACHED_WEIGHTS:
-        return _CACHED_WEIGHTS[weights_path]
+    if weights_path in _weights_cache:
+        return _weights_cache[weights_path]
     if verbose:
         print(f"Loading best weights from {weights_path}")
     ret = torch.load(weights_path)
-    _CACHED_WEIGHTS[weights_path] = ret
+    _weights_cache[weights_path] = ret
     return ret
 
 
-## GENERIC (given _load_empty_nn_acqf)
-def load_nn_acqf(
+## DONE -- GENERIC (given _load_empty_model)
+def load_module(
         model_and_info_folder_name: str,
         return_model_path=False,
         load_weights=True,
         verbose=True):
     model_and_info_path = os.path.join(MODELS_DIR, model_and_info_folder_name)
-    model = _load_empty_nn_acqf(model_and_info_path)
+    model = _load_empty_model(model_and_info_path)
 
     if return_model_path or load_weights:
-        model_path = get_latest_model_path(model_and_info_path)
+        model_path = BASIC_SAVING.get_latest_model_path(model_and_info_path)
 
     if load_weights:
         # print(f"Loading model from {model_path}")
@@ -103,12 +71,12 @@ def load_nn_acqf(
     return model
 
 
-## PROJECT-SPECIFIC (but we will provide a very simple default
+## DONE -- PROJECT-SPECIFIC (but we will provide a very simple default
 ## which simply loads a single JSON file that has everything)
 ## The user will specify a function that does it, given model_and_info_path
 ## (there's a default)
 @cache
-def load_nn_acqf_configs(model_and_info_folder_name: str):
+def load_module_configs(model_and_info_folder_name: str):
     model_and_info_path = os.path.join(MODELS_DIR, model_and_info_folder_name)
     
     function_samples_config = load_json(

@@ -18,12 +18,13 @@ from botorch.utils.sampling import optimize_posterior_samples
 
 from dataset_factory import add_unified_function_dataset_args, validate_args_for_dataset_type
 from transfer_bo_baselines.fsbo.fsbo_optimizer import FSBOOptimizer
+from utils.basic_model_save_utils import BASIC_SAVING
 from utils.utils import add_outcome_transform, remove_priors
 from utils.constants import RESULTS_DIR
-from nn_af.acquisition_function_net_save_utils import load_nn_acqf_configs
+from nn_af.acquisition_function_net_save_utils import load_module_configs
 
 from nn_af.acquisition_function_net import GittinsAcquisitionFunctionNet
-from nn_af.acquisition_function_net_save_utils import load_nn_acqf, nn_acqf_is_trained
+from nn_af.acquisition_function_net_save_utils import load_module
 from datasets.dataset_with_models import RandomModelSampler
 from datasets.hpob_dataset import get_hpob_dataset_dimension, get_hpob_function_min_max, get_hpob_initialization, get_hpob_objective_function
 from datasets.cancer_dosage_dataset import CancerDosageObjectiveSampler, get_cancer_dosage_function_min_max
@@ -670,10 +671,10 @@ def pre_run_bo(objective_args: dict[str, Any],
 
             results_print_data = {**results_print_data, 'GP AF': gp_af, 'fit': fit}
         elif nn_model_name is not None: # Using a NN AF
-            if not nn_acqf_is_trained(nn_model_name):
+            if not BASIC_SAVING.model_is_trained(nn_model_name):
                 return None
             
-            nn_model = load_nn_acqf(nn_model_name, load_weights=load_weights)
+            nn_model = load_module(nn_model_name, load_weights=load_weights)
 
             # TODO (maybe): provide exponentiate=False or exponentiate=True here
             # for ExpectedImprovementAcquisitionFunctionNet?
@@ -693,7 +694,7 @@ def pre_run_bo(objective_args: dict[str, Any],
                     raise UnsupportedError("nn_model.cost_is_input=True is currently not"
                                         " supported for Gittins index optimization")
 
-                configs = load_nn_acqf_configs(nn_model_name)
+                configs = load_module_configs(nn_model_name)
                 train_config = configs['training_config']
                 lamda_min, lamda_max = train_config['lamda_min'], train_config['lamda_max']
 

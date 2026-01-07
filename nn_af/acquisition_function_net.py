@@ -13,15 +13,13 @@ from abc import abstractmethod
 from nn_af.acquisition_function_net_constants import POINTNET_ACQF_PARAMS_INPUT_DEFAULT, POINTNET_ACQF_PARAMS_INPUT_OPTIONS
 from utils_general.saveable_object import SaveableObject
 from utils.utils import standardize_y_hist
-from utils_general.utils import safe_issubclass
+from utils_general.utils import to_device, safe_issubclass, check_subclass
 
 from utils_general.nn_utils import Dense, expand_dim
 from utils.nn_utils import (MultiLayerPointNet, PointNetLayer,
                       SoftmaxOrSoftplusLayer, add_neg_inf_for_max, check_xy_dims)
 
 import logging
-
-from utils_general.utils import to_device
 
 # Set to True to enable debug logging
 DEBUG = False
@@ -383,13 +381,6 @@ class AcquisitionFunctionHead(nn.Module, SaveableObject):
                 Standard deviations of y_hist, shape (*, 1, n_hist_out)
         """
         pass  # pragma: no cover
-
-
-def check_subclass(cls, cls_var_name:str, super_cls):
-    if not safe_issubclass(cls, super_cls):
-        cls_str = cls.__name__ if isinstance(cls, type) else str(cls)
-        raise ValueError(
-            f"{cls_var_name}={cls_str} should be a subclass of {super_cls.__name__}")
 
 
 class TwoPartAcquisitionFunctionNet(ParameterizedAcquisitionFunctionNet,

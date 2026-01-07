@@ -5,13 +5,13 @@ from functools import cache
 
 from datasets.utils import get_cmd_options_sample_dataset
 from single_train_baseline import get_dataset_hash_for_transfer_bo_baselines, transfer_bo_baseline_is_trained
+from utils.basic_model_save_utils import BASIC_SAVING
 from utils_general.utils import dict_to_cmd_args, get_arg_names
 from utils_general.io_utils import save_json
 from utils_general.experiments.experiment_config_utils import CONFIG_DIR, add_config_args, get_config_options_list
 from utils_general.experiments.submit_dependent_jobs import add_slurm_args, submit_jobs_sweep_from_args
 
-from nn_af.acquisition_function_net_save_utils import (
-    nn_acqf_is_trained, cmd_opts_nn_to_model_and_info_name)
+from nn_af.acquisition_function_net_save_utils import cmd_opts_nn_to_model_and_info_name
 from dataset_factory import add_common_acquisition_dataset_args, add_lamda_args, create_train_test_acquisition_datasets_from_args
 
 
@@ -141,7 +141,7 @@ def create_dependency_structure_train_acqf(
             else:
                 (args_nn, af_dataset_configs, pre_model, model_and_info_name, models_path
                 ) = cmd_opts_nn_to_model_and_info_name(cmd_opts_nn)
-                train_nn = not nn_acqf_is_trained(model_and_info_name)
+                train_nn = not BASIC_SAVING.model_is_trained(model_and_info_name)
         
         if train_nn:
             # Determine whether or not the dataset is already cached

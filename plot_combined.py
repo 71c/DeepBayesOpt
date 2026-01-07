@@ -15,7 +15,8 @@ import time
 from tqdm import tqdm
 
 from experiments.registry import get_registry
-from nn_af.acquisition_function_net_save_utils import get_latest_model_path, MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN
+from nn_af.acquisition_function_net_save_utils import MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN
+from utils.basic_model_save_utils import BASIC_SAVING
 from utils.plot_utils import (
     create_plot_directory, get_plot_ax_loss_vs_regret_func, group_by_nested_attrs, save_figures_from_nested_structure)
 from utils_general.utils import group_by
@@ -160,7 +161,7 @@ def main():
             else:
                 # Get model path
                 model_and_info_path = os.path.join(MODELS_DIR, nn_model_name)
-                model_path = get_latest_model_path(model_and_info_path)
+                model_path = BASIC_SAVING.get_latest_model_path(model_and_info_path)
 
                 # Load training history
                 training_history_data = load_json(

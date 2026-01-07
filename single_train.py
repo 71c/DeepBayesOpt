@@ -4,8 +4,8 @@ import matplotlib.pyplot as plt
 import os
 import cProfile, pstats
 
+from utils.basic_model_save_utils import BASIC_SAVING
 from utils.utils import get_lamda_for_bo_of_nn
-from utils_general.save_utils import get_new_timestamp_model_save_dir, mark_new_model_as_trained
 from utils_general.utils import DEVICE
 from utils_general.io_utils import load_json
 from utils_general.nn_utils import count_trainable_parameters, count_parameters
@@ -19,7 +19,7 @@ from utils.plot_utils import (
 from dataset_factory import create_train_test_acquisition_datasets_from_args
 
 from nn_af.acquisition_function_net_save_utils import (
-    get_nn_af_args_configs_model_paths_from_cmd_args, load_nn_acqf)
+    get_nn_af_args_configs_model_paths_from_cmd_args, load_module)
 from nn_af.acquisition_function_net import AcquisitionFunctionNetAcquisitionFunction
 from nn_af.train_acquisition_function_net import (
     print_stats, train_acquisition_function_net, train_or_test_loop)
@@ -48,7 +48,7 @@ def single_train(cmd_args: Optional[Sequence[str]]=None):
     ) = get_nn_af_args_configs_model_paths_from_cmd_args(cmd_args)
 
     if args.load_saved_model:
-        model, model_path = load_nn_acqf(
+        model, model_path = load_module(
             model_and_info_folder_name, return_model_path=True)
     else:
         model_path = None
@@ -71,7 +71,7 @@ def single_train(cmd_args: Optional[Sequence[str]]=None):
     ######################## Train the model #######################################
     if args.train:
         if args.save_model:
-            model_path, model_name = get_new_timestamp_model_save_dir(models_path)
+            model_path, model_name = BASIC_SAVING.get_new_model_save_dir(models_path)
         else:
             model_path = None
 
@@ -123,7 +123,7 @@ def single_train(cmd_args: Optional[Sequence[str]]=None):
         )
 
         if args.save_model:
-            mark_new_model_as_trained(models_path, model_name)
+            BASIC_SAVING.mark_new_model_as_trained(models_path, model_name)
             print(f"Saved best weights to {model_and_info_folder_name}")
 
         if TIME:

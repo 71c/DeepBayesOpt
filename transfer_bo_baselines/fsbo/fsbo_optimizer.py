@@ -1,11 +1,11 @@
 from typing import Callable
-from nn_af.acquisition_function_net_save_utils import get_latest_model_path
 import numpy as np
 import torch
 from torch import Tensor
 from single_train_baseline import get_relative_checkpoints_path_for_transfer_bo_baseline
 from bayesopt.bayesopt import BayesianOptimizer
 from transfer_bo_baselines.fsbo.fsbo_modules import DeepKernelGP
+from utils.basic_model_save_utils import BASIC_SAVING
 
 
 class FSBOOptimizer(BayesianOptimizer):
@@ -20,7 +20,7 @@ class FSBOOptimizer(BayesianOptimizer):
         
         relative_checkpoints_path = get_relative_checkpoints_path_for_transfer_bo_baseline(
             'FSBO', dataset_hash)
-        checkpoint_path = get_latest_model_path(relative_checkpoints_path)
+        checkpoint_path = BASIC_SAVING.get_latest_model_path(relative_checkpoints_path)
         
         randomInitializer = np.random.RandomState(0)
         torch_seed = randomInitializer.randint(0,100000)

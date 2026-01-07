@@ -10,10 +10,9 @@ from dataset_factory import (add_unified_acquisition_dataset_args,
                              create_train_test_acquisition_datasets_from_args,
                              validate_args_for_dataset_type)
 from datasets.utils import get_cmd_options_sample_dataset
-from nn_af.acquisition_function_net_save_utils import nn_acqf_is_trained
 from transfer_bo_baselines.fsbo.fsbo_modules import FSBO
+from utils.basic_model_save_utils import BASIC_SAVING
 from utils.constants import MODELS_DIR, MODELS_SUBDIR
-from utils_general.save_utils import get_new_timestamp_model_save_dir, mark_new_model_as_trained
 from utils_general.utils import dict_to_hash
 from utils_general.io_utils import save_json
 
@@ -57,7 +56,7 @@ def get_checkpoints_path_for_transfer_bo_baseline(
 def transfer_bo_baseline_is_trained(transfer_bo_method: str, dataset_hash: str) -> bool:
     relative_checkpoints_path = get_relative_checkpoints_path_for_transfer_bo_baseline(
         transfer_bo_method, dataset_hash)
-    return nn_acqf_is_trained(relative_checkpoints_path)
+    return BASIC_SAVING.model_is_trained(relative_checkpoints_path)
 
 
 _EPOCHS_REFERENCE = 6508
@@ -137,7 +136,7 @@ def single_train_baseline(cmd_args: Optional[Sequence[str]]=None):
     save_json(dataset_info, os.path.join(checkpoints_path, 'dataset_info.json'))
 
     models_path = os.path.join(checkpoints_path, MODELS_SUBDIR)
-    model_path, model_name = get_new_timestamp_model_save_dir(models_path)
+    model_path, model_name = BASIC_SAVING.get_new_model_save_dir(models_path)
 
     if args.transfer_bo_method == 'FSBO':
         fsbo_model = FSBO(train_data=train_data, valid_data=valid_data,
@@ -148,7 +147,7 @@ def single_train_baseline(cmd_args: Optional[Sequence[str]]=None):
               f"{args.fsbo_time_budget_hours} hours")
         fsbo_model.meta_train(epochs=fsbo_epochs)
     
-    mark_new_model_as_trained(models_path, model_name)
+    BASIC_SAVING.mark_new_model_as_trained(models_path, model_name)
     print(f"Completed training, saved to {model_path}")
 
 
