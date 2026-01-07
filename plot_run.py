@@ -232,7 +232,7 @@ def add_plot_iterations_args(parser):
 
 
 def main():
-    ## Create parser
+    ############################### CREATE PARSER ######################################
     (parser, train_base_config_name, train_experiment_config_name, run_base_config_name,
      run_experiment_config_name) = get_bo_experiments_parser(train=False)
     add_plot_args(parser)
@@ -240,20 +240,17 @@ def main():
     plot_formatting_group = add_plot_formatting_args(parser)
     plot_iterations_group = add_plot_iterations_args(parser)
     
-    ## Parse arguments
+    ############################### PARSE ARGUMENTS ####################################
     args = parser.parse_args()
 
+    ########################### SETUP PLOTTING CONFIG ##################################
     try:
         get_registry().setup_plotting_from_args(args, 'run_plot', globals())
         print("Successfully applied auto-plotting configuration")
     except Exception as e:
         print(f"Auto-plotting failed, using manual configuration: {e}")
 
-    interval_kwargs = {k: getattr(args, k) for k in get_arg_names(interval_group)}
-    plot_formatting_kwargs = {
-        k: getattr(args, k) for k in get_arg_names(plot_formatting_group)}
-
-    ## Get the configurations and corresponding results
+    ############### GET JOB CONFIGS AND CORRESPONDING RESULTS ##########################
     jobs_spec, new_cfgs, existing_cfgs_and_results, refined_config \
         = generate_gp_bo_job_specs(
             args,
@@ -320,6 +317,9 @@ def main():
     save_dir = create_plot_directory(
         args.plots_name, args.plots_group_name, is_run_plot=True)
     
+    plot_formatting_kwargs = {
+        k: getattr(args, k) for k in get_arg_names(plot_formatting_group)}
+    interval_kwargs = {k: getattr(args, k) for k in get_arg_names(interval_group)}
     script_plot_kwargs = dict(
         sharey=True,
         aspect=1.618,
