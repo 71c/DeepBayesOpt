@@ -9,6 +9,7 @@ from botorch.exceptions import UnsupportedError
 from dataset_factory import DATASET_TYPES
 from datasets.hpob_dataset import get_hpob_dataset_ids
 from nn_af.acquisition_function_net_save_utils import get_lamda_for_bo_of_nn
+from utils_general.experiments.experiment_manager import add_recompute_args
 from utils_general.utils import group_by
 from utils_general.experiments.experiment_config_utils import add_config_args, get_config_options_list
 from utils_general.experiments.submit_dependent_jobs import add_slurm_args, submit_jobs_sweep_from_args
@@ -330,26 +331,6 @@ def _gp_bo_jobs_spec_and_cfgs(
             'gpu': False
         }
     return jobs_spec, new_bo_configs, existing_bo_configs_and_results
-
-
-def add_recompute_args(parser):
-    """Add recompute options to argument parser.
-
-    This function can be reused by other scripts (e.g., experiment_manager.py)
-    to avoid duplicating argument definitions.
-    """
-    recompute_group = parser.add_argument_group("Recompute options")
-    recompute_group.add_argument(
-        '--recompute-run',
-        action='store_true',
-        help='Recompute/overwrite existing BO results (all types)'
-    )
-    recompute_group.add_argument(
-        '--recompute-non-train-only',
-        action='store_true',
-        help='Recompute/overwrite only non-NN BO results (GP and random search)'
-    )
-    return recompute_group
 
 
 def get_bo_experiments_parser(train=True):

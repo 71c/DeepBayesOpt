@@ -7,18 +7,18 @@ Handles execution of experiments defined in the registry.
 import subprocess
 import sys
 import threading
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Tuple
 
 from utils_general.utils import dict_to_cmd_args
-from .registry import ExperimentRegistry, get_registry
+from .registry import ExperimentRegistryBase
 
 
 class ExperimentRunnerBase:
     """Handles execution of experiments from the registry."""
 
-    def __init__(self, registry: Optional[ExperimentRegistry] = None):
+    def __init__(self, registry: ExperimentRegistryBase):
         """Initialize the runner."""
-        self.registry = registry or get_registry()
+        self.registry = registry
 
     def _build_command(self, script: str, args: Dict[str, str],
                       include_nn_config: bool = True,
