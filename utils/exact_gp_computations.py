@@ -1,8 +1,3 @@
-import math
-from botorch.utils.probability.utils import get_constants_like, ndtr as Phi
-import numpy as np
-import scipy
-from scipy.optimize import newton
 import torch
 from torch import Tensor
 from botorch.fit import fit_gpytorch_mll
@@ -11,12 +6,11 @@ from botorch.models.gp_regression import SingleTaskGP
 from botorch.models.gpytorch import GPyTorchModel
 from botorch.posteriors import GPyTorchPosterior, Posterior, TransformedPosterior
 from botorch.exceptions import UnsupportedError
-from botorch.acquisition.analytic import ExpectedImprovement, LogExpectedImprovement, _log_ei_helper
+from botorch.acquisition.analytic import ExpectedImprovement, LogExpectedImprovement
 from typing import Optional
 from utils.utils import fit_model, pad_tensor, remove_priors, add_priors
 from utils.nn_utils import check_xy_dims
-
-torch.set_default_dtype(torch.double)
+from utils_general.math_utils import ei_helper_inverse
 
 
 # Trying to debug a crazy problem....
@@ -225,7 +219,7 @@ def _safe_log(x):
     return torch.where(x > 0, torch.log(x), torch.zeros_like(x))
 
 
-def calculate_gi_gp_already_fit(model: GPyTorchModel,
+def _calculate_gi_gp_already_fit(model: GPyTorchModel,
                     x_cand:Tensor,
                     lambda_cand:Tensor,
                     cost_cand:Optional[Tensor]=None):
@@ -289,13 +283,13 @@ def calculate_gi_gp_already_fit(model: GPyTorchModel,
     
     lc = lambda_cand if cost_cand is None else lambda_cand * cost_cand
 
-    return gi_normal(lc, mean_y, sigma_y)
+    return _gi_normal(lc, mean_y, sigma_y)
 
 
 def calculate_gi_gp(model, x_hist, y_hist, x_cand, lambda_cand,
              cost_cand=None, fit_params=False, mle=False):
     fit_model(model, x_hist, y_hist, fit_params, mle)
-    return calculate_gi_gp_already_fit(model, x_cand, lambda_cand, cost_cand)
+    return _calculate_gi_gp_already_fit(model, x_cand, lambda_cand, cost_cand)
 
 
 def calculate_gi_gp_padded_batch(
@@ -409,58 +403,6 @@ def calculate_gi_gp_padded_batch(
     return torch.stack(gi_values) # shape (batch_size, n_cand)
 
 
-_neg_inv_sqrt_2 = -(1 / math.sqrt(2))
-_inv_sqrt_2pi = 1 / math.sqrt(math.tau)
-# _constant_1 = math.log(0.5 / math.sqrt(math.tau))
-_constant_1 = -0.5 * math.log(8.0 * math.pi)
-_constant_2 = 0.5755
-
-def _approx_ei_helper_inverse(v: Tensor) -> Tensor:
-    const1, const2 = get_constants_like((_constant_1, _constant_2), v)
-    tmp_log = const1 - torch.log(v)
-    val_low = -torch.sqrt(2 * (tmp_log - torch.log(tmp_log)))
-    val_med = const2 * torch.log(-1 + torch.exp(v / const2))
-    return torch.where(
-        v <= 0.05, val_low,
-        torch.where(v <= 10.0, val_med, v)
-    )
-
-def _phi_numpy(x: Tensor) -> Tensor:
-    r"""Standard normal PDF."""
-    return _inv_sqrt_2pi * np.exp(-0.5 * x**2)
-
-def _Phi_numpy(x):
-    r"""Standard normal CDF."""
-    return 0.5 * scipy.special.erfc(_neg_inv_sqrt_2 * x)
-
-def _ei_helper_numpy(u):
-    return _phi_numpy(u) + u * _Phi_numpy(u)
-
-def _ei_helper_inverse(v: Tensor) -> Tensor:
-    v = v.detach().cpu()
-    if not torch.is_tensor(v):
-        raise ValueError("v should be a torch tensor")
-    log_v = torch.log(v).numpy()
-
-    def f(x):
-        x = torch.from_numpy(np.asarray(x))
-        return _log_ei_helper(x).numpy() - log_v
-    def fprime(x):
-        return _Phi_numpy(x) / _ei_helper_numpy(x)
-    def fprime2(x):
-        return (
-            _phi_numpy(x) * _ei_helper_numpy(x) - _Phi_numpy(x)**2) / _ei_helper_numpy(x)**2
-
-    x0 = _approx_ei_helper_inverse(v).numpy()
-    result = newton(f, x0, fprime=fprime, fprime2=fprime2, tol=1e-10, maxiter=50)
-    return torch.tensor(result, dtype=v.dtype, device=v.device)
-
-
-def gi_normal(cbar: Tensor, mu: Tensor, sigma: Tensor) -> Tensor:
-    u = _ei_helper_inverse(cbar / sigma)
+def _gi_normal(cbar: Tensor, mu: Tensor, sigma: Tensor) -> Tensor:
+    u = ei_helper_inverse(cbar / sigma)
     return mu - sigma * u
-
-
-def probability_y_greater_than_gi_normal(cbar: Tensor, sigma: Tensor) -> Tensor:
-    u = _ei_helper_inverse(cbar / sigma)
-    return Phi(u)

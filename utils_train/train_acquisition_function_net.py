@@ -12,11 +12,17 @@ from botorch.exceptions import UnsupportedError
 
 from utils_general.tictoc import tic, toc
 from utils.utils import calculate_batch_improvement
+from utils_general.training_utils import (
+    EarlyStopper, get_average_stats, check_2d_or_3d_tensors,
+    calculate_gittins_loss, GI_NORMALIZATIONS)
 from utils_general.utils import int_linspace
 from utils_general.io_utils import save_json
-from utils.exact_gp_computations import calculate_EI_GP_padded_batch, calculate_gi_gp_padded_batch, probability_y_greater_than_gi_normal
+from utils.exact_gp_computations import (
+    calculate_EI_GP_padded_batch, calculate_gi_gp_padded_batch)
 
-from utils_train.acquisition_function_net import AcquisitionFunctionNet, ExpectedImprovementAcquisitionFunctionNet, GittinsAcquisitionFunctionNet
+from utils_train.acquisition_function_net import (
+    AcquisitionFunctionNet, ExpectedImprovementAcquisitionFunctionNet,
+    GittinsAcquisitionFunctionNet)
 from datasets.acquisition_dataset import AcquisitionDataset
 
 
@@ -24,34 +30,7 @@ METHODS = ['mse_ei', 'policy_gradient', 'gittins']
 METHODS_STR = ', '.join(f"'{x}'" for x in METHODS)
 
 
-def check_2d_or_3d_tensors(*tensors):
-    tensors = [t.squeeze(2) if t is not None and t.dim() == 3 else t
-               for t in tensors]
-    shape = None
-    for t in tensors:
-        if t is not None:
-            shape = t.shape
-            break
-    for t in tensors:
-        if t is not None:
-            if t.dim() != 2:
-                raise ValueError("All tensors must be 2D or 3D tensors")
-            if shape is not None and t.shape != shape:
-                raise ValueError("All tensors must have the same shape")
-    return tensors
-
-
-def max_one_hot(values, mask=None):
-    values, mask = check_2d_or_3d_tensors(values, mask)
-    if mask is not None:
-        neg_inf = torch.zeros_like(values)
-        neg_inf[~mask] = float("-inf")
-        values = values + neg_inf
-    return F.one_hot(torch.argmax(values, dim=1),
-                     num_classes=values.size(1)).double()
-
-
-def get_average_normalized_entropy(probabilities, mask=None, reduction="mean"):
+def _get_average_normalized_entropy(probabilities, mask=None, reduction="mean"):
     """
     Calculates the average normalized entropy of a probability distribution,
     where a uniform distribution would give a value of 1.
@@ -82,7 +61,7 @@ def get_average_normalized_entropy(probabilities, mask=None, reduction="mean"):
         raise ValueError("'reduction' must be either 'mean' or 'sum'")
 
 
-def myopic_policy_gradient_ei(probabilities, improvements, reduction="mean"):
+def _myopic_policy_gradient_ei(probabilities, improvements, reduction="mean"):
     """Calculate the policy gradient expected 1-step improvement.
 
     Args:
@@ -104,7 +83,7 @@ def myopic_policy_gradient_ei(probabilities, improvements, reduction="mean"):
         raise ValueError("'reduction' must be either 'mean' or 'sum'")
 
 
-def mse_loss(pred_improvements, improvements, mask=None, reduction="mean"):
+def _mse_loss(pred_improvements, improvements, mask=None, reduction="mean"):
     """Calculate the MSE loss. Handle padding with mask for the case that
     there is padding. This works because the padded values are both zero
     so (0 - 0)^2 = 0. Equivalent to reduction="mean" if no padding.
@@ -143,68 +122,22 @@ def mse_loss(pred_improvements, improvements, mask=None, reduction="mean"):
     return mse_per_batch.sum()
 
 
-GI_NORMALIZATIONS = ["normal"]
-def calculate_gittins_loss(pred_gi, y, lamdas, costs=None,
-                           normalize=None, known_costs=True,
-                           mask=None, reduction="mean"):
-    """Calculate the Gittins index loss.
-
-    Args:
-        pred_gi (Tensor):
-            The predicted Gittins indices. Shape (batch_size, n_cand)
-        y (Tensor):
-            The y values. Shape (batch_size, n_cand)
-        lamdas (Tensor):
-            The lambda values. Shape (batch_size, n_cand), or a scalar tensor
-        costs (Tensor or None):
-            The costs tensor, shape (batch_size, n_cand)
-        normalize (str or None):
-            How to normalize the loss function as proposed
-        known_costs (bool):
-            Whether the costs `costs` are known
-            (only applicable if normalize != None and costs != None)
-        mask (Tensor or None):
-            The mask tensor, shape (batch_size, n_cand)
-        reduction (str):
-            The reduction method. Either "mean" or "sum".
-    """
-    if lamdas.dim() == 0:
-        pred_gi, y, costs, mask = check_2d_or_3d_tensors(pred_gi, y, costs, mask)
-    else:
-        pred_gi, y, lamdas, costs, mask = check_2d_or_3d_tensors(
-            pred_gi, y, lamdas, costs, mask)
-    
-    if reduction not in {"mean", "sum"}:
-        raise ValueError("'reduction' must be either 'mean' or 'sum'")
-
-    c = lamdas if costs is None else lamdas * costs
-    losses = 0.5 * c**2 + c * (pred_gi - y) + 0.5 * F.relu(y - pred_gi)**2
-
-    if normalize == "normal":
-        normalize_c = c if known_costs else lamdas
-        normalization_consts = probability_y_greater_than_gi_normal(
-            cbar=normalize_c, sigma=1.0)
-        losses = losses / normalization_consts.to(losses)
-    elif normalize is not None:
-        raise ValueError(f"normalize must be one of {GI_NORMALIZATIONS} or None")
-
-    if mask is None:
-        mean_error_per_batch = losses.mean(dim=1)
-    else:
-        losses *= mask
-        mean_error_per_batch = losses.sum(dim=1) / mask.sum(dim=1).double()
-
-    if reduction == "mean":
-        return mean_error_per_batch.mean()
-    return mean_error_per_batch.sum()
+def _max_one_hot(values, mask=None):
+    values, mask = check_2d_or_3d_tensors(values, mask)
+    if mask is not None:
+        neg_inf = torch.zeros_like(values)
+        neg_inf[~mask] = float("-inf")
+        values = values + neg_inf
+    return F.one_hot(torch.argmax(values, dim=1),
+                     num_classes=values.size(1)).double()
 
 
-def compute_maxei(output, improvements, cand_mask, reduction="mean"):
-    probs_max = max_one_hot(output, cand_mask)
-    return myopic_policy_gradient_ei(probs_max, improvements, reduction).item()
+def _compute_maxei(output, improvements, cand_mask, reduction="mean"):
+    probs_max = _max_one_hot(output, cand_mask)
+    return _myopic_policy_gradient_ei(probs_max, improvements, reduction).item()
 
 
-def compute_acquisition_output_batch_stats(
+def _compute_acquisition_output_batch_stats(
         output, cand_mask, method:str,
         improvements=None,
         y_cand=None, lambdas=None, normalize=None,
@@ -223,9 +156,9 @@ def compute_acquisition_output_batch_stats(
         if improvements is None:
             raise ValueError(
                 "improvements must be specified for method='policy_gradient'")
-        ret[name+"avg_normalized_entropy"] = get_average_normalized_entropy(
+        ret[name+"avg_normalized_entropy"] = _get_average_normalized_entropy(
             output_detached, mask=cand_mask, reduction=reduction).item()
-        ei_softmax = myopic_policy_gradient_ei(
+        ei_softmax = _myopic_policy_gradient_ei(
             output if return_loss else output_detached, improvements, reduction)
         ret[name+"ei_softmax"] = ei_softmax.item()
         if return_loss:
@@ -233,7 +166,7 @@ def compute_acquisition_output_batch_stats(
     elif method == "mse_ei":
         if improvements is None:
             raise ValueError("improvements must be specified for method='mse_ei'")
-        mse = mse_loss(output if return_loss else output_detached,
+        mse = _mse_loss(output if return_loss else output_detached,
                        improvements, cand_mask, reduction)
         ret[name+"mse"] = mse.item()
         if return_loss:
@@ -254,13 +187,13 @@ def compute_acquisition_output_batch_stats(
                 ret["loss"] = gittins_loss
 
     if improvements is not None:
-        ret[name+"maxei"] = compute_maxei(output_detached, improvements,
+        ret[name+"maxei"] = _compute_maxei(output_detached, improvements,
                                           cand_mask, reduction)
 
     return ret
 
 
-def print_things(rows, prefix=''):
+def _print_things(rows, prefix=''):
     # Calculate the maximum width for each column
     col_widths = [
         max(len(row[col_idx]) for row in rows if len(row) > col_idx)
@@ -275,7 +208,7 @@ def print_things(rows, prefix=''):
     print("\n".join(row_strings))
 
 
-def print_stat_summary(
+def _print_stat_summary(
         stats, things_to_print, best_stat:Optional[str]=None,
         inverse_ratio=False, sqrt_ratio=False, ratio_name='Ratio'):
     best_val = None if best_stat is None else stats.get(best_stat)
@@ -290,7 +223,7 @@ def print_stat_summary(
                     ratio = math.sqrt(ratio)
                 this_thing.extend([f'  {ratio_name}:', f'{ratio:>8f}'])
             direct_things_to_print.append(this_thing)
-    print_things(direct_things_to_print, prefix="  ")
+    _print_things(direct_things_to_print, prefix="  ")
 
 
 def print_stats(stats:dict,
@@ -309,7 +242,7 @@ def print_stats(stats:dict,
             ('ei_random_search', 'Random search', True),
             ('ei_ideal', 'Ideal', True),
             ('avg_normalized_entropy', 'Avg norm. entropy', False)]
-        print_stat_summary(
+        _print_stat_summary(
             stats, things_to_print, best_stat='true_gp_ei_maxei',
             inverse_ratio=False, sqrt_ratio=False)
     
@@ -320,7 +253,7 @@ def print_stats(stats:dict,
             ('true_gp_ei_mse', 'True GP EI', False),
             ('map_gp_ei_mse', 'MAP GP EI', True),
             ('mse_always_predict_0', 'Always predict 0', True)]
-        print_stat_summary(
+        _print_stat_summary(
             stats, things_to_print, best_stat='true_gp_ei_mse',
             inverse_ratio=True, sqrt_ratio=True, ratio_name='RMSE Ratio')
     elif method == 'gittins':
@@ -330,12 +263,12 @@ def print_stats(stats:dict,
             ('gittins_loss' + tmp, 'NN', True),
             ('true_gp_gi_gittins_loss' + tmp, 'True GP GI', False)
         ]
-        print_stat_summary(
+        _print_stat_summary(
             stats, things_to_print, best_stat='true_gp_gi',
             inverse_ratio=True, sqrt_ratio=False)
 
 
-def print_train_batch_stats(nn_batch_stats, nn_model, method,
+def _print_train_batch_stats(nn_batch_stats, nn_model, method,
                             batch_index, n_batches,
                             reduction="mean", batch_size=None,
                             gi_loss_normalization=None):
@@ -377,22 +310,6 @@ def print_train_batch_stats(nn_batch_stats, nn_model, method,
                 suffix += f", batchnorm constant={const:>7f}"
 
     print(f"{prefix}: {loss_value:>7f}{suffix}  [{batch_index+1:>4d}/{n_batches:>4d}]")
-
-
-def get_average_stats(stats_list, batch_reduction:str, total_n_samples=None):
-    if batch_reduction == "mean":
-        assert total_n_samples is None
-        divisor = len(stats_list)
-    elif batch_reduction == "sum":
-        divisor = total_n_samples
-    else:
-        raise ValueError("'batch_reduction' must be either 'mean' or 'sum'")
-    return {key: sum(d[key] for d in stats_list) / divisor
-            for key in stats_list[0]}
-
-
-def shape_or_none(x):
-    return x if x is None else list(x.shape)
 
 
 def train_or_test_loop(dataloader: DataLoader,
@@ -511,11 +428,6 @@ def train_or_test_loop(dataloader: DataLoader,
             raise ValueError("'train' must not be specified if not evaluating a NN model")
         if nn_device is not None:
             raise ValueError("'nn_device' must not be specified if not evaluating a NN model")
-
-    # More of an annoyance than anything, so just ignore
-    # if not (train and verbose):
-    #     if n_train_printouts is not None:
-    #         raise ValueError("n_train_printouts can't be be specified if train != True or verbose != True")
     
     if not train:
         if optimizer is not None:
@@ -526,8 +438,6 @@ def train_or_test_loop(dataloader: DataLoader,
     if verbose:
         if not (desc is None or isinstance(desc, str)):
             raise ValueError("desc must be a string or None if verbose")
-    # elif desc is not None:  # Just ignore desc in this case.
-    #     raise ValueError("desc must be None if not verbose")
     
     has_true_gp_stats = hasattr(dataset, "_cached_true_gp_stats")
     has_map_gp_stats = hasattr(dataset, "_cached_map_gp_stats")
@@ -586,10 +496,6 @@ def train_or_test_loop(dataloader: DataLoader,
         else:
             y_cand = vals_cand_0
             improvements = calculate_batch_improvement(y_hist, y_cand, hist_mask, cand_mask)
-
-        # print("(DEBUG) Mean Improvement:", improvements.mean())
-
-        # print("x_hist shape:", shape_or_none(x_hist), "y_hist shape:", shape_or_none(y_hist), "x_cand shape:", shape_or_none(x_cand), "improvements shape:", shape_or_none(improvements), "hist_mask shape:", shape_or_none(hist_mask), "cand_mask shape:", shape_or_none(cand_mask))
 
         this_batch_size = improvements.size(0)
         assert this_batch_size <= batch_size
@@ -653,14 +559,12 @@ def train_or_test_loop(dataloader: DataLoader,
                         exponentiate=(method == "mse_ei"),
                         softmax=(method == "policy_gradient"))
 
-                nn_batch_stats = compute_acquisition_output_batch_stats(
+                nn_batch_stats = _compute_acquisition_output_batch_stats(
                     nn_output, cand_mask_nn, method,
                     improvements=improvements_nn,
                     y_cand=y_cand_nn, lambdas=lambdas_nn,
                     normalize=gi_loss_normalization,
                     return_loss=train, reduction="sum")
-                # print("NN", nn_batch_stats)
-                # print("(DEBUG) Mean EI NN:", nn_output.mean())
                 
                 if train and not is_degenerate_batch:
                     # convert sum to mean so that this is consistent across batch sizes
@@ -674,50 +578,22 @@ def train_or_test_loop(dataloader: DataLoader,
                         nn_model.set_alpha(nn_model.get_alpha() + alpha_increment)
                     
                     if verbose and n_train_printouts is not None and i in print_indices:
-                        print_train_batch_stats(nn_batch_stats, nn_model,
+                        _print_train_batch_stats(nn_batch_stats, nn_model,
                                                 method, i,
                                                 n_training_batches,
                                                 reduction="sum",
                                                 batch_size=this_batch_size,
                                                 gi_loss_normalization=gi_loss_normalization)
-                        
-                        # # Debug code
-                        # if method == 'mse_ei':
-                        #     nn_output_no_transform = nn_model(
-                        #         x_hist_nn, y_hist_nn, x_cand_nn, hist_mask_nn, cand_mask_nn,
-                        #         exponentiate=False, softmax=False)
-                        #     mean = nn_output_no_transform.mean().item()
-                        #     std = nn_output_no_transform.std().item()
-                        #     min_val = nn_output_no_transform.min().item()
-                        #     max_val = nn_output_no_transform.max().item()
-                        #     print(f"(DEBUG) nn_output_no_transform mean={mean:>4f}, "
-                        #           f"std={std:>4f}, min={min_val:>4f}, max={max_val:>4f}")
-                        #     min_tf = nn_output.min().item()
-                        #     max_tf = nn_output.max().item()
-                        #     print(f"(DEBUG) nn_output min={min_tf:>4f}, max={max_tf:>4f}")
-
-                            # if has_models:
-                            #     ei_values_true_model = calculate_EI_GP_padded_batch(
-                            #         x_hist, y_hist, x_cand, hist_mask, cand_mask, models)
-                            #     min_ei_gp = ei_values_true_model.min().item()
-                            #     max_ei_gp = ei_values_true_model.max().item()
-                            #     print(f"(DEBUG) ei_values_true_model min={min_ei_gp:>4f}, max={max_ei_gp:>4f}")
 
                 nn_batch_stats_list.append(nn_batch_stats)
 
         with torch.no_grad():
             if compute_true_gp_stats:
                 # Calculate true GP EI stats
-                # print(models[0].training)
                 ei_values_true_model = calculate_EI_GP_padded_batch(
                     x_hist, y_hist, x_cand, hist_mask, cand_mask, models)
-                # print(f"{ei_values_true_model=}, {ei_values_true_model.shape=}")
-                # print(f"{improvements=}, {improvements.shape=}")
-                # print(models[0].training, models[0])
 
-                # print(f"Here, {x_cand.shape=}, {vals_cand.shape=}, {cand_mask.shape=}, {improvements.shape=}")
-
-                true_gp_batch_stats = compute_acquisition_output_batch_stats(
+                true_gp_batch_stats = _compute_acquisition_output_batch_stats(
                     ei_values_true_model, cand_mask, method='mse_ei',
                     improvements=improvements,
                     return_loss=False, name="true_gp_ei", reduction="sum")
@@ -733,27 +609,12 @@ def train_or_test_loop(dataloader: DataLoader,
                         is_log=False
                     )
                     # normalize=None here means normalize all options
-                    true_gp_batch_stats_gi = compute_acquisition_output_batch_stats(
+                    true_gp_batch_stats_gi = _compute_acquisition_output_batch_stats(
                         gi_values_true_model, cand_mask, method='gittins',
                         improvements=improvements,
                         y_cand=y_cand, lambdas=lambdas, normalize=None,
                         return_loss=False, name="true_gp_gi", reduction="sum")
                     true_gp_batch_stats = {**true_gp_batch_stats, **true_gp_batch_stats_gi}
-
-                # print(compute_myopic_acquisition_output_batch_stats(
-                #     ei_values_true_model, cand_mask, method='mse_ei',
-                #     improvements=improvements, return_loss=False,
-                #     name="true_gp_ei", reduction="mean"))
-                # print()
-                # print("GP", true_gp_batch_stats)
-                
-                # model0 = models[0]
-                # if hasattr(model0, "outcome_transform"):
-                #     print("Outcome transform:",
-                #           model0.outcome_transform._original_transform.means,
-                #           model0.outcome_transform._original_transform.stdvs)
-                
-                # print("(DEBUG) Mean EI GP:", ei_values_true_model.mean())
 
                 true_gp_stats_list.append(true_gp_batch_stats)
             
@@ -767,21 +628,20 @@ def train_or_test_loop(dataloader: DataLoader,
                     random_search_probs = cand_mask.double() / cand_mask.sum(
                         dim=1, keepdim=True).double()
                 basic_stats_list.append({
-                    "ei_random_search": myopic_policy_gradient_ei(
+                    "ei_random_search": _myopic_policy_gradient_ei(
                         random_search_probs, improvements, reduction="sum").item(),
-                    "ei_ideal": compute_maxei(improvements, improvements,
+                    "ei_ideal": _compute_maxei(improvements, improvements,
                                                cand_mask, reduction="sum"),
-                    "mse_always_predict_0": mse_loss(
+                    "mse_always_predict_0": _mse_loss(
                         torch.zeros_like(vals_cand_0), improvements, cand_mask,
                         reduction="sum").item()
                 })
-        # print()
         
         if compute_map_gp_stats: # I'm not updating this part anymore, I don't care
             # Calculate the MAP GP EI values
             ei_values_map = calculate_EI_GP_padded_batch(
                 x_hist, y_hist, x_cand, hist_mask, cand_mask, models, fit_params=True)
-            map_gp_batch_stats = compute_acquisition_output_batch_stats(
+            map_gp_batch_stats = _compute_acquisition_output_batch_stats(
                     ei_values_map, cand_mask, method='mse_ei',
                     improvements=improvements, return_loss=False,
                     name="map_gp_ei", reduction="sum")
@@ -823,50 +683,6 @@ def train_or_test_loop(dataloader: DataLoader,
         ret.update(get_average_stats(nn_batch_stats_list, "sum", dataset_length))
     
     return ret
-
-
-import logging
-
-# Set to True to enable debug logging
-DEBUG = False
-
-# Based on EarlyStopping class from PyTorch Ignite
-# https://pytorch.org/ignite/_modules/ignite/handlers/early_stopping.html#EarlyStopping
-class EarlyStopper:
-    def __init__(
-        self,
-        patience: int,
-        min_delta: float = 0.0,
-        cumulative_delta: bool = False,
-    ):
-        if patience < 1:
-            raise ValueError("Argument patience should be positive integer.")
-        if min_delta < 0.0:
-            raise ValueError("Argument min_delta should not be a negative number.")
-        
-        self.patience = patience
-        self.min_delta = min_delta
-        self.cumulative_delta = cumulative_delta
-        self.counter = 0
-        self.best_score: Optional[float] = None
-        self.logger = logging.getLogger(self.__class__.__name__)
-        self.logger.setLevel(logging.DEBUG if DEBUG else logging.WARNING)
-    
-    def __call__(self, score: float) -> bool:
-        if self.best_score is None:
-            self.best_score = score
-        elif score <= self.best_score + self.min_delta:
-            if not self.cumulative_delta and score > self.best_score:
-                self.best_score = score
-            self.counter += 1
-            self.logger.debug("EarlyStopper: %i / %i" % (self.counter, self.patience))
-            if self.counter >= self.patience:
-                self.logger.info("EarlyStopper: Stop training")
-                return True
-        else:
-            self.best_score = score
-            self.counter = 0
-        return False
 
 
 BASIC_STATS = {"ei_random_search", "ei_ideal", "mse_always_predict_0"}

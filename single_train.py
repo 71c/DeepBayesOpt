@@ -26,15 +26,13 @@ from utils_train.train_acquisition_function_net import (
 import logging
 logging.basicConfig(level=logging.WARNING)
 
-##################### Settings for this script #################################
-# Whether to fit maximum a posteriori GP for testing
-FIT_MAP_GP = False
+############################### Settings #######################################
 SAVE_INCREMENTAL_BEST_MODELS = False
 CPROFILE = False
 TIME = True
 VERBOSE = True
 
-############################# Settings for datasets ############################
+#### SPECIFIC
 from datasets.gp_acquisition_dataset_manager import (
     GET_TRAIN_TRUE_GP_STATS,
     GET_TEST_TRUE_GP_STATS
@@ -58,11 +56,13 @@ def single_train(cmd_args: Optional[Sequence[str]]=None):
     print("Number of parameters:", count_parameters(model))
     print(f"\nSaving model and configs to {model_and_info_folder_name}\n")
 
+    #### SPECIFIC
     dataset_type = getattr(args, 'dataset_type', 'gp')
     get_train_true_gp_stats = GET_TRAIN_TRUE_GP_STATS and dataset_type == 'gp'
     get_test_true_gp_stats = GET_TEST_TRUE_GP_STATS and dataset_type == 'gp'
 
     ####################### Make the train and test datasets #######################
+    #### SPECIFIC (COULD BE MADE GENERIC)
     (train_aq_dataset, test_aq_dataset,
      small_test_aq_dataset) = create_train_test_acquisition_datasets_from_args(args)
 
@@ -81,6 +81,7 @@ def single_train(cmd_args: Optional[Sequence[str]]=None):
             tic("Training")
         
         print(f"learning rate: {args.learning_rate}, batch size: {args.batch_size}")
+        #### SPECIFIC
         print(f"dimension: {args.dimension}, lengthscale: {args.lengthscale}")
         weight_decay = 0.0 if args.weight_decay is None else args.weight_decay
         c = torch.optim.AdamW if weight_decay > 0 else torch.optim.Adam

@@ -12,10 +12,11 @@ from utils.constants import MODELS_VERSION
 from utils.utils import convert_to_json_serializable_gpytorch
 from utils_general.io_utils import load_json, save_json
 from utils_general.torch_module_save_utils import TorchModuleSaveUtils
+from utils_general.training_utils import GI_NORMALIZATIONS
 from utils_general.utils import dict_to_hash
 from utils_train.acquisition_function_net import AcquisitionFunctionBodyPointnetV1and2, AcquisitionFunctionBodyTransformerNP, AcquisitionFunctionNet, AcquisitionFunctionNetFinalMLP, ExpectedImprovementAcquisitionFunctionNet, GittinsAcquisitionFunctionNet, TwoPartAcquisitionFunctionNetFixedHistoryOutputDim
 from utils_train.acquisition_function_net_constants import POINTNET_ACQF_PARAMS_INPUT_DEFAULT, POINTNET_ACQF_PARAMS_INPUT_OPTIONS
-from utils_train.train_acquisition_function_net import GI_NORMALIZATIONS, METHODS
+from utils_train.train_acquisition_function_net import METHODS
 
 
 _POINTNET_X_CAND_INPUT_OPTIONS = {
