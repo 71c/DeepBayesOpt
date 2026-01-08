@@ -1,7 +1,10 @@
 from typing import Optional
+from types import SimpleNamespace
+from abc import ABC, abstractmethod
 from tqdm import tqdm
 from datasets.acquisition_dataset import AcquisitionDataset
 import torch
+from torch import Tensor
 from torch.utils.data import DataLoader
 from botorch.exceptions import UnsupportedError
 
@@ -22,7 +25,341 @@ from utils_train.train_utils import compute_maxei, get_average_normalized_entrop
 _METHODS_STR = ', '.join(f"'{x}'" for x in METHODS)
 
 
-class TrainOrTestLoop:
+class TrainOrTestLoopState(ABC):
+    def __init__(
+            self,
+            dataloader: DataLoader,
+            nn_model: Optional[AcquisitionFunctionNet]=None,
+            train:Optional[bool]=None,
+            nn_device=None,
+            method:Optional[str]=None, # ONLY used when training NN
+            verbose:bool=True,
+            desc:Optional[str]=None,
+            
+            n_train_printouts:Optional[int]=None,
+            optimizer:Optional[torch.optim.Optimizer]=None,
+
+            # Whether to return None if there is nothing to compute
+            return_none=False,
+
+            **specific_kwargs) -> bool:
+        """Initialize the TrainOrTestLoopState.
+        Must set an attribute `do_nothing` to self, which is a boolean indicating
+        whether there is anything to compute
+        (True if there is nothing to compute, False otherwise)."""
+        
+        self.do_nothing = nn_model is None
+
+        self.nn_model = nn_model
+        self.train = train
+        self.nn_device = nn_device
+        self.method = method
+
+        if nn_model is not None:
+            self.nn_batch_stats_list = []
+        
+        self.n_batches = len(dataloader)
+        self.dataset = dataloader.dataset
+        self.batch_size = dataloader.batch_size
+
+        self.n_training_batches = self.n_batches
+        if len(self.dataset) % self.batch_size != 0:
+            self.n_training_batches -= 1
+
+        if not isinstance(dataloader, DataLoader):
+            raise ValueError("dataloader must be a torch DataLoader")
+        
+        if dataloader.drop_last:
+            raise ValueError("dataloader must have drop_last=False")
+        
+        if not isinstance(verbose, bool):
+            raise ValueError("verbose must be a boolean")
+        
+        if n_train_printouts == 0:
+            n_train_printouts = None
+
+        if nn_model is not None: # evaluating a NN model
+            if not isinstance(nn_model, AcquisitionFunctionNet):
+                raise ValueError("nn_model must be a AcquisitionFunctionNet instance")
+            if not isinstance(train, bool):
+                raise ValueError("'train' must be a boolean if evaluating a NN model")
+            
+            if method not in METHODS:
+                raise ValueError(
+                    f"'method' must be one of {_METHODS_STR} if evaluating a NN model; "
+                    f"it was {method}")
+            
+            if train:
+                if optimizer is None:
+                    raise ValueError("optimizer must be specified if training")
+                if not isinstance(optimizer, torch.optim.Optimizer):
+                    raise ValueError("optimizer must be a torch Optimizer instance")
+                if verbose:
+                    if n_train_printouts is not None:
+                        if not (isinstance(n_train_printouts, int) and n_train_printouts >= 0):
+                            raise ValueError("n_train_printouts must be a non-negative integer")
+                nn_model.train()
+            else:
+                nn_model.eval()
+        else: # just evaluating the dataset, no NN model
+            if method is not None:
+                raise ValueError("'method' must not be specified if not evaluating a NN model")
+            if train is not None:
+                raise ValueError("'train' must not be specified if not evaluating a NN model")
+            if nn_device is not None:
+                raise ValueError("'nn_device' must not be specified if not evaluating a NN model")
+        
+        if not train:
+            if optimizer is not None:
+                raise ValueError("optimizer must not be specified if train != True")
+        
+        if verbose:
+            if not (desc is None or isinstance(desc, str)):
+                raise ValueError("desc must be a string or None if verbose")
+    
+    @abstractmethod
+    def get_data_from_batch(self, batch) -> SimpleNamespace:
+        pass
+
+    @abstractmethod
+    def get_data_from_batch_for_nn(self, batch) -> SimpleNamespace:
+        pass
+
+    @abstractmethod
+    def evaluate_nn_on_batch(self, nn_model, batch_data: SimpleNamespace) -> Tensor:
+        pass
+
+    @abstractmethod
+    def compute_nn_batch_stats(
+            self, nn_output, batch_data: SimpleNamespace) -> dict:
+        pass
+    
+    def perform_post_optimizer_step_updates(self):
+        """Perform any updates needed after the optimizer step during training.
+        This is a no-op by default, but can be overridden in subclasses."""
+        pass
+
+    @abstractmethod
+    def print_train_batch_stats(self, nn_batch_stats):
+        pass
+
+    def compute_additional_batch_stats(self, batch_data: SimpleNamespace):
+        """Compute any additional batch statistics that do not involve the NN model.
+        This is a no-op by default, but can be overridden in subclasses."""
+        pass
+
+    def aggregate_stats(self) -> dict:
+        ret = {}
+        if self.nn_model is not None:
+            ret.update(get_average_stats(
+                self.nn_batch_stats_list, "sum", self._dataset_length))
+        return ret
+    
+    @property
+    def _dataset_length(self):
+        return 0 if self.do_nothing else len(self.dataset)
+
+
+class AcquisitionFunctionTrainOrTestLoopState(TrainOrTestLoopState):
+    def __init__(
+            self,
+            dataloader: DataLoader,
+            nn_model: Optional[AcquisitionFunctionNet]=None,
+            train:Optional[bool]=None,
+            nn_device=None,
+            method:Optional[str]=None, # ONLY used when training NN
+            verbose:bool=True,
+            desc:Optional[str]=None,
+            
+            n_train_printouts:Optional[int]=None,
+            optimizer:Optional[torch.optim.Optimizer]=None,
+
+            # Whether to return None if there is nothing to compute
+            return_none=False,
+
+            **specific_kwargs) -> bool:
+        super().__init__(
+            dataloader=dataloader,
+            nn_model=nn_model,
+            train=train,
+            nn_device=nn_device,
+            method=method,
+            verbose=verbose,
+            desc=desc,
+            n_train_printouts=n_train_printouts,
+            optimizer=optimizer,
+            return_none=return_none,
+            **specific_kwargs
+        )
+        ### Get the specific kwargs
+        self.get_true_gp_stats = specific_kwargs.get("get_true_gp_stats")
+        self.get_map_gp_stats = specific_kwargs.get("get_map_gp_stats", False)
+        self.get_basic_stats = specific_kwargs.get("get_basic_stats", True)
+        self.alpha_increment = specific_kwargs.get("alpha_increment")
+        self.gi_loss_normalization = specific_kwargs.get("gi_loss_normalization")
+        ### Validate inputs
+        dataset = self.dataset
+        if not isinstance(dataset, AcquisitionDataset):
+            raise ValueError("The dataloader must contain an AcquisitionDataset")
+        if nn_model is not None: # evaluating a NN model
+            if method == "gittins":
+                if not isinstance(nn_model, GittinsAcquisitionFunctionNet):
+                    raise ValueError("nn_model must be a GittinsAcquisitionFunctionNet "
+                                    "instance if method='gittins'")
+                if nn_model.costs_in_history:
+                    raise UnsupportedError("nn_model.costs_in_history=True is currently not"
+                                        " supported for method='gittins'")
+                if nn_model.cost_is_input:
+                    raise UnsupportedError("nn_model.cost_is_input=True is currently not"
+                                        " supported for method='gittins'")
+                self.nnei = False
+            elif method == 'policy_gradient' or method == 'mse_ei':
+                if not isinstance(nn_model, ExpectedImprovementAcquisitionFunctionNet):
+                    raise ValueError(
+                        "nn_model must be a ExpectedImprovementAcquisitionFunctionNet "
+                        "instance if method='policy_gradient' or method='mse_ei'")
+                self.nnei = True
+            else:
+                raise UnsupportedError(f"method '{method}' is not supported")
+        self.has_models = dataset.has_models
+        if self.get_true_gp_stats is None:
+            self.get_true_gp_stats = self.has_models and dataset.data_is_fixed
+        if not isinstance(self.get_true_gp_stats, bool):
+            raise ValueError("get_true_gp_stats must be a boolean")
+        if not isinstance(self.get_map_gp_stats, bool):
+            raise ValueError("get_map_gp_stats must be a boolean")
+        if not isinstance(self.get_basic_stats, bool):
+            raise ValueError("get_basic_stats must be a boolean")
+        if not self.has_models:
+            if self.get_true_gp_stats:
+                raise ValueError("get_true_gp_stats must be False if no models are present")
+            if self.get_map_gp_stats:
+                raise ValueError("get_map_gp_stats must be False if no models are present")
+        if nn_model is not None and train and self.alpha_increment is not None:
+            if not (isinstance(self.alpha_increment, float) and self.alpha_increment >= 0):
+                raise ValueError("alpha_increment must be a positive float")
+        if not train and self.alpha_increment is not None:
+            raise ValueError("alpha_increment must not be specified if train != True")
+        
+        self.has_true_gp_stats = hasattr(dataset, "_cached_true_gp_stats")
+        self.has_map_gp_stats = hasattr(dataset, "_cached_map_gp_stats")
+        self.has_basic_stats = hasattr(dataset, "_cached_basic_stats")
+        if not dataset.data_is_fixed:
+            assert not (self.has_true_gp_stats or self.has_map_gp_stats or self.has_basic_stats)
+        self.compute_true_gp_stats = self.get_true_gp_stats and not self.has_true_gp_stats
+        self.compute_map_gp_stats = self.get_map_gp_stats and not self.has_map_gp_stats
+        self.compute_basic_stats = self.get_basic_stats and not self.has_basic_stats
+
+        if self.compute_true_gp_stats:
+            self.true_gp_stats_list = []
+        if self.compute_map_gp_stats:
+            self.map_gp_stats_list = []
+        if self.compute_basic_stats:
+            self.basic_stats_list = []
+        
+        self.do_nothing = (self.do_nothing
+                           and not self.compute_true_gp_stats
+                           and not self.compute_map_gp_stats
+                           and not self.compute_basic_stats)
+
+    def get_data_from_batch(self, batch) -> SimpleNamespace:
+        x_hist, y_hist, x_cand, vals_cand, hist_mask, cand_mask = batch.tuple_no_model
+
+        n_out_cand = vals_cand.size(-1)
+        if not (n_out_cand == 1 or n_out_cand == 2):
+            raise ValueError("Expected either 1 or 2 output values per candidate, "
+                            f"but got {n_out_cand} output values")
+
+        vals_cand_0 = vals_cand if n_out_cand == 1 else vals_cand[..., 0].unsqueeze(-1)
+        
+        ret = SimpleNamespace(
+            x_hist=x_hist,
+            y_hist=y_hist,
+            x_cand=x_cand,
+            vals_cand=vals_cand,
+            hist_mask=hist_mask,
+            cand_mask=cand_mask,
+            n_out_cand=n_out_cand,
+            vals_cand_0=vals_cand_0,
+        )
+        if batch.give_improvements:
+            ret.improvements = vals_cand_0
+        else:
+            ret.y_cand = vals_cand_0
+            ret.improvements = calculate_batch_improvement(y_hist, ret.y_cand, hist_mask, cand_mask)
+        ret.batch_size = ret.improvements.size(0)
+        if batch.has_model:
+            ret.models = batch.model
+        return ret
+
+    def get_data_from_batch_for_nn(self, batch) -> SimpleNamespace:
+        (x_hist, y_hist, x_cand, vals_cand,
+        hist_mask, cand_mask) = batch.to(self.nn_device).tuple_no_model
+
+        method = self.method
+        n_out_cand = vals_cand.size(-1)
+
+        # Only check this when we are training the NN
+        if method == 'gittins':
+            if n_out_cand != 2:
+                raise ValueError(f"Gittins index method requires 2 cand-vals (y, lambda), but got {n_out_cand} cand-vals")
+        else:
+            if n_out_cand != 1:
+                raise UnsupportedError(
+                    "Expected 1 output value per candidate for training when method is not 'gittins'")
+        
+        ret = SimpleNamespace(
+            x_hist=x_hist,
+            y_hist=y_hist,
+            x_cand=x_cand,
+            hist_mask=hist_mask,
+            cand_mask=cand_mask,
+        )
+        
+        if batch.give_improvements:
+            if method == 'gittins':
+                raise RuntimeError(
+                    "Has batch.give_improvements==True but we need the y values for Gittins index loss")
+            ret.y_cand = None
+            ret.improvements = vals_cand
+        else:
+            # y_cand shape: batch x n_cand x 1
+            if method == 'gittins':
+                ret.y_cand = vals_cand[..., 0].unsqueeze(-1)
+            else:
+                ret.y_cand = vals_cand
+            ret.improvements = calculate_batch_improvement(
+                y_hist, ret.y_cand, hist_mask, cand_mask)
+        ret.batch_size = ret.improvements.size(0)
+
+        if method == 'gittins':
+            ret.log_lambdas = vals_cand[..., 1].unsqueeze(-1)
+            ret.lambdas = torch.exp(ret.log_lambdas)
+        else:
+            ret.lambdas = None
+        
+        return ret
+
+    def evaluate_nn_on_batch(self, nn_model, batch_data: SimpleNamespace) -> Tensor:
+        method = self.method
+        if method == 'gittins':
+            if nn_model.variable_lambda:
+                lambda_cand = batch_data.log_lambdas
+            else:
+                lambda_cand = None
+            return nn_model(
+                batch_data.x_hist, batch_data.y_hist, batch_data.x_cand,
+                lambda_cand=lambda_cand,
+                hist_mask=batch_data.hist_mask, cand_mask=batch_data.cand_mask,
+                is_log=True
+            )
+        else: # method = 'mse_ei' or 'policy_gradient' (nnei=True)
+            return nn_model(
+                batch_data.x_hist, batch_data.y_hist, batch_data.x_cand,
+                batch_data.hist_mask, batch_data.cand_mask,
+                exponentiate=(method == "mse_ei"),
+                softmax=(method == "policy_gradient"))
+
     @classmethod
     def _compute_acquisition_output_batch_stats(
             cls, output, cand_mask, method:str,
@@ -79,6 +416,28 @@ class TrainOrTestLoop:
 
         return ret
 
+    def compute_nn_batch_stats(
+            self, nn_output, batch_data: SimpleNamespace) -> dict:
+        return self._compute_acquisition_output_batch_stats(
+            nn_output, batch_data.cand_mask, self.method,
+            improvements=batch_data.improvements,
+            y_cand=batch_data.y_cand, lambdas=batch_data.lambdas,
+            normalize=self.gi_loss_normalization,
+            return_loss=self.train, reduction="sum")
+
+    def perform_post_optimizer_step_updates(self):
+        nn_model = self.nn_model
+        alpha_increment = self.alpha_increment
+        if self.nnei and nn_model.includes_alpha and alpha_increment is not None:
+            nn_model.set_alpha(nn_model.get_alpha() + alpha_increment)
+    
+    def print_train_batch_stats(self, nn_batch_stats):
+        self._print_train_batch_stats(
+            nn_batch_stats, self.nn_model, self.method,
+            self.batch_index, self.n_training_batches,
+            reduction="sum", batch_size=nn_batch_stats.batch_size,
+            gi_loss_normalization=self.gi_loss_normalization)
+
     @classmethod
     def _print_train_batch_stats(cls, nn_batch_stats, nn_model, method,
                                 batch_index, n_batches,
@@ -123,267 +482,190 @@ class TrainOrTestLoop:
 
         print(f"{prefix}: {loss_value:>7f}{suffix}  [{batch_index+1:>4d}/{n_batches:>4d}]")
 
+    def compute_additional_batch_stats(self, batch_data: SimpleNamespace):
+        x_hist = batch_data.x_hist
+        y_hist = batch_data.y_hist
+        x_cand = batch_data.x_cand
+        vals_cand = batch_data.vals_cand
+        hist_mask = batch_data.hist_mask
+        cand_mask = batch_data.cand_mask
+        n_out_cand = batch_data.n_out_cand
+        vals_cand_0 = batch_data.vals_cand_0
+        improvements = batch_data.improvements
+        with torch.no_grad():
+            if self.compute_true_gp_stats:
+                # Calculate true GP EI stats
+                ei_values_true_model = calculate_EI_GP_padded_batch(
+                    x_hist, y_hist, x_cand, hist_mask, cand_mask, batch_data.models)
+
+                true_gp_batch_stats = self._compute_acquisition_output_batch_stats(
+                    ei_values_true_model, cand_mask, method='mse_ei',
+                    improvements=improvements,
+                    return_loss=False, name="true_gp_ei", reduction="sum")
+
+                if n_out_cand == 2: # Gittins index
+                    log_lambdas = vals_cand[..., 1].unsqueeze(-1)
+                    lambdas = torch.exp(log_lambdas)
+                    gi_values_true_model = calculate_gi_gp_padded_batch(
+                        batch_data.models,
+                        x_hist, y_hist, x_cand,
+                        lambda_cand=lambdas,
+                        hist_mask=hist_mask, cand_mask=cand_mask,
+                        is_log=False
+                    )
+                    # normalize=None here means normalize all options
+                    true_gp_batch_stats_gi = self._compute_acquisition_output_batch_stats(
+                        gi_values_true_model, cand_mask, method='gittins',
+                        improvements=improvements,
+                        y_cand=batch_data.y_cand, lambdas=lambdas, normalize=None,
+                        return_loss=False, name="true_gp_gi", reduction="sum")
+                    true_gp_batch_stats = {**true_gp_batch_stats, **true_gp_batch_stats_gi}
+
+                self.true_gp_stats_list.append(true_gp_batch_stats)
+            
+            if self.compute_basic_stats:
+                # Calculate the E(I) of selecting a point at random,
+                # the E(I) of selecting the point with the maximum I (cheating), and
+                # the MSE loss of always predicting 0
+                if cand_mask is None:
+                    random_search_probs = torch.ones_like(vals_cand_0) / vals_cand_0.size(1)
+                else:
+                    random_search_probs = cand_mask.double() / cand_mask.sum(
+                        dim=1, keepdim=True).double()
+                self.basic_stats_list.append({
+                    "ei_random_search": myopic_policy_gradient_ei(
+                        random_search_probs, improvements, reduction="sum").item(),
+                    "ei_ideal": compute_maxei(improvements, improvements,
+                                            cand_mask, reduction="sum"),
+                    "mse_always_predict_0": mse_loss(
+                        torch.zeros_like(vals_cand_0), improvements, cand_mask,
+                        reduction="sum").item()
+                })
+        
+        if self.compute_map_gp_stats: # I'm not updating this part anymore, I don't care
+            # Calculate the MAP GP EI values
+            ei_values_map = calculate_EI_GP_padded_batch(
+                x_hist, y_hist, x_cand, hist_mask, cand_mask, batch_data.models, fit_params=True)
+            map_gp_batch_stats = self._compute_acquisition_output_batch_stats(
+                    ei_values_map, cand_mask, method='mse_ei',
+                    improvements=improvements, return_loss=False,
+                    name="map_gp_ei", reduction="sum")
+            self.map_gp_stats_list.append(map_gp_batch_stats)
+
+    def aggregate_stats(self) -> dict:
+        ret = super().aggregate_stats()
+        
+        if self.get_true_gp_stats:
+            if not self.has_true_gp_stats:
+                true_gp_stats = get_average_stats(self.true_gp_stats_list, "sum", self._dataset_length)
+                if self.dataset.data_is_fixed:
+                    self.dataset._cached_true_gp_stats = true_gp_stats
+            else:
+                true_gp_stats = self.dataset._cached_true_gp_stats
+            ret.update(true_gp_stats)
+        if self.get_map_gp_stats:
+            if not self.has_map_gp_stats:
+                map_gp_stats = get_average_stats(self.map_gp_stats_list, "sum", self._dataset_length)
+                if self.dataset.data_is_fixed:
+                    self.dataset._cached_map_gp_stats = map_gp_stats
+            else:
+                map_gp_stats = self.dataset._cached_map_gp_stats
+            ret.update(map_gp_stats)
+        if self.get_basic_stats:
+            if not self.has_basic_stats:
+                basic_stats = get_average_stats(self.basic_stats_list, "sum", self._dataset_length)
+                if self.dataset.data_is_fixed:
+                    self.dataset._cached_basic_stats = basic_stats
+            else:
+                basic_stats = self.dataset._cached_basic_stats
+            ret.update(basic_stats)
+        
+        return ret
+
+
+class TrainOrTestLoop:
     @classmethod
-    def train_or_test_loop(cls, dataloader: DataLoader,
-                        nn_model: Optional[AcquisitionFunctionNet]=None,
-                        train:Optional[bool]=None,
-                        nn_device=None,
-                        method:Optional[str]=None, # ONLY used when training NN
-                        verbose:bool=True,
-                        desc:Optional[str]=None,
-                        
-                        n_train_printouts:Optional[int]=None,
-                        optimizer:Optional[torch.optim.Optimizer]=None,
+    def train_or_test_loop(
+        cls,
+        dataloader: DataLoader,
+        nn_model: Optional[AcquisitionFunctionNet]=None,
+        train:Optional[bool]=None,
+        nn_device=None,
+        method:Optional[str]=None, # ONLY used when training NN
+        verbose:bool=True,
+        desc:Optional[str]=None,
+        
+        n_train_printouts:Optional[int]=None,
+        optimizer:Optional[torch.optim.Optimizer]=None,
 
-                        # Whether to return None if there is nothing to compute
-                        return_none=False,
+        # Whether to return None if there is nothing to compute
+        return_none=False,
 
-                        #### SPECIFIC
-                        get_true_gp_stats:Optional[bool]=None,
-                        get_map_gp_stats:bool=False,
-                        get_basic_stats:bool=True,
-                        # Only used when method="mse_ei" or "policy_gradient"
-                        # (only does anything if method="policy_gradient")
-                        alpha_increment:Optional[float]=None,
-                        # Only used when method="gittins" and train=True
-                        gi_loss_normalization:Optional[str]=None):
-        if not isinstance(dataloader, DataLoader):
-            raise ValueError("dataloader must be a torch DataLoader")
-        
-        if dataloader.drop_last:
-            raise ValueError("dataloader must have drop_last=False")
-        
-        n_batches = len(dataloader)
-        dataset = dataloader.dataset
-        batch_size = dataloader.batch_size
+        **specific_kwargs
 
-        n_training_batches = n_batches
-        if len(dataset) % batch_size != 0:
-            n_training_batches -= 1
-        
-        if not isinstance(verbose, bool):
-            raise ValueError("verbose must be a boolean")
-        
-        if n_train_printouts == 0:
-            n_train_printouts = None
+        # get_true_gp_stats:Optional[bool]=None,
+        # get_map_gp_stats:bool=False,
+        # get_basic_stats:bool=True,
+        # # Only used when method="mse_ei" or "policy_gradient"
+        # # (only does anything if method="policy_gradient")
+        # alpha_increment:Optional[float]=None,
+        # # Only used when method="gittins" and train=True
+        # gi_loss_normalization:Optional[str]=None
+    ):
+        loop_state = AcquisitionFunctionTrainOrTestLoopState(
+            dataloader=dataloader,
+            nn_model=nn_model,
+            train=train,
+            nn_device=nn_device,
+            method=method,
+            verbose=verbose,
+            desc=desc,
+            n_train_printouts=n_train_printouts,
+            optimizer=optimizer,
+            return_none=return_none,
+            **specific_kwargs
+        )
 
-        if nn_model is not None: # evaluating a NN model
-            if not isinstance(nn_model, AcquisitionFunctionNet):
-                raise ValueError("nn_model must be a AcquisitionFunctionNet instance")
-            if not isinstance(train, bool):
-                raise ValueError("'train' must be a boolean if evaluating a NN model")
-            
-            if method not in METHODS:
-                raise ValueError(
-                    f"'method' must be one of {_METHODS_STR} if evaluating a NN model; "
-                    f"it was {method}")
-            
-            if train:
-                if optimizer is None:
-                    raise ValueError("optimizer must be specified if training")
-                if not isinstance(optimizer, torch.optim.Optimizer):
-                    raise ValueError("optimizer must be a torch Optimizer instance")
-                if verbose:
-                    if n_train_printouts is not None:
-                        if not (isinstance(n_train_printouts, int) and n_train_printouts >= 0):
-                            raise ValueError("n_train_printouts must be a non-negative integer")
-                nn_model.train()
-            else:
-                nn_model.eval()
-        else: # just evaluating the dataset, no NN model
-            if method is not None:
-                raise ValueError("'method' must not be specified if not evaluating a NN model")
-            if train is not None:
-                raise ValueError("'train' must not be specified if not evaluating a NN model")
-            if nn_device is not None:
-                raise ValueError("'nn_device' must not be specified if not evaluating a NN model")
-        
-        if not train:
-            if optimizer is not None:
-                raise ValueError("optimizer must not be specified if train != True")
-        
-        if verbose:
-            if not (desc is None or isinstance(desc, str)):
-                raise ValueError("desc must be a string or None if verbose")
-
-        #### SPECIFIC
-        if not isinstance(dataset, AcquisitionDataset):
-            raise ValueError("The dataloader must contain an AcquisitionDataset")
-        if nn_model is not None: # evaluating a NN model
-            if method == "gittins":
-                if not isinstance(nn_model, GittinsAcquisitionFunctionNet):
-                    raise ValueError("nn_model must be a GittinsAcquisitionFunctionNet "
-                                    "instance if method='gittins'")
-                if nn_model.costs_in_history:
-                    raise UnsupportedError("nn_model.costs_in_history=True is currently not"
-                                        " supported for method='gittins'")
-                if nn_model.cost_is_input:
-                    raise UnsupportedError("nn_model.cost_is_input=True is currently not"
-                                        " supported for method='gittins'")
-                nnei = False
-            elif method == 'policy_gradient' or method == 'mse_ei':
-                if not isinstance(nn_model, ExpectedImprovementAcquisitionFunctionNet):
-                    raise ValueError(
-                        "nn_model must be a ExpectedImprovementAcquisitionFunctionNet "
-                        "instance if method='policy_gradient' or method='mse_ei'")
-                nnei = True
-            else:
-                raise UnsupportedError(f"method '{method}' is not supported")
-        has_models = dataset.has_models
-        if get_true_gp_stats is None:
-            get_true_gp_stats = has_models and dataset.data_is_fixed
-        if not isinstance(get_true_gp_stats, bool):
-            raise ValueError("get_true_gp_stats must be a boolean")
-        if not isinstance(get_map_gp_stats, bool):
-            raise ValueError("get_map_gp_stats must be a boolean")
-        if not isinstance(get_basic_stats, bool):
-            raise ValueError("get_basic_stats must be a boolean")
-        if not has_models:
-            if get_true_gp_stats:
-                raise ValueError("get_true_gp_stats must be False if no models are present")
-            if get_map_gp_stats:
-                raise ValueError("get_map_gp_stats must be False if no models are present")
-        if nn_model is not None and train and alpha_increment is not None:
-            if not (isinstance(alpha_increment, float) and alpha_increment >= 0):
-                raise ValueError("alpha_increment must be a positive float")
-        if not train and alpha_increment is not None:
-            raise ValueError("alpha_increment must not be specified if train != True")
-        
-        #### SPECIFIC
-        has_true_gp_stats = hasattr(dataset, "_cached_true_gp_stats")
-        has_map_gp_stats = hasattr(dataset, "_cached_map_gp_stats")
-        has_basic_stats = hasattr(dataset, "_cached_basic_stats")
-        if not dataset.data_is_fixed:
-            assert not (has_true_gp_stats or has_map_gp_stats or has_basic_stats)
-        compute_true_gp_stats = get_true_gp_stats and not has_true_gp_stats
-        compute_map_gp_stats = get_map_gp_stats and not has_map_gp_stats
-        compute_basic_stats = get_basic_stats and not has_basic_stats
-
-        #### SPECIFIC
-        if compute_true_gp_stats:
-            true_gp_stats_list = []
-        if compute_map_gp_stats:
-            map_gp_stats_list = []
-        if compute_basic_stats:
-            basic_stats_list = []
-        if nn_model is not None:
-            nn_batch_stats_list = []
-        
-        #### SPECIFIC
-        if not (compute_true_gp_stats or compute_map_gp_stats or
-                compute_basic_stats or nn_model is not None):
+        if loop_state.do_nothing:
             if return_none:
                 return None
             # If we are not computing any stats, then don't actually need to go through
             # the dataset. Also make verbose=False in this case.
             it = []
             verbose = False
-            do_nothing = True
         else:
             it = dataloader
-            do_nothing = False
         
         if verbose:
             if train and n_train_printouts is not None:
                 print(desc)
                 print_indices = set(int_linspace(
-                    0, n_training_batches - 1,
-                    min(n_train_printouts, n_training_batches)))
+                    0, loop_state.n_training_batches - 1,
+                    min(n_train_printouts, loop_state.n_training_batches)))
             else:
                 it = tqdm(it, desc=desc)
             tic(desc)
             
         dataset_length = 0
-        for i, batch in enumerate(it):
-            ############## SPECIFIC: Get data from the batch and determine this_batch_size
-            x_hist, y_hist, x_cand, vals_cand, hist_mask, cand_mask = batch.tuple_no_model
+        for batch_index, batch in enumerate(it):
+            loop_state.batch_index = batch_index
 
-            n_out_cand = vals_cand.size(-1)
-            if not (n_out_cand == 1 or n_out_cand == 2):
-                raise ValueError("Expected either 1 or 2 output values per candidate, "
-                                f"but got {n_out_cand} output values")
-
-            vals_cand_0 = vals_cand if n_out_cand == 1 else vals_cand[..., 0].unsqueeze(-1)
-            if batch.give_improvements:
-                improvements = vals_cand_0
-            else:
-                y_cand = vals_cand_0
-                improvements = calculate_batch_improvement(y_hist, y_cand, hist_mask, cand_mask)
+            batch_data = loop_state.get_data_from_batch(batch)
+            this_batch_size = batch_data.batch_size
             
-            if has_models:
-                models = batch.model
-
-            this_batch_size = improvements.size(0)
-            
-            
-            ############## NOT SPECIFIC
-            assert this_batch_size <= batch_size
-            is_degenerate_batch = this_batch_size < batch_size
-            if i != n_batches - 1:
+            assert this_batch_size <= loop_state.batch_size
+            is_degenerate_batch = this_batch_size < loop_state.batch_size
+            if batch_index != loop_state.n_batches - 1:
                 assert not is_degenerate_batch
             dataset_length += this_batch_size
 
-
             if nn_model is not None:
-                ############## SPECIFIC: Get data from the batch for NN
-                (x_hist_nn, y_hist_nn, x_cand_nn, vals_cand_nn,
-                hist_mask_nn, cand_mask_nn) = batch.to(nn_device).tuple_no_model
-
-                # Only check this when we are training the NN
-                if method == 'gittins':
-                    if n_out_cand != 2:
-                        raise ValueError(f"Gittins index method requires 2 cand-vals (y, lambda), but got {n_out_cand} cand-vals")
-                else:
-                    if n_out_cand != 1:
-                        raise UnsupportedError(
-                            "Expected 1 output value per candidate for training when method is not 'gittins'")
-                
-                if batch.give_improvements:
-                    if method == 'gittins':
-                        raise RuntimeError(
-                            "Has batch.give_improvements==True but we need the y values for Gittins index loss")
-                    improvements_nn = vals_cand_nn
-                else:
-                    # y_cand_nn shape: batch x n_cand x 1
-                    if method == 'gittins':
-                        y_cand_nn = vals_cand_nn[..., 0].unsqueeze(-1)
-                    else:
-                        y_cand_nn = vals_cand_nn
-                    improvements_nn = calculate_batch_improvement(
-                        y_hist_nn, y_cand_nn, hist_mask_nn, cand_mask_nn)
-                
-                if method == 'gittins':
-                    log_lambdas_nn = vals_cand_nn[..., 1].unsqueeze(-1)
-                    lambdas_nn = torch.exp(log_lambdas_nn)
-                else:
-                    lambdas_nn = None
+                batch_data_nn = loop_state.get_data_from_batch_for_nn(batch)
 
                 with torch.set_grad_enabled(train and not is_degenerate_batch):
-                    ############## SPECIFIC: Evaluate NN model on the data
-                    if method == 'gittins':
-                        if nn_model.variable_lambda:
-                            lambda_cand_nn = log_lambdas_nn
-                        else:
-                            lambda_cand_nn = None
-                        nn_output = nn_model(
-                            x_hist_nn, y_hist_nn, x_cand_nn,
-                            lambda_cand=lambda_cand_nn,
-                            hist_mask=hist_mask_nn, cand_mask=cand_mask_nn,
-                            is_log=True
-                        )
-                    else: # method = 'mse_ei' or 'policy_gradient' (nnei=True)
-                        nn_output = nn_model(
-                            x_hist_nn, y_hist_nn, x_cand_nn, hist_mask_nn, cand_mask_nn,
-                            exponentiate=(method == "mse_ei"),
-                            softmax=(method == "policy_gradient"))
+                    nn_output = loop_state.evaluate_nn_on_batch(nn_model, batch_data_nn)
 
-                    ############## SPECIFIC
-                    nn_batch_stats = cls._compute_acquisition_output_batch_stats(
-                        nn_output, cand_mask_nn, method,
-                        improvements=improvements_nn,
-                        y_cand=y_cand_nn, lambdas=lambdas_nn,
-                        normalize=gi_loss_normalization,
-                        return_loss=train, reduction="sum")
+                    nn_batch_stats = loop_state.compute_nn_batch_stats(nn_output, batch_data_nn)
                     
                     if train and not is_degenerate_batch:
                         # convert sum to mean so that this is consistent across batch sizes
@@ -393,120 +675,22 @@ class TrainOrTestLoop:
                         loss.backward()
                         optimizer.step()
 
-                        ############## SPECIFIC: Optionally do any updates after optimizer step
-                        if nnei and nn_model.includes_alpha and alpha_increment is not None:
-                            nn_model.set_alpha(nn_model.get_alpha() + alpha_increment)
+                        loop_state.perform_post_optimizer_step_updates()
                         
-                        if verbose and n_train_printouts is not None and i in print_indices:
-                            ############## SPECIFIC
-                            cls._print_train_batch_stats(nn_batch_stats, nn_model,
-                                                    method, i,
-                                                    n_training_batches,
-                                                    reduction="sum",
-                                                    batch_size=this_batch_size,
-                                                    gi_loss_normalization=gi_loss_normalization)
+                        if verbose and n_train_printouts is not None and batch_index in print_indices:
+                            loop_state.print_train_batch_stats(nn_batch_stats)
+                            
+                    loop_state.nn_batch_stats_list.append(nn_batch_stats)
 
-                    nn_batch_stats_list.append(nn_batch_stats)
+            loop_state.compute_additional_batch_stats(batch_data)
 
-            ############## SPECIFIC: Do any computations on the batch that do not involve
-            # the NN model (may involve storing results for example)
-            with torch.no_grad():
-                if compute_true_gp_stats:
-                    # Calculate true GP EI stats
-                    ei_values_true_model = calculate_EI_GP_padded_batch(
-                        x_hist, y_hist, x_cand, hist_mask, cand_mask, models)
-
-                    true_gp_batch_stats = cls._compute_acquisition_output_batch_stats(
-                        ei_values_true_model, cand_mask, method='mse_ei',
-                        improvements=improvements,
-                        return_loss=False, name="true_gp_ei", reduction="sum")
-
-                    if n_out_cand == 2: # Gittins index
-                        log_lambdas = vals_cand[..., 1].unsqueeze(-1)
-                        lambdas = torch.exp(log_lambdas)
-                        gi_values_true_model = calculate_gi_gp_padded_batch(
-                            models,
-                            x_hist, y_hist, x_cand,
-                            lambda_cand=lambdas,
-                            hist_mask=hist_mask, cand_mask=cand_mask,
-                            is_log=False
-                        )
-                        # normalize=None here means normalize all options
-                        true_gp_batch_stats_gi = cls._compute_acquisition_output_batch_stats(
-                            gi_values_true_model, cand_mask, method='gittins',
-                            improvements=improvements,
-                            y_cand=y_cand, lambdas=lambdas, normalize=None,
-                            return_loss=False, name="true_gp_gi", reduction="sum")
-                        true_gp_batch_stats = {**true_gp_batch_stats, **true_gp_batch_stats_gi}
-
-                    true_gp_stats_list.append(true_gp_batch_stats)
-                
-                if compute_basic_stats:
-                    # Calculate the E(I) of selecting a point at random,
-                    # the E(I) of selecting the point with the maximum I (cheating), and
-                    # the MSE loss of always predicting 0
-                    if cand_mask is None:
-                        random_search_probs = torch.ones_like(vals_cand_0) / vals_cand_0.size(1)
-                    else:
-                        random_search_probs = cand_mask.double() / cand_mask.sum(
-                            dim=1, keepdim=True).double()
-                    basic_stats_list.append({
-                        "ei_random_search": myopic_policy_gradient_ei(
-                            random_search_probs, improvements, reduction="sum").item(),
-                        "ei_ideal": compute_maxei(improvements, improvements,
-                                                cand_mask, reduction="sum"),
-                        "mse_always_predict_0": mse_loss(
-                            torch.zeros_like(vals_cand_0), improvements, cand_mask,
-                            reduction="sum").item()
-                    })
-            
-            if compute_map_gp_stats: # I'm not updating this part anymore, I don't care
-                # Calculate the MAP GP EI values
-                ei_values_map = calculate_EI_GP_padded_batch(
-                    x_hist, y_hist, x_cand, hist_mask, cand_mask, models, fit_params=True)
-                map_gp_batch_stats = cls._compute_acquisition_output_batch_stats(
-                        ei_values_map, cand_mask, method='mse_ei',
-                        improvements=improvements, return_loss=False,
-                        name="map_gp_ei", reduction="sum")
-                map_gp_stats_list.append(map_gp_batch_stats)
-        
-        if not do_nothing:
-            assert dataset_length == len(dataset)
+        if not loop_state.do_nothing:
+            assert dataset_length == len(loop_state.dataset)
 
         if verbose:
             toc(desc)
         
-        ret = {}
-
-        if nn_model is not None:
-            ret.update(get_average_stats(nn_batch_stats_list, "sum", dataset_length))
-
-        if get_true_gp_stats:
-            if not has_true_gp_stats:
-                true_gp_stats = get_average_stats(true_gp_stats_list, "sum", dataset_length)
-                if dataset.data_is_fixed:
-                    dataset._cached_true_gp_stats = true_gp_stats
-            else:
-                true_gp_stats = dataset._cached_true_gp_stats
-            ret.update(true_gp_stats)
-        if get_map_gp_stats:
-            if not has_map_gp_stats:
-                map_gp_stats = get_average_stats(map_gp_stats_list, "sum", dataset_length)
-                if dataset.data_is_fixed:
-                    dataset._cached_map_gp_stats = map_gp_stats
-            else:
-                map_gp_stats = dataset._cached_map_gp_stats
-            ret.update(map_gp_stats)
-        if get_basic_stats:
-            if not has_basic_stats:
-                basic_stats = get_average_stats(basic_stats_list, "sum", dataset_length)
-                if dataset.data_is_fixed:
-                    dataset._cached_basic_stats = basic_stats
-            else:
-                basic_stats = dataset._cached_basic_stats
-            ret.update(basic_stats)
-        
-        return ret
+        return loop_state.aggregate_stats()
 
 
 train_or_test_loop = TrainOrTestLoop.train_or_test_loop
