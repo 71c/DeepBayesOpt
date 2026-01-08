@@ -139,7 +139,7 @@ def forward(self, x_hist, y_hist, x_cand, acqf_params_dict=None, acqf_params=Non
 
 ### 1. Dataset Parameter Dictionary Creation
 
-**Location:** `nn_af/train_acquisition_function_net.py`
+**Location:** `utils_train/train_acquisition_function_net.py`
 
 Add preprocessing step to convert tensor-based `acqf_params` to dictionary format and compute GP posterior when enabled:
 
@@ -280,7 +280,7 @@ class AcquisitionFunctionNetModelWithParamDict(AcquisitionFunctionNetModel):
 
 ### 1. New Command-Line Arguments
 
-**Location:** `nn_af/acquisition_function_net_save_utils.py`
+**Location:** `utils_train/model_save_utils.py`
 
 ```python
 nn_architecture_group.add_argument(
@@ -304,7 +304,7 @@ nn_architecture_group.add_argument(
 ### 2. Update Model Creation
 
 ```python
-def _get_model(args):
+def initialize_module_from_args(args):
     # ... existing code ...
     
     if architecture == "pointnet":

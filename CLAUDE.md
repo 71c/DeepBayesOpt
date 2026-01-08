@@ -10,10 +10,10 @@ This repository implements research on using deep reinforcement learning techniq
 
 ### Key Components
 
-- **Neural Network Acquisition Functions** (`nn_af/`): PyTorch modules for acquisition function networks
+- **Neural Network Acquisition Functions** (`utils_train/`): PyTorch modules for acquisition function networks
   - `acquisition_function_net.py`: Core NN architectures (PointNet, Transformer-based)
   - `train_acquisition_function_net.py`: Training logic and model persistence
-  - `acquisition_function_net_save_utils.py`: Model saving/loading and configuration parsing
+  - `model_save_utils.py`: Model saving/loading and configuration parsing (contains `ACQF_NET_SAVING`)
 
 - **Bayesian Optimization Loop** (`bayesopt/`): Core BO implementation
   - `bayesopt.py`: Optimizer classes (RandomSearch, GPAcquisitionOptimizer, NNAcquisitionOptimizer)
@@ -212,9 +212,9 @@ The codebase recently underwent a refactoring where general-purpose utilities we
 
 To add new NN training parameters:
 1. Add to `get_cmd_options_train_acqf()` in `submit_train.py`
-2. Update `_parse_af_train_cmd_args()` and `_get_run_train_parser()` in `nn_af/acquisition_function_net_save_utils.py`
-3. For architecture params: modify `_get_model()`
-4. For training params: modify `_get_training_config()` and `run_train()` in `single_train.py`
+2. Update `validate_single_train_args` and `add_single_train_args_and_return_info` in `utils_train/model_save_utils.py`
+3. For architecture params: modify `initialize_module_from_args` in `utils_train/model_save_utils.py`
+4. For training params: modify `_get_training_config()` in `utils_train/model_save_utils.py` and `run_train()` in `single_train.py`
 
 ### SLURM Integration
 
