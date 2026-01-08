@@ -99,7 +99,7 @@ class TorchModuleSaveUtils(ABC):
         return ret
 
     def get_args_module_paths_from_cmd_args(self, cmd_args:Optional[Sequence[str]]=None):
-        parser, additional_info = self._get_single_train_parser_and_info()
+        parser, additional_info = self.get_single_train_parser_and_info()
         args = parser.parse_args(args=cmd_args)
         self.validate_single_train_args(args, additional_info)
 
@@ -124,6 +124,11 @@ class TorchModuleSaveUtils(ABC):
         self._cmd_opts_train_to_model_and_info_name_cache[s] = ret
         self.MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN[model_and_info_name] = cmd_opts_nn
         return ret
+    
+    def get_single_train_parser_and_info(self):
+        if self._single_train_parser_and_info is None:
+            self._single_train_parser_and_info = self._get_single_train_parser_and_info_impl()
+        return self._single_train_parser_and_info
     
     def _load_empty(self, model_and_info_path: str):
         # Loads empty model (without weights)
@@ -168,11 +173,6 @@ class TorchModuleSaveUtils(ABC):
         parser_info = self.add_single_train_args_and_return_info(parser)
 
         return parser, parser_info
-
-    def _get_single_train_parser_and_info(self):
-        if self._single_train_parser_and_info is None:
-            self._single_train_parser_and_info = self._get_single_train_parser_and_info_impl()
-        return self._single_train_parser_and_info
     
     def _get_module_paths_and_save(self, model, args):
         model_and_info_folder_name, data = self.get_module_folder_name_and_configs(model, args)

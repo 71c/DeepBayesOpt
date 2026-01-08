@@ -4,7 +4,6 @@ import cProfile, pstats
 import numpy as np
 
 from experiments.registry import get_registry
-from utils_train.acquisition_function_net_save_utils import load_module, MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN
 from utils.plot_sorting import plot_dict_to_str
 from utils.plot_utils import (
     create_plot_directory, get_plot_ax_af_iterations_func, get_plot_ax_bo_stats_vs_iteration_func, group_by_nested_attrs, save_figures_from_nested_structure)
@@ -16,6 +15,7 @@ from submit import get_bo_experiments_parser, generate_gp_bo_job_specs
 from single_run import GP_AF_DICT, pre_run_bo
 from utils_general.plot_utils import add_plot_args
 from utils_general.utils import dict_to_str, get_arg_names
+from utils_train.model_save_utils import ACQF_NET_SAVING
 
 
 CPROFILE = True
@@ -294,7 +294,7 @@ def main():
         if nn_model_name is not None:
             bo_policy_args.update(
                 {"nn." + k: v
-                 for k, v in MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN[nn_model_name].items()
+                 for k, v in ACQF_NET_SAVING.MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN[nn_model_name].items()
                  }
             )
         
@@ -551,7 +551,7 @@ def main():
                     # print()
                     # print(f"{stuff=}")
                     # exit()
-                    nn = load_module(bo_policy_args['nn_model_name'],
+                    nn = ACQF_NET_SAVING.load_module(bo_policy_args['nn_model_name'],
                                         return_model_path=False,
                                         load_weights=True,
                                         verbose=False)

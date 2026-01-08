@@ -26,7 +26,6 @@ from gpytorch.mlls import ExactMarginalLogLikelihood
 from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprovement
 
 from bayesopt.random_gp_function import RandomGPFunction
-from utils_train.acquisition_function_net_save_utils import load_module_configs
 from utils.utils import (convert_to_json_serializable_gpytorch, remove_priors)
 from utils_general.io_utils import load_json, save_json
 from utils.plot_utils import plot_optimization_trajectories_error_bars
@@ -36,6 +35,7 @@ from utils_train.acquisition_function_net import (
     AcquisitionFunctionNet, AcquisitionFunctionNetModel,
     AcquisitionFunctionNetAcquisitionFunction, ExpectedImprovementAcquisitionFunctionNet)
 from utils_general.utils import aggregate_stats_list, dict_to_hash, json_serializable_to_numpy, sanitize_file_name
+from utils_train.model_save_utils import ACQF_NET_SAVING
 
 
 class BayesianOptimizer(ABC):
@@ -528,7 +528,7 @@ class OptimizationResultsSingleMethod:
             opt_config['nn_acqf'] = {
                 'name': nn_model_name,
                 'model': optimizer_kwargs['model'].get_info_dict(),
-                **load_module_configs(nn_model_name)
+                **ACQF_NET_SAVING.load_module_configs(nn_model_name)
             }
             
         elif nn_model_name is not None:

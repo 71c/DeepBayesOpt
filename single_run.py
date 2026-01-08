@@ -21,10 +21,8 @@ from transfer_bo_baselines.fsbo.fsbo_optimizer import FSBOOptimizer
 from utils.basic_model_save_utils import BASIC_SAVING
 from utils.utils import add_outcome_transform, remove_priors
 from utils.constants import RESULTS_DIR
-from utils_train.acquisition_function_net_save_utils import load_module_configs
 
 from utils_train.acquisition_function_net import GittinsAcquisitionFunctionNet
-from utils_train.acquisition_function_net_save_utils import load_module
 from datasets.dataset_with_models import RandomModelSampler
 from datasets.hpob_dataset import get_hpob_dataset_dimension, get_hpob_function_min_max, get_hpob_initialization, get_hpob_objective_function
 from datasets.cancer_dosage_dataset import CancerDosageObjectiveSampler, get_cancer_dosage_function_min_max
@@ -37,6 +35,7 @@ from bayesopt.bayesopt import (
     RandomSearch, get_rff_function, outcome_transform_function)
 from bayesopt.stable_gittins import StableGittinsIndex
 from utils_general.utils import dict_to_cmd_args, dict_to_fname_str, dict_to_str, get_arg_names
+from utils_train.model_save_utils import ACQF_NET_SAVING
 
 
 GP_AF_NAME_PREFIX = "gp_af"
@@ -674,7 +673,7 @@ def pre_run_bo(objective_args: dict[str, Any],
             if not BASIC_SAVING.model_is_trained(nn_model_name):
                 return None
             
-            nn_model = load_module(nn_model_name, load_weights=load_weights)
+            nn_model = ACQF_NET_SAVING.load_module(nn_model_name, load_weights=load_weights)
 
             # TODO (maybe): provide exponentiate=False or exponentiate=True here
             # for ExpectedImprovementAcquisitionFunctionNet?
@@ -694,7 +693,7 @@ def pre_run_bo(objective_args: dict[str, Any],
                     raise UnsupportedError("nn_model.cost_is_input=True is currently not"
                                         " supported for Gittins index optimization")
 
-                configs = load_module_configs(nn_model_name)
+                configs = ACQF_NET_SAVING.load_module_configs(nn_model_name)
                 train_config = configs['training_config']
                 lamda_min, lamda_max = train_config['lamda_min'], train_config['lamda_max']
 

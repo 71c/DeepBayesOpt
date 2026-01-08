@@ -1,8 +1,4 @@
-"""Constants for acquisition function networks.
-
-This module contains constants that are shared between acquisition_function_net.py
-and acquisition_function_net_save_utils.py to avoid circular imports.
-"""
+"""Constants for acquisition function networks."""
 
 POINTNET_ACQF_PARAMS_INPUT_DEFAULT = 'final_only'
 

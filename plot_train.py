@@ -16,10 +16,10 @@ from utils.plot_utils import N_CANDIDATES_PLOT, create_plot_directory, group_by_
 from utils_general.utils import group_by
 from utils_general.io_utils import load_json, save_json
 
-from utils_train.acquisition_function_net_save_utils import load_module, cmd_opts_train_to_args_module_paths
 from submit_train import add_train_acqf_args, get_cmd_options_train_acqf
 from utils_general.plot_utils import add_plot_args
 from utils_general.utils import DEVICE, dict_to_str
+from utils_train.model_save_utils import ACQF_NET_SAVING
 
 CPROFILE = False
 
@@ -182,11 +182,11 @@ def main():
          cmd_nn_train, cmd_opts_nn) = get_cmd_options_train_acqf(cfg)
         
         (args_nn, pre_model, model_and_info_name, models_path
-        ) = cmd_opts_train_to_args_module_paths(cmd_opts_nn)
+        ) = ACQF_NET_SAVING.cmd_opts_train_to_args_module_paths(cmd_opts_nn)
 
         # Get the model (with the weights)
         if BASIC_SAVING.model_is_trained(model_and_info_name):
-            model, model_path = load_module(
+            model, model_path = ACQF_NET_SAVING.load_module(
                 model_and_info_name,
                 return_model_path=True, load_weights=True, verbose=False)
         else:
