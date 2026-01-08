@@ -23,7 +23,7 @@ from datasets.function_samples_dataset import ListMapFunctionSamplesDataset
 from datasets.acquisition_dataset import (
     AcquisitionDataset, CostAwareAcquisitionDataset, FunctionSamplesAcquisitionDataset)
 
-from utils_train.train_acquisition_function_net import train_or_test_loop
+from utils_train.train_or_test_loop import train_or_test_loop
 from utils_general.utils import dict_to_hash, dict_to_str
 
 

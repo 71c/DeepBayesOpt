@@ -21,7 +21,8 @@ from dataset_factory import create_train_test_acquisition_datasets_from_args
 from utils_train.acquisition_function_net import AcquisitionFunctionNetAcquisitionFunction
 from utils_train.model_save_utils import ACQF_NET_SAVING
 from utils_train.train_acquisition_function_net import (
-    print_stats, train_acquisition_function_net, train_or_test_loop)
+    print_stats, train_acquisition_function_net)
+from utils_train.train_or_test_loop import train_or_test_loop
 
 import logging
 logging.basicConfig(level=logging.WARNING)

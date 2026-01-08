@@ -2,6 +2,7 @@
 
 POINTNET_ACQF_PARAMS_INPUT_DEFAULT = 'final_only'
 
+
 POINTNET_ACQF_PARAMS_INPUT_OPTIONS = {
     "local_and_final": dict(
         input_acqf_params_to_local_nn=True,
@@ -16,3 +17,6 @@ POINTNET_ACQF_PARAMS_INPUT_OPTIONS = {
         input_acqf_params_to_final_mlp=True
     )
 }
+
+
+METHODS = ['mse_ei', 'policy_gradient', 'gittins']
