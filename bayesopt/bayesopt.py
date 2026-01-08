@@ -26,13 +26,13 @@ from gpytorch.mlls import ExactMarginalLogLikelihood
 from botorch.acquisition.analytic import LogExpectedImprovement, ExpectedImprovement
 
 from bayesopt.random_gp_function import RandomGPFunction
-from nn_af.acquisition_function_net_save_utils import load_module_configs
+from utils_train.acquisition_function_net_save_utils import load_module_configs
 from utils.utils import (convert_to_json_serializable_gpytorch, remove_priors)
 from utils_general.io_utils import load_json, save_json
 from utils.plot_utils import plot_optimization_trajectories_error_bars
 
 from datasets.dataset_with_models import RandomModelSampler
-from nn_af.acquisition_function_net import (
+from utils_train.acquisition_function_net import (
     AcquisitionFunctionNet, AcquisitionFunctionNetModel,
     AcquisitionFunctionNetAcquisitionFunction, ExpectedImprovementAcquisitionFunctionNet)
 from utils_general.utils import aggregate_stats_list, dict_to_hash, json_serializable_to_numpy, sanitize_file_name

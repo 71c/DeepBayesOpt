@@ -8,7 +8,7 @@ from botorch.exceptions import UnsupportedError
 
 from dataset_factory import DATASET_TYPES
 from datasets.hpob_dataset import get_hpob_dataset_ids
-from nn_af.acquisition_function_net_save_utils import cmd_opts_train_to_args_module_paths
+from utils_train.acquisition_function_net_save_utils import cmd_opts_train_to_args_module_paths
 from utils.utils import get_lamda_for_bo_of_nn
 from utils_general.experiments.experiment_manager import add_recompute_args
 from utils_general.utils import group_by

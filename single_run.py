@@ -21,10 +21,10 @@ from transfer_bo_baselines.fsbo.fsbo_optimizer import FSBOOptimizer
 from utils.basic_model_save_utils import BASIC_SAVING
 from utils.utils import add_outcome_transform, remove_priors
 from utils.constants import RESULTS_DIR
-from nn_af.acquisition_function_net_save_utils import load_module_configs
+from utils_train.acquisition_function_net_save_utils import load_module_configs
 
-from nn_af.acquisition_function_net import GittinsAcquisitionFunctionNet
-from nn_af.acquisition_function_net_save_utils import load_module
+from utils_train.acquisition_function_net import GittinsAcquisitionFunctionNet
+from utils_train.acquisition_function_net_save_utils import load_module
 from datasets.dataset_with_models import RandomModelSampler
 from datasets.hpob_dataset import get_hpob_dataset_dimension, get_hpob_function_min_max, get_hpob_initialization, get_hpob_objective_function
 from datasets.cancer_dosage_dataset import CancerDosageObjectiveSampler, get_cancer_dosage_function_min_max

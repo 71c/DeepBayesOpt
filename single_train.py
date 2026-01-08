@@ -18,10 +18,10 @@ from utils.plot_utils import (
 
 from dataset_factory import create_train_test_acquisition_datasets_from_args
 
-from nn_af.acquisition_function_net_save_utils import (
+from utils_train.acquisition_function_net_save_utils import (
     get_args_module_paths_from_cmd_args, load_module)
-from nn_af.acquisition_function_net import AcquisitionFunctionNetAcquisitionFunction
-from nn_af.train_acquisition_function_net import (
+from utils_train.acquisition_function_net import AcquisitionFunctionNetAcquisitionFunction
+from utils_train.train_acquisition_function_net import (
     print_stats, train_acquisition_function_net, train_or_test_loop)
 
 import logging

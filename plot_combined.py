@@ -15,7 +15,7 @@ import time
 from tqdm import tqdm
 
 from experiments.registry import get_registry
-from nn_af.acquisition_function_net_save_utils import MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN
+from utils_train.acquisition_function_net_save_utils import MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN
 from utils.basic_model_save_utils import BASIC_SAVING
 from utils.plot_utils import (
     create_plot_directory, get_plot_ax_loss_vs_regret_func, group_by_nested_attrs, save_figures_from_nested_structure)
