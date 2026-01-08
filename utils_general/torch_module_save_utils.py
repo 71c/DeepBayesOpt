@@ -32,33 +32,63 @@ class TorchModuleSaveUtils(ABC):
     @classmethod
     @abstractmethod
     def load_module_configs_from_path(cls, model_and_info_path: str) -> dict:
+        """Load all configuration files from a saved model directory.
+
+        Read configuration files from model_and_info_path and return a complete
+        configuration dictionary. Inverse of save_module_configs_to_path.
+        """
         pass
 
     @classmethod
     @abstractmethod
     def add_single_train_args_and_return_info(
         cls, parser: argparse.ArgumentParser) -> Any:
+        """Define all command-line arguments needed to train your module.
+
+        Add argument groups to the parser for dataset settings, architecture hyperparameters,
+        training options, etc. Return metadata about argument groupings (used by validation).
+        """
         pass
 
     @classmethod
     @abstractmethod
     def validate_single_train_args(cls, args: argparse.Namespace, additional_info: Any):
+        """Validate parsed arguments for consistency and set defaults.
+
+        Check required arguments, mutually exclusive options, and conditional requirements.
+        Raise ValueError with helpful messages on validation failure. Set sensible defaults.
+        """
         pass
 
     @classmethod
     @abstractmethod
     def initialize_module_from_args(cls, args: argparse.Namespace) -> nn.Module:
+        """Create and return an instance of your PyTorch module from validated arguments.
+
+        Extract parameters from args, construct initialization dictionaries, and instantiate
+        the module. Returns an empty/untrained model (weights loaded separately).
+        """
         pass
 
     @classmethod
     @abstractmethod
     def get_module_folder_name_and_configs(
         cls, model: nn.Module, args: argparse.Namespace) -> Tuple[str, dict]:
+        """Generate unique folder name for this configuration and prepare data for saving.
+
+        Create configuration dictionaries from args and model. Compute content-based hash
+        for folder name. Return (folder_name, data_dict) for save_module_configs_to_path.
+        """
         pass
 
     @classmethod
     @abstractmethod
     def save_module_configs_to_path(cls, model_and_info_path: str, data: dict):
+        """Persist all configuration data to disk in the specified directory.
+
+        Extract configs from data dict (from get_module_folder_name_and_configs) and save
+        as JSON files and/or PyTorch checkpoints. Inverse of load_module_configs_from_path.
+        """
         pass
 
     def load_module(
