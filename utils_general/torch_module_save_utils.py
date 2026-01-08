@@ -1,5 +1,6 @@
+import argparse
 import os
-from typing import Type
+from typing import Any, Optional, Sequence, Tuple, Type
 from abc import ABC, abstractmethod
 from utils_general.basic_model_save_utils import BasicModelSaveUtils
 import torch
@@ -30,6 +31,7 @@ class TorchModuleSaveUtils(ABC):
         self._empty_modules_cache = {}
         self._weights_cache = {}
         self._configs_cache = {}
+        self._single_train_parser_and_info = None
 
     def _load_empty(self, model_and_info_path: str):
         # Loads empty model (without weights)
@@ -87,3 +89,60 @@ class TorchModuleSaveUtils(ABC):
     @abstractmethod
     def load_module_configs_from_path(self, model_and_info_path: str) -> dict:
         pass
+
+    @abstractmethod
+    def get_single_train_parser_and_info(self) -> Tuple[argparse.ArgumentParser, Any]:
+        pass
+
+    @abstractmethod
+    def validate_single_train_args(self, args: argparse.Namespace, additional_info: Any):
+        pass
+
+    @abstractmethod
+    def initialize_module_from_args(self, args: argparse.Namespace) -> nn.Module:
+        pass
+
+    def _get_single_train_parser_and_info(self):
+        if self._single_train_parser_and_info is None:
+            self._single_train_parser_and_info = self.get_single_train_parser_and_info()
+        return self._single_train_parser_and_info
+
+    def get_args_module_paths_from_cmd_args(self, cmd_args:Optional[Sequence[str]]=None):
+        parser, additional_info = self._get_single_train_parser_and_info()
+        args = parser.parse_args(args=cmd_args)
+        self.validate_single_train_args(args, additional_info)
+
+        # Get the untrained model
+        # This wastes some resources, but need to do it to get the model's init dict to
+        # obtain the correct path for saving the model because that is currently how the
+        # model is uniquely identified.
+        model = self.initialize_module_from_args(args)
+
+        # Save the configs for the model and training and datasets
+        model_and_info_folder_name, models_path = self._get_module_paths_and_save(model, args)
+
+        return args, model, model_and_info_folder_name, models_path
+    
+    @abstractmethod
+    def get_module_folder_name_and_configs(self, model, args) -> Tuple[str, dict]:
+        pass
+
+    @abstractmethod
+    def save_module_configs_to_path(model_and_info_path, data):
+        pass
+
+    def _get_module_paths_and_save(self, model, args):
+        model_and_info_folder_name, data = self.get_module_folder_name_and_configs(model, args)
+        model_and_info_path = os.path.join(self.models_path, model_and_info_folder_name)
+        models_path = os.path.join(model_and_info_path, self.models_subdir_name)
+
+        already_saved = os.path.isdir(model_and_info_path)
+
+        # Assume that all the json files are already saved if the directory exists
+        if args.save_model and not already_saved:
+            print(f"Saving model and configs to new directory {model_and_info_folder_name}")
+            os.makedirs(model_and_info_path, exist_ok=False)
+            model.save_init(models_path) # Save model config
+            self.save_module_configs_to_path(model_and_info_path, data)
+
+        return model_and_info_folder_name, models_path

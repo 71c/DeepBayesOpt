@@ -126,10 +126,9 @@ def load_module_configs(model_and_info_folder_name: str):
     return all_info_json
 
 
-## PROJECT-SPECIFIC -- VERY IMPORTANT FUNCTION
-def get_nn_af_args_configs_model_paths_from_cmd_args(
-        cmd_args:Optional[Sequence[str]]=None):
-    parser, additional_info = get_single_train_parser()
+## DONE -- PROJECT-SPECIFIC -- VERY IMPORTANT FUNCTION
+def get_args_module_paths_from_cmd_args(cmd_args:Optional[Sequence[str]]=None):
+    parser, additional_info = get_single_train_parser_and_info()
     args = parser.parse_args(args=cmd_args)
     validate_single_train_args(args, additional_info)
 
@@ -138,32 +137,19 @@ def get_nn_af_args_configs_model_paths_from_cmd_args(
     # This wastes some resources, but need to do it to get the model's init dict to
     # obtain the correct path for saving the model because that is currently how the
     # model is uniquely identified.
-    model = _get_model(args)
+    model = _initialize_module_from_args(args)
 
     ############ Save the configs for the model and training and datasets
+    model_and_info_folder_name, models_path = _get_module_paths_and_save(model, args)
+
+    return args, model, model_and_info_folder_name, models_path
+
+
+## DONE
+def _get_module_folder_name_and_configs(model, args):
     training_config = _get_training_config(args)
     manager = get_dataset_manager(getattr(args, 'dataset_type', 'gp'), device="cpu")
-    gp_af_dataset_configs = manager.get_dataset_configs(args, device=GP_GEN_DEVICE)
-    model_and_info_folder_name, models_path = _save_nn_acqf_configs(
-        model,
-        training_config=training_config,
-        af_dataset_config=gp_af_dataset_configs,
-        save=args.save_model
-    )
-
-    return (args, gp_af_dataset_configs,
-            model, model_and_info_folder_name, models_path)
-
-
-## This function is *only* used in the function
-## get_nn_af_args_configs_model_paths_from_cmd_args defined above.
-## TODO: figure out what to do with this / how to treat it in the API
-def _save_nn_acqf_configs(
-        model: AcquisitionFunctionNet,
-        training_config: dict[str, Any],
-        af_dataset_config: dict[str, dict[str, Any]],
-        save:bool=True
-    ):
+    af_dataset_config = manager.get_dataset_configs(args, device=GP_GEN_DEVICE)
 
     all_info_json, model_sampler = _json_serialize_nn_acqf_configs(
         training_config=training_config,
@@ -173,47 +159,66 @@ def _save_nn_acqf_configs(
     
     all_info_hash = dict_to_hash(all_info_json)
     model_and_info_folder_name = os.path.join(MODELS_VERSION, f"model_{all_info_hash}")
+    
+    data = {
+        'training_config': training_config,
+        'af_dataset_config': af_dataset_config,
+        'model_sampler': model_sampler,
+        'all_info_json': all_info_json
+    }
+
+    return model_and_info_folder_name, data
+
+
+## DONE 
+def _save_module_configs_to_path(model_and_info_path, data):
+    # Save training config
+    save_json(data['training_config'],
+            os.path.join(model_and_info_path, "training_config.json"))
+    
+    all_info_json = data['all_info_json']
+    model_sampler = data['model_sampler']
+    af_dataset_config = data['af_dataset_config']
+
+    # Save GP dataset config
+    function_samples_config_json = all_info_json['function_samples_config']
+    acquisition_dataset_config = all_info_json['acquisition_dataset_config']
+    n_points_config = all_info_json['n_points_config']
+    save_json(function_samples_config_json,
+            os.path.join(model_and_info_path, "function_samples_config.json"))
+    save_json(acquisition_dataset_config,
+            os.path.join(model_and_info_path, "acquisition_dataset_config.json"))
+    save_json(n_points_config,
+            os.path.join(model_and_info_path, "n_points_config.json"))
+    if model_sampler is not None:
+        model_sampler.save(
+            os.path.join(model_and_info_path, "model_sampler"))
+
+    # Save dataset transform config
+    dataset_transform_config_json = all_info_json['dataset_transform_config']
+    dataset_transform_config = af_dataset_config['dataset_transform_config']
+    save_json(dataset_transform_config_json,
+            os.path.join(model_and_info_path, "dataset_transform_config.json"))
+    outcome_transform = dataset_transform_config['outcome_transform']
+    if outcome_transform is not None:
+        torch.save(outcome_transform,
+                os.path.join(model_and_info_path, "outcome_transform.pt"))
+
+
+## DONE
+def _get_module_paths_and_save(model, args):
+    model_and_info_folder_name, data = _get_module_folder_name_and_configs(model, args)
     model_and_info_path = os.path.join(MODELS_DIR, model_and_info_folder_name)
     models_path = os.path.join(model_and_info_path, MODELS_SUBDIR)
 
     already_saved = os.path.isdir(model_and_info_path)
 
     # Assume that all the json files are already saved if the directory exists
-    if save and not already_saved:
+    if args.save_model and not already_saved:
         print(f"Saving model and configs to new directory {model_and_info_folder_name}")
-
         os.makedirs(model_and_info_path, exist_ok=False)
-
-        # Save model config
-        model.save_init(models_path)
-
-        # Save training config
-        save_json(training_config,
-                os.path.join(model_and_info_path, "training_config.json"))
-
-        # Save GP dataset config
-        function_samples_config_json = all_info_json['function_samples_config']
-        acquisition_dataset_config = all_info_json['acquisition_dataset_config']
-        n_points_config = all_info_json['n_points_config']
-        save_json(function_samples_config_json,
-                os.path.join(model_and_info_path, "function_samples_config.json"))
-        save_json(acquisition_dataset_config,
-                os.path.join(model_and_info_path, "acquisition_dataset_config.json"))
-        save_json(n_points_config,
-                os.path.join(model_and_info_path, "n_points_config.json"))
-        if model_sampler is not None:
-            model_sampler.save(
-                os.path.join(model_and_info_path, "model_sampler"))
-
-        # Save dataset transform config
-        dataset_transform_config_json = all_info_json['dataset_transform_config']
-        dataset_transform_config = af_dataset_config['dataset_transform_config']
-        save_json(dataset_transform_config_json,
-                os.path.join(model_and_info_path, "dataset_transform_config.json"))
-        outcome_transform = dataset_transform_config['outcome_transform']
-        if outcome_transform is not None:
-            torch.save(outcome_transform,
-                    os.path.join(model_and_info_path, "outcome_transform.pt"))
+        model.save_init(models_path) # Save model config
+        _save_module_configs_to_path(model_and_info_path, data)
 
     return model_and_info_folder_name, models_path
 
@@ -291,15 +296,14 @@ def cmd_opts_nn_to_model_and_info_name(cmd_opts_nn):
     if s in _cache:
         return _cache[s]
     cmd_args_list_nn = dict_to_cmd_args({**cmd_opts_nn, 'no-save-model': True})
-    ret = get_nn_af_args_configs_model_paths_from_cmd_args(cmd_args_list_nn)
-    (args_nn, af_dataset_configs,
-     model, model_and_info_name, models_path) = ret
+    ret = get_args_module_paths_from_cmd_args(cmd_args_list_nn)
+    (args_nn, model, model_and_info_name, models_path) = ret
     _cache[s] = ret
     MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN[model_and_info_name] = cmd_opts_nn
     return ret
 
 
-## PROJECT-SPECIFIC (NOT PART OF THE API -- A HELPER FUNCTION)
+## DONE -- PROJECT-SPECIFIC (NOT PART OF THE API -- A HELPER FUNCTION)
 def _json_serialize_nn_acqf_configs(
         training_config: dict[str, Any],
         af_dataset_config: dict[str, dict[str, Any]],
@@ -345,7 +349,7 @@ def _json_serialize_nn_acqf_configs(
     return all_info_json, model_sampler
 
 
-## USER-SPECIFIED FUNCTION (defaults to doing nothing)
+## DONE -- USER-SPECIFIED FUNCTION (defaults to doing nothing)
 def validate_single_train_args(args: argparse.Namespace, additional_info: Any):
     all_groups_arg_names = additional_info
 
@@ -489,7 +493,8 @@ _POINTNET_X_CAND_INPUT_OPTIONS = {
 }
 
 
-def _get_model(args: argparse.Namespace):
+## DONE
+def _initialize_module_from_args(args: argparse.Namespace):
     ### Get dimension based on dataset type
     dataset_type = getattr(args, 'dataset_type', 'gp')
     if dataset_type in {'gp', 'cancer_dosage'}:
@@ -642,9 +647,9 @@ def _get_model(args: argparse.Namespace):
     #                                     initial_alpha=args.initial_alpha)
 
 
-## USER-SPECIFIED FUNCTION
+## DONE -- USER-SPECIFIED FUNCTION
 @cache
-def get_single_train_parser():
+def get_single_train_parser_and_info():
     parser = argparse.ArgumentParser()
 
     parser.add_argument(

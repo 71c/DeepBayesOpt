@@ -74,8 +74,8 @@ def get_cmd_options_train_acqf(options: dict[str, Any]):
                                 *dict_to_cmd_args(cmd_opts_nn)])
     else:
         # Get NN training argument structure
-        from nn_af.acquisition_function_net_save_utils import get_single_train_parser
-        _, nn_arg_groups = get_single_train_parser()
+        from nn_af.acquisition_function_net_save_utils import get_single_train_parser_and_info
+        _, nn_arg_groups = get_single_train_parser_and_info()
 
         # Get ALL non-dataset argument names (architecture + training + method-specific)
         nn_arg_names = set()
@@ -139,7 +139,7 @@ def create_dependency_structure_train_acqf(
                 train_nn = not transfer_bo_baseline_is_trained(
                     transfer_bo_method, dataset_hash)
             else:
-                (args_nn, af_dataset_configs, pre_model, model_and_info_name, models_path
+                (args_nn, pre_model, model_and_info_name, models_path
                 ) = cmd_opts_nn_to_model_and_info_name(cmd_opts_nn)
                 train_nn = not BASIC_SAVING.model_is_trained(model_and_info_name)
         

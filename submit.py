@@ -189,7 +189,7 @@ def _gp_bo_jobs_spec_and_cfgs(
         # Get model_and_info_name for this NN
         (cmd_dataset, cmd_opts_dataset,
          cmd_nn_train, cmd_opts_nn) = get_cmd_options_train_acqf(nn_options)
-        (args_nn, af_dataset_configs, pre_model, model_and_info_name, models_path
+        (args_nn, pre_model, model_and_info_name, models_path
         ) = cmd_opts_nn_to_model_and_info_name(cmd_opts_nn)
 
         all_new_cmds_this_nn = []

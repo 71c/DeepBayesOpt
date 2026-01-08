@@ -19,7 +19,7 @@ from utils.plot_utils import (
 from dataset_factory import create_train_test_acquisition_datasets_from_args
 
 from nn_af.acquisition_function_net_save_utils import (
-    get_nn_af_args_configs_model_paths_from_cmd_args, load_module)
+    get_args_module_paths_from_cmd_args, load_module)
 from nn_af.acquisition_function_net import AcquisitionFunctionNetAcquisitionFunction
 from nn_af.train_acquisition_function_net import (
     print_stats, train_acquisition_function_net, train_or_test_loop)
@@ -43,9 +43,8 @@ from datasets.gp_acquisition_dataset_manager import (
 
 
 def single_train(cmd_args: Optional[Sequence[str]]=None):
-    (args, af_dataset_configs,
-     model, model_and_info_folder_name, models_path
-    ) = get_nn_af_args_configs_model_paths_from_cmd_args(cmd_args)
+    (args, model, model_and_info_folder_name, models_path
+    ) = get_args_module_paths_from_cmd_args(cmd_args)
 
     if args.load_saved_model:
         model, model_path = load_module(
