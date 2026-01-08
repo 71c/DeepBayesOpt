@@ -31,10 +31,9 @@ def add_recompute_args(parser):
 
 
 class _ExperimentManagerCLI:
-    def __init__(self, runner: ExperimentRunnerBase, add_plot_args_func):
+    def __init__(self, runner: ExperimentRunnerBase):
         self.runner = runner
         self.registry = runner.registry
-        self.add_plot_args_func = add_plot_args_func
     
     def _run_command_with_streaming(self, cmd: List[str]) -> Tuple[int, str, str]:
         """Run command with real-time output streaming using threads to avoid blocking."""
@@ -286,7 +285,8 @@ class _ExperimentManagerCLI:
 
         # Note: plots_name and plots_group_name are set automatically from experiment config
         add_plot_args(parser_plot, add_plot_name_args=False)
-        self.add_plot_args_func(parser_plot)
+        if self.runner.add_extra_plot_args_func is not None:
+            self.runner.add_extra_plot_args_func(parser_plot)
         
         # Commands command (show commands like commands.txt)
         parser_commands = subparsers.add_parser('commands', help='Show commands for an experiment')
@@ -315,7 +315,7 @@ class _ExperimentManagerCLI:
         command_map[args.command](args)
 
 
-def run_experiment_manager(runner: ExperimentRunnerBase, add_plot_args_func):
+def run_experiment_manager(runner: ExperimentRunnerBase):
     """Run the Experiment Manager CLI with the given runner."""
-    cli = _ExperimentManagerCLI(runner, add_plot_args_func)
+    cli = _ExperimentManagerCLI(runner)
     cli.main()

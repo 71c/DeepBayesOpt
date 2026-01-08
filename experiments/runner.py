@@ -4,9 +4,37 @@ Experiment Runner Module
 Handles execution of experiments defined in the registry.
 """
 
+import argparse
 from typing import Tuple
 from utils_general.experiments.runner import ExperimentRunnerBase
-from utils_general.utils import dict_to_cmd_args
+from utils_general.utils import dict_to_cmd_args, get_arg_names
+from utils_general.plot_utils import add_plot_args
+from plot_run import add_plot_interval_args, add_plot_formatting_args, add_plot_iterations_args
+
+
+def _get_valid_plot_args_for_type_extended(plot_type: str) -> set:
+    """
+    Dynamically determine valid plot arguments by introspecting the argument parser.
+
+    Args:
+        plot_type: Type of plot ('run_plot', 'train_plot', or 'combined_plot')
+
+    Returns:
+        Set of valid argument names (with underscores, as they appear in kwargs)
+    """
+    parser = argparse.ArgumentParser()
+
+    # All plot types support common plot args
+    add_plot_args(parser, add_plot_name_args=True)
+
+    # run_plot and combined_plot support additional args
+    if plot_type in ('run_plot', 'combined_plot'):
+        add_plot_interval_args(parser)
+        add_plot_formatting_args(parser)
+        add_plot_iterations_args(parser)
+
+    # Extract argument names using the utility function
+    return set(get_arg_names(parser))
 
 
 class ExperimentRunner(ExperimentRunnerBase):
@@ -57,7 +85,13 @@ class ExperimentRunner(ExperimentRunnerBase):
         # Add plots configuration
         cmd.extend(args['PLOTS_CFG'].strip('"').split())
 
-        # Add all plot-specific arguments dynamically
-        cmd.extend(dict_to_cmd_args(plot_kwargs))
+        # Filter plot_kwargs to only include arguments valid for this plot type
+        valid_args = _get_valid_plot_args_for_type_extended(plot_type)
+        filtered_plot_kwargs = {
+            k: v for k, v in plot_kwargs.items() if k in valid_args
+        }
+
+        # Add filtered plot-specific arguments dynamically
+        cmd.extend(dict_to_cmd_args(filtered_plot_kwargs))
 
         return cmd

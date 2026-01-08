@@ -25,7 +25,7 @@ class TorchModuleSaveUtils(ABC):
         self._configs_cache = {}
         self._single_train_parser_and_info = None
         self.MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN = {}
-        self._cmd_opts_nn_to_model_and_info_name_cache = {}
+        self._cmd_opts_train_to_args_module_paths_cache = {}
     
     module_class: ClassVar[Type[nn.Module]]
 
@@ -114,14 +114,14 @@ class TorchModuleSaveUtils(ABC):
 
         return args, model, model_and_info_folder_name, models_path
 
-    def cmd_opts_train_to_model_and_info_name(self, cmd_opts_nn):
+    def cmd_opts_train_to_args_module_paths(self, cmd_opts_nn):
         s = dict_to_str(cmd_opts_nn)
-        if s in self._cmd_opts_train_to_model_and_info_name_cache:
-            return self._cmd_opts_train_to_model_and_info_name_cache[s]
+        if s in self._cmd_opts_train_to_args_module_paths_cache:
+            return self._cmd_opts_train_to_args_module_paths_cache[s]
         cmd_args_list_nn = dict_to_cmd_args({**cmd_opts_nn, 'no-save-model': True})
         ret = self.get_args_module_paths_from_cmd_args(cmd_args_list_nn)
         (args_nn, model, model_and_info_name, models_path) = ret
-        self._cmd_opts_train_to_model_and_info_name_cache[s] = ret
+        self._cmd_opts_train_to_args_module_paths_cache[s] = ret
         self.MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN[model_and_info_name] = cmd_opts_nn
         return ret
     

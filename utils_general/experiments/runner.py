@@ -3,19 +3,46 @@ Experiment Runner Module
 
 Handles execution of experiments defined in the registry.
 """
+import argparse
 import sys
 from typing import Dict, List, Tuple
 
-from utils_general.utils import dict_to_cmd_args
+from utils_general.utils import dict_to_cmd_args, get_arg_names
+from utils_general.plot_utils import add_plot_args
 from .registry import ExperimentRegistryBase
+
+
+def _get_valid_plot_args_for_type(plot_type: str, add_extra_plot_args_func) -> set:
+    """
+    Dynamically determine valid plot arguments by introspecting the argument parser.
+
+    Args:
+        plot_type: Type of plot ('run_plot', 'train_plot', etc.)
+        add_extra_plot_args_func: Function that adds extra plot-specific arguments
+
+    Returns:
+        Set of valid argument names (with underscores, as they appear in kwargs)
+    """
+    parser = argparse.ArgumentParser()
+
+    # All plot types support common plot args
+    add_plot_args(parser, add_plot_name_args=True)
+
+    # Add extra plot-specific args for run_plot
+    if plot_type == 'run_plot' and add_extra_plot_args_func is not None:
+        add_extra_plot_args_func(parser)
+
+    # Extract argument names using the utility function
+    return set(get_arg_names(parser))
 
 
 class ExperimentRunnerBase:
     """Handles execution of experiments from the registry."""
 
-    def __init__(self, registry: ExperimentRegistryBase):
+    def __init__(self, registry: ExperimentRegistryBase, add_extra_plot_args_func=None):
         """Initialize the runner."""
         self.registry = registry
+        self.add_extra_plot_args_func = add_extra_plot_args_func
 
     def _build_command(self, script: str, args: Dict[str, str],
                       include_nn_config: bool = True,
@@ -177,12 +204,18 @@ class ExperimentRunnerBase:
             )
         else:
             raise ValueError(f"Unknown plot type: {plot_type}")
-        
+
         # Add plots configuration
         cmd.extend(args['PLOTS_CFG'].strip('"').split())
 
-        # Add all plot-specific arguments dynamically
-        cmd.extend(dict_to_cmd_args(plot_kwargs))
+        # Filter plot_kwargs to only include arguments valid for this plot type
+        valid_args = _get_valid_plot_args_for_type(plot_type, self.add_extra_plot_args_func)
+        filtered_plot_kwargs = {
+            k: v for k, v in plot_kwargs.items() if k in valid_args
+        }
+
+        # Add filtered plot-specific arguments dynamically
+        cmd.extend(dict_to_cmd_args(filtered_plot_kwargs))
 
         return cmd
 

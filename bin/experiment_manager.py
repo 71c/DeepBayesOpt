@@ -26,8 +26,8 @@ def add_extra_plot_args(parser_plot):
 
 def main():
     registry = get_registry()
-    runner = ExperimentRunner(registry)
-    run_experiment_manager(runner, add_extra_plot_args)
+    runner = ExperimentRunner(registry, add_extra_plot_args_func=add_extra_plot_args)
+    run_experiment_manager(runner)
 
 
 if __name__ == '__main__':

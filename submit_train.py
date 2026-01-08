@@ -12,6 +12,7 @@ from utils_general.experiments.experiment_config_utils import CONFIG_DIR, add_co
 from utils_general.experiments.submit_dependent_jobs import add_slurm_args, submit_jobs_sweep_from_args
 
 from dataset_factory import add_common_acquisition_dataset_args, add_lamda_args, create_train_test_acquisition_datasets_from_args
+from utils_train.model_save_utils import ACQF_NET_SAVING
 
 
 @cache
@@ -73,7 +74,6 @@ def get_cmd_options_train_acqf(options: dict[str, Any]):
                                 *dict_to_cmd_args(cmd_opts_nn)])
     else:
         # Get NN training argument structure
-        from utils_train.model_save_utils import ACQF_NET_SAVING
         _, nn_arg_groups = ACQF_NET_SAVING.get_single_train_parser_and_info()
 
         # Get ALL non-dataset argument names (architecture + training + method-specific)
