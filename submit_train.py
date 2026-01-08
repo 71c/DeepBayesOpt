@@ -11,7 +11,7 @@ from utils_general.io_utils import save_json
 from utils_general.experiments.experiment_config_utils import CONFIG_DIR, add_config_args, get_config_options_list
 from utils_general.experiments.submit_dependent_jobs import add_slurm_args, submit_jobs_sweep_from_args
 
-from nn_af.acquisition_function_net_save_utils import cmd_opts_nn_to_model_and_info_name
+from nn_af.acquisition_function_net_save_utils import cmd_opts_train_to_args_module_paths
 from dataset_factory import add_common_acquisition_dataset_args, add_lamda_args, create_train_test_acquisition_datasets_from_args
 
 
@@ -98,9 +98,6 @@ def get_cmd_options_train_acqf(options: dict[str, Any]):
     return cmd_dataset, cmd_opts_dataset, cmd_nn_train, cmd_opts_nn
 
 
-
-
-
 DATASETS_JOB_ID = "datasets"
 NO_DATASET_ID = 0
 NO_NN_ID = "dep-nn"
@@ -140,7 +137,7 @@ def create_dependency_structure_train_acqf(
                     transfer_bo_method, dataset_hash)
             else:
                 (args_nn, pre_model, model_and_info_name, models_path
-                ) = cmd_opts_nn_to_model_and_info_name(cmd_opts_nn)
+                ) = cmd_opts_train_to_args_module_paths(cmd_opts_nn)
                 train_nn = not BASIC_SAVING.model_is_trained(model_and_info_name)
         
         if train_nn:

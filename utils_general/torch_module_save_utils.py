@@ -7,7 +7,7 @@ import torch
 from torch import nn
 from utils_general.io_utils import load_json
 from utils_general.saveable_object import SaveableObject
-from utils_general.utils import check_subclass
+from utils_general.utils import check_subclass, dict_to_cmd_args, dict_to_str
 
 
 class TorchModuleSaveUtils(ABC):
@@ -32,6 +32,8 @@ class TorchModuleSaveUtils(ABC):
         self._weights_cache = {}
         self._configs_cache = {}
         self._single_train_parser_and_info = None
+        self.MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN = {}
+        self._cmd_opts_nn_to_model_and_info_name_cache = {}
 
     def _load_empty(self, model_and_info_path: str):
         # Loads empty model (without weights)
@@ -146,3 +148,14 @@ class TorchModuleSaveUtils(ABC):
             self.save_module_configs_to_path(model_and_info_path, data)
 
         return model_and_info_folder_name, models_path
+
+    def cmd_opts_train_to_model_and_info_name(self, cmd_opts_nn):
+        s = dict_to_str(cmd_opts_nn)
+        if s in self._cmd_opts_train_to_model_and_info_name_cache:
+            return self._cmd_opts_train_to_model_and_info_name_cache[s]
+        cmd_args_list_nn = dict_to_cmd_args({**cmd_opts_nn, 'no-save-model': True})
+        ret = self.get_args_module_paths_from_cmd_args(cmd_args_list_nn)
+        (args_nn, model, model_and_info_name, models_path) = ret
+        self._cmd_opts_train_to_model_and_info_name_cache[s] = ret
+        self.MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN[model_and_info_name] = cmd_opts_nn
+        return ret

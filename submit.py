@@ -8,7 +8,7 @@ from botorch.exceptions import UnsupportedError
 
 from dataset_factory import DATASET_TYPES
 from datasets.hpob_dataset import get_hpob_dataset_ids
-from nn_af.acquisition_function_net_save_utils import cmd_opts_nn_to_model_and_info_name
+from nn_af.acquisition_function_net_save_utils import cmd_opts_train_to_args_module_paths
 from utils.utils import get_lamda_for_bo_of_nn
 from utils_general.experiments.experiment_manager import add_recompute_args
 from utils_general.utils import group_by
@@ -190,7 +190,7 @@ def _gp_bo_jobs_spec_and_cfgs(
         (cmd_dataset, cmd_opts_dataset,
          cmd_nn_train, cmd_opts_nn) = get_cmd_options_train_acqf(nn_options)
         (args_nn, pre_model, model_and_info_name, models_path
-        ) = cmd_opts_nn_to_model_and_info_name(cmd_opts_nn)
+        ) = cmd_opts_train_to_args_module_paths(cmd_opts_nn)
 
         all_new_cmds_this_nn = []
         for bo_loop_args in bo_loop_args_list:

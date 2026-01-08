@@ -286,19 +286,17 @@ def _get_training_config(args: argparse.Namespace):
     return training_config
 
 
-## GENERIC but DO NOT INCLUDE
-# (this is for the job submission system, not for the individual training
-## & saving API, so we won't include it for now in the API we will be making now)
+## GENERIC
 MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN = {}
-_cache = {}
-def cmd_opts_nn_to_model_and_info_name(cmd_opts_nn):
+_cmd_opts_train_to_args_module_paths_cache = {}
+def cmd_opts_train_to_args_module_paths(cmd_opts_nn):
     s = dict_to_str(cmd_opts_nn)
-    if s in _cache:
-        return _cache[s]
+    if s in _cmd_opts_train_to_args_module_paths_cache:
+        return _cmd_opts_train_to_args_module_paths_cache[s]
     cmd_args_list_nn = dict_to_cmd_args({**cmd_opts_nn, 'no-save-model': True})
     ret = get_args_module_paths_from_cmd_args(cmd_args_list_nn)
     (args_nn, model, model_and_info_name, models_path) = ret
-    _cache[s] = ret
+    _cmd_opts_train_to_args_module_paths_cache[s] = ret
     MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN[model_and_info_name] = cmd_opts_nn
     return ret
 
