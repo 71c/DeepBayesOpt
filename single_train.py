@@ -93,7 +93,9 @@ def single_train(cmd_args: Optional[Sequence[str]]=None):
 
         training_history_data = train_acquisition_function_net(
             model, train_aq_dataset, optimizer, args.epochs, args.batch_size,
-            DEVICE, verbose=VERBOSE, n_train_printouts_per_epoch=10,
+            args.method,
+            
+            nn_device=DEVICE, verbose=VERBOSE, n_train_printouts_per_epoch=10,
             test_dataset=test_aq_dataset, small_test_dataset=small_test_aq_dataset,
             get_train_stats_while_training=True,
             get_train_stats_after_training=True,
@@ -115,7 +117,6 @@ def single_train(cmd_args: Optional[Sequence[str]]=None):
             lr_scheduler_burnin=args.lr_scheduler_burnin,
 
             #### SPECIFIC
-            method=args.method,
             alpha_increment=args.alpha_increment,
             gi_loss_normalization=args.gi_loss_normalization,
             # These both default to reasonable values depending on whether the

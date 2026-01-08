@@ -151,10 +151,12 @@ def train_acquisition_function_net(
         optimizer: torch.optim.Optimizer,
         n_epochs: int,
         batch_size: int,
+        method: str,
+        
         nn_device=None,
         verbose:bool=True,
         n_train_printouts_per_epoch:Optional[int]=None,
-        
+
         test_dataset: Optional[AcquisitionDataset]=None,
         small_test_dataset:Optional[AcquisitionDataset]=None,
         test_during_training:Optional[bool]=None,
@@ -180,7 +182,6 @@ def train_acquisition_function_net(
         lr_scheduler_burnin:int=1,
 
         #### SPECIFIC
-        method: str = "gittins",
         # Only used when method="mse_ei" or "policy_gradient"
         # (only does anything if method="policy_gradient")
         alpha_increment:Optional[float]=None,
