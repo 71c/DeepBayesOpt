@@ -21,8 +21,6 @@ from dataset_factory import add_unified_acquisition_dataset_args, get_dataset_ma
 from utils_general.utils import dict_to_cmd_args, dict_to_hash, dict_to_str
 
 
-## DONE -- PROJECT-SPECIFIC: The user must specify a class that is their neural network class,
-## which must be a subclass of SaveableObject.
 @cache
 def _load_empty_model(model_and_info_path: str):
     # Loads empty model (without weights)
@@ -30,7 +28,6 @@ def _load_empty_model(model_and_info_path: str):
     return AcquisitionFunctionNet.load_init(models_path)
 
 
-## DONE -- GENERIC
 _weights_cache = {}
 def _get_state_dict(weights_path: str, verbose: bool=True):
     if weights_path in _weights_cache:
@@ -42,7 +39,6 @@ def _get_state_dict(weights_path: str, verbose: bool=True):
     return ret
 
 
-## DONE -- GENERIC (given _load_empty_model)
 def load_module(
         model_and_info_folder_name: str,
         return_model_path=False,
@@ -71,14 +67,13 @@ def load_module(
     return model
 
 
-## DONE -- PROJECT-SPECIFIC (but we will provide a very simple default
-## which simply loads a single JSON file that has everything)
-## The user will specify a function that does it, given model_and_info_path
-## (there's a default)
 @cache
 def load_module_configs(model_and_info_folder_name: str):
     model_and_info_path = os.path.join(MODELS_DIR, model_and_info_folder_name)
-    
+    return _load_module_configs_from_path(model_and_info_path)
+
+
+def _load_module_configs_from_path(model_and_info_path: str):
     function_samples_config = load_json(
         os.path.join(model_and_info_path, "function_samples_config.json"))
     acquisition_dataset_config = load_json(
@@ -126,7 +121,6 @@ def load_module_configs(model_and_info_folder_name: str):
     return all_info_json
 
 
-## DONE -- PROJECT-SPECIFIC -- VERY IMPORTANT FUNCTION
 def get_args_module_paths_from_cmd_args(cmd_args:Optional[Sequence[str]]=None):
     parser, additional_info = get_single_train_parser_and_info()
     args = parser.parse_args(args=cmd_args)
@@ -145,7 +139,6 @@ def get_args_module_paths_from_cmd_args(cmd_args:Optional[Sequence[str]]=None):
     return args, model, model_and_info_folder_name, models_path
 
 
-## DONE
 def _get_module_folder_name_and_configs(model, args):
     training_config = _get_training_config(args)
     manager = get_dataset_manager(getattr(args, 'dataset_type', 'gp'), device="cpu")
@@ -170,8 +163,7 @@ def _get_module_folder_name_and_configs(model, args):
     return model_and_info_folder_name, data
 
 
-## DONE 
-def _save_module_configs_to_path(model_and_info_path, data):
+def _save_module_configs_to_path(model_and_info_path: str, data: dict):
     # Save training config
     save_json(data['training_config'],
             os.path.join(model_and_info_path, "training_config.json"))
@@ -205,7 +197,6 @@ def _save_module_configs_to_path(model_and_info_path, data):
                 os.path.join(model_and_info_path, "outcome_transform.pt"))
 
 
-## DONE
 def _get_module_paths_and_save(model, args):
     model_and_info_folder_name, data = _get_module_folder_name_and_configs(model, args)
     model_and_info_path = os.path.join(MODELS_DIR, model_and_info_folder_name)
@@ -223,7 +214,6 @@ def _get_module_paths_and_save(model, args):
     return model_and_info_folder_name, models_path
 
 
-## PROJECT-SPECIFIC (NOT PART OF THE API -- A HELPER FUNCTION)
 def _get_training_config(args: argparse.Namespace):
     training_config = dict(
         method=args.method,
@@ -286,7 +276,6 @@ def _get_training_config(args: argparse.Namespace):
     return training_config
 
 
-## GENERIC
 MODEL_AND_INFO_NAME_TO_CMD_OPTS_NN = {}
 _cmd_opts_train_to_args_module_paths_cache = {}
 def cmd_opts_train_to_args_module_paths(cmd_opts_nn):
@@ -301,7 +290,6 @@ def cmd_opts_train_to_args_module_paths(cmd_opts_nn):
     return ret
 
 
-## DONE -- PROJECT-SPECIFIC (NOT PART OF THE API -- A HELPER FUNCTION)
 def _json_serialize_nn_acqf_configs(
         training_config: dict[str, Any],
         af_dataset_config: dict[str, dict[str, Any]],
@@ -347,7 +335,6 @@ def _json_serialize_nn_acqf_configs(
     return all_info_json, model_sampler
 
 
-## DONE -- USER-SPECIFIED FUNCTION (defaults to doing nothing)
 def validate_single_train_args(args: argparse.Namespace, additional_info: Any):
     all_groups_arg_names = additional_info
 
@@ -491,7 +478,6 @@ _POINTNET_X_CAND_INPUT_OPTIONS = {
 }
 
 
-## DONE
 def _initialize_module_from_args(args: argparse.Namespace):
     ### Get dimension based on dataset type
     dataset_type = getattr(args, 'dataset_type', 'gp')
@@ -645,7 +631,6 @@ def _initialize_module_from_args(args: argparse.Namespace):
     #                                     initial_alpha=args.initial_alpha)
 
 
-## DONE -- USER-SPECIFIED FUNCTION
 @cache
 def get_single_train_parser_and_info():
     parser = argparse.ArgumentParser()
@@ -669,6 +654,12 @@ def get_single_train_parser_and_info():
         help='Whether to load a saved model. Set this flag to load the saved model.'
     )
 
+    parser_info = _add_single_train_args_and_return_info(parser)
+
+    return parser, parser_info
+
+
+def _add_single_train_args_and_return_info(parser: argparse.ArgumentParser):
     ################################ Dataset settings ##################################
     dataset_group = parser.add_argument_group("Dataset options")
     groups_arg_names = add_unified_acquisition_dataset_args(
@@ -945,7 +936,7 @@ def get_single_train_parser_and_info():
     # Extract argument names from all groups
     from utils_general.utils import get_arg_names
 
-    all_groups_arg_names = {
+    return {
         'dataset': groups_arg_names,  # Dataset-specific groups (gp, hpob, cancer_dosage, etc.)
         'architecture': get_arg_names(nn_architecture_group),
         'training': get_arg_names(training_group),
@@ -953,5 +944,3 @@ def get_single_train_parser_and_info():
         'gittins': get_arg_names(gittins_group),
         'mse_ei': get_arg_names(mse_ei_group),
     }
-
-    return parser, all_groups_arg_names
