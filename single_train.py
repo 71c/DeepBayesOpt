@@ -91,17 +91,12 @@ def single_train(cmd_args: Optional[Sequence[str]]=None):
         # optimizer = torch.optim.RMSprop(model.parameters(), lr=learning_rate)
 
         training_history_data = train_acquisition_function_net(
-            model, train_aq_dataset, optimizer, args.method, args.epochs, args.batch_size,
+            model, train_aq_dataset, optimizer, args.epochs, args.batch_size,
             DEVICE, verbose=VERBOSE, n_train_printouts_per_epoch=10,
-            alpha_increment=args.alpha_increment,
-            gi_loss_normalization=args.gi_loss_normalization,
             test_dataset=test_aq_dataset, small_test_dataset=small_test_aq_dataset,
             get_train_stats_while_training=True,
             get_train_stats_after_training=True,
-            ## These both default to reasonable values depending on whether the
-            ## acquisition datasets are fixed
-            get_train_true_gp_stats=get_train_true_gp_stats,
-            get_test_true_gp_stats=get_test_true_gp_stats,
+            
             save_dir=model_path,
             save_incremental_best_models=SAVE_INCREMENTAL_BEST_MODELS and args.save_model,
             # early stopping
@@ -117,6 +112,15 @@ def single_train(cmd_args: Optional[Sequence[str]]=None):
             lr_scheduler_cooldown=args.lr_scheduler_cooldown,
             lr_scheduler_power=args.lr_scheduler_power,
             lr_scheduler_burnin=args.lr_scheduler_burnin,
+
+            #### SPECIFIC
+            method=args.method,
+            alpha_increment=args.alpha_increment,
+            gi_loss_normalization=args.gi_loss_normalization,
+            # These both default to reasonable values depending on whether the
+            # acquisition datasets are fixed
+            get_train_true_gp_stats=get_train_true_gp_stats,
+            get_test_true_gp_stats=get_test_true_gp_stats,
             # evaluation metric
             use_maxei=args.use_maxei
         )
