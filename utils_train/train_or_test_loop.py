@@ -1,18 +1,14 @@
 from typing import Optional
 from types import SimpleNamespace
-from abc import ABC, abstractmethod
-from tqdm import tqdm
 from datasets.acquisition_dataset import AcquisitionDataset
 import torch
 from torch import Tensor
 from torch.utils.data import DataLoader
 from botorch.exceptions import UnsupportedError
 
-from utils_general.tictoc import tic, toc
+from utils_general.train_or_test_loop import TrainOrTestLoop
+from utils_general.train_utils import calculate_gittins_loss, GI_NORMALIZATIONS
 from utils.utils import calculate_batch_improvement
-from utils_general.train_utils import (
-    get_average_stats, calculate_gittins_loss, GI_NORMALIZATIONS)
-from utils_general.utils import int_linspace
 from utils.exact_gp_computations import (
     calculate_EI_GP_padded_batch, calculate_gi_gp_padded_batch)
 from utils_train.acquisition_function_net import (
@@ -22,163 +18,34 @@ from utils_train.acquisition_function_net_constants import METHODS
 from utils_train.train_utils import compute_maxei, get_average_normalized_entropy, mse_loss, myopic_policy_gradient_ei
 
 
-_METHODS_STR = ', '.join(f"'{x}'" for x in METHODS)
-
-
-class TrainOrTestLoopState(ABC):
-    def __init__(
-            self,
-            dataloader: DataLoader,
-            nn_model: Optional[AcquisitionFunctionNet]=None,
-            train:Optional[bool]=None,
-            nn_device=None,
-            method:Optional[str]=None, # ONLY used when training NN
-            verbose:bool=True,
-            desc:Optional[str]=None,
-            
-            n_train_printouts:Optional[int]=None,
-            optimizer:Optional[torch.optim.Optimizer]=None,
-
-            # Whether to return None if there is nothing to compute
-            return_none=False,
-
-            **specific_kwargs) -> bool:
-        """Initialize the TrainOrTestLoopState.
-        Must set an attribute `do_nothing` to self, which is a boolean indicating
-        whether there is anything to compute
-        (True if there is nothing to compute, False otherwise)."""
+class _AcquisitionFunctionTrainOrTestLoop(TrainOrTestLoop):
+    @classmethod
+    def train_or_test_loop(
+        cls,
+        dataloader: DataLoader,
+        nn_model: Optional[AcquisitionFunctionNet]=None,
+        train:Optional[bool]=None,
+        nn_device=None,
+        method:Optional[str]=None, # ONLY used when training NN
+        verbose:bool=True,
+        desc:Optional[str]=None,
         
-        self.do_nothing = nn_model is None
+        n_train_printouts:Optional[int]=None,
+        optimizer:Optional[torch.optim.Optimizer]=None,
 
-        self.nn_model = nn_model
-        self.train = train
-        self.nn_device = nn_device
-        self.method = method
+        # Whether to return None if there is nothing to compute
+        return_none=False,
 
-        if nn_model is not None:
-            self.nn_batch_stats_list = []
-        
-        self.n_batches = len(dataloader)
-        self.dataset = dataloader.dataset
-        self.batch_size = dataloader.batch_size
-
-        self.n_training_batches = self.n_batches
-        if len(self.dataset) % self.batch_size != 0:
-            self.n_training_batches -= 1
-
-        if not isinstance(dataloader, DataLoader):
-            raise ValueError("dataloader must be a torch DataLoader")
-        
-        if dataloader.drop_last:
-            raise ValueError("dataloader must have drop_last=False")
-        
-        if not isinstance(verbose, bool):
-            raise ValueError("verbose must be a boolean")
-        
-        if n_train_printouts == 0:
-            n_train_printouts = None
-
-        if nn_model is not None: # evaluating a NN model
-            if not isinstance(nn_model, AcquisitionFunctionNet):
-                raise ValueError("nn_model must be a AcquisitionFunctionNet instance")
-            if not isinstance(train, bool):
-                raise ValueError("'train' must be a boolean if evaluating a NN model")
-            
-            if method not in METHODS:
-                raise ValueError(
-                    f"'method' must be one of {_METHODS_STR} if evaluating a NN model; "
-                    f"it was {method}")
-            
-            if train:
-                if optimizer is None:
-                    raise ValueError("optimizer must be specified if training")
-                if not isinstance(optimizer, torch.optim.Optimizer):
-                    raise ValueError("optimizer must be a torch Optimizer instance")
-                if verbose:
-                    if n_train_printouts is not None:
-                        if not (isinstance(n_train_printouts, int) and n_train_printouts >= 0):
-                            raise ValueError("n_train_printouts must be a non-negative integer")
-                nn_model.train()
-            else:
-                nn_model.eval()
-        else: # just evaluating the dataset, no NN model
-            if method is not None:
-                raise ValueError("'method' must not be specified if not evaluating a NN model")
-            if train is not None:
-                raise ValueError("'train' must not be specified if not evaluating a NN model")
-            if nn_device is not None:
-                raise ValueError("'nn_device' must not be specified if not evaluating a NN model")
-        
-        if not train:
-            if optimizer is not None:
-                raise ValueError("optimizer must not be specified if train != True")
-        
-        if verbose:
-            if not (desc is None or isinstance(desc, str)):
-                raise ValueError("desc must be a string or None if verbose")
-    
-    @abstractmethod
-    def get_data_from_batch(self, batch) -> SimpleNamespace:
-        pass
-
-    @abstractmethod
-    def get_data_from_batch_for_nn(self, batch) -> SimpleNamespace:
-        pass
-
-    @abstractmethod
-    def evaluate_nn_on_batch(self, nn_model, batch_data: SimpleNamespace) -> Tensor:
-        pass
-
-    @abstractmethod
-    def compute_nn_batch_stats(
-            self, nn_output, batch_data: SimpleNamespace) -> dict:
-        pass
-    
-    def perform_post_optimizer_step_updates(self):
-        """Perform any updates needed after the optimizer step during training.
-        This is a no-op by default, but can be overridden in subclasses."""
-        pass
-
-    @abstractmethod
-    def print_train_batch_stats(self, nn_batch_stats):
-        pass
-
-    def compute_additional_batch_stats(self, batch_data: SimpleNamespace):
-        """Compute any additional batch statistics that do not involve the NN model.
-        This is a no-op by default, but can be overridden in subclasses."""
-        pass
-
-    def aggregate_stats(self) -> dict:
-        ret = {}
-        if self.nn_model is not None:
-            ret.update(get_average_stats(
-                self.nn_batch_stats_list, "sum", self._dataset_length))
-        return ret
-    
-    @property
-    def _dataset_length(self):
-        return 0 if self.do_nothing else len(self.dataset)
-
-
-class AcquisitionFunctionTrainOrTestLoopState(TrainOrTestLoopState):
-    def __init__(
-            self,
-            dataloader: DataLoader,
-            nn_model: Optional[AcquisitionFunctionNet]=None,
-            train:Optional[bool]=None,
-            nn_device=None,
-            method:Optional[str]=None, # ONLY used when training NN
-            verbose:bool=True,
-            desc:Optional[str]=None,
-            
-            n_train_printouts:Optional[int]=None,
-            optimizer:Optional[torch.optim.Optimizer]=None,
-
-            # Whether to return None if there is nothing to compute
-            return_none=False,
-
-            **specific_kwargs) -> bool:
-        super().__init__(
+        get_true_gp_stats:Optional[bool]=None,
+        get_map_gp_stats:bool=False,
+        get_basic_stats:bool=True,
+        # Only used when method="mse_ei" or "policy_gradient"
+        # (only does anything if method="policy_gradient")
+        alpha_increment:Optional[float]=None,
+        # Only used when method="gittins" and train=True
+        gi_loss_normalization:Optional[str]=None
+    ) -> Optional[dict]:
+        return super().train_or_test_loop(
             dataloader=dataloader,
             nn_model=nn_model,
             train=train,
@@ -189,14 +56,50 @@ class AcquisitionFunctionTrainOrTestLoopState(TrainOrTestLoopState):
             n_train_printouts=n_train_printouts,
             optimizer=optimizer,
             return_none=return_none,
+
+            get_true_gp_stats=get_true_gp_stats,
+            get_map_gp_stats=get_map_gp_stats,
+            get_basic_stats=get_basic_stats,
+            alpha_increment=alpha_increment,
+            gi_loss_normalization=gi_loss_normalization
+        )
+
+    methods = METHODS
+    module_class = AcquisitionFunctionNet
+    
+    def __init__(
+            self,
+            dataloader: DataLoader,
+            nn_model: Optional[AcquisitionFunctionNet]=None,
+            train:Optional[bool]=None,
+            nn_device=None,
+            method:Optional[str]=None, # ONLY used when training NN
+            verbose:bool=True,
+            desc:Optional[str]=None,
+            
+            n_train_printouts:Optional[int]=None,
+            optimizer:Optional[torch.optim.Optimizer]=None,
+
+            **specific_kwargs):
+        super().__init__(
+            dataloader=dataloader,
+            nn_model=nn_model,
+            train=train,
+            nn_device=nn_device,
+            method=method,
+            verbose=verbose,
+            desc=desc,
+            n_train_printouts=n_train_printouts,
+            optimizer=optimizer,
             **specific_kwargs
         )
-        ### Get the specific kwargs
+        #### Extract from specific_kwargs
         self.get_true_gp_stats = specific_kwargs.get("get_true_gp_stats")
         self.get_map_gp_stats = specific_kwargs.get("get_map_gp_stats", False)
         self.get_basic_stats = specific_kwargs.get("get_basic_stats", True)
         self.alpha_increment = specific_kwargs.get("alpha_increment")
         self.gi_loss_normalization = specific_kwargs.get("gi_loss_normalization")
+        
         ### Validate inputs
         dataset = self.dataset
         if not isinstance(dataset, AcquisitionDataset):
@@ -557,7 +460,8 @@ class AcquisitionFunctionTrainOrTestLoopState(TrainOrTestLoopState):
         
         if self.get_true_gp_stats:
             if not self.has_true_gp_stats:
-                true_gp_stats = get_average_stats(self.true_gp_stats_list, "sum", self._dataset_length)
+                true_gp_stats = self.get_average_stats(
+                    self.true_gp_stats_list, "sum", self.dataset_length)
                 if self.dataset.data_is_fixed:
                     self.dataset._cached_true_gp_stats = true_gp_stats
             else:
@@ -565,7 +469,8 @@ class AcquisitionFunctionTrainOrTestLoopState(TrainOrTestLoopState):
             ret.update(true_gp_stats)
         if self.get_map_gp_stats:
             if not self.has_map_gp_stats:
-                map_gp_stats = get_average_stats(self.map_gp_stats_list, "sum", self._dataset_length)
+                map_gp_stats = self.get_average_stats(
+                    self.map_gp_stats_list, "sum", self.dataset_length)
                 if self.dataset.data_is_fixed:
                     self.dataset._cached_map_gp_stats = map_gp_stats
             else:
@@ -573,7 +478,8 @@ class AcquisitionFunctionTrainOrTestLoopState(TrainOrTestLoopState):
             ret.update(map_gp_stats)
         if self.get_basic_stats:
             if not self.has_basic_stats:
-                basic_stats = get_average_stats(self.basic_stats_list, "sum", self._dataset_length)
+                basic_stats = self.get_average_stats(
+                    self.basic_stats_list, "sum", self.dataset_length)
                 if self.dataset.data_is_fixed:
                     self.dataset._cached_basic_stats = basic_stats
             else:
@@ -583,114 +489,4 @@ class AcquisitionFunctionTrainOrTestLoopState(TrainOrTestLoopState):
         return ret
 
 
-class TrainOrTestLoop:
-    @classmethod
-    def train_or_test_loop(
-        cls,
-        dataloader: DataLoader,
-        nn_model: Optional[AcquisitionFunctionNet]=None,
-        train:Optional[bool]=None,
-        nn_device=None,
-        method:Optional[str]=None, # ONLY used when training NN
-        verbose:bool=True,
-        desc:Optional[str]=None,
-        
-        n_train_printouts:Optional[int]=None,
-        optimizer:Optional[torch.optim.Optimizer]=None,
-
-        # Whether to return None if there is nothing to compute
-        return_none=False,
-
-        **specific_kwargs
-
-        # get_true_gp_stats:Optional[bool]=None,
-        # get_map_gp_stats:bool=False,
-        # get_basic_stats:bool=True,
-        # # Only used when method="mse_ei" or "policy_gradient"
-        # # (only does anything if method="policy_gradient")
-        # alpha_increment:Optional[float]=None,
-        # # Only used when method="gittins" and train=True
-        # gi_loss_normalization:Optional[str]=None
-    ):
-        loop_state = AcquisitionFunctionTrainOrTestLoopState(
-            dataloader=dataloader,
-            nn_model=nn_model,
-            train=train,
-            nn_device=nn_device,
-            method=method,
-            verbose=verbose,
-            desc=desc,
-            n_train_printouts=n_train_printouts,
-            optimizer=optimizer,
-            return_none=return_none,
-            **specific_kwargs
-        )
-
-        if loop_state.do_nothing:
-            if return_none:
-                return None
-            # If we are not computing any stats, then don't actually need to go through
-            # the dataset. Also make verbose=False in this case.
-            it = []
-            verbose = False
-        else:
-            it = dataloader
-        
-        if verbose:
-            if train and n_train_printouts is not None:
-                print(desc)
-                print_indices = set(int_linspace(
-                    0, loop_state.n_training_batches - 1,
-                    min(n_train_printouts, loop_state.n_training_batches)))
-            else:
-                it = tqdm(it, desc=desc)
-            tic(desc)
-            
-        dataset_length = 0
-        for batch_index, batch in enumerate(it):
-            loop_state.batch_index = batch_index
-
-            batch_data = loop_state.get_data_from_batch(batch)
-            this_batch_size = batch_data.batch_size
-            
-            assert this_batch_size <= loop_state.batch_size
-            is_degenerate_batch = this_batch_size < loop_state.batch_size
-            if batch_index != loop_state.n_batches - 1:
-                assert not is_degenerate_batch
-            dataset_length += this_batch_size
-
-            if nn_model is not None:
-                batch_data_nn = loop_state.get_data_from_batch_for_nn(batch)
-
-                with torch.set_grad_enabled(train and not is_degenerate_batch):
-                    nn_output = loop_state.evaluate_nn_on_batch(nn_model, batch_data_nn)
-
-                    nn_batch_stats = loop_state.compute_nn_batch_stats(nn_output, batch_data_nn)
-                    
-                    if train and not is_degenerate_batch:
-                        # convert sum to mean so that this is consistent across batch sizes
-                        loss = nn_batch_stats.pop("loss") / this_batch_size # (== batch_size)
-                        
-                        optimizer.zero_grad()
-                        loss.backward()
-                        optimizer.step()
-
-                        loop_state.perform_post_optimizer_step_updates()
-                        
-                        if verbose and n_train_printouts is not None and batch_index in print_indices:
-                            loop_state.print_train_batch_stats(nn_batch_stats)
-                            
-                    loop_state.nn_batch_stats_list.append(nn_batch_stats)
-
-            loop_state.compute_additional_batch_stats(batch_data)
-
-        if not loop_state.do_nothing:
-            assert dataset_length == len(loop_state.dataset)
-
-        if verbose:
-            toc(desc)
-        
-        return loop_state.aggregate_stats()
-
-
-train_or_test_loop = TrainOrTestLoop.train_or_test_loop
+train_or_test_loop = _AcquisitionFunctionTrainOrTestLoop.train_or_test_loop

@@ -4,18 +4,6 @@ import torch.nn.functional as F
 from utils_general.math_utils import probability_y_greater_than_gi_normal
 
 
-def get_average_stats(stats_list, batch_reduction:str, total_n_samples=None):
-    if batch_reduction == "mean":
-        assert total_n_samples is None
-        divisor = len(stats_list)
-    elif batch_reduction == "sum":
-        divisor = total_n_samples
-    else:
-        raise ValueError("'batch_reduction' must be either 'mean' or 'sum'")
-    return {key: sum(d[key] for d in stats_list) / divisor
-            for key in stats_list[0]}
-
-
 def check_2d_or_3d_tensors(*tensors):
     tensors = [t.squeeze(2) if t is not None and t.dim() == 3 else t
                for t in tensors]

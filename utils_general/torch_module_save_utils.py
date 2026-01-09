@@ -3,12 +3,12 @@ import os
 from typing import Any, ClassVar, Optional, Sequence, Tuple, Type
 from abc import ABC, abstractmethod
 
-from utils_general.basic_model_save_utils import BasicModelSaveUtils
 import torch
 from torch import nn
 from utils_general.io_utils import load_json
 from utils_general.saveable_object import SaveableObject
 from utils_general.utils import check_subclass, dict_to_cmd_args, dict_to_str
+from utils_general.basic_model_save_utils import BasicModelSaveUtils
 
 
 class TorchModuleSaveUtils(ABC):
@@ -223,7 +223,7 @@ class TorchModuleSaveUtils(ABC):
     def __init_subclass__(cls, **kwargs):
         # Validate that subclasses define module_class correctly
         super().__init_subclass__(**kwargs)
-        error_message = f"Subclasses of TorchModuleSaveUtils must define a valid " \
+        error_message = f"Subclasses of {cls.__name__} must define a valid " \
             f"'module_class' class variable"
         if not hasattr(cls, "module_class"):
             raise TypeError(error_message)
