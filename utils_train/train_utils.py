@@ -1,7 +1,7 @@
 import torch
 from torch.distributions import Categorical
 import torch.nn.functional as F
-from utils_general.train_utils import check_2d_or_3d_tensors
+from utils_general.training.train_utils import check_2d_or_3d_tensors
 
 
 def get_average_normalized_entropy(probabilities, mask=None, reduction="mean"):

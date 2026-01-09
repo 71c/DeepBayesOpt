@@ -6,8 +6,8 @@ from torch import Tensor
 from torch.utils.data import DataLoader
 from botorch.exceptions import UnsupportedError
 
-from utils_general.train_or_test_loop import TrainOrTestLoop
-from utils_general.train_utils import calculate_gittins_loss, GI_NORMALIZATIONS
+from utils_general.training.train_or_test_loop import TrainOrTestLoop
+from utils_general.training.train_utils import calculate_gittins_loss, GI_NORMALIZATIONS
 from utils.utils import calculate_batch_improvement
 from utils.exact_gp_computations import (
     calculate_EI_GP_padded_batch, calculate_gi_gp_padded_batch)
@@ -18,7 +18,7 @@ from utils_train.acquisition_function_net_constants import METHODS
 from utils_train.train_utils import compute_maxei, get_average_normalized_entropy, mse_loss, myopic_policy_gradient_ei
 
 
-class _AcquisitionFunctionTrainOrTestLoop(TrainOrTestLoop):
+class AcquisitionFunctionTrainOrTestLoop(TrainOrTestLoop):
     @classmethod
     def train_or_test_loop(
         cls,
@@ -489,4 +489,4 @@ class _AcquisitionFunctionTrainOrTestLoop(TrainOrTestLoop):
         return ret
 
 
-train_or_test_loop = _AcquisitionFunctionTrainOrTestLoop.train_or_test_loop
+train_or_test_loop = AcquisitionFunctionTrainOrTestLoop.train_or_test_loop
