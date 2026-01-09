@@ -93,9 +93,9 @@ class TrainOrTestLoop(ABC):
                         optimizer.step()
 
                         loop_state.perform_post_optimizer_step_updates()
-                        
+
                         if verbose and n_train_printouts is not None and batch_index in print_indices:
-                            loop_state.print_train_batch_stats(nn_batch_stats)
+                            loop_state.print_train_batch_stats(nn_batch_stats, this_batch_size)
                             
                     loop_state.nn_batch_stats_list.append(nn_batch_stats)
 
@@ -244,7 +244,7 @@ class TrainOrTestLoop(ABC):
         pass
 
     @abstractmethod
-    def print_train_batch_stats(self, nn_batch_stats: dict):
+    def print_train_batch_stats(self, nn_batch_stats: dict, batch_size: int):
         pass
 
     def compute_additional_batch_stats(self, batch_data: SimpleNamespace):

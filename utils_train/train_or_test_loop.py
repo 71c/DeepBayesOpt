@@ -334,11 +334,11 @@ class _AcquisitionFunctionTrainOrTestLoop(TrainOrTestLoop):
         if self.nnei and nn_model.includes_alpha and alpha_increment is not None:
             nn_model.set_alpha(nn_model.get_alpha() + alpha_increment)
     
-    def print_train_batch_stats(self, nn_batch_stats):
+    def print_train_batch_stats(self, nn_batch_stats: dict, batch_size: int):
         self._print_train_batch_stats(
             nn_batch_stats, self.nn_model, self.method,
             self.batch_index, self.n_training_batches,
-            reduction="sum", batch_size=nn_batch_stats.batch_size,
+            reduction="sum", batch_size=batch_size,
             gi_loss_normalization=self.gi_loss_normalization)
 
     @classmethod
