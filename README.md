@@ -119,7 +119,7 @@ Use `single_train.py` for training a single NN, and `submit_train.py` for traini
 `single_train.py` is the script that trains a single neural network. `single_train.py --help` will show the description of the arguments. An example command is as follows:
 **GP Dataset Example:**
 ```bash
-python single_train.py --dimension 1 --lengthscale 0.05 --kernel Matern52 --min_history 1 --max_history 20 --replacement --train_n_candidates 1 --test_n_candidates 1 --train_acquisition_size 8192 --train_samples_size 10000 --test_expansion_factor 1 --test_samples_size 5000 --batch_size 512 --early_stopping --min_delta 0.0 --patience 30 --layer_width 200 --learning_rate 3e-4 --lr_scheduler ReduceLROnPlateau --lr_scheduler_patience 15 --lr_scheduler_factor 0.1 --method gittins --lamda 1e-2 --gi_loss_normalization normal --architecture pointnet --epochs 3
+python single_train.py --dataset_type gp --dimension 1 --lengthscale 0.05 --kernel Matern52 --min_history 1 --max_history 20 --replacement --train_n_candidates 1 --test_n_candidates 1 --train_acquisition_size 8192 --train_samples_size 10000 --test_expansion_factor 1 --test_samples_size 5000 --batch_size 512 --early_stopping --min_delta 0.0 --patience 30 --layer_width 200 --learning_rate 3e-4 --lr_scheduler ReduceLROnPlateau --lr_scheduler_patience 15 --lr_scheduler_factor 0.1 --method gittins --lamda 1e-2 --gi_loss_normalization normal --architecture pointnet --epochs 3
 ```
 
 **Logistic Regression Dataset Example:**
