@@ -1,24 +1,18 @@
 from typing import Optional, Sequence
 import torch
-import matplotlib.pyplot as plt
 import os
 import cProfile, pstats
 
 from utils.basic_model_save_utils import BASIC_SAVING
-from utils.utils import get_lamda_for_bo_of_nn
 from utils_general.utils import DEVICE
 from utils_general.io_utils import load_json
 from utils_general.nn_utils import count_trainable_parameters, count_parameters
 from utils_general.tictoc import tic, tocl
 
-from utils.exact_gp_computations import calculate_EI_GP
-from utils.plot_utils import (
-    plot_nn_vs_gp_acquisition_function_1d_grid,
-    plot_acquisition_function_net_training_history)
+from utils.plot_utils import plot_acquisition_function_net_training_history
 
 from dataset_factory import create_train_test_acquisition_datasets_from_args
 
-from utils_train.acquisition_function_net import AcquisitionFunctionNetAcquisitionFunction
 from utils_train.model_save_utils import ACQF_NET_SAVING
 from utils_train.train_acquisition_function_net import (
     print_stats, train_acquisition_function_net)
@@ -82,8 +76,6 @@ def single_train(cmd_args: Optional[Sequence[str]]=None):
             tic("Training")
         
         print(f"learning rate: {args.learning_rate}, batch size: {args.batch_size}")
-        #### SPECIFIC
-        print(f"dimension: {args.dimension}, lengthscale: {args.lengthscale}")
         weight_decay = 0.0 if args.weight_decay is None else args.weight_decay
         c = torch.optim.AdamW if weight_decay > 0 else torch.optim.Adam
         optimizer = c(model.parameters(), lr=args.learning_rate,
@@ -136,11 +128,6 @@ def single_train(cmd_args: Optional[Sequence[str]]=None):
 
         if CPROFILE:
             pr.disable()
-            
-            # s = io.StringIO()
-            # ps = pstats.Stats(pr, stream=s).sort_stats(pstats.SortKey.CUMULATIVE)
-            # ps.print_stats()
-            # print(s.getvalue())
 
             with open('stats_output.txt', 'w') as s:
                 ps = pstats.Stats(pr, stream=s).sort_stats(pstats.SortKey.CUMULATIVE)
@@ -183,73 +170,6 @@ def single_train(cmd_args: Optional[Sequence[str]]=None):
             history_plot_path = os.path.join(model_path, 'training_history.pdf')
             history_fig.savefig(history_plot_path, bbox_inches='tight')
             print(f"Saved training history plot to {history_plot_path}")
-
-    ######################## Plot performance of model #############################
-    ######################## (old useless code)
-    # TODO: Fix the below code to work with Gittins index
-    plot_stuff = False
-    if plot_stuff:
-        n_candidates = 2_000
-        plot_map = False
-
-        name = "EI" if args.method == "mse_ei" else "acquisition"
-        if args.dimension == 1:
-            nrows, ncols = 5, 5
-            fig, axs = plot_nn_vs_gp_acquisition_function_1d_grid(
-                aq_dataset=test_aq_dataset, nn_model=model, plot_name=name,
-                n_candidates=n_candidates, nrows=nrows, ncols=ncols,
-                method=args.method,
-                min_x=0., max_x=1.,
-                lamda=get_lamda_for_bo_of_nn(args.lamda, args.lamda_min, args.lamda_max),
-                plot_map=plot_map, nn_device=DEVICE,
-                group_standardization=None # May manually set this to True or False
-            )
-            if model_path is not None:
-                fname = f'acqusion_function_net_vs_gp_acquisition_function_1d_grid_{nrows}x{ncols}.pdf'
-                path = os.path.join(model_path, fname)
-                # Don't want to overwrite the plot if it already exists;
-                # it could have been trained on different data from the data we are
-                # evaluating it on if args.train=False.
-                if not os.path.exists(path):
-                    fig.savefig(path, bbox_inches='tight')
-        else:
-            it = iter(test_aq_dataset)
-            item = next(it)
-            x_hist, y_hist, x_cand, improvements, gp_model = item
-            x_hist_nn, y_hist_nn, x_cand_nn, improvements_nn = item.to(DEVICE).tuple_no_model
-            print(f"Number of history points: {x_hist.size(0)}")
-
-            x_cand = torch.rand(n_candidates, args.dimension)
-
-            kwargs = dict(exponentiate=True, softmax=False) if args.method == "mse_ei" else dict()
-            aq_fn = AcquisitionFunctionNetAcquisitionFunction.from_net(
-                model, x_hist_nn, y_hist_nn, **kwargs)
-            ei_nn = aq_fn(x_cand.to(DEVICE).unsqueeze(1))
-
-            ei_true = calculate_EI_GP(gp_model, x_hist, y_hist, x_cand, log=False)
-            if plot_map:
-                ei_map = calculate_EI_GP(gp_model, x_hist, y_hist, x_cand, mle=False, log=False)
-
-            # print(f"{name} True:")
-            # print(ei_true)
-            # print(f"{name} NN:")
-            # print(ei_nn)
-            # print(f"{name} MAP:")
-            # print(ei_map)
-
-            plt.scatter(ei_true.detach().cpu().numpy(), ei_nn.detach().cpu().numpy())
-            plt.xlabel(f'{name} True')
-            plt.ylabel(f'{name} NN')
-            plt.title(f'{name} True vs {name} NN')
-
-            if plot_map:
-                plt.figure()
-                plt.scatter(ei_true.detach().cpu().numpy(), ei_map.detach().cpu().numpy())
-                plt.xlabel(f'{name} True')
-                plt.ylabel(f'{name} MAP')
-                plt.title(f'{name} True vs {name} MAP')
-
-    plt.show()
 
 
 if __name__ == "__main__":

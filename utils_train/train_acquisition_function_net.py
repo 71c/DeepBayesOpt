@@ -339,6 +339,7 @@ def train_acquisition_function_net(
             verbose=verbose, desc=f"Epoch {t+1} train",
             n_train_printouts=n_train_printouts_per_epoch,
             optimizer=optimizer,
+
             alpha_increment=alpha_increment,
             gi_loss_normalization=gi_loss_normalization,
             get_true_gp_stats=get_train_true_gp_stats,
@@ -361,6 +362,7 @@ def train_acquisition_function_net(
                 train_dataset_eval_dataloader, nn_model, train=False,
                 nn_device=nn_device, method=method,
                 verbose=verbose, desc=f"Epoch {t+1} compute train stats",
+
                 gi_loss_normalization=gi_loss_normalization,
                 # Don't need to compute non-NN stats because already computed them
                 # while training, and we ensured that the train dataset is fixed for this epoch.
@@ -379,6 +381,7 @@ def train_acquisition_function_net(
                 small_test_dataloader, nn_model, train=False,
                 nn_device=nn_device, method=method,
                 verbose=verbose, desc=f"Epoch {t+1} compute test stats",
+                
                 gi_loss_normalization=gi_loss_normalization,
                 get_true_gp_stats=get_test_true_gp_stats,
                 get_map_gp_stats=get_test_map_gp_stats,
@@ -478,6 +481,7 @@ def train_acquisition_function_net(
                 test_dataloader, nn_model, train=False,
                 nn_device=nn_device, method=method,
                 verbose=verbose, desc=f"Compute final test stats",
+                
                 gi_loss_normalization=gi_loss_normalization,
                 get_true_gp_stats=get_test_true_gp_stats_after_training,
                 get_map_gp_stats=get_test_map_gp_stats,
