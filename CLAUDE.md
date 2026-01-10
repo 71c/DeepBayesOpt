@@ -48,8 +48,8 @@ This repository implements research on using deep reinforcement learning techniq
     - `io_utils.py`: I/O helper functions
     - `math_utils.py`: General mathematical utilities
     - `tictoc.py`: Timing utilities
-    - `iterable_utils.py`: Iterable manipulation utilities (moved from `utils/utils.py`)
-    - `dataset_with_models.py`: Dataset hierarchy with optional GP models (moved from `datasets/`)
+    - `iterable_utils.py`: Iterable manipulation utilities
+    - `dataset_with_models.py`: Dataset hierarchy with optional GP models
     - `saveable_object.py`: Object serialization/persistence
     - `basic_model_save_utils.py`: Basic model saving/loading utilities
     - `torch_module_save_utils.py`: PyTorch module saving/loading utilities

@@ -456,8 +456,8 @@ This module implements the core Bayesian optimization loop. It includes:
 - `io_utils.py`: I/O helper functions.
 - `math_utils.py`: General mathematical utilities.
 - `tictoc.py`: Timing utilities.
-- `iterable_utils.py`: Iterable manipulation utilities (moved from `utils/utils.py`).
-- `dataset_with_models.py`: Provides a mechanism for creating a hierarchy of classes that represents datasets and can optionally have a GP model attached to each item in the dataset (moved from `datasets/`).
+- `iterable_utils.py`: Iterable manipulation utilities.
+- `dataset_with_models.py`: Provides a mechanism for creating a hierarchy of classes that represents datasets and can optionally have a GP model attached to each item in the dataset.
 - `saveable_object.py`: Object serialization/persistence.
 - `basic_model_save_utils.py`: Basic model saving/loading utilities.
 - `torch_module_save_utils.py`: PyTorch module saving/loading utilities.
