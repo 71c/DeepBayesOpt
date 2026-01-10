@@ -1,4 +1,3 @@
-import inspect
 import math
 from typing import List, Optional, Sequence, Tuple, Type, Union, Literal
 
@@ -13,7 +12,7 @@ from abc import abstractmethod
 from utils_train.acquisition_function_net_constants import POINTNET_ACQF_PARAMS_INPUT_DEFAULT, POINTNET_ACQF_PARAMS_INPUT_OPTIONS
 from utils_general.saveable_object import SaveableObject
 from utils.utils import standardize_y_hist
-from utils_general.utils import to_device, safe_issubclass, check_subclass
+from utils_general.utils import to_device, safe_issubclass, check_subclass, check_class_for_init_params
 
 from utils_general.nn_utils import Dense, expand_dim
 from utils.nn_utils import (MultiLayerPointNet, PointNetLayer,
@@ -42,19 +41,6 @@ def concat_y_hist_with_best_y(y_hist, hist_mask, subtract=False):
     if subtract:
         return torch.cat((best_f, best_f - y_hist), dim=-1)
     return torch.cat((best_f, y_hist), dim=-1)
-
-
-def check_class_for_init_params(cls, base_class_name:str, *required_params):
-    if inspect.isabstract(cls):
-        # Don't check abstract classes; only check concrete classes
-        return
-    init_sig = inspect.signature(cls.__init__)
-    for param_name in required_params:
-        if param_name not in init_sig.parameters:
-            raise TypeError(
-                f"Class {cls.__name__} is missing required init param '{param_name}' "
-                f"since it is a subclass of {base_class_name}"
-            )
 
 
 class AcquisitionFunctionNet(nn.Module, SaveableObject):

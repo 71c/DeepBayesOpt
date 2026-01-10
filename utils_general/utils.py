@@ -1,5 +1,6 @@
 from typing import Any, Dict, Optional, Union
 import hashlib
+import inspect
 import re
 import numpy as np
 from functools import lru_cache
@@ -282,3 +283,52 @@ def check_subclass(cls, cls_var_name:str, super_cls):
         cls_str = cls.__name__ if isinstance(cls, type) else str(cls)
         raise ValueError(
             f"{cls_var_name}={cls_str} should be a subclass of {super_cls.__name__}")
+
+
+def check_class_for_init_params(cls, base_class_name: str, *required_params):
+    """Validate that a concrete class has required parameters in its __init__ signature.
+
+    This function is typically used in conjunction with __init_subclass__ to enforce
+    that all concrete subclasses of a base class have specific parameters in their
+    __init__ method. This provides compile-time validation of constructor signatures,
+    enabling early error detection and ensuring consistent interfaces across subclasses.
+
+    Args:
+        cls: The class to validate. If the class is abstract (has abstract methods),
+            validation is skipped.
+        base_class_name (str): The name of the base class requiring these parameters.
+            Used in error messages to provide context.
+        *required_params: Variable number of parameter names (strings) that must
+            appear in the __init__ signature.
+
+    Raises:
+        TypeError: If cls is a concrete class (not abstract) and is missing any of
+            the required parameters in its __init__ signature.
+
+    Example:
+        >>> class BaseHead:
+        ...     def __init_subclass__(cls, **kwargs):
+        ...         check_class_for_init_params(cls, 'BaseHead', 'input_dim', 'output_dim')
+        ...         super().__init_subclass__(**kwargs)
+        ...
+        >>> class GoodHead(BaseHead):
+        ...     def __init__(self, input_dim, output_dim):
+        ...         self.input_dim = input_dim
+        ...         self.output_dim = output_dim
+        ...
+        >>> class BadHead(BaseHead):  # Raises TypeError
+        ...     def __init__(self, input_dim):  # Missing output_dim
+        ...         self.input_dim = input_dim
+        TypeError: Class BadHead is missing required init param 'output_dim'
+        since it is a subclass of BaseHead
+    """
+    if inspect.isabstract(cls):
+        # Don't check abstract classes; only check concrete classes
+        return
+    init_sig = inspect.signature(cls.__init__)
+    for param_name in required_params:
+        if param_name not in init_sig.parameters:
+            raise TypeError(
+                f"Class {cls.__name__} is missing required init param '{param_name}' "
+                f"since it is a subclass of {base_class_name}"
+            )
