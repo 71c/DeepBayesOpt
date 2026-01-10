@@ -23,7 +23,7 @@ from utils.utils import add_outcome_transform, remove_priors
 from utils.constants import RESULTS_DIR
 
 from utils_train.acquisition_function_net import GittinsAcquisitionFunctionNet
-from datasets.dataset_with_models import RandomModelSampler
+from utils_general.dataset_with_models import RandomModelSampler
 from datasets.hpob_dataset import get_hpob_dataset_dimension, get_hpob_function_min_max, get_hpob_initialization, get_hpob_objective_function
 from datasets.cancer_dosage_dataset import CancerDosageObjectiveSampler, get_cancer_dosage_function_min_max
 from datasets.gp_acquisition_dataset_manager import (

@@ -14,7 +14,7 @@ from gpytorch.likelihoods import GaussianLikelihood, FixedNoiseGaussianLikelihoo
 from gpytorch.constraints.constraints import GreaterThan
 import math
 
-from datasets.dataset_with_models import TupleWithModel, create_classes, RandomModelSampler
+from utils_general.dataset_with_models import TupleWithModel, create_classes, RandomModelSampler
 from utils.utils import (invert_outcome_transform, concatenate_outcome_transforms,
                    get_gp)
 from utils_general.iterable_utils import len_or_inf

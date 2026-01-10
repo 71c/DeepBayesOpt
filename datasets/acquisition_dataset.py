@@ -17,7 +17,7 @@ from utils_general.io_utils import load_json, save_json
 from utils_general.iterable_utils import SizedIterableMixin, get_lengths_from_proportions, iterable_is_finite
 from utils_general.tictoc import tic, tocl
 
-from datasets.dataset_with_models import ModelsWithParamsList, TupleWithModel, create_classes
+from utils_general.dataset_with_models import ModelsWithParamsList, TupleWithModel, create_classes
 from datasets.function_samples_dataset import (
     FunctionSamplesDataset, GaussianProcessRandomDataset,
     ResizedFunctionSamplesIterableDataset, FunctionSamplesItem)

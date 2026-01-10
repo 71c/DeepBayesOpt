@@ -30,7 +30,7 @@ from utils.utils import (convert_to_json_serializable_gpytorch, remove_priors)
 from utils_general.io_utils import load_json, save_json
 from utils.plot_utils import plot_optimization_trajectories_error_bars
 
-from datasets.dataset_with_models import RandomModelSampler
+from utils_general.dataset_with_models import RandomModelSampler
 from utils_train.acquisition_function_net import (
     AcquisitionFunctionNet, AcquisitionFunctionNetModel,
     AcquisitionFunctionNetAcquisitionFunction, ExpectedImprovementAcquisitionFunctionNet)

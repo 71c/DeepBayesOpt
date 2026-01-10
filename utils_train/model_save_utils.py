@@ -3,7 +3,7 @@ import os
 from typing import Any, Tuple
 from dataset_factory import add_lamda_args, add_unified_acquisition_dataset_args, get_dataset_manager, validate_args_for_dataset_type
 from datasets.acquisition_dataset_manager import FIX_TRAIN_ACQUISITION_DATASET, get_lamda_min_max
-from datasets.dataset_with_models import RandomModelSampler
+from utils_general.dataset_with_models import RandomModelSampler
 from datasets.gp_acquisition_dataset_manager import GP_GEN_DEVICE
 from datasets.hpob_dataset import get_hpob_dataset_dimension
 import torch
