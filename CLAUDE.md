@@ -21,7 +21,7 @@ This repository implements research on using deep reinforcement learning techniq
   - `datasets/lr_acquisition_dataset_manager.py`: Logistic regression hyperparameter optimization datasets
   - `datasets/hpob_acquisition_dataset_manager.py`: HPO-B benchmark datasets
   - `datasets/cancer_dosage_acquisition_dataset_manager.py`: Cancer dosage optimization datasets
-  - Supporting classes in `datasets/` including `acquisition_dataset.py`, `function_samples_dataset.py`, `dataset_with_models.py`, `gp_acquisition_dataset_manager.py`, `logistic_regression_dataset.py`, `hpob_dataset.py`, and `cancer_dosage_dataset.py`
+  - Supporting classes in `datasets/` including `acquisition_dataset.py`, `function_samples_dataset.py`, `gp_acquisition_dataset_manager.py`, `logistic_regression_dataset.py`, `hpob_dataset.py`, and `cancer_dosage_dataset.py`
 
 - **Experiment Management**: Centralized experiment registry and orchestration
   - `experiments/`: Core experiment registry system
@@ -48,6 +48,8 @@ This repository implements research on using deep reinforcement learning techniq
     - `io_utils.py`: I/O helper functions
     - `math_utils.py`: General mathematical utilities
     - `tictoc.py`: Timing utilities
+    - `iterable_utils.py`: Iterable manipulation utilities (moved from `utils/utils.py`)
+    - `dataset_with_models.py`: Dataset hierarchy with optional GP models (moved from `datasets/`)
     - `saveable_object.py`: Object serialization/persistence
     - `basic_model_save_utils.py`: Basic model saving/loading utilities
     - `torch_module_save_utils.py`: PyTorch module saving/loading utilities

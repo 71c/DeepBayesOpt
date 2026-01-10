@@ -376,8 +376,7 @@ Enabling `--use_rows` and/or `use_cols` is more compact since it fits multiple s
 
 ## Datasets
 - `datasets/`: Directory containing dataset implementations:
-  - `dataset_with_models.py`: Provides a mechanism for creating a hierarchy of classes that represents datasets and can optionally have a GP model attached to each item in the dataset.
-  - `function_samples_dataset.py`: Defines classes that represent samples of functions. Uses `dataset_with_models.py` to create the class `FunctionSamplesDataset`, along with `MapFunctionSamplesDataset`, `ListMapFunctionSamplesDataset`, `LazyMapFunctionSamplesDataset`, and `MapFunctionSamplesSubset`. Also defines `TransformedFunctionSamplesIterableDataset`, `TransformedLazyMapFunctionSamplesDataset`, `GaussianProcessRandomDataset`, and `ResizedFunctionSamplesIterableDataset`.
+  - `function_samples_dataset.py`: Defines classes that represent samples of functions. Uses `utils_general/dataset_with_models.py` to create the class `FunctionSamplesDataset`, along with `MapFunctionSamplesDataset`, `ListMapFunctionSamplesDataset`, `LazyMapFunctionSamplesDataset`, and `MapFunctionSamplesSubset`. Also defines `TransformedFunctionSamplesIterableDataset`, `TransformedLazyMapFunctionSamplesDataset`, `GaussianProcessRandomDataset`, and `ResizedFunctionSamplesIterableDataset`.
   - `acquisition_dataset.py`: Defines classes that represent datasets for training acquisition functions. Uses `function_samples_dataset.py` to create the class `AcquisitionDataset`, along with `MapAcquisitionDataset`, `ListMapAcquisitionDataset`, `LazyMapAcquisitionDataset`, and `MapAcquisitionSubset`. Defines `FunctionSamplesAcquisitionDataset` which is used to create an acquisition dataset from a function samples dataset. Also defines `CostAwareAcquisitionDataset` which simply combines random $\lambda$ values with the acquisition dataset.
   - `hpob_dataset.py`: Implementation for HPO-B benchmark datasets.
   - `logistic_regression_dataset.py`: Implementation for logistic regression hyperparameter optimization datasets.
@@ -457,6 +456,8 @@ This module implements the core Bayesian optimization loop. It includes:
 - `io_utils.py`: I/O helper functions.
 - `math_utils.py`: General mathematical utilities.
 - `tictoc.py`: Timing utilities.
+- `iterable_utils.py`: Iterable manipulation utilities (moved from `utils/utils.py`).
+- `dataset_with_models.py`: Provides a mechanism for creating a hierarchy of classes that represents datasets and can optionally have a GP model attached to each item in the dataset (moved from `datasets/`).
 - `saveable_object.py`: Object serialization/persistence.
 - `basic_model_save_utils.py`: Basic model saving/loading utilities.
 - `torch_module_save_utils.py`: PyTorch module saving/loading utilities.
