@@ -232,6 +232,19 @@ The centralized experiment registry (`experiments/registry.py`) provides structu
 
 Datasets are cached in `datasets/` directory with content-based naming to avoid regeneration of identical datasets across experiments.
 
+### Notes Directory
+
+The `notes/` directory is used for temporary planning documents, analysis files, and other working notes that should not be committed to the repository. This directory is ignored by git.
+
+**When to use the notes directory:**
+- Planning documents and implementation proposals (e.g., when using `/plan` or creating design documents)
+- Temporary analysis files and visualizations (PDFs, plots, etc.)
+- Scratch notes and working documents
+- Any other files that are for reference or planning purposes but not part of the project codebase
+
+**Default behavior for Claude Code:**
+When asked to create planning documents, proposals, or similar reference materials without a specific path, save them to the `notes/` directory by default.
+
 ## Testing
 
 No specific test framework is mentioned in the codebase. Verify changes by running small-scale experiments with `config/train_acqf_experiment_test_simple.yml`.
