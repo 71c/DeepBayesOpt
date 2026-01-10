@@ -10,29 +10,24 @@ This repository implements research on using deep reinforcement learning techniq
 
 ### Key Components
 
-- **Neural Network Acquisition Functions** (`utils_train/`): PyTorch modules for acquisition function networks
-  - `acquisition_function_net.py`: Core NN architectures (PointNet, Transformer-based)
-  - `train_acquisition_function_net.py`: Training logic and model persistence
-  - `model_save_utils.py`: Model saving/loading and configuration parsing (contains `ACQF_NET_SAVING`)
-
 - **Bayesian Optimization Loop** (`bayesopt/`): Core BO implementation
   - `bayesopt.py`: Optimizer classes (RandomSearch, GPAcquisitionOptimizer, NNAcquisitionOptimizer)
   - `stable_gittins.py`: Stable Gittins index computations
 
 - **Dataset Generation**: Multiple dataset types for training acquisition functions
   - `dataset_factory.py`: Unified factory interface for creating different dataset types
-  - `acquisition_dataset_base.py`: Base classes and manager architecture
-  - `gp_acquisition_dataset_manager.py`: GP-based synthetic training datasets
-  - `lr_acquisition_dataset_manager.py`: Logistic regression hyperparameter optimization datasets
-  - `hpob_acquisition_dataset_manager.py`: HPO-B benchmark datasets
-  - Supporting classes in `datasets/` including `GaussianProcessRandomDataset`, `LogisticRegressionRandomDataset`, and HPO-B datasets
+  - `datasets/acquisition_dataset_manager.py`: Base classes and manager architecture for acquisition datasets
+  - `datasets/gp_acquisition_dataset_manager.py`: GP-based synthetic training datasets
+  - `datasets/lr_acquisition_dataset_manager.py`: Logistic regression hyperparameter optimization datasets
+  - `datasets/hpob_acquisition_dataset_manager.py`: HPO-B benchmark datasets
+  - `datasets/cancer_dosage_acquisition_dataset_manager.py`: Cancer dosage optimization datasets
+  - Supporting classes in `datasets/` including `acquisition_dataset.py`, `function_samples_dataset.py`, `dataset_with_models.py`, `gp_acquisition_dataset_manager.py`, `logistic_regression_dataset.py`, `hpob_dataset.py`, and `cancer_dosage_dataset.py`
 
 - **Experiment Management**: Centralized experiment registry and orchestration
   - `experiments/`: Core experiment registry system
     - `registry.py`: Central registry for managing experiment configurations
     - `runner.py`: Experiment execution and orchestration
-    - `plot_helper.py`: Utilities for generating experiment plots
-    - `validate_migration.py`: Tools for validating experiment migrations
+    - `registry.yml`: YAML file containing all experiment configurations
   - `bin/`: Command-line tools (recommended entry points)
     - `experiment_manager.py`: High-level CLI for running registered experiments
     - `activate_env.sh`: Convenience script to activate conda environment
@@ -42,19 +37,53 @@ This repository implements research on using deep reinforcement learning techniq
     - `utils.py`: Outcome transformations, kernel setup, JSON serialization
     - `nn_utils.py`: Custom PyTorch modules (PointNet layers, pooling strategies)
     - `plot_utils.py`: Plotting utilities for BO experiments
+    - `plot_sorting.py`: Utilities for sorting and organizing plot results
     - `exact_gp_computations.py`: Exact GP posterior calculations
     - `constants.py`: Global constants (e.g., HPOB_DATA_DIR)
+    - `basic_model_save_utils.py`: Basic model saving utilities
   - `utils_general/`: General-purpose utilities (recently refactored from `utils/`)
     - `utils.py`: General utility functions
     - `nn_utils.py`: General neural network utilities
     - `plot_utils.py`: General plotting utilities
     - `io_utils.py`: I/O helper functions
+    - `math_utils.py`: General mathematical utilities
     - `tictoc.py`: Timing utilities
     - `saveable_object.py`: Object serialization/persistence
+    - `basic_model_save_utils.py`: Basic model saving/loading utilities
+    - `torch_module_save_utils.py`: PyTorch module saving/loading utilities
+    - `training/`: Training utilities
+      - `single_trainer.py`: Single model trainer class
+      - `train_or_test_loop.py`: Training and testing loop implementations
+      - `train_utils.py`: General training utilities
     - `experiments/`: SLURM job submission utilities
       - `experiment_config_utils.py`: Configuration management
+      - `experiment_manager.py`: Experiment manager utilities
+      - `registry.py`: General-purpose experiment registry
+      - `runner.py`: General-purpose experiment runner
       - `submit_dependent_jobs.py`: Job dependency handling
       - `job_array.sub`: SLURM job array template
+  - `utils_train/`: Training utilities specific to acquisition function networks
+    - `acquisition_function_net.py`: Core NN architectures (PointNet, Transformer-based)
+    - `acquisition_function_net_constants.py`: Constants for acquisition function networks
+    - `train_acquisition_function_net.py`: Training logic and model persistence
+    - `model_save_utils.py`: Model saving/loading and configuration parsing
+    - `train_or_test_loop.py`: Training/testing loops for acquisition functions
+    - `train_utils.py`: Training utilities for acquisition functions
+
+- **Top-level Scripts**: Main entry points for various tasks
+  - `single_train.py`: Train a single acquisition function network
+  - `single_run.py`: Run a single Bayesian optimization loop
+  - `submit_train.py`: Submit multiple NN training jobs to SLURM
+  - `submit.py`: Submit complete experiments (training + BO loops) to SLURM
+  - `status.py`: Check status of experiments
+  - `plot_run.py`: Generate plots for BO experiment results
+  - `plot_train.py`: Generate plots for NN training results
+  - `plot_combined.py`: Generate combined plots across experiments
+  - `plot_1d_objectives.py`: Plot 1D objective function visualizations
+  - `get_training_stats.py`: Extract and display training statistics
+  - `dataset_factory.py`: Factory for creating different dataset types
+  - `single_train_baseline.py`: Baseline training script
+  - `g2top.py`: GPU monitoring utility
 
 ### Training Methods
 
@@ -69,6 +98,7 @@ The codebase supports multiple dataset types for training acquisition functions:
 1. **Gaussian Process** (`dataset_type: gp`): Traditional GP-based synthetic functions (default)
 2. **Logistic Regression** (`dataset_type: logistic_regression`): Hyperparameter optimization for regularized logistic regression
 3. **HPO-B** (`dataset_type: hpob`): Real-world hyperparameter optimization benchmarks from the HPO-B dataset
+4. **Cancer Dosage** (`dataset_type: cancer_dosage`): Cancer dosage optimization tasks
 
 ## Common Development Commands
 
@@ -172,8 +202,8 @@ The project uses YAML-based hierarchical configuration:
 - **Configuration structure**: Nested parameters with `values` arrays for hyperparameter sweeps
 
 Key configuration sections:
-- `dataset_type`: Choose between 'gp' (default), 'logistic_regression', or 'hpob'
-- `function_samples_dataset`: Dataset parameters (GP kernel parameters, logistic regression parameters, OR HPO-B search space), dataset sizes
+- `dataset_type`: Choose between 'gp' (default), 'logistic_regression', 'hpob', or 'cancer_dosage'
+- `function_samples_dataset`: Dataset parameters (GP kernel parameters, logistic regression parameters, HPO-B search space, OR cancer dosage parameters), dataset sizes
 - `acquisition_dataset`: History lengths, candidate counts
 - `architecture`: NN architecture (PointNet/Transformer), layer widths, features
 - `training`: Loss methods, learning rates, regularization
@@ -195,9 +225,20 @@ Key configuration sections:
 ### Model Persistence
 
 Trained models are saved with content-based hashing:
-- Location: `v2/model_[hash]/`
+- Location: `data/saved_models/v2/model_[hash]/` (or `v2/model_[hash]/` for backward compatibility)
 - Contains: model weights, training config, dataset config
 - Hash based on: all training hyperparameters and dataset settings
+
+### Data Directory Structure
+
+The `data/` directory contains all runtime-generated files and cached data:
+- `data/saved_models/`: Trained acquisition function network models
+- `data/bayesopt_results/`: Results from Bayesian optimization runs
+- `data/datasets/`: Cached datasets for training acquisition functions
+- `data/plots/`: Generated plots and visualizations
+- `data/sweeps/`: SLURM job submission files and logs
+- `data/hpob-data/`: HPO-B benchmark dataset files (if using HPO-B)
+- `data/saved-surrogates/`: Cached surrogate models (if applicable)
 
 ## Development Notes
 
@@ -230,7 +271,7 @@ The centralized experiment registry (`experiments/registry.py`) provides structu
 
 ### Dataset Caching
 
-Datasets are cached in `datasets/` directory with content-based naming to avoid regeneration of identical datasets across experiments.
+Datasets are cached in `data/datasets/` directory with content-based naming to avoid regeneration of identical datasets across experiments.
 
 ### Notes Directory
 

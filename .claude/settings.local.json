@@ -23,7 +23,9 @@
       "Bash(timeout 60 ./bin/experiment_manager.py plot pointnet_1d_pbgi_cancer_dosage --type combined_plot --max-iterations-to-plot 20 --center-stat mean)",
       "Bash(timeout 120 ./bin/experiment_manager.py plot pointnet_1d_pbgi_cancer_dosage --type combined_plot --max-iterations-to-plot 20 --center-stat mean)",
       "Bash(./bin/experiment_manager.py:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(ls:*)",
+      "Bash(test:*)"
     ],
     "deny": [],
     "ask": []
