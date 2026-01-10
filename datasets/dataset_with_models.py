@@ -6,6 +6,7 @@ import os
 from tqdm import tqdm
 import json
 
+from utils_general.iterable_utils import resize_iterable
 import torch
 from torch.utils.data import Dataset, IterableDataset, random_split, Subset
 from botorch.models.gp_regression import SingleTaskGP
@@ -13,7 +14,7 @@ from botorch.exceptions import UnsupportedError
 import pyro
 
 from utils_general.tictoc import tic, tocl
-from utils.utils import resize_iterable, iterable_is_finite
+from utils_general.iterable_utils import iterable_is_finite
 from utils_general.io_utils import load_json, save_json
 
 

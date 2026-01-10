@@ -15,14 +15,14 @@ from abc import ABC, abstractmethod
 from botorch.models.transforms.outcome import OutcomeTransform
 
 from utils.utils import (
-    get_uniform_randint_generator, get_loguniform_randint_generator,
-    get_lengths_from_proportions)
+    get_uniform_randint_generator, get_loguniform_randint_generator)
 from utils.constants import DATASETS_DIR
 
 from datasets.function_samples_dataset import ListMapFunctionSamplesDataset
 from datasets.acquisition_dataset import (
     AcquisitionDataset, CostAwareAcquisitionDataset, FunctionSamplesAcquisitionDataset)
 
+from utils_general.iterable_utils import get_lengths_from_proportions
 from utils_train.train_or_test_loop import train_or_test_loop
 from utils_general.utils import dict_to_hash, dict_to_str
 

@@ -4,7 +4,7 @@ from scipy.stats import norm
 import torch
 from torch.utils.data import IterableDataset
 
-from utils.utils import SizedInfiniteIterableMixin
+from utils_general.iterable_utils import SizedInfiniteIterableMixin
 from datasets.function_samples_dataset import (
     FunctionSamplesDataset, FunctionSamplesItem)
 

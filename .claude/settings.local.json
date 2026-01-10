@@ -25,7 +25,8 @@
       "Bash(./bin/experiment_manager.py:*)",
       "Bash(find:*)",
       "Bash(ls:*)",
-      "Bash(test:*)"
+      "Bash(test:*)",
+      "Bash(grep:*)"
     ],
     "deny": [],
     "ask": []

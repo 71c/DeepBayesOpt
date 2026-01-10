@@ -2,6 +2,7 @@ import copy
 from functools import partial
 from typing import Optional, List, Union
 from collections.abc import Sequence
+from utils_general.iterable_utils import SizedInfiniteIterableMixin, SizedIterableMixin, resize_iterable
 import torch
 from torch.utils.data import IterableDataset, DataLoader
 from torch.distributions import Uniform, Normal, Independent, Distribution
@@ -14,10 +15,9 @@ from gpytorch.constraints.constraints import GreaterThan
 import math
 
 from datasets.dataset_with_models import TupleWithModel, create_classes, RandomModelSampler
-from utils.utils import (SizedInfiniteIterableMixin, SizedIterableMixin,
-                   get_lengths_from_proportions,
-                   invert_outcome_transform, concatenate_outcome_transforms,
-                   get_gp, len_or_inf, resize_iterable)
+from utils.utils import (invert_outcome_transform, concatenate_outcome_transforms,
+                   get_gp)
+from utils_general.iterable_utils import len_or_inf
 
 
 class FunctionSamplesItem(TupleWithModel):
