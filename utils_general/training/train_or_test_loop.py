@@ -80,7 +80,7 @@ class TrainOrTestLoop(ABC):
                 batch_data_nn = loop_state.get_data_from_batch_for_nn(batch)
 
                 with torch.set_grad_enabled(train and not is_degenerate_batch):
-                    nn_output = loop_state.evaluate_nn_on_batch(nn_model, batch_data_nn)
+                    nn_output = loop_state.evaluate_nn_on_batch(batch_data_nn)
 
                     nn_batch_stats = loop_state.compute_nn_batch_stats(nn_output, batch_data_nn)
                     
@@ -230,7 +230,9 @@ class TrainOrTestLoop(ABC):
         pass
 
     @abstractmethod
-    def evaluate_nn_on_batch(self, nn_model, batch_data: SimpleNamespace) -> Tensor:
+    def evaluate_nn_on_batch(self, batch_data: SimpleNamespace) -> Tensor:
+        """Evaluate self.nn_model on the given batch_data and return the output Tensor.
+        """
         pass
 
     @abstractmethod

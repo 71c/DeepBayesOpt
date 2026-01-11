@@ -243,8 +243,9 @@ class AcquisitionFunctionTrainOrTestLoop(TrainOrTestLoop):
         
         return ret
 
-    def evaluate_nn_on_batch(self, nn_model, batch_data: SimpleNamespace) -> Tensor:
+    def evaluate_nn_on_batch(self, batch_data: SimpleNamespace) -> Tensor:
         method = self.method
+        nn_model = self.nn_model
         if method == 'gittins':
             if nn_model.variable_lambda:
                 lambda_cand = batch_data.log_lambdas
@@ -310,7 +311,8 @@ class AcquisitionFunctionTrainOrTestLoop(TrainOrTestLoop):
                     costs=None, normalize=nrmlz, mask=cand_mask, reduction=reduction)
                 nam = name + "gittins_loss" + (f"_normalized_{nrmlz}" if nrmlz else "")
                 ret[nam] = gittins_loss.item()
-                if return_loss:
+                # Only set loss for the target normalization (unnormalized when normalize is None)
+                if return_loss and nrmlz == normalize:
                     ret["loss"] = gittins_loss
 
         if improvements is not None:

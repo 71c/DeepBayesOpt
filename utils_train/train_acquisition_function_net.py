@@ -120,8 +120,6 @@ class AcquisitionFunctionSingleTrainer(SingleTrainer):
     def _print_stat_summary(
             cls, stats, things_to_print, best_stat:Optional[str]=None,
             inverse_ratio=False, sqrt_ratio=False, ratio_name='Ratio'):
-        # Maybe TODO: consider possibly to somehow make this functionality
-        # automatic in the abstract base class (maybe tricky or awkward)
         
         # Prepare the rows to print
         best_val = None if best_stat is None else stats.get(best_stat)
