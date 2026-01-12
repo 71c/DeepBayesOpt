@@ -51,6 +51,9 @@ class SingleTrainer(ABC):
         (args, model, model_and_info_folder_name, models_path
         ) = torch_model_save_instance.get_args_module_paths_from_cmd_args(cmd_args)
 
+        root_models_path = basic_save_utils.models_path
+        model_and_info_path = os.path.join(root_models_path, model_and_info_folder_name)
+
         if args.load_saved_model:
             model, model_path = torch_model_save_instance.load_module(
                 model_and_info_folder_name, return_model_path=True)
@@ -62,7 +65,7 @@ class SingleTrainer(ABC):
         print(model)
         print("Number of trainable parameters:", count_trainable_parameters(model))
         print("Number of parameters:", count_parameters(model))
-        print(f"\nSaving model and configs to {model_and_info_folder_name}\n")
+        print(f"\nSaving model and configs to {model_and_info_path}\n")
 
         ####################### Make the train and test datasets #######################
         (train_dataset, test_dataset,
@@ -123,7 +126,7 @@ class SingleTrainer(ABC):
 
             if args.save_model:
                 basic_save_utils.mark_new_model_as_trained(models_path, model_name)
-                print(f"Saved best weights to {model_and_info_folder_name}")
+                print(f"Saved best weights to {model_and_info_path}")
 
             if measure_time:
                 tocl()
