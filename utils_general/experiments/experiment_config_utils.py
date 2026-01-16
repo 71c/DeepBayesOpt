@@ -27,6 +27,22 @@ def add_config_args(parser, prefix='', experiment_name=None):
     return base_config_name, experiment_config_name
 
 
+def add_submit_train_args(parser, train=True, prefix='train'):
+    train_base_config_name, train_experiment_config_name = add_config_args(
+        parser, prefix=prefix, experiment_name='train')
+
+    if train:
+        parser.add_argument(
+            f'--always_train',
+            action='store_true',
+            help=('If this flag is set, train all models regardless of '
+                'whether they have already been trained. Default is to only train '
+                'models that have not already been trained.')
+        )
+    
+    return train_base_config_name, train_experiment_config_name
+
+
 def get_config_options_list(base_config: str,
                             experiment_config: Optional[str]=None):
     # Load the base configuration

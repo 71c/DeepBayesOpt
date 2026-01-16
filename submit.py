@@ -11,11 +11,12 @@ from datasets.hpob_dataset import get_hpob_dataset_ids
 from utils.utils import get_lamda_for_bo_of_nn
 from utils_general.experiments.experiment_manager import add_recompute_args
 from utils_general.utils import group_by
-from utils_general.experiments.experiment_config_utils import add_config_args, get_config_options_list
+from utils_general.experiments.experiment_config_utils import add_config_args, add_submit_train_args, get_config_options_list
 from utils_general.experiments.submit_dependent_jobs import add_slurm_args, submit_jobs_sweep_from_args
 
 from single_run import GP_AF_DICT, bo_loop_dicts_to_cmd_args_list, run_bo
-from submit_train import ALWAYS_TRAIN_NAME, NO_NN_ID, add_train_acqf_args, create_dependency_structure_train_acqf, get_cmd_options_train_acqf
+from submit_train import AF_TRAIN_SUBMIT_UTILS
+from utils_general.experiments.submit_train_utils import NO_NN_ID
 from utils_general.utils import dict_to_hash, dict_to_str, str_to_hash
 from utils_train.model_save_utils import ACQF_NET_SAVING
 
@@ -188,7 +189,7 @@ def _gp_bo_jobs_spec_and_cfgs(
         
         # Get model_and_info_name for this NN
         (cmd_dataset, cmd_opts_dataset,
-         cmd_nn_train, cmd_opts_nn) = get_cmd_options_train_acqf(nn_options)
+         cmd_nn_train, cmd_opts_nn) = AF_TRAIN_SUBMIT_UTILS.get_dataset_and_train_cmd_options(nn_options)
         (args_nn, pre_model, model_and_info_name, models_path
         ) = ACQF_NET_SAVING.cmd_opts_train_to_args_module_paths(cmd_opts_nn)
 
@@ -256,7 +257,7 @@ def _gp_bo_jobs_spec_and_cfgs(
 
     if included:
         options_list, nn_bo_loop_commands_list = zip(*included)
-        jobs_spec = create_dependency_structure_train_acqf(
+        jobs_spec = AF_TRAIN_SUBMIT_UTILS.create_submit_train_dependency_structure(
             options_list,
             dependents_list=nn_bo_loop_commands_list,
             always_train=always_train,
@@ -371,7 +372,7 @@ def get_bo_experiments_parser(train=True):
         bo_loop_group, prefix='run', experiment_name='BO loops')
 
     nn_train_group = parser.add_argument_group("NN experiments")
-    train_base_config_name, train_experiment_config_name = add_train_acqf_args(nn_train_group,
+    train_base_config_name, train_experiment_config_name = add_submit_train_args(nn_train_group,
                                                                          train=train)
     nn_train_group.add_argument(
         '--no_train',
@@ -527,8 +528,8 @@ def main():
         parser.error("Cannot specify both --recompute-run and --recompute-non-train-only. "
                      "--recompute-run includes all BO results.")
     
-    if args.no_train and getattr(args, ALWAYS_TRAIN_NAME):
-        parser.error(f"Cannot specify both --no_train and --{ALWAYS_TRAIN_NAME}.")
+    if args.no_train and getattr(args, 'always_train'):
+        parser.error(f"Cannot specify both --no_train and --always_train.")
 
     jobs_spec, new_cfgs, existing_cfgs_and_results, refined_config \
         = generate_gp_bo_job_specs(

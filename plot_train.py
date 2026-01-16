@@ -11,12 +11,12 @@ from dataset_factory import create_train_test_acquisition_datasets_from_args
 from utils.basic_model_save_utils import BASIC_SAVING
 from utils.plot_sorting import plot_dict_to_str
 from utils.utils import get_lamda_for_bo_of_nn
-from utils_general.experiments.experiment_config_utils import get_config_options_list
+from utils_general.experiments.experiment_config_utils import add_submit_train_args, get_config_options_list
 from utils.plot_utils import N_CANDIDATES_PLOT, create_plot_directory, group_by_nested_attrs, plot_acquisition_function_net_training_history_ax, plot_nn_vs_gp_acquisition_function_1d, save_figures_from_nested_structure
 from utils_general.utils import group_by
 from utils_general.io_utils import load_json, save_json
 
-from submit_train import add_train_acqf_args, get_cmd_options_train_acqf
+from submit_train import AF_TRAIN_SUBMIT_UTILS
 from utils_general.plot_utils import add_plot_args
 from utils_general.utils import DEVICE, dict_to_str
 from utils_train.model_save_utils import ACQF_NET_SAVING
@@ -142,7 +142,7 @@ def get_plot_train_ax_func(get_result_func):
 def main():
     ## Create parser
     parser = argparse.ArgumentParser()
-    train_base_config_name, train_experiment_config_name = add_train_acqf_args(parser,
+    train_base_config_name, train_experiment_config_name = add_submit_train_args(parser,
                                                                          train=False)
     add_plot_args(parser)
 
@@ -179,7 +179,7 @@ def main():
     caches = [None for _ in range(len(all_cfgs_list))]
     for i, cfg in enumerate(all_cfgs_list):
         (cmd_dataset, cmd_opts_dataset,
-         cmd_nn_train, cmd_opts_nn) = get_cmd_options_train_acqf(cfg)
+         cmd_nn_train, cmd_opts_nn) = AF_TRAIN_SUBMIT_UTILS.get_dataset_and_train_cmd_options(cfg)
         
         (args_nn, pre_model, model_and_info_name, models_path
         ) = ACQF_NET_SAVING.cmd_opts_train_to_args_module_paths(cmd_opts_nn)

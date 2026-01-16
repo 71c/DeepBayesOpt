@@ -1419,6 +1419,10 @@ experiments:
             - transfer_bo_method
           - - objective.id
             - bo_seed
+      train_plot:
+        default:
+          post:
+          - ['learning_rate']
   pointnet_pbgi_cancer_dosage_pbgi_5d_dataset_size:
     description: 'Experiment of cancer dosage PointNet PBGI, 5D, dataset size, x_cand_input, max_history_input experiment'
     created_date: '2025-10-20'
