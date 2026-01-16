@@ -430,7 +430,7 @@ class AcquisitionDatasetManager(ABC):
                 aq_dataset = None
             else:
                 # Save the function samples dataset
-                if cache and fix_function_samples and not function_dataset_already_saved:
+                if cache and fix_function_samples and create_function_samples_dataset:
                     os.makedirs(DATASETS_DIR, exist_ok=True)
                     print(f"Saving {function_dataset_name}")
                     function_samples_dataset.save(function_dataset_path, verbose=True)

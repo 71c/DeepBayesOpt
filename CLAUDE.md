@@ -175,12 +175,12 @@ python single_run.py --n_initial_samples 1 --n_iter 20 --objective_dimension 1 -
 
 #### Batch Experiments
 ```bash
-python submit.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_test_simple.yml --run_base_config config/bo_config.yml --n_gp_draws 8 --seed 8 --sweep_name preliminary-test-small --mail user@domain.edu --gres gpu:1
+python submit.py --train_base_config config/train_base_config.yml --train_experiment_config config/train_acqf_experiment_test_simple.yml --run_base_config config/run_base_config.yml --n_gp_draws 8 --seed 8 --sweep_name preliminary-test-small --mail user@domain.edu --gres gpu:1
 ```
 
 #### Generate Plots
 ```bash
-python plot_run.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_1dim_example.yml --run_base_config config/bo_config.yml --n_gp_draws 2 --seed 8 --use_rows --use_cols --center_stat mean --plots_group_name test_1dim --plots_name results
+python plot_run.py --train_base_config config/train_base_config.yml --train_experiment_config config/train_acqf_experiment_1dim_example.yml --run_base_config config/run_base_config.yml --n_gp_draws 2 --seed 8 --use_rows --use_cols --center_stat mean --plots_group_name test_1dim --plots_name results
 ```
 
 **Plot Formatting Options:**
@@ -192,14 +192,14 @@ python plot_run.py --train_base_config config/train_acqf.yml --train_experiment_
 
 #### Check Status
 ```bash
-python status.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_test_simple.yml --run_base_config config/bo_config.yml --n_gp_draws 8 --seed 8
+python status.py --train_base_config config/train_base_config.yml --train_experiment_config config/train_acqf_experiment_test_simple.yml --run_base_config config/run_base_config.yml --n_gp_draws 8 --seed 8
 ```
 
 ### Configuration System
 
 The project uses YAML-based hierarchical configuration:
 
-- **Base configs**: `config/train_acqf.yml`, `config/bo_config.yml`
+- **Base configs**: `config/train_base_config.yml`, `config/run_base_config.yml`
 - **Experiment configs**: Override specific parameters for experiments
 - **Configuration structure**: Nested parameters with `values` arrays for hyperparameter sweeps
 

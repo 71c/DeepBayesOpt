@@ -226,7 +226,7 @@ The following command automatically runs all of the BO loops of both the NNs and
 
 An example command is as follows:
 ```bash
-python submit.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_test_simple.yml --run_base_config config/bo_config.yml --n_gp_draws 8 --seed 8 --sweep_name preliminary-test-small --mail adj53@cornell.edu --gres gpu:1
+python submit.py --train_base_config config/train_base_config.yml --train_experiment_config config/train_acqf_experiment_test_simple.yml --run_base_config config/run_base_config.yml --n_gp_draws 8 --seed 8 --sweep_name preliminary-test-small --mail adj53@cornell.edu --gres gpu:1
 ```
 
 ### Arguments
@@ -307,7 +307,7 @@ The `dataset_factory.py` provides a unified interface for creating datasets of d
 Run `python submit_train.py --help` for the description of the arguments.
 An example command is as follows:
 ```bash
-python submit_train.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_test_simple.yml --sweep_name preliminary-test-small-train --mail adj53@cornell.edu --gres gpu:1
+python submit_train.py --train_base_config config/train_base_config.yml --train_experiment_config config/train_acqf_experiment_test_simple.yml --sweep_name preliminary-test-small-train --mail adj53@cornell.edu --gres gpu:1
 ```
 This will train multiple neural networks with different hyperparameters and save the models.
 
@@ -317,7 +317,7 @@ This will train multiple neural networks with different hyperparameters and save
 
 An example command is as follows:
 ```bash
-python plot_run.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_1dim_example.yml --run_base_config config/bo_config.yml --run_experiment_config config/bo_config_experiment_2_20iter_160.yml --n_gp_draws 2 --seed 8 --use_rows --use_cols --center_stat mean --interval_of_center --plots_group_name test_1dim_maxhistory20_example --plots_name results_20iter
+python plot_run.py --train_base_config config/train_base_config.yml --train_experiment_config config/train_acqf_experiment_1dim_example.yml --run_base_config config/run_base_config.yml --run_experiment_config config/bo_config_experiment_2_20iter_160.yml --n_gp_draws 2 --seed 8 --use_rows --use_cols --center_stat mean --interval_of_center --plots_group_name test_1dim_maxhistory20_example --plots_name results_20iter
 ```
 
 ## Plot Formatting Options
@@ -344,12 +344,12 @@ You can control the auto-detection behavior with these parameters:
 
 Example with formatting options and auto-detection:
 ```bash
-python plot_run.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_1dim_example.yml --run_base_config config/bo_config.yml --n_gp_draws 2 --seed 8 --use_rows --use_cols --add_grid --add_markers --min_regret_for_plot 1e-8 --auto_max_iterations_buffer 0.3 --plots_group_name test_plots --plots_name results
+python plot_run.py --train_base_config config/train_base_config.yml --train_experiment_config config/train_acqf_experiment_1dim_example.yml --run_base_config config/run_base_config.yml --n_gp_draws 2 --seed 8 --use_rows --use_cols --add_grid --add_markers --min_regret_for_plot 1e-8 --auto_max_iterations_buffer 0.3 --plots_group_name test_plots --plots_name results
 ```
 
 Example with manual max iterations (disables auto-detection):
 ```bash
-python plot_run.py --train_base_config config/train_acqf.yml --train_experiment_config config/train_acqf_experiment_1dim_example.yml --run_base_config config/bo_config.yml --n_gp_draws 2 --seed 8 --max_iterations_to_plot 50 --plots_group_name test_plots --plots_name results
+python plot_run.py --train_base_config config/train_base_config.yml --train_experiment_config config/train_acqf_experiment_1dim_example.yml --run_base_config config/run_base_config.yml --n_gp_draws 2 --seed 8 --max_iterations_to_plot 50 --plots_group_name test_plots --plots_name results
 ```
 This means that at the highest level it will vary the layer width and the training samples size, then the lambda, the GP acquisition function or NN method, and finally the seed for the GP. The GP seed corresponds to individual BO runs that together comprise an error bar that is in the legend of a specific subplot. The higher levels make up subplots within a figure, figures (which correspond to `.pdf` files), and folders containing the figures. 
 The script will output something like the following to indicate to the user the structure of the plots:
@@ -477,7 +477,7 @@ This module implements the core Bayesian optimization loop. It includes:
 
 
 # How to add a new parameter to the experiments
-To add a new parameter to the experiments, you should at least add to `config/train_acqf.yml`.
+To add a new parameter to the experiments, you should at least add to `config/train_base_config.yml`.
 ## Adding a new NN training parameter
 To add a new NN training parameter to the experiments,
 you will need to do the following:
@@ -495,4 +495,4 @@ To add a new dataset type, you will need to do the following:
 - Add a new dataset manager in `datasets/` (see `datasets/hpob_acquisition_dataset_manager.py` for an example)
 - Add the new dataset type in the required places in `dataset_factory.py`.
 - Add to `get_cmd_options_train_acqf` in `submit_train.py` the command-line arguments that are specific to the new dataset type.
-- Add the dataset type to `config/train_acqf.yml`
+- Add the dataset type to `config/train_base_config.yml`

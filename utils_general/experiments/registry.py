@@ -87,8 +87,8 @@ class ExperimentRegistryBase(ABC):
         seeds_cfg = self.get_seeds_cfg(params)
         args['SEEDS_CFG'] = f'"{seeds_cfg}"'
         
-        args['TRAIN_CFG'] = f'"--train_base_config config/train_acqf.yml --train_experiment_config {params["train_experiment_config"]}"'
-        args['RUN_CFG'] = f'"--run_base_config config/bo_config.yml --run_experiment_config {params["run_experiment_config"]} --seed {params["seed"]} {seeds_cfg}"'
+        args['TRAIN_CFG'] = f'"--train_base_config config/train_base_config.yml --train_experiment_config {params["train_experiment_config"]}"'
+        args['RUN_CFG'] = f'"--run_base_config config/run_base_config.yml --run_experiment_config {params["run_experiment_config"]} --seed {params["seed"]} {seeds_cfg}"'
         args['SLURM_CFG'] = f'"--sweep_name {params["sweep_name"]} --mail adj53@cornell.edu --gres gpu:1"'
         args['PLOTS_CFG'] = f'"--plots_group_name {params["plots_group_name"]}"'
         

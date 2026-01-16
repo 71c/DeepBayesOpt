@@ -65,13 +65,13 @@ class ExperimentRunnerBase:
 
         if include_nn_config:
             cmd.extend([
-                "--train_base_config", "config/train_acqf.yml",
+                "--train_base_config", "config/train_base_config.yml",
                 "--train_experiment_config", args['TRAIN_EXPERIMENT_CFG'].strip('"')
             ])
 
         if include_bo_config:
             cmd.extend([
-                "--run_base_config", "config/bo_config.yml",
+                "--run_base_config", "config/run_base_config.yml",
                 "--run_experiment_config", args['RUN_EXPERIMENT_CFG'].strip('"')
             ])
 

@@ -52,7 +52,7 @@ GP_AF_DICT = {
 
 
 # Load the base configuration
-with open("config/bo_config.yml", 'r') as f:
+with open("config/run_base_config.yml", 'r') as f:
     BO_BASE_CONFIG = yaml.safe_load(f)
 
 GEN_CANDIDATES_CONFIG = {
