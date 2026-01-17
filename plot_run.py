@@ -6,7 +6,10 @@ import numpy as np
 from experiments.registry import get_registry
 from utils.plot_sorting import plot_dict_to_str
 from utils.plot_utils import (
-    create_plot_directory, get_plot_ax_af_iterations_func, get_plot_ax_bo_stats_vs_iteration_func, group_by_nested_attrs, save_figures_from_nested_structure)
+    get_plot_ax_af_iterations_func,
+    get_plot_ax_bo_stats_vs_iteration_func,
+    PROJECT_PLOT_UTILS
+)
 from utils_general.utils import group_by
 from utils_general.io_utils import save_json
 from utils_general.experiments.experiment_config_utils import CONFIG_DIR
@@ -312,7 +315,7 @@ def main():
         })
 
     # Folder name
-    save_dir = create_plot_directory(
+    save_dir = PROJECT_PLOT_UTILS.create_plot_directory(
         args.plots_name, args.plots_group_name, is_run_plot=True)
     
     plot_formatting_kwargs = {
@@ -424,7 +427,7 @@ def main():
                 idx = -2
             attrs_groups_list.insert(idx, last)
 
-        plot_config, new_attrs_groups_list = group_by_nested_attrs(
+        plot_config, new_attrs_groups_list = PROJECT_PLOT_UTILS.group_by_nested_attrs(
             this_reformatted_configs,
             attrs_groups_list,
             dict_to_str_func=plot_dict_to_str,
@@ -612,7 +615,7 @@ def main():
             this_script_plot_kwargs["aspect"] = 3.0
             # this_script_plot_kwargs["scale"] = 0.87
 
-        save_figures_from_nested_structure(
+        PROJECT_PLOT_UTILS.save_figures_from_nested_structure(
             plot_config,
             plot_ax_func,
             new_attrs_groups_list,

@@ -21,7 +21,7 @@ from utils.constants import PLOTS_DIR
 from utils.exact_gp_computations import calculate_EI_GP, calculate_gi_gp
 from utils.plot_sorting import plot_key_value_to_str, sort_key_for_grouped_items
 from utils.utils import add_outcome_transform
-from utils_general.plot_utils import get_create_plot_directory_func, get_group_by_nested_attrs_func, get_save_figures_from_nested_structure
+from utils_general.plot_utils import get_plot_utils_namespace
 from utils_general.utils import DEVICE, dict_to_str
 
 
@@ -1238,15 +1238,11 @@ def get_plot_ax_af_iterations_func(get_result_func):
     return ret
 
 
-save_figures_from_nested_structure = get_save_figures_from_nested_structure(
+PROJECT_PLOT_UTILS = get_plot_utils_namespace(
     special_names={"attr_name", "nn.method", "method", "gp_af"},
-    kv_to_str_func=plot_key_value_to_str)
-
-
-group_by_nested_attrs = get_group_by_nested_attrs_func(
+    kv_to_str_func=plot_key_value_to_str,
     sort_key_for_grouped_items_func=sort_key_for_grouped_items,
-    constant_keys_to_remove={"nn.method", "gp_af"})
-
-
-create_plot_directory = get_create_plot_directory_func(
-    plots_dir_path=PLOTS_DIR, run_plots_folder_name=RUN_PLOTS_FOLDER)
+    plots_dir_path=PLOTS_DIR,
+    run_plots_folder_name=RUN_PLOTS_FOLDER,
+    constant_keys_to_remove={"nn.method", "gp_af"},
+)

@@ -17,7 +17,9 @@ from tqdm import tqdm
 from experiments.registry import get_registry
 from utils.basic_model_save_utils import BASIC_SAVING
 from utils.plot_utils import (
-    create_plot_directory, get_plot_ax_loss_vs_regret_func, group_by_nested_attrs, save_figures_from_nested_structure)
+    get_plot_ax_loss_vs_regret_func,
+    PROJECT_PLOT_UTILS
+)
 from utils_general.utils import group_by
 from utils_general.io_utils import load_json, save_json
 from utils_general.experiments.experiment_config_utils import CONFIG_DIR
@@ -227,7 +229,7 @@ def main():
         reformatted_configs.append(reformatted_config)
 
     # Folder name
-    save_dir = create_plot_directory(
+    save_dir = PROJECT_PLOT_UTILS.create_plot_directory(
         args.plots_name, args.plots_group_name, is_run_plot=True)
 
     script_plot_kwargs = dict(
@@ -280,7 +282,7 @@ def main():
             return combined_results_list[i]
 
         # Group by attributes
-        grouped_plot_config, final_attrs_groups_list = group_by_nested_attrs(
+        grouped_plot_config, final_attrs_groups_list = PROJECT_PLOT_UTILS.group_by_nested_attrs(
             this_reformatted_configs,
             attrs_groups_list)
 
@@ -342,7 +344,7 @@ def main():
             print(f"Saved single combined plot to {fig_path}")
         else:
             # Original behavior - save separate figures
-            save_figures_from_nested_structure(
+            PROJECT_PLOT_UTILS.save_figures_from_nested_structure(
                 grouped_plot_config,
                 plot_ax_func,
                 attrs_groups_list,

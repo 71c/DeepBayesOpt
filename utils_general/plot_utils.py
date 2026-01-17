@@ -1,5 +1,6 @@
 import sys
 from typing import Any, List, Optional, Sequence, Set, TypeVar
+from types import SimpleNamespace
 import os
 import logging
 import warnings
@@ -386,56 +387,6 @@ def _save_figures_from_nested_structure(
                 warnings.formatwarning(w.message, w.category, w.filename, w.lineno))
 
 
-def get_save_figures_from_nested_structure(special_names, kv_to_str_func):
-    def ret(
-            plot_config: dict,
-            plot_ax_func,
-            attrs_groups_list: list[Optional[set]],
-            level_names: list[str],
-            base_folder='',
-            attr_name_to_title: dict[str, str] = {},
-            print_pbar=True,
-            all_seeds=True,
-            **plot_kwargs):
-        if type(plot_config) is tuple and len(plot_config) == 2 and \
-            type(plot_config[0]) is dict and type(plot_config[1]) is list:
-            plot_config = plot_config[0]
-        elif type(plot_config) is not dict:
-            print(f"{type(plot_config)=}", file=sys.stderr)
-            if type(plot_config) in {list, tuple}:
-                print(f"  len(plot_config)={len(plot_config)}", file=sys.stderr)
-                for i, pc in enumerate(plot_config):
-                    print(f"  {i}: {type(pc)=}", file=sys.stderr)
-                    if type(pc) is dict:
-                        print(f"    plot_config[{i}] type: dict with {len(pc)} keys",
-                            file=sys.stderr)
-                    elif type(pc) is list:
-                        print(f"    plot_config[{i}] type: list with {len(pc)} items",
-                            file=sys.stderr)
-                        for j, item in enumerate(pc):
-                            print(f"      item {j}: type {type(item)}, value {item}",
-                                file=sys.stderr)
-                    else:
-                        print(f"    plot_config[{i}] type: {type(pc)}", file=sys.stderr)
-            raise ValueError("plot_config should be a dict")
-
-        n_plots = _count_num_plots(
-            plot_config, level_names=level_names.copy(), all_seeds=all_seeds)
-        pbar = tqdm(total=n_plots, desc="Saving figures") if print_pbar else None
-        _save_figures_from_nested_structure(
-            plot_config, plot_ax_func, attrs_groups_list, level_names,
-            base_folder=base_folder,
-            attr_name_to_title=attr_name_to_title,
-            pbar=pbar,
-            special_names=special_names,
-            kv_to_str_func=kv_to_str_func,
-            **plot_kwargs
-        )
-        if print_pbar:
-            pbar.close()
-    return ret
-
-
 K = TypeVar('K')
 V = TypeVar('V')
 
@@ -558,9 +509,61 @@ def _iterate_nested(d):
             yield from _iterate_nested(value)  # Recursively process the nested dict
 
 
-def get_group_by_nested_attrs_func(
-        sort_key_for_grouped_items_func, constant_keys_to_remove=set()):
-    def ret(items: List[dict[K, Any]],
+def get_plot_utils_namespace(
+        special_names: set,
+        kv_to_str_func: callable,
+        sort_key_for_grouped_items_func: callable,
+        plots_dir_path: str,
+        run_plots_folder_name: str,
+        constant_keys_to_remove: set=set()):
+    def save_figures_from_nested_structure(
+            plot_config: dict,
+            plot_ax_func,
+            attrs_groups_list: list[Optional[set]],
+            level_names: list[str],
+            base_folder='',
+            attr_name_to_title: dict[str, str] = {},
+            print_pbar=True,
+            all_seeds=True,
+            **plot_kwargs):
+        if type(plot_config) is tuple and len(plot_config) == 2 and \
+            type(plot_config[0]) is dict and type(plot_config[1]) is list:
+            plot_config = plot_config[0]
+        elif type(plot_config) is not dict:
+            print(f"{type(plot_config)=}", file=sys.stderr)
+            if type(plot_config) in {list, tuple}:
+                print(f"  len(plot_config)={len(plot_config)}", file=sys.stderr)
+                for i, pc in enumerate(plot_config):
+                    print(f"  {i}: {type(pc)=}", file=sys.stderr)
+                    if type(pc) is dict:
+                        print(f"    plot_config[{i}] type: dict with {len(pc)} keys",
+                            file=sys.stderr)
+                    elif type(pc) is list:
+                        print(f"    plot_config[{i}] type: list with {len(pc)} items",
+                            file=sys.stderr)
+                        for j, item in enumerate(pc):
+                            print(f"      item {j}: type {type(item)}, value {item}",
+                                file=sys.stderr)
+                    else:
+                        print(f"    plot_config[{i}] type: {type(pc)}", file=sys.stderr)
+            raise ValueError("plot_config should be a dict")
+
+        n_plots = _count_num_plots(
+            plot_config, level_names=level_names.copy(), all_seeds=all_seeds)
+        pbar = tqdm(total=n_plots, desc="Saving figures") if print_pbar else None
+        _save_figures_from_nested_structure(
+            plot_config, plot_ax_func, attrs_groups_list, level_names,
+            base_folder=base_folder,
+            attr_name_to_title=attr_name_to_title,
+            pbar=pbar,
+            special_names=special_names,
+            kv_to_str_func=kv_to_str_func,
+            **plot_kwargs
+        )
+        if print_pbar:
+            pbar.close()
+    
+    def group_by_nested_attrs(items: List[dict[K, Any]],
             attrs_groups_list: List[Set[K]],
             dict_to_str_func=dict_to_str,
             add_extra_index=-1):
@@ -640,7 +643,7 @@ def get_group_by_nested_attrs_func(
 
         if len(nonconstant_keys_in_all) != 0:
             attrs_groups_list = [nonconstant_keys_in_all] + attrs_groups_list
-            return ret(items, attrs_groups_list, dict_to_str_func,
+            return group_by_nested_attrs(items, attrs_groups_list, dict_to_str_func,
                        add_extra_index=add_extra_index)
 
         if len(nonconstant_keys_not_in_all) != 0:
@@ -650,11 +653,8 @@ def get_group_by_nested_attrs_func(
             items, attrs_groups_list, dict_to_str_func,
             return_single=True,
             sort_key_for_grouped_items_func=sort_key_for_grouped_items_func), attrs_groups_list
-    return ret
-
-
-def get_create_plot_directory_func(plots_dir_path: str, run_plots_folder_name: str):
-    def ret(plots_name=None, plots_group_name=None, is_run_plot=False):
+    
+    def create_plot_directory(plots_name=None, plots_group_name=None, is_run_plot=False):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         parts = [timestamp]
         if plots_name is not None:
@@ -666,4 +666,9 @@ def get_create_plot_directory_func(plots_dir_path: str, run_plots_folder_name: s
         save_dir = os.path.join(*pp)
         print(f"Saving plots to {save_dir}")
         return save_dir
-    return ret
+
+    return SimpleNamespace(
+        create_plot_directory=create_plot_directory,
+        group_by_nested_attrs=group_by_nested_attrs,
+        save_figures_from_nested_structure=save_figures_from_nested_structure
+    )

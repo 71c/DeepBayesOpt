@@ -15,9 +15,7 @@ from experiments.registry import get_registry
 from utils.plot_sorting import plot_dict_to_str
 from utils.utils import get_lamda_for_bo_of_nn
 from utils.plot_utils import (
-    create_plot_directory, # general
-    group_by_nested_attrs, # general
-    save_figures_from_nested_structure, # general
+    PROJECT_PLOT_UTILS,
     N_CANDIDATES_PLOT, # for get_plot_train_ax_func
     plot_acquisition_function_net_training_history_ax, # for get_plot_train_ax_func
     plot_nn_vs_gp_acquisition_function_1d, # for get_plot_train_ax_func
@@ -238,7 +236,7 @@ def main():
     assert all(len(v) == 1 for v in gr.values())
 
     # Folder name
-    save_dir = create_plot_directory(
+    save_dir = PROJECT_PLOT_UTILS.create_plot_directory(
         args.plots_name, args.plots_group_name, is_run_plot=False)
 
     if CPROFILE:
@@ -271,7 +269,7 @@ def main():
              for name in attr_names
              for i, cfg in enumerate(existing_cfgs)]
 
-        plot_config, new_attrs_groups_list = group_by_nested_attrs(
+        plot_config, new_attrs_groups_list = PROJECT_PLOT_UTILS.group_by_nested_attrs(
             this_configs,
             attrs_groups_list,
             dict_to_str_func=plot_dict_to_str,
@@ -341,7 +339,7 @@ def main():
             }
 
         plot_train_ax = get_plot_train_ax_func(get_result)
-        save_figures_from_nested_structure(
+        PROJECT_PLOT_UTILS.save_figures_from_nested_structure(
             plot_config,
             plot_train_ax,
             new_attrs_groups_list,
