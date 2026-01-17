@@ -44,7 +44,7 @@ if INCLUDE_TIMES:
     ]
 
 
-ATTR_NAME_TO_TITLE = {
+RUN_ATTR_NAME_TO_TITLE = {
     "best_y": "Best function value",
     "regret": "Regret",
     "normalized_regret": "Normalized Regret",
@@ -617,7 +617,7 @@ def main():
             plot_ax_func,
             new_attrs_groups_list,
             level_names,
-            attr_name_to_title=ATTR_NAME_TO_TITLE,
+            attr_name_to_title=RUN_ATTR_NAME_TO_TITLE,
             base_folder=save_dir_this_attrs,
             print_pbar=True,
             all_seeds=not plot_af_iterations or PLOT_ALL_SEEDS,

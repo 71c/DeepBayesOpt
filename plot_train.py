@@ -6,20 +6,24 @@ from typing import Optional
 
 import torch
 
+from utils_general.experiments.experiment_config_utils import add_submit_train_args, get_config_options_list
+from utils_general.io_utils import load_json, save_json
+from utils_general.plot_utils import add_plot_args
+from utils_general.utils import DEVICE, group_by, dict_to_str
+
 from experiments.registry import get_registry
-from dataset_factory import create_train_test_acquisition_datasets_from_args
-from utils.basic_model_save_utils import BASIC_SAVING
 from utils.plot_sorting import plot_dict_to_str
 from utils.utils import get_lamda_for_bo_of_nn
-from utils_general.experiments.experiment_config_utils import add_submit_train_args, get_config_options_list
-from utils.plot_utils import N_CANDIDATES_PLOT, create_plot_directory, group_by_nested_attrs, plot_acquisition_function_net_training_history_ax, plot_nn_vs_gp_acquisition_function_1d, save_figures_from_nested_structure
-from utils_general.utils import group_by
-from utils_general.io_utils import load_json, save_json
+from utils.plot_utils import (
+    create_plot_directory, # general
+    group_by_nested_attrs, # general
+    save_figures_from_nested_structure, # general
+    N_CANDIDATES_PLOT, # for get_plot_train_ax_func
+    plot_acquisition_function_net_training_history_ax, # for get_plot_train_ax_func
+    plot_nn_vs_gp_acquisition_function_1d, # for get_plot_train_ax_func
+)
 
 from submit_train import AF_TRAIN_SUBMIT_UTILS
-from utils_general.plot_utils import add_plot_args
-from utils_general.utils import DEVICE, dict_to_str
-from utils_train.model_save_utils import ACQF_NET_SAVING
 
 CPROFILE = False
 
@@ -44,7 +48,7 @@ ATTR_GROUPS = [
     # ["0_training_history_train_test", "1_training_history_test_log_regret"],
 ]
 
-ATTR_NAME_TO_TITLE = {
+TRAIN_ATTR_NAME_TO_TITLE = {
     "0_training_history_train_test": "Training history (train and test loss)",
     "1_training_history_test_log_regret": "Training history (test log regret)",
     "2_af_plot": "Acquisition function plot"
@@ -173,6 +177,9 @@ def main():
     all_cfgs_list, refined_config = get_config_options_list(
         getattr(args, train_base_config_name), getattr(args, train_experiment_config_name))
     
+    torch_model_save_instance = AF_TRAIN_SUBMIT_UTILS.torch_model_save_instance
+    basic_save_utils = torch_model_save_instance.basic_save_utils
+    
     # Get all the configs for which we have results, and the corresponding results
     existing_cfgs = []
     results_list = []
@@ -182,11 +189,11 @@ def main():
          cmd_nn_train, cmd_opts_nn) = AF_TRAIN_SUBMIT_UTILS.get_dataset_and_train_cmd_options(cfg)
         
         (args_nn, pre_model, model_and_info_name, models_path
-        ) = ACQF_NET_SAVING.cmd_opts_train_to_args_module_paths(cmd_opts_nn)
+        ) = torch_model_save_instance.cmd_opts_train_to_args_module_paths(cmd_opts_nn)
 
         # Get the model (with the weights)
-        if BASIC_SAVING.model_is_trained(model_and_info_name):
-            model, model_path = ACQF_NET_SAVING.load_module(
+        if basic_save_utils.model_is_trained(model_and_info_name):
+            model, model_path = torch_model_save_instance.load_module(
                 model_and_info_name,
                 return_model_path=True, load_weights=True, verbose=False)
         else:
@@ -199,7 +206,7 @@ def main():
             if cached is not None:
                 return cached
             (train_aq_dataset, test_aq_dataset, small_test_aq_dataset
-            ) = create_train_test_acquisition_datasets_from_args(args_nn)
+            ) = AF_TRAIN_SUBMIT_UTILS.create_datasets_func(args_nn)
             caches[i] = test_aq_dataset
             return test_aq_dataset
         
@@ -339,7 +346,7 @@ def main():
             plot_train_ax,
             new_attrs_groups_list,
             level_names,
-            attr_name_to_title=ATTR_NAME_TO_TITLE,
+            attr_name_to_title=TRAIN_ATTR_NAME_TO_TITLE,
             base_folder=save_dir_this_attrs,
             **script_plot_kwargs
         )

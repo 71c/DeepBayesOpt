@@ -24,7 +24,7 @@ from utils_general.experiments.experiment_config_utils import CONFIG_DIR
 from utils.constants import MODELS_DIR
 
 from submit import get_bo_experiments_parser, generate_gp_bo_job_specs
-from plot_run import add_plot_interval_args, add_plot_formatting_args, ATTR_NAME_TO_TITLE
+from plot_run import add_plot_interval_args, add_plot_formatting_args, RUN_ATTR_NAME_TO_TITLE
 from utils_general.plot_utils import add_plot_args
 from utils_general.utils import dict_to_str
 from utils_train.model_save_utils import ACQF_NET_SAVING
@@ -305,8 +305,8 @@ def main():
         # Create the plot
         plot_ax_func = get_plot_ax_loss_vs_regret_func(get_result_func)
 
-        attr_name_to_title = copy.deepcopy(ATTR_NAME_TO_TITLE)
-        attr_name_to_title['loss_vs_regret'] = 'Validation Loss vs. BO Regret'
+        run_attr_name_to_title = copy.deepcopy(RUN_ATTR_NAME_TO_TITLE)
+        run_attr_name_to_title['loss_vs_regret'] = 'Validation Loss vs. BO Regret'
 
         if CREATE_SINGLE_COMBINED_PLOT:
             # Create a single combined plot with all data points
@@ -329,7 +329,7 @@ def main():
                 plot_config=simple_plot_config,
                 ax=ax,
                 plot_name='Validation Loss vs. BO Regret',
-                attr_name_to_title=attr_name_to_title,
+                attr_name_to_title=run_attr_name_to_title,
                 **script_plot_kwargs
             )
 
@@ -348,7 +348,7 @@ def main():
                 attrs_groups_list,
                 level_names,
                 base_folder=save_dir,
-                attr_name_to_title=attr_name_to_title,
+                attr_name_to_title=run_attr_name_to_title,
                 print_pbar=True,
                 all_seeds=PLOT_ALL_SEEDS,
                 **script_plot_kwargs

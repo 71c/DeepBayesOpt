@@ -6,7 +6,7 @@ from utils_general.utils import get_arg_names
 
 
 @cache
-def get_dataset_arg_names():
+def _get_dataset_arg_names():
     """Get argument names from dataset factory parser structure.
 
     The result is cached since parser structure doesn't change during runtime.
@@ -39,7 +39,7 @@ def get_cmd_options_sample_dataset(options: dict[str, Any]):
     # Extract dataset_type to determine which parameters to include
     dataset_type = options.get('dataset_type', 'gp')
 
-    arg_structure = get_dataset_arg_names()
+    arg_structure = _get_dataset_arg_names()
 
     # Start with common dataset parameters
     cmd_opts_sample_dataset = {
