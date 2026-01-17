@@ -31,6 +31,5 @@ class ExperimentRegistry(ExperimentRegistryBase):
         return " ".join(seeds_parts)
 
 
-def get_registry() -> ExperimentRegistry:
-    """Get the default experiment registry instance."""
-    return ExperimentRegistry(REGISTRY_PATH)
+# Global singleton registry instance
+REGISTRY = ExperimentRegistry(REGISTRY_PATH)

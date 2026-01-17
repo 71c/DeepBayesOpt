@@ -14,7 +14,7 @@ import os
 import time
 from tqdm import tqdm
 
-from experiments.registry import get_registry
+from experiments.registry import REGISTRY
 from utils.basic_model_save_utils import BASIC_SAVING
 from utils.plot_utils import (
     get_plot_ax_loss_vs_regret_func,
@@ -82,7 +82,7 @@ def main():
     args = parser.parse_args()
 
     try:
-        get_registry().setup_plotting_from_args(args, 'combined_plot', globals())
+        REGISTRY.setup_plotting_from_args(args, 'combined_plot', globals())
         print("Successfully applied auto-plotting configuration")
     except Exception as e:
         print(f"Auto-plotting failed, using manual configuration: {e}")

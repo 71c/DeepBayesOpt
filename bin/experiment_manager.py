@@ -11,7 +11,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
-from experiments.registry import get_registry
+from experiments.registry import REGISTRY
 from experiments.runner import ExperimentRunner
 
 from plot_run import add_plot_interval_args, add_plot_formatting_args, add_plot_iterations_args
@@ -25,8 +25,7 @@ def add_extra_plot_args(parser_plot):
 
 
 def main():
-    registry = get_registry()
-    runner = ExperimentRunner(registry, add_extra_plot_args_func=add_extra_plot_args)
+    runner = ExperimentRunner(REGISTRY, add_extra_plot_args_func=add_extra_plot_args)
     run_experiment_manager(runner)
 
 

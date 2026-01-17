@@ -11,7 +11,7 @@ from utils_general.io_utils import load_json, save_json
 from utils_general.plot_utils import add_plot_args
 from utils_general.utils import DEVICE, group_by, dict_to_str
 
-from experiments.registry import get_registry
+from experiments.registry import REGISTRY
 from utils.plot_sorting import plot_dict_to_str
 from utils.utils import get_lamda_for_bo_of_nn
 from utils.plot_utils import (
@@ -186,7 +186,7 @@ def main():
     args = parser.parse_args()
 
     # Configure plotting parameters based on experiment
-    get_registry().setup_plotting_from_args(args, 'train_plot', globals())
+    REGISTRY.setup_plotting_from_args(args, 'train_plot', globals())
     print("Successfully applied train plotting configuration for this experiment")
     
     PLOTS_CONFIG_SINGLE = [

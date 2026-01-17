@@ -3,7 +3,7 @@ import os
 import cProfile, pstats
 import numpy as np
 
-from experiments.registry import get_registry
+from experiments.registry import REGISTRY
 from utils.plot_sorting import plot_dict_to_str
 from utils.plot_utils import (
     get_plot_ax_af_iterations_func,
@@ -246,7 +246,7 @@ def main():
 
     ########################### SETUP PLOTTING CONFIG ##################################
     try:
-        get_registry().setup_plotting_from_args(args, 'run_plot', globals())
+        REGISTRY.setup_plotting_from_args(args, 'run_plot', globals())
         print("Successfully applied auto-plotting configuration")
     except Exception as e:
         print(f"Auto-plotting failed, using manual configuration: {e}")
