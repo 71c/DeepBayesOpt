@@ -513,6 +513,7 @@ def get_plot_utils_namespace(
         special_names: set,
         kv_to_str_func: callable,
         sort_key_for_grouped_items_func: callable,
+        plot_dict_to_str: callable,
         plots_dir_path: str,
         run_plots_folder_name: str,
         constant_keys_to_remove: set=set()):
@@ -670,5 +671,6 @@ def get_plot_utils_namespace(
     return SimpleNamespace(
         create_plot_directory=create_plot_directory,
         group_by_nested_attrs=group_by_nested_attrs,
-        save_figures_from_nested_structure=save_figures_from_nested_structure
+        save_figures_from_nested_structure=save_figures_from_nested_structure,
+        plot_dict_to_str=plot_dict_to_str
     )

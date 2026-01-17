@@ -4,7 +4,6 @@ import cProfile, pstats
 import numpy as np
 
 from experiments.registry import REGISTRY
-from utils.plot_sorting import plot_dict_to_str
 from utils.plot_utils import (
     get_plot_ax_af_iterations_func,
     get_plot_ax_bo_stats_vs_iteration_func,
@@ -430,7 +429,7 @@ def main():
         plot_config, new_attrs_groups_list = PROJECT_PLOT_UTILS.group_by_nested_attrs(
             this_reformatted_configs,
             attrs_groups_list,
-            dict_to_str_func=plot_dict_to_str,
+            dict_to_str_func=PROJECT_PLOT_UTILS.plot_dict_to_str,
             add_extra_index=-2 # -2 is the "line" level
         )
 

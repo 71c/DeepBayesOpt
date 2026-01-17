@@ -19,7 +19,7 @@ from datasets.acquisition_dataset import AcquisitionDataset
 from utils_train.acquisition_function_net import AcquisitionFunctionNet, AcquisitionFunctionNetAcquisitionFunction, ExpectedImprovementAcquisitionFunctionNet
 from utils.constants import PLOTS_DIR
 from utils.exact_gp_computations import calculate_EI_GP, calculate_gi_gp
-from utils.plot_sorting import plot_key_value_to_str, sort_key_for_grouped_items
+from utils.plot_sorting import plot_dict_to_str, plot_key_value_to_str, sort_key_for_grouped_items
 from utils.utils import add_outcome_transform
 from utils_general.plot_utils import get_plot_utils_namespace
 from utils_general.utils import DEVICE, dict_to_str
@@ -1242,6 +1242,7 @@ PROJECT_PLOT_UTILS = get_plot_utils_namespace(
     special_names={"attr_name", "nn.method", "method", "gp_af"},
     kv_to_str_func=plot_key_value_to_str,
     sort_key_for_grouped_items_func=sort_key_for_grouped_items,
+    plot_dict_to_str=plot_dict_to_str,
     plots_dir_path=PLOTS_DIR,
     run_plots_folder_name=RUN_PLOTS_FOLDER,
     constant_keys_to_remove={"nn.method", "gp_af"},
