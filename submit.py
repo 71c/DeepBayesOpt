@@ -257,13 +257,15 @@ def _gp_bo_jobs_spec_and_cfgs(
 
     if included:
         options_list, nn_bo_loop_commands_list = zip(*included)
-        jobs_spec = AF_TRAIN_SUBMIT_UTILS.create_submit_train_dependency_structure(
+        jobs_spec, num_new_nn_cfgs, num_existing_nn_cfgs = AF_TRAIN_SUBMIT_UTILS.create_submit_train_dependency_structure(
             options_list,
             dependents_list=nn_bo_loop_commands_list,
             always_train=always_train,
             dependents_slurm_options=dependents_slurm_options)
     else:
         jobs_spec = {}
+        num_new_nn_cfgs = 0
+        num_existing_nn_cfgs = 0
 
     # Add the GP AF commands & random search
     non_nn_bo_commands = []
@@ -332,7 +334,7 @@ def _gp_bo_jobs_spec_and_cfgs(
             'commands': non_nn_bo_commands,
             'gpu': False
         }
-    return jobs_spec, new_bo_configs, existing_bo_configs_and_results
+    return jobs_spec, new_bo_configs, existing_bo_configs_and_results, num_new_nn_cfgs, num_existing_nn_cfgs
 
 
 def get_bo_experiments_parser(train=True):
@@ -486,7 +488,8 @@ def generate_gp_bo_job_specs(args: argparse.Namespace,
         pr = cProfile.Profile()
         pr.enable()
     
-    jobs_spec, new_cfgs, existing_cfgs_and_results =  _gp_bo_jobs_spec_and_cfgs(
+    (jobs_spec, new_cfgs, existing_cfgs_and_results,
+     num_new_nn_cfgs, num_existing_nn_cfgs) = _gp_bo_jobs_spec_and_cfgs(
         nn_options_list, bo_options_list, bo_options_list_random_search,
         seeds,
         n_objectives=getattr(args, 'n_objectives', None),
@@ -511,7 +514,8 @@ def generate_gp_bo_job_specs(args: argparse.Namespace,
         }
     }
 
-    return jobs_spec, new_cfgs, existing_cfgs_and_results, refined_config
+    return (jobs_spec, new_cfgs, existing_cfgs_and_results, refined_config,
+            num_new_nn_cfgs, num_existing_nn_cfgs)
 
 
 def main():
@@ -531,8 +535,8 @@ def main():
     if args.no_train and getattr(args, 'always_train'):
         parser.error(f"Cannot specify both --no_train and --always_train.")
 
-    jobs_spec, new_cfgs, existing_cfgs_and_results, refined_config \
-        = generate_gp_bo_job_specs(
+    (jobs_spec, new_cfgs, existing_cfgs_and_results, refined_config,
+     num_new_nn_cfgs, num_existing_nn_cfgs) = generate_gp_bo_job_specs(
             args,
             train_base_config=getattr(args, train_base_config_name),
             train_experiment_config=getattr(args, train_experiment_config_name),
@@ -546,7 +550,9 @@ def main():
             recompute_run=getattr(args, 'recompute_run', False),
             recompute_non_train_only=getattr(args, 'recompute_non_train_only', False)
         )
-    
+
+    print(f"Number of new NN configs: {num_new_nn_cfgs}")
+    print(f"Number of existing NN configs: {num_existing_nn_cfgs}")
     print(f"Number of new BO configs: {len(new_cfgs)}")
     print(f"Number of existing BO configs: {len(existing_cfgs_and_results)}")
 

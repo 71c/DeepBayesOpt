@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Any, Callable, ClassVar, Optional, Sequence
+from typing import Any, ClassVar, Optional, Sequence
 import os
 import argparse
 
@@ -110,7 +110,14 @@ class SubmitTrainUtils(ABC):
             dependents_slurm_options:dict[str, Any]={}):
         r"""Create a command dependency structure for training acquisition function NNs.
         Includes dataset generation commands and NN training commands.
-        Only includes dataset generation commands for datasets that are not cached."""
+        Only includes dataset generation commands for datasets that are not cached.
+
+        Returns:
+            Tuple of (jobs_spec, num_new_configs, num_existing_configs) where:
+            - jobs_spec: Dictionary of job specifications
+            - num_new_configs: Number of configs that need training
+            - num_existing_configs: Number of configs that are already trained
+        """
         if dependents_list is None:
             dependents_list = [[] for _ in options_list]
         else:
@@ -121,6 +128,8 @@ class SubmitTrainUtils(ABC):
         datasets_cached_dict = {}
         dataset_command_ids = {}
         ret = {}
+        num_new_configs = 0
+        num_existing_configs = 0
         
         for options, depdendent_commands in zip(options_list, dependents_list):
             (cmd_dataset, cmd_opts_dataset,
@@ -134,6 +143,7 @@ class SubmitTrainUtils(ABC):
                 train_nn = not self.determine_whether_trained(options, cmd_opts_nn)
             
             if train_nn:
+                num_new_configs += 1
                 # Determine whether or not the dataset is already cached
                 if cmd_dataset in datasets_cached_dict:
                     dataset_already_cached = datasets_cached_dict[cmd_dataset]
@@ -196,6 +206,7 @@ class SubmitTrainUtils(ABC):
                         **dependents_slurm_options
                     }
             else:
+                num_existing_configs += 1
                 # Do not add the NN train command
 
                 # Add the commands that are dependent on the NN training command
@@ -219,7 +230,7 @@ class SubmitTrainUtils(ABC):
                 "gpu": False
             }
 
-        return ret
+        return ret, num_new_configs, num_existing_configs
 
     def submit_jobs(self, cmd_args: Optional[Sequence[str]] = None):
         # Create parser
@@ -232,8 +243,12 @@ class SubmitTrainUtils(ABC):
 
         options_list, refined_config = get_config_options_list(
             getattr(args, train_base_config_name), getattr(args, train_experiment_config_name))
-        
-        jobs_spec = self.create_submit_train_dependency_structure(
+
+        jobs_spec, num_new_configs, num_existing_configs = self.create_submit_train_dependency_structure(
             options_list, always_train=getattr(args, 'always_train'))
+
+        print(f"Number of new NN configs: {num_new_configs}")
+        print(f"Number of existing NN configs: {num_existing_configs}")
+
         save_json(jobs_spec, os.path.join(CONFIG_DIR, "dependencies.json"), indent=4)
         submit_jobs_sweep_from_args(jobs_spec, args)
