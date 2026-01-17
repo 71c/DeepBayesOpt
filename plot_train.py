@@ -16,9 +16,9 @@ from utils.plot_sorting import plot_dict_to_str
 from utils.utils import get_lamda_for_bo_of_nn
 from utils.plot_utils import (
     PROJECT_PLOT_UTILS,
-    N_CANDIDATES_PLOT, # for get_plot_train_ax_func
-    plot_acquisition_function_net_training_history_ax, # for get_plot_train_ax_func
-    plot_nn_vs_gp_acquisition_function_1d, # for get_plot_train_ax_func
+    N_CANDIDATES_PLOT,
+    plot_acquisition_function_net_training_history_ax,
+    plot_nn_vs_gp_acquisition_function_1d,
 )
 
 from submit_train import AF_TRAIN_SUBMIT_UTILS
@@ -26,13 +26,105 @@ from submit_train import AF_TRAIN_SUBMIT_UTILS
 CPROFILE = False
 
 
-# # For 1dim_pointnet-max_history_input_variation-pbgi
-# PRE = []
-# ATTR_A = ["train_samples_size", "samples_addition_amount"]
-# ATTR_B = ["max_history_input"]
-# POST = [
-#     ["learning_rate"]
-# ]
+def plot_0_training_history_train_test(
+        ax,
+        training_history_data,
+        dataset_getter,
+        nn_model,
+        cfg,
+        plot_name: Optional[str]=None,
+        label='',
+        color=None,
+        alpha=1.0
+    ):
+    plot_acquisition_function_net_training_history_ax(
+        ax, training_history_data, plot_maxei=False, plot_name=plot_name,
+        plot_log_regret=False, label=label, color=color, alpha=alpha)
+
+
+def plot_1_training_history_test_log_regret(
+        ax,
+        training_history_data,
+        dataset_getter,
+        nn_model,
+        cfg,
+        plot_name: Optional[str]=None,
+        label='',
+        color=None,
+        alpha=1.0
+    ):
+    plot_acquisition_function_net_training_history_ax(
+        ax, training_history_data, plot_maxei=False, plot_name=plot_name,
+        plot_log_regret=True, label=label, color=color, alpha=alpha)
+
+
+def plot_2_af_plot(
+        ax,
+        training_history_data,
+        dataset_getter,
+        nn_model,
+        cfg,
+        plot_name: Optional[str]=None,
+        label='',
+        color=None,
+        alpha=1.0
+    ):
+    train_aq_dataset, test_aq_dataset, small_test_aq_dataset = dataset_getter()
+
+    it = iter(test_aq_dataset)
+    item = next(it)
+    try:
+        while item.x_hist.shape[0] != N_HISTORY:
+            item = next(it)
+    except StopIteration:
+        raise ValueError("No item with the right number of history points.")
+    
+    # Get the data to plot
+    x_hist, y_hist, x_cand, vals_cand = item.tuple_no_model
+    x_cand_original = x_cand
+    dimension = x_hist.size(1)
+    x_cand_varying_component = torch.linspace(0, 1, N_CANDIDATES_PLOT)
+    varying_index = 0
+    if dimension == 1:
+        # N_CANDIDATES_PLOT x 1
+        x_cand = x_cand_varying_component.unsqueeze(1)
+    else:
+        torch.manual_seed(0)
+        random_x = torch.rand(dimension)
+        # N_CANDIDATES_PLOT x dimension
+        x_cand = random_x.repeat(N_CANDIDATES_PLOT, 1)
+        x_cand[:, varying_index] = x_cand_varying_component
+
+    # Get the GP model
+    gp_model = item.model if item.has_model else None
+
+    lamda = get_lamda_for_bo_of_nn(
+            cfg.get('lamda'), cfg.get('lamda_min'), cfg.get('lamda_max'))
+    plot_nn_vs_gp_acquisition_function_1d(
+        ax=ax, x_hist=x_hist, y_hist=y_hist, x_cand=x_cand,
+        # x_cand_original=x_cand_original, vals_cand=vals_cand,
+        lamda=lamda,
+        gp_model=gp_model, nn_model=nn_model, method=cfg['method'],
+        gp_fit_methods=['exact'],
+        min_x=0.0, max_x=1.0,
+        nn_device=DEVICE, group_standardization=None,
+        varying_index=varying_index
+    )
+    ax.set_title("Acquisition function plot")
+
+
+TRAIN_ATTR_NAME_TO_TITLE = {
+    "0_training_history_train_test": "Training history (train and test loss)",
+    "1_training_history_test_log_regret": "Training history (test log regret)",
+    "2_af_plot": "Acquisition function plot"
+}
+
+
+TRAIN_ATTR_NAME_TO_PLOT_FUNC = {
+    "0_training_history_train_test": plot_0_training_history_train_test,
+    "1_training_history_test_log_regret": plot_1_training_history_test_log_regret,
+    "2_af_plot": plot_2_af_plot
+}
 
 
 ATTR_GROUPS = [
@@ -45,12 +137,6 @@ ATTR_GROUPS = [
 
     # ["0_training_history_train_test", "1_training_history_test_log_regret"],
 ]
-
-TRAIN_ATTR_NAME_TO_TITLE = {
-    "0_training_history_train_test": "Training history (train and test loss)",
-    "1_training_history_test_log_regret": "Training history (test log regret)",
-    "2_af_plot": "Acquisition function plot"
-}
 
 
 N_HISTORY = 10
@@ -77,64 +163,12 @@ def get_plot_train_ax_func(get_result_func):
 
         info = get_result_func(plot_config)
         attr_name = info['attr_name']
-
         results = info['results']
-        training_history_data = results['training_history_data']
-        nn_model = results['model']
-
-        if attr_name == "0_training_history_train_test":
-            plot_acquisition_function_net_training_history_ax(
-                ax, training_history_data, plot_maxei=False, plot_name=plot_name,
-                plot_log_regret=False, label=label, color=color, alpha=alpha)
-        elif attr_name == "1_training_history_test_log_regret":
-            plot_acquisition_function_net_training_history_ax(
-                ax, training_history_data, plot_maxei=False, plot_name=plot_name,
-                plot_log_regret=True, label=label, color=color, alpha=alpha)
-        elif attr_name == "2_af_plot":
-            aq_dataset = results['dataset_getter']()
-
-            it = iter(aq_dataset)
-            item = next(it)
-            try:
-                while item.x_hist.shape[0] != N_HISTORY:
-                    item = next(it)
-            except StopIteration:
-                raise ValueError("No item with the right number of history points.")
-            
-            # Get the data to plot
-            x_hist, y_hist, x_cand, vals_cand = item.tuple_no_model
-            x_cand_original = x_cand
-            dimension = x_hist.size(1)
-            x_cand_varying_component = torch.linspace(0, 1, N_CANDIDATES_PLOT)
-            varying_index = 0
-            if dimension == 1:
-                # N_CANDIDATES_PLOT x 1
-                x_cand = x_cand_varying_component.unsqueeze(1)
-            else:
-                torch.manual_seed(0)
-                random_x = torch.rand(dimension)
-                # N_CANDIDATES_PLOT x dimension
-                x_cand = random_x.repeat(N_CANDIDATES_PLOT, 1)
-                x_cand[:, varying_index] = x_cand_varying_component
-
-            # Get the GP model
-            gp_model = item.model if item.has_model else None
-
-            cfg = info['config']
-
-            lamda = get_lamda_for_bo_of_nn(
-                    cfg.get('lamda'), cfg.get('lamda_min'), cfg.get('lamda_max'))
-            plot_nn_vs_gp_acquisition_function_1d(
-                ax=ax, x_hist=x_hist, y_hist=y_hist, x_cand=x_cand,
-                # x_cand_original=x_cand_original, vals_cand=vals_cand,
-                lamda=lamda,
-                gp_model=gp_model, nn_model=nn_model, method=cfg['method'],
-                gp_fit_methods=['exact'],
-                min_x=0.0, max_x=1.0,
-                nn_device=DEVICE, group_standardization=None,
-                varying_index=varying_index
-            )
-            ax.set_title("Acquisition function plot")
+        if attr_name in TRAIN_ATTR_NAME_TO_PLOT_FUNC:
+            TRAIN_ATTR_NAME_TO_PLOT_FUNC[attr_name](
+                ax, results['training_history_data'], results['dataset_getter'],
+                results['model'], info['config'],
+                plot_name=plot_name, label=label, color=color, alpha=alpha)
         else:
             raise ValueError(f"Unknown attribute name: {attr_name}")
     
@@ -151,12 +185,9 @@ def main():
     ## Parse arguments
     args = parser.parse_args()
 
-    # Auto-configure plotting parameters based on experiment
-    try:
-        get_registry().setup_plotting_from_args(args, 'train_plot', globals())
-        print("Successfully applied auto-plotting configuration")
-    except Exception as e:
-        print(f"Auto-plotting failed, using manual configuration: {e}")
+    # Configure plotting parameters based on experiment
+    get_registry().setup_plotting_from_args(args, 'train_plot', globals())
+    print("Successfully applied train plotting configuration for this experiment")
     
     PLOTS_CONFIG_SINGLE = [
         *PRE,
@@ -203,10 +234,9 @@ def main():
             cached = caches[i]
             if cached is not None:
                 return cached
-            (train_aq_dataset, test_aq_dataset, small_test_aq_dataset
-            ) = AF_TRAIN_SUBMIT_UTILS.create_datasets_func(args_nn)
-            caches[i] = test_aq_dataset
-            return test_aq_dataset
+            result = AF_TRAIN_SUBMIT_UTILS.create_datasets_func(args_nn)
+            caches[i] = result
+            return result
         
         training_history_data = load_json(
             os.path.join(model_path, 'training_history_data.json'))
