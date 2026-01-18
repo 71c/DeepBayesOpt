@@ -23,10 +23,7 @@ from utils.plot_sorting import plot_dict_to_str, plot_key_value_to_str, sort_key
 from utils.utils import add_outcome_transform
 from utils_general.plot_utils import get_plot_utils_namespace
 from utils_general.utils import DEVICE, dict_to_str
-
-
-BLUE = '#1f77b4'
-ORANGE = '#ff7f0e'
+from utils_general.plot_core import BLUE, ORANGE, render_to_plot
 
 
 def _calculate_center_and_interval(
@@ -596,34 +593,8 @@ def plot_acquisition_function_net_training_history_ax(
 
     epochs = np.arange(1, len(test_stat) + 1)
 
-    line_properties = ['label', 'marker', 'linestyle', 'color']
-
-    lines = to_plot.get('lines')
-    if lines is not None:
-        for line in lines:
-            kwargs = {p: line[p] for p in line_properties if p in line}
-            ax.plot(epochs, line['data'], **kwargs)
-    consts = to_plot.get('consts')
-    if consts is not None:
-        for line in consts:
-            kwargs = {p: line[p] for p in line_properties if p in line}
-            ax.axhline(line['data'], **kwargs)
-    
-    plot_desc = to_plot['title']
-    if plot_name is not None:
-        plot_name = f"{plot_name} ({plot_desc})"
-    else:
-        plot_name = plot_desc
-
-    ax.set_title(plot_name)
-    ax.set_xlabel(to_plot['xlabel'])
-    ax.set_ylabel(to_plot['ylabel'])
-    ax.legend()
-    ax.grid(True)
-    if to_plot['log_scale_x']:
-        ax.set_xscale('log')
-    if to_plot['log_scale_y']:
-        ax.set_yscale('log')
+    # Use shared render_to_plot function (defaults match this function's original behavior)
+    render_to_plot(ax, to_plot, epochs, plot_name=plot_name)
 
 
 def plot_acquisition_function_net_training_history(
