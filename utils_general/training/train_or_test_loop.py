@@ -12,6 +12,16 @@ from utils_general.utils import check_subclass, int_linspace
 
 class TrainOrTestLoop(ABC):
     @classmethod
+    def _get_batch_size(cls, batch_data: SimpleNamespace) -> int:
+        try:
+            return batch_data.batch_size
+        except AttributeError:
+            raise AttributeError(
+                "batch_data must have a 'batch_size' attribute. Make sure to " \
+                "set it in get_data_from_batch."
+            )
+
+    @classmethod
     def train_or_test_loop(
         cls,
         dataloader: DataLoader,
@@ -68,7 +78,7 @@ class TrainOrTestLoop(ABC):
             loop_state.batch_index = batch_index
 
             batch_data = loop_state.get_data_from_batch(batch)
-            this_batch_size = batch_data.batch_size
+            this_batch_size = cls._get_batch_size(batch_data)
             
             assert this_batch_size <= loop_state.batch_size
             is_degenerate_batch = this_batch_size < loop_state.batch_size
