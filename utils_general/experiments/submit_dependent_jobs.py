@@ -16,13 +16,14 @@ from utils_general.io_utils import save_json
 MAX_ARRAY_SIZE = 1000
 
 
-def add_slurm_args(parser):
-    parser.add_argument(
-        '--sweep_name',
-        type=str,
-        default='test',
-        help='Name of the sweep.'
-    )
+def add_slurm_args(parser, add_sweep_name_arg=True, default_env_name="nn_bo"):
+    if add_sweep_name_arg:
+        parser.add_argument(
+            '--sweep_name',
+            type=str,
+            default='test',
+            help='Name of the sweep.'
+        )
     parser.add_argument(
         '--gres',
         type=str,
@@ -42,6 +43,12 @@ def add_slurm_args(parser):
         help='If specified, do not submit jobs, but only save dependencies.json so '
                 'that you can see what would be submitted.'
     )
+    parser.add_argument(
+        '--env_name',
+        type=str,
+        default=default_env_name,
+        help=f'Conda environment name to activate (default: {default_env_name})'
+    )
 
 
 def submit_jobs_sweep_from_args(jobs_spec, args):
@@ -53,7 +60,8 @@ def submit_jobs_sweep_from_args(jobs_spec, args):
         args=args,
         gres=args.gres,
         mail=args.mail,
-        no_submit=args.no_submit
+        no_submit=args.no_submit,
+        env_name=args.env_name
     )
  
 
@@ -80,7 +88,8 @@ def _submit_dependent_jobs(
         args: argparse.Namespace,
         gres: str = "gpu:a100:1", # e.g. "gpu:a100:1" or "gpu:1"
         mail:Optional[str]=None,
-        no_submit:bool=False
+        no_submit:bool=False,
+        env_name:str="nn_bo"
     ):
     # Split jobs_spec into chunks of size MAX_ARRAY_SIZE
     jobs_spec = _split_jobs_spec(jobs_spec)
@@ -159,21 +168,29 @@ def _submit_dependent_jobs(
         if dependency_job_ids:
             dependency_flag = 'afterok:' + ':'.join(dependency_job_ids)
             sbatch_args_dict['dependency'] = dependency_flag
-        
+
+        # Allow job-specific SLURM options to override defaults
+        extra_slurm_options = job_spec.get("slurm_options", {})
+        sbatch_args_dict.update(extra_slurm_options)
+
         sbatch_args = dict_to_cmd_args(sbatch_args_dict, equals=True)
-        args = ["sbatch"] + sbatch_args + [
-            JOB_ARRAY_SUB_PATH, commands_list_fpath, sweep_dir]
-        if mail is not None:
-            args += [mail]
-        print(" ".join(args))
+        # Pass: commands_file, sweep_dir, mail (or empty string), env_name
+        # Allow per-job env_name override
+        job_env_name = job_spec.get("env_name", env_name)
+        sbatch_cmd_args = ["sbatch"] + sbatch_args + [
+            JOB_ARRAY_SUB_PATH, commands_list_fpath, sweep_dir,
+            mail if mail is not None else "",
+            job_env_name
+        ]
+        print(" ".join(sbatch_cmd_args))
         result = subprocess.run(
-            args,
+            sbatch_cmd_args,
             capture_output=True,
             text=True
         )
         output = result.stdout.strip()
         if result.returncode != 0:
-            cmd = " ".join(args)
+            cmd = " ".join(sbatch_cmd_args)
             stderr = result.stderr
             raise RuntimeError(f"Failed to submit job\n {cmd}\nOutput:\n{output}\nError:\n{stderr}")
         job_id = output.split()[-1]

@@ -18,6 +18,7 @@ JOB_DESC="j${SLURM_JOB_ID}-A${SLURM_ARRAY_JOB_ID}_a${SLURM_ARRAY_TASK_ID}"
 commands_file=$1
 sweep_dir=$2
 mail=$3
+env_name=$4
 
 send_email_notification() {
     local subject="$1"
@@ -33,14 +34,7 @@ command=$(sed -n "${SLURM_ARRAY_TASK_ID}p" $commands_file)
 attempt_file="${sweep_dir}/attempt-$JOB_DESC.txt"
 fails_dir="${sweep_dir}/failed"
 
-# Load the conda environment
-
-if [ -d "/share/apps/anaconda3/2022.10/bin/conda" ] ; then
-    eval "$(/share/apps/anaconda3/2022.10/bin/conda shell.bash hook)"
-else
-    /share/apps/software/anaconda3/bin/conda init
-fi
-conda activate nn_bo
+. activate_env.sh "$env_name"
 
 # Attempt number of this job
 if [ -f "$attempt_file" ]; then
