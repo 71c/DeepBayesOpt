@@ -719,6 +719,55 @@ class DatasetWithModels(Dataset, ABC):
 
     @classmethod
     def load(cls, dir_name: str, verbose=True):
+        """
+        Load a dataset from disk with automatic class detection.
+
+        This method implements automatic class detection when called on a BASE class
+        (e.g., PandorasBoxDataset, CostAwarePandorasBoxDataset). It reads the saved
+        class name from info.json, looks it up in the base class's _subclasses registry,
+        and delegates to the correct concrete subclass's load() method.
+
+        **Intended Usage:**
+        - Call this method on the BASE class of a dataset hierarchy, NOT on concrete subclasses
+        - For example: `PandorasBoxDataset.load(dir_name)` (correct)
+        - NOT: `ListMapPandorasBoxDataset.load(dir_name)` (will raise NotImplementedError)
+
+        **How Auto-Detection Works:**
+        1. When a dataset is saved, its concrete class name is written to info.json
+        2. All subclasses are automatically registered in _subclasses via __init_subclass__
+        3. When loading, the base class reads the class name and looks it up in its registry
+        4. The base class then delegates to the correct subclass's load() implementation
+
+        **For Loading Across Multiple Base Class Hierarchies:**
+        If you don't know which base class hierarchy was used (e.g., could be either
+        PandorasBoxDataset or CostAwarePandorasBoxDataset), use the module-level
+        `load_dataset_polymorphic()` function instead.
+
+        Args:
+            dir_name: Directory containing the saved dataset
+            verbose: Whether to print loading messages
+
+        Returns:
+            Loaded dataset instance of the correct concrete subclass
+
+        Raises:
+            RuntimeError: If called on a non-base class, or if info.json is missing/invalid,
+                or if the saved class name is not found in the registry
+            NotImplementedError: If called on a concrete subclass that doesn't implement load()
+
+        Example:
+            >>> # Correct usage - call on base class
+            >>> dataset = PandorasBoxDataset.load("path/to/dataset")
+            >>> # This will automatically detect and load the correct subclass
+            >>> # (e.g., ListMapPandorasBoxDataset, LazyMapPandorasBoxDataset, etc.)
+            >>>
+            >>> # For loading when base class is unknown, use polymorphic loader
+            >>> from pandoras_box_llm.utils_general.dataset_with_models import load_dataset_polymorphic
+            >>> dataset = load_dataset_polymorphic(
+            ...     "path/to/dataset",
+            ...     (PandorasBoxDataset, CostAwarePandorasBoxDataset)
+            ... )
+        """
         if cls is cls._base_class:
             try:
                 data = load_json(os.path.join(dir_name, "info.json"))
@@ -793,6 +842,89 @@ class DatasetWithModels(Dataset, ABC):
                             "should not be accessed by index.")
         raise NotImplementedError(
             "Subclass must implement __getitem__ for map-style datasets")
+
+
+def load_dataset_polymorphic(
+    dir_name: str,
+    allowed_base_classes: tuple,
+    verbose: bool = True
+) -> 'DatasetWithModels':
+    """
+    Load a dataset from disk with automatic class detection across multiple base class hierarchies.
+
+    This function enables loading datasets when you don't know which specific class hierarchy
+    was used to save the dataset. It reads the saved class name from info.json and searches
+    through the provided base classes' registries to find the correct one.
+
+    The function leverages the existing auto-detection mechanism in DatasetWithModels.load():
+    each base class maintains its own _subclasses registry (populated via __init_subclass__),
+    and calling base_class.load() automatically looks up and delegates to the correct subclass.
+
+    Args:
+        dir_name: Directory containing the saved dataset
+        allowed_base_classes: Tuple of allowed base class types (e.g.,
+            (PandorasBoxDataset, CostAwarePandorasBoxDataset)). Each base class should
+            be a subclass of DatasetWithModels and have a _subclasses registry.
+        verbose: Whether to print loading messages
+
+    Returns:
+        Loaded dataset instance
+
+    Raises:
+        ValueError: If loaded dataset is not an instance of any allowed base class
+        FileNotFoundError: If directory doesn't exist or info.json is missing
+        RuntimeError: If class_name is not found in any of the base class registries
+
+    Example:
+        >>> from pandoras_box_llm.datasets.pandoras_box_dataset import PandorasBoxDataset
+        >>> from pandoras_box_llm.datasets.cost_aware_pandoras_box_dataset import CostAwarePandorasBoxDataset
+        >>> dataset = load_dataset_polymorphic(
+        ...     "path/to/dataset",
+        ...     (PandorasBoxDataset, CostAwarePandorasBoxDataset)
+        ... )
+    """
+    # Read the saved class name from info.json
+    info_path = os.path.join(dir_name, "info.json")
+    try:
+        data = load_json(info_path)
+        class_name = data['class_name']
+    except FileNotFoundError:
+        raise FileNotFoundError(
+            f"Cannot load dataset from {dir_name}: info.json not found"
+        )
+    except (json.decoder.JSONDecodeError, KeyError) as e:
+        raise RuntimeError(
+            f"Cannot load dataset from {dir_name}: invalid or missing 'class_name' in info.json"
+        ) from e
+
+    # Search through allowed base classes to find which registry contains the saved class
+    for base_class in allowed_base_classes:
+        if not hasattr(base_class, '_subclasses'):
+            raise ValueError(
+                f"Base class {base_class.__name__} does not have a _subclasses registry. "
+                f"Ensure it is a subclass of DatasetWithModels."
+            )
+
+        if class_name in base_class._subclasses:
+            # Found the correct base class - use its load() method for auto-detection
+            dataset = base_class.load(dir_name, verbose)
+
+            # Validate that the loaded dataset is an instance of one of the allowed base classes
+            if not isinstance(dataset, allowed_base_classes):
+                raise ValueError(
+                    f"Loaded dataset of type {type(dataset).__name__} is not an instance of "
+                    f"any allowed base class: {[cls.__name__ for cls in allowed_base_classes]}"
+                )
+
+            return dataset
+
+    # Class not found in any registry
+    raise RuntimeError(
+        f"Dataset class '{class_name}' not found in any of the provided base class registries. "
+        f"Allowed base classes: {[cls.__name__ for cls in allowed_base_classes]}. "
+        f"Available classes in registries: "
+        f"{[list(base_class._subclasses.keys()) for base_class in allowed_base_classes]}"
+    )
 
 
 class MapDatasetWithModels(DatasetWithModels):
