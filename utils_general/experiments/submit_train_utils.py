@@ -4,7 +4,7 @@ import os
 import argparse
 
 from utils_general.torch_module_save_utils import TorchModuleSaveUtils
-from utils_general.utils import dict_to_cmd_args
+from utils_general.cmd_utils import dict_to_cmd_args
 from utils_general.io_utils import save_json
 from utils_general.experiments.experiment_config_utils import CONFIG_DIR, add_submit_train_args, get_config_options_list
 from utils_general.experiments.submit_dependent_jobs import add_slurm_args, submit_jobs_sweep_from_args

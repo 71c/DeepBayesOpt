@@ -7,7 +7,8 @@ import argparse
 import sys
 from typing import Dict, List, Tuple
 
-from utils_general.utils import dict_to_cmd_args, get_arg_names
+from utils_general.cmd_utils import dict_to_cmd_args
+from utils_general.utils import get_arg_names
 from utils_general.plot_utils import add_plot_args
 from .registry import ExperimentRegistryBase
 

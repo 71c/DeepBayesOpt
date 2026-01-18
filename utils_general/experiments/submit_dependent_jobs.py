@@ -8,7 +8,7 @@ import math
 
 from utils.constants import JOB_ARRAY_SUB_PATH, SWEEPS_DIR
 from utils_general.experiments.experiment_config_utils import CONFIG_DIR
-from utils_general.utils import dict_to_cmd_args
+from utils_general.cmd_utils import dict_to_cmd_args
 from utils_general.io_utils import save_json
 
 # scontrol show config | grep -E 'MaxArraySize'

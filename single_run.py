@@ -34,7 +34,8 @@ from bayesopt.bayesopt import (
     GPAcquisitionOptimizer, NNAcquisitionOptimizer, OptimizationResultsSingleMethod,
     RandomSearch, get_rff_function, outcome_transform_function)
 from bayesopt.stable_gittins import StableGittinsIndex
-from utils_general.utils import dict_to_cmd_args, dict_to_fname_str, dict_to_str, get_arg_names
+from utils_general.cmd_utils import dict_to_cmd_args
+from utils_general.utils import dict_to_fname_str, dict_to_str, get_arg_names
 from utils_train.model_save_utils import ACQF_NET_SAVING
 
 

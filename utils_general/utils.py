@@ -150,23 +150,6 @@ def to_device(tensor, device):
     return tensor.to(device)
 
 
-def dict_to_cmd_args(params: Dict, equals=False) -> list[str]:
-    """Convert keyword arguments to command-line argument list."""
-    parts = []
-    for key, value in sorted(params.items()):
-        # If the value is a boolean, only include it if True.
-        if isinstance(value, bool):
-            if value:
-                parts.append(f"--{key}")
-        elif value is not None:
-            if equals:
-                parts.append(f"--{key}={value}")
-            else:
-                parts.append(f"--{key}")
-                parts.append(str(value))
-    return parts
-
-
 def _json_serializable_to_numpy(data: Any, array_keys: Optional[set]=None):
     if isinstance(data, dict):
         return {

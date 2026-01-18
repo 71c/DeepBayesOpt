@@ -7,7 +7,8 @@ import torch
 from torch import nn
 from utils_general.io_utils import load_json
 from utils_general.saveable_object import SaveableObject
-from utils_general.utils import check_subclass, dict_to_cmd_args, dict_to_str
+from utils_general.cmd_utils import dict_to_cmd_args
+from utils_general.utils import check_subclass, dict_to_str
 from utils_general.basic_model_save_utils import BasicModelSaveUtils
 
 

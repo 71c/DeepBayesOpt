@@ -7,7 +7,8 @@ Handles execution of experiments defined in the registry.
 import argparse
 from typing import Tuple
 from utils_general.experiments.runner import ExperimentRunnerBase
-from utils_general.utils import dict_to_cmd_args, get_arg_names
+from utils_general.cmd_utils import dict_to_cmd_args
+from utils_general.utils import get_arg_names
 from utils_general.plot_utils import add_plot_args
 from plot_run import add_plot_interval_args, add_plot_formatting_args, add_plot_iterations_args
 
