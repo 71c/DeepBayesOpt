@@ -16,12 +16,12 @@ This repository implements research on using deep reinforcement learning techniq
 
 - **Dataset Generation**: Multiple dataset types for training acquisition functions
   - `dataset_factory.py`: Unified factory interface for creating different dataset types
-  - `datasets/acquisition_dataset_manager.py`: Base classes and manager architecture for acquisition datasets
-  - `datasets/gp_acquisition_dataset_manager.py`: GP-based synthetic training datasets
-  - `datasets/lr_acquisition_dataset_manager.py`: Logistic regression hyperparameter optimization datasets
-  - `datasets/hpob_acquisition_dataset_manager.py`: HPO-B benchmark datasets
-  - `datasets/cancer_dosage_acquisition_dataset_manager.py`: Cancer dosage optimization datasets
-  - Supporting classes in `datasets/` including `acquisition_dataset.py`, `function_samples_dataset.py`, `gp_acquisition_dataset_manager.py`, `logistic_regression_dataset.py`, `hpob_dataset.py`, and `cancer_dosage_dataset.py`
+  - `dataset/acquisition_dataset_manager.py`: Base classes and manager architecture for acquisition datasets
+  - `dataset/gp_acquisition_dataset_manager.py`: GP-based synthetic training datasets
+  - `dataset/lr_acquisition_dataset_manager.py`: Logistic regression hyperparameter optimization datasets
+  - `dataset/hpob_acquisition_dataset_manager.py`: HPO-B benchmark datasets
+  - `dataset/cancer_dosage_acquisition_dataset_manager.py`: Cancer dosage optimization datasets
+  - Supporting classes in `dataset/` including `acquisition_dataset.py`, `function_samples_dataset.py`, `gp_acquisition_dataset_manager.py`, `logistic_regression_dataset.py`, `hpob_dataset.py`, and `cancer_dosage_dataset.py`
 
 - **Experiment Management**: Centralized experiment registry and orchestration
   - `experiments/`: Core experiment registry system

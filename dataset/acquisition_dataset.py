@@ -18,7 +18,7 @@ from utils_general.iterable_utils import SizedIterableMixin, get_lengths_from_pr
 from utils_general.tictoc import tic, tocl
 
 from utils_general.dataset_with_models import ModelsWithParamsList, TupleWithModel, create_classes
-from datasets.function_samples_dataset import (
+from dataset.function_samples_dataset import (
     FunctionSamplesDataset, GaussianProcessRandomDataset,
     ResizedFunctionSamplesIterableDataset, FunctionSamplesItem)
 

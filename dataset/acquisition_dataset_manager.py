@@ -18,8 +18,8 @@ from utils.utils import (
     get_uniform_randint_generator, get_loguniform_randint_generator)
 from utils.constants import DATASETS_DIR
 
-from datasets.function_samples_dataset import ListMapFunctionSamplesDataset
-from datasets.acquisition_dataset import (
+from dataset.function_samples_dataset import ListMapFunctionSamplesDataset
+from dataset.acquisition_dataset import (
     AcquisitionDataset, CostAwareAcquisitionDataset, FunctionSamplesAcquisitionDataset)
 
 from utils_general.iterable_utils import get_lengths_from_proportions
@@ -692,7 +692,7 @@ class AcquisitionDatasetManager(ABC):
         train_aq_dataset, test_aq_dataset, small_test_aq_dataset = ret
 
         if not check_cached:
-            from datasets.acquisition_dataset import CostAwareAcquisitionDataset, FunctionSamplesAcquisitionDataset
+            from dataset.acquisition_dataset import CostAwareAcquisitionDataset, FunctionSamplesAcquisitionDataset
             
             if train_aq_dataset is not None:
                 if isinstance(train_aq_dataset, CostAwareAcquisitionDataset):

@@ -1,6 +1,6 @@
 from typing import Optional
 from types import SimpleNamespace
-from datasets.acquisition_dataset import AcquisitionDataset
+from dataset.acquisition_dataset import AcquisitionDataset
 import torch
 from torch import Tensor
 from torch.utils.data import DataLoader

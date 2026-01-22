@@ -2,7 +2,7 @@ import argparse
 from functools import cache
 
 from utils_general.experiments.submit_train_utils import SubmitTrainUtils
-from datasets.utils import get_cmd_options_sample_dataset
+from dataset.utils import get_cmd_options_sample_dataset
 from single_train_baseline import get_dataset_hash_for_transfer_bo_baselines, transfer_bo_baseline_is_trained
 from utils_general.cmd_utils import dict_to_cmd_args
 from utils_general.utils import get_arg_names

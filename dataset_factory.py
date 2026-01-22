@@ -8,11 +8,11 @@ regardless of the underlying dataset type (GP, logistic regression, etc.).
 import argparse
 from typing import Optional, Tuple, Any, Type
 
-from datasets.gp_acquisition_dataset_manager import GPAcquisitionDatasetManager, add_gp_args
-from datasets.hpob_acquisition_dataset_manager import HPOBAcquisitionDatasetManager, add_hpob_args
-from datasets.lr_acquisition_dataset_manager import LogisticRegressionAcquisitionDatasetManager, add_lr_args
-from datasets.cancer_dosage_acquisition_dataset_manager import CancerDosageAcquisitionDatasetManager, add_cancer_dosage_args
-from datasets.acquisition_dataset_manager import AcquisitionDatasetManager
+from dataset.gp_acquisition_dataset_manager import GPAcquisitionDatasetManager, add_gp_args
+from dataset.hpob_acquisition_dataset_manager import HPOBAcquisitionDatasetManager, add_hpob_args
+from dataset.lr_acquisition_dataset_manager import LogisticRegressionAcquisitionDatasetManager, add_lr_args
+from dataset.cancer_dosage_acquisition_dataset_manager import CancerDosageAcquisitionDatasetManager, add_cancer_dosage_args
+from dataset.acquisition_dataset_manager import AcquisitionDatasetManager
 from utils_general.utils import get_arg_names 
 
 

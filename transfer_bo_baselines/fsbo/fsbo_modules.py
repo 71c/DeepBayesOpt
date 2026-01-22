@@ -17,7 +17,7 @@ https://docs.gpytorch.ai/en/stable/examples/06_PyTorch_NN_Integration_DKL/KISSGP
 
 """
 
-from datasets.function_samples_dataset import MapFunctionSamplesDataset
+from dataset.function_samples_dataset import MapFunctionSamplesDataset
 import torch
 import torch.nn as nn
 import copy 

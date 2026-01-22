@@ -9,7 +9,7 @@ from typing import Optional, Sequence
 from dataset_factory import (add_unified_acquisition_dataset_args,
                              create_train_test_acquisition_datasets_from_args,
                              validate_args_for_dataset_type)
-from datasets.utils import get_cmd_options_sample_dataset
+from dataset.utils import get_cmd_options_sample_dataset
 from transfer_bo_baselines.fsbo.fsbo_modules import FSBO
 from utils.basic_model_save_utils import BASIC_SAVING
 from utils.constants import MODELS_DIR, MODELS_SUBDIR

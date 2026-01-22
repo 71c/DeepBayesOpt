@@ -1,6 +1,6 @@
 import argparse
-from datasets.cancer_dosage_dataset import CancerDosageDataset
-from datasets.acquisition_dataset_manager import AcquisitionDatasetManager
+from dataset.cancer_dosage_dataset import CancerDosageDataset
+from dataset.acquisition_dataset_manager import AcquisitionDatasetManager
 
 
 class CancerDosageAcquisitionDatasetManager(AcquisitionDatasetManager):

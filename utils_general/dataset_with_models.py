@@ -874,14 +874,6 @@ def load_dataset_polymorphic(
         ValueError: If loaded dataset is not an instance of any allowed base class
         FileNotFoundError: If directory doesn't exist or info.json is missing
         RuntimeError: If class_name is not found in any of the base class registries
-
-    Example:
-        >>> from pandoras_box_llm.datasets.pandoras_box_dataset import PandorasBoxDataset
-        >>> from pandoras_box_llm.datasets.cost_aware_pandoras_box_dataset import CostAwarePandorasBoxDataset
-        >>> dataset = load_dataset_polymorphic(
-        ...     "path/to/dataset",
-        ...     (PandorasBoxDataset, CostAwarePandorasBoxDataset)
-        ... )
     """
     # Read the saved class name from info.json
     info_path = os.path.join(dir_name, "info.json")

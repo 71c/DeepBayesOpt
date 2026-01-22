@@ -14,7 +14,7 @@ _FIX_TRAIN_DATA_EACH_EPOCH = False
 
 
 #### SPECIFIC
-from datasets.gp_acquisition_dataset_manager import (
+from dataset.gp_acquisition_dataset_manager import (
     GET_TRAIN_TRUE_GP_STATS,
     GET_TEST_TRUE_GP_STATS
 )

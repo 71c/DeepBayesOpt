@@ -15,7 +15,7 @@ from botorch.models.gpytorch import GPyTorchModel
 
 from utils.utils import get_lamda_for_bo_of_nn
 from utils.constants import RUN_PLOTS_FOLDER
-from datasets.acquisition_dataset import AcquisitionDataset
+from dataset.acquisition_dataset import AcquisitionDataset
 from utils_train.acquisition_function_net import AcquisitionFunctionNet, AcquisitionFunctionNetAcquisitionFunction, ExpectedImprovementAcquisitionFunctionNet
 from utils.constants import PLOTS_DIR
 from utils.exact_gp_computations import calculate_EI_GP, calculate_gi_gp

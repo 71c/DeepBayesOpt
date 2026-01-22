@@ -7,8 +7,8 @@ building on the abstract base class.
 
 import argparse
 
-from datasets.acquisition_dataset_manager import AcquisitionDatasetManager
-from datasets.logistic_regression_dataset import LogisticRegressionRandomDataset
+from dataset.acquisition_dataset_manager import AcquisitionDatasetManager
+from dataset.logistic_regression_dataset import LogisticRegressionRandomDataset
 
 
 class LogisticRegressionAcquisitionDatasetManager(AcquisitionDatasetManager):

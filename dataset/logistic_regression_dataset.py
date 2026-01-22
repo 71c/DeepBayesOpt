@@ -8,7 +8,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import cross_val_score, StratifiedKFold
 
 from utils.utils import uniform_randint, loguniform_randint
-from datasets.function_samples_dataset import (
+from dataset.function_samples_dataset import (
     FunctionSamplesDataset, FunctionSamplesItem)
 from utils_general.iterable_utils import SizedInfiniteIterableMixin
 

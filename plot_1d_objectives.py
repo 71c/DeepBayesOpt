@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
-from datasets.gp_acquisition_dataset_manager import GPAcquisitionDatasetManager, get_gp_model_from_args_no_outcome_transform
-from datasets.lr_acquisition_dataset_manager import LogisticRegressionAcquisitionDatasetManager
+from dataset.gp_acquisition_dataset_manager import GPAcquisitionDatasetManager, get_gp_model_from_args_no_outcome_transform
+from dataset.lr_acquisition_dataset_manager import LogisticRegressionAcquisitionDatasetManager
 
 
 command = "python gp_acquisition_dataset.py --dimension 1 --kernel Matern52 --lengthscale 0.05 --max_history 100 --min_history 100 --replacement --test_expansion_factor 1 --test_n_candidates 1 --test_samples_size 100 --train_acquisition_size 30000 --train_n_candidates 1 --train_samples_size 10000"

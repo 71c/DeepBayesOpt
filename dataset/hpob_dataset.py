@@ -17,7 +17,7 @@ import xgboost as xgb
 
 import numpy as np
 import torch
-from datasets.function_samples_dataset import FunctionSamplesItem, ListMapFunctionSamplesDataset
+from dataset.function_samples_dataset import FunctionSamplesItem, ListMapFunctionSamplesDataset
 from utils.constants import HPOB_DATA_DIR, HPOB_SAVED_SURROGATES_DIR
 from utils_general.io_utils import load_json
 

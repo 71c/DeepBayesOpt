@@ -24,9 +24,9 @@ from utils.constants import RESULTS_DIR
 
 from utils_train.acquisition_function_net import GittinsAcquisitionFunctionNet
 from utils_general.dataset_with_models import RandomModelSampler
-from datasets.hpob_dataset import get_hpob_dataset_dimension, get_hpob_function_min_max, get_hpob_initialization, get_hpob_objective_function
-from datasets.cancer_dosage_dataset import CancerDosageObjectiveSampler, get_cancer_dosage_function_min_max
-from datasets.gp_acquisition_dataset_manager import (
+from dataset.hpob_dataset import get_hpob_dataset_dimension, get_hpob_function_min_max, get_hpob_initialization, get_hpob_objective_function
+from dataset.cancer_dosage_dataset import CancerDosageObjectiveSampler, get_cancer_dosage_function_min_max
+from dataset.gp_acquisition_dataset_manager import (
     GP_GEN_DEVICE, add_gp_args, get_gp_model_from_args_no_outcome_transform,
     get_outcome_transform_from_args as get_outcome_transform)
 

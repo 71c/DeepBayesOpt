@@ -5,7 +5,7 @@ import torch
 from torch.utils.data import IterableDataset
 
 from utils_general.iterable_utils import SizedInfiniteIterableMixin
-from datasets.function_samples_dataset import (
+from dataset.function_samples_dataset import (
     FunctionSamplesDataset, FunctionSamplesItem)
 
 

@@ -7,7 +7,7 @@ import torch
 from botorch.exceptions import UnsupportedError
 
 from dataset_factory import DATASET_TYPES
-from datasets.hpob_dataset import get_hpob_dataset_ids
+from dataset.hpob_dataset import get_hpob_dataset_ids
 from utils.utils import get_lamda_for_bo_of_nn
 from utils_general.experiments.experiment_manager import add_recompute_args
 from utils_general.utils import group_by

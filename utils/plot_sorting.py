@@ -42,7 +42,7 @@ def _get_sort_key_for_param(k, v):
     # Special handling for HPO-B search space IDs to include dimension
     if k == "objective.hpob_search_space_id" or k == "hpob_search_space_id":
         # Lazy import to avoid circular dependency
-        from datasets.hpob_dataset import get_hpob_dataset_dimension
+        from dataset.hpob_dataset import get_hpob_dataset_dimension
         dim = get_hpob_dataset_dimension(v)
         return (dim, display_key, 0, f"{display_key}={v} ({dim}D)")
 
